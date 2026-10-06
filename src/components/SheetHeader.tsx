@@ -38,7 +38,7 @@ interface SheetHeaderProps {
   currentUser: AppUser;
   availableUsers: AppUser[];
   pendingRequestsCount: number;
-  activeTab?: 'fanpage' | 'fullvia' | 'shared_accounts' | 'staff_management';
+  activeTab?: 'fanpage' | 'group' | 'fullvia' | 'shared_accounts' | 'staff_management';
   viaList?: FullViaItem[];
   errorViaUids?: Set<string>;
   errorViaCount?: number;
@@ -455,12 +455,29 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
 
             <button
               type="button"
-              id="btn-reset-demo-records"
-              onClick={onResetData}
-              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
-              title="Khôi phục lại dữ liệu mẫu gốc"
+              id="btn-backup-json"
+              onClick={() => {
+                const backupPayload = {
+                  timestamp: new Date().toISOString(),
+                  totalRecords: records.length,
+                  totalVias: viaList.length,
+                  records,
+                  viaList,
+                };
+                const blob = new Blob([JSON.stringify(backupPayload, null, 2)], {
+                  type: 'application/json',
+                });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `sao_luu_du_lieu_fanpage_${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="p-1.5 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+              title="Tải bản sao lưu an toàn toàn bộ dữ liệu (JSON)"
             >
-              <RotateCcw className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>

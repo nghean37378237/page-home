@@ -49,6 +49,12 @@ service cloud.firestore {
              data.password is string && data.password.size() <= 200;
     }
 
+    function isValidGroupRecord(data) {
+      return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             (!('uid' in data) || (data.uid is string && data.uid.size() <= 100)) &&
+             (!('groupName' in data) || (data.groupName is string && data.groupName.size() <= 200));
+    }
+
     match /pageRecords/{recordId} {
       allow read: if true;
       allow create: if isValidId(recordId) && isValidPageRecord(request.resource.data);
@@ -82,6 +88,13 @@ service cloud.firestore {
       allow create: if isValidId(accountId) && isValidSharedAccount(request.resource.data);
       allow update: if isValidId(accountId) && isValidSharedAccount(request.resource.data);
       allow delete: if isValidId(accountId);
+    }
+
+    match /groupRecords/{recordId} {
+      allow read: if true;
+      allow create: if isValidId(recordId) && isValidGroupRecord(request.resource.data);
+      allow update: if isValidId(recordId) && isValidGroupRecord(request.resource.data);
+      allow delete: if isValidId(recordId);
     }
   }
 }

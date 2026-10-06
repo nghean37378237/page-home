@@ -131,3 +131,25 @@ export interface SharedAccount {
   updatedAt?: string; // Ngày cập nhật
 }
 
+export interface GroupRecord {
+  id: string;
+  groupId: string; // Mã nhóm duy nhất để gộp ô các Via trong cùng 1 Group
+  groupName: string; // Cột E: NHÓM (Chữ màu đỏ, VD: 'Beautifull World ✅', 'Movies World ✅', 'NETFLIX Highlight Movies')
+  groupLink: string; // Cột D: GROUP (Link nhóm Facebook: https://www.facebook.com/groups/...)
+  uid: string; // Cột B: UID nick Facebook (VD: '100060665184656')
+  viaName: string; // Cột C: TÊN VIA (VD: 'Lucas Santos', 'Rupesh Yadav'...)
+  note: string; // Cột F: Ghi Chú (VD: 'vhh', 'hạn chế', 'đình chỉ'...)
+  isHighlighted?: boolean; // Ô bôi xanh lá (dòng via chính / via duyệt theo yêu cầu hình ảnh)
+  staffName: string; // TÊN NV (Quản lý phân quyền tài khoản tương tự như Page)
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface GroupFilter {
+  search: string;
+  staffName: string;
+  highlightedOnly: boolean;
+  hasNoteOnly: boolean;
+}
+
+

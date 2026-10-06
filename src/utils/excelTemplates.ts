@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { PageRecord, FullViaItem } from '../types';
+import { PageRecord, FullViaItem, GroupRecord } from '../types';
 
 export const SAMPLE_FANPAGE_ROWS = [
   {
@@ -267,4 +267,88 @@ export function exportViaToXLSX(vias: FullViaItem[]): void {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Danh_Sach_Full_Via');
   XLSX.writeFile(wb, `Danh_Sach_Full_Via_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * Xuất dữ liệu Group Facebook ra file Excel .xlsx
+ */
+export function exportGroupToXLSX(groups: GroupRecord[]): void {
+  const data = groups.map((g, idx) => ({
+    'STT': idx + 1,
+    'UID VIA': g.uid || '',
+    'TÊN VIA': g.viaName || '',
+    'LINK GROUP': g.groupLink || '',
+    'TÊN NHÓM': g.groupName || '',
+    'GHI CHÚ': g.note || '',
+    'VIA CHÍNH / BÔI XANH': g.isHighlighted ? 'Có (Via chính)' : 'Không',
+    'NHÂN VIÊN': g.staffName || '',
+    'MÃ GROUP': g.groupId || '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [
+    { wch: 8 },
+    { wch: 22 },
+    { wch: 25 },
+    { wch: 45 },
+    { wch: 35 },
+    { wch: 20 },
+    { wch: 22 },
+    { wch: 18 },
+    { wch: 25 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Danh_Sach_Group');
+  XLSX.writeFile(wb, `Danh_Sach_Group_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * Tải file Excel mẫu Quản lý Group
+ */
+export function downloadGroupExcelTemplate(): void {
+  const sampleData = [
+    {
+      'UID VIA': '100060665184656',
+      'TÊN VIA': 'Lucas Santos',
+      'LINK GROUP': 'https://www.facebook.com/groups/289880638621489',
+      'TÊN NHÓM': 'Beautifull World ✅',
+      'GHI CHÚ': '',
+      'VIA CHÍNH': 'Không',
+      'NHÂN VIÊN': 'Anh Quỳnh',
+    },
+    {
+      'UID VIA': '100023228976334',
+      'TÊN VIA': 'Tolga Yagmur',
+      'LINK GROUP': 'https://www.facebook.com/groups/289880638621489',
+      'TÊN NHÓM': 'Beautifull World ✅',
+      'GHI CHÚ': 'vhh',
+      'VIA CHÍNH': 'Có',
+      'NHÂN VIÊN': 'Anh Quỳnh',
+    },
+    {
+      'UID VIA': '100060467292965',
+      'TÊN VIA': 'Ansh Patial',
+      'LINK GROUP': 'https://www.facebook.com/groups/1055686641112045',
+      'TÊN NHÓM': 'Movies World ✅',
+      'GHI CHÚ': '',
+      'VIA CHÍNH': 'Không',
+      'NHÂN VIÊN': 'Bảo',
+    },
+  ];
+
+  const ws = XLSX.utils.json_to_sheet(sampleData);
+  ws['!cols'] = [
+    { wch: 22 },
+    { wch: 25 },
+    { wch: 45 },
+    { wch: 30 },
+    { wch: 18 },
+    { wch: 15 },
+    { wch: 18 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Mau_Group');
+  XLSX.writeFile(wb, 'Mau_Nhap_Group_Facebook.xlsx');
 }

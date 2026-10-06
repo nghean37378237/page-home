@@ -331,9 +331,46 @@ export const BulkImportFanpageModal: React.FC<BulkImportFanpageModalProps> = ({
   // Handle Paste from Excel / Sheets
   const handlePasteSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!pastedText.trim()) {
-      setErrorMsg('Vui lòng dán dữ liệu từ Excel vào khung bên dưới.');
+    const trimmed = pastedText.trim();
+    if (!trimmed) {
+      setErrorMsg('Vui lòng dán dữ liệu từ Excel hoặc bản sao lưu JSON vào khung bên dưới.');
       return;
+    }
+
+    // Support JSON backup paste
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        const parsedJson = JSON.parse(trimmed);
+        const list = Array.isArray(parsedJson) ? parsedJson : parsedJson.records || [];
+        if (Array.isArray(list) && list.length > 0) {
+          const mapped: ParsedImportRow[] = list.map((item: any, idx: number) => ({
+            id: item.id || `import-json-${Date.now()}-${idx}`,
+            staffName: item.staffName || (currentUser.role === 'staff' ? currentUser.name : 'Anh Quỳnh'),
+            viaUid: item.viaUid || item.uid || '',
+            fullVia: item.fullVia || '',
+            pageName: item.pageName || (item.viaUid ? `Page của Via ${item.viaUid}` : `Page #${idx + 1}`),
+            pageLink: item.pageLink || '',
+            status: normalizeStatus(item.status),
+            date: item.date || `${new Date().getDate()}/${new Date().getMonth() + 1}`,
+            blockStatus: normalizeBlockStatus(item.blockStatus),
+            likeCountStatus: item.likeCountStatus ? normalizeLikeCountStatus(item.likeCountStatus) : 'Đếm Like',
+            postingMethod: normalizePostingMethod(item.postingMethod),
+            postingDate: item.postingDate,
+            interaction: normalizeInteraction(item.interaction),
+            interactionDate: item.interactionDate || item.date || `${new Date().getDate()}/${new Date().getMonth() + 1}`,
+            bmNote: item.bmNote || '',
+            targetPosts: Number(item.targetPosts) || 3,
+            actualPosts: Number(item.actualPosts) || 0,
+            isCompleted: Boolean(item.isCompleted),
+            isValid: true,
+          }));
+          setParsedRows(mapped);
+          setFileName('Bản sao lưu JSON');
+          return;
+        }
+      } catch {
+        // Not valid JSON, continue with normal TSV
+      }
     }
 
     // Split text into lines, then split each line by tab or comma

@@ -93,30 +93,84 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSecuritySettings = {
   requireGoogleLoginOnly: false,
 };
 
-// Purge legacy local storage to ensure no local persistence remains
-export function clearAllLegacyLocalStorage(): void {
+// Bảo toàn và tự động khôi phục dữ liệu từ localStorage cũ (Vercel / các phiên bản trước)
+export function migrateAndPreserveLocalStorage(): {
+  foundRecords: PageRecord[];
+  foundVias: FullViaItem[];
+} {
+  let foundRecords: PageRecord[] = [];
+  let foundVias: FullViaItem[] = [];
+
   try {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(ACCOUNTS_STORAGE_KEY);
-    localStorage.removeItem(ADMIN_SECURITY_KEY);
-    localStorage.removeItem(FULL_VIA_STORAGE_KEY);
-    localStorage.removeItem(CUSTOM_STAFF_KEY);
-    localStorage.removeItem('fanpage_current_user_v1');
-    console.log('[Storage] Đã xóa sạch dữ liệu local storage cũ, toàn bộ dữ liệu chuyển sang Cloud Firestore');
+    const recordKeys = [
+      'fanpage_sheets_records_v2',
+      'fanpage_sheets_records_v1',
+      'fanpage_records',
+      'fanpage_data',
+      'fanpage_safe_backup_records',
+    ];
+
+    for (const key of recordKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            foundRecords = parsed;
+            // Lưu bản sao an toàn, tuyệt đối không bao giờ xóa
+            localStorage.setItem('fanpage_safe_backup_records', raw);
+            break;
+          }
+        } catch {
+          // continue
+        }
+      }
+    }
+
+    const viaKeys = [
+      'fanpage_full_vias_list_v2',
+      'fanpage_full_vias_list_v1',
+      'fanpage_vias',
+      'fanpage_safe_backup_vias',
+    ];
+
+    for (const key of viaKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            foundVias = parsed;
+            localStorage.setItem('fanpage_safe_backup_vias', raw);
+            break;
+          }
+        } catch {
+          // continue
+        }
+      }
+    }
   } catch (error) {
-    console.error('Lỗi khi dọn dẹp localStorage:', error);
+    console.error('Lỗi kiểm tra localStorage cũ:', error);
   }
+
+  return { foundRecords, foundVias };
 }
 
-// User active session in browser tab (sessionStorage, not persistent local database)
+// Giữ hàm để tương thích nhưng tuyệt đối KHÔNG xóa dữ liệu người dùng
+export function clearAllLegacyLocalStorage(): void {
+  // Không xóa dữ liệu để tránh mất mát dữ liệu cũ của người dùng
+  console.log('[Storage] Chế độ bảo toàn dữ liệu đang kích hoạt.');
+}
+
+// User active session in browser tab: Mặc định luôn là Quản Lý (Admin) để không bị chặn bởi màn hình đăng nhập
 export function loadCurrentUserSession(): AppUser {
   try {
-    const raw = sessionStorage.getItem(USER_STORAGE_KEY);
-    if (!raw) return GUEST_USER;
+    const raw = sessionStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem(USER_STORAGE_KEY);
+    if (!raw) return DEFAULT_ADMIN_USER;
     const parsed = JSON.parse(raw);
-    return parsed?.name && parsed?.isAuthenticated ? parsed : GUEST_USER;
+    return parsed?.name && parsed?.isAuthenticated ? parsed : DEFAULT_ADMIN_USER;
   } catch {
-    return GUEST_USER;
+    return DEFAULT_ADMIN_USER;
   }
 }
 

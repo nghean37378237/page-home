@@ -17,9 +17,10 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { PageRecord, UserAccount, FullViaItem, SharedAccount } from '../types';
+import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord } from '../types';
 import {
   INITIAL_PAGE_RECORDS,
+  INITIAL_GROUP_RECORDS,
 } from '../data/initialData';
 import {
   INITIAL_ACCOUNTS,
@@ -182,6 +183,7 @@ export const ACCOUNTS_COLLECTION = 'accounts';
 export const SETTINGS_COLLECTION = 'settings';
 export const GENERAL_SETTINGS_DOC = 'general';
 export const SHARED_ACCOUNTS_COLLECTION = 'sharedAccounts';
+export const GROUP_RECORDS_COLLECTION = 'groupRecords';
 
 export const INITIAL_SHARED_ACCOUNTS: SharedAccount[] = [
   {
@@ -310,6 +312,18 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       INITIAL_SHARED_ACCOUNTS.forEach((acc) => {
         const ref = doc(db, SHARED_ACCOUNTS_COLLECTION, acc.id);
         batch.set(ref, sanitizeForFirestore(acc));
+      });
+      await batch.commit();
+    }
+
+    // Check if groupRecords collection has data
+    const groupsSnapshot = await getDocs(collection(db, GROUP_RECORDS_COLLECTION));
+    if (groupsSnapshot.empty) {
+      console.log('[Firestore] Seeding Group Records to Cloud Firestore...');
+      const batch = writeBatch(db);
+      INITIAL_GROUP_RECORDS.forEach((grp) => {
+        const ref = doc(db, GROUP_RECORDS_COLLECTION, grp.id);
+        batch.set(ref, sanitizeForFirestore(grp));
       });
       await batch.commit();
     }
@@ -451,6 +465,40 @@ export async function getCloudSharedAccounts(): Promise<SharedAccount[]> {
     return list;
   } catch (error) {
     console.error('[Firestore] Lỗi đọc shared accounts trực tiếp:', error);
+    return [];
+  }
+}
+
+export function subscribeToGroupRecords(
+  onData: (groups: GroupRecord[]) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, GROUP_RECORDS_COLLECTION),
+    (snapshot) => {
+      const list: GroupRecord[] = [];
+      snapshot.forEach((d) => {
+        list.push({ id: d.id, ...d.data() } as GroupRecord);
+      });
+      onData(list);
+    },
+    (error) => {
+      if (onError) onError(error);
+      handleFirestoreError(error, OperationType.LIST, GROUP_RECORDS_COLLECTION);
+    }
+  );
+}
+
+export async function getCloudGroupRecords(): Promise<GroupRecord[]> {
+  try {
+    const snapshot = await getDocs(collection(db, GROUP_RECORDS_COLLECTION));
+    const list: GroupRecord[] = [];
+    snapshot.forEach((d) => {
+      list.push({ id: d.id, ...d.data() } as GroupRecord);
+    });
+    return list;
+  } catch (error) {
+    console.error('[Firestore] Lỗi đọc group records trực tiếp:', error);
     return [];
   }
 }
@@ -666,6 +714,81 @@ export async function batchSaveCloudSharedAccounts(accounts: SharedAccount[]): P
     console.log(`[Firestore] Đã lưu hàng loạt ${accounts.length} tài khoản web dùng chung.`);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, SHARED_ACCOUNTS_COLLECTION);
+    throw error;
+  }
+}
+
+// --- Group Records ---
+export async function setCloudGroupRecord(record: GroupRecord): Promise<void> {
+  const path = `${GROUP_RECORDS_COLLECTION}/${record.id}`;
+  try {
+    const clean = sanitizeForFirestore(record);
+    await setDoc(doc(db, GROUP_RECORDS_COLLECTION, record.id), clean);
+    console.log(`[Firestore] Đã lưu thành công dòng group: ${record.groupName} (${record.uid})`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
+export async function updateCloudGroupRecord(id: string, updates: Partial<GroupRecord>): Promise<void> {
+  const path = `${GROUP_RECORDS_COLLECTION}/${id}`;
+  try {
+    const clean = sanitizeForFirestore(updates);
+    await updateDoc(doc(db, GROUP_RECORDS_COLLECTION, id), clean as DocumentData);
+    console.log(`[Firestore] Đã cập nhật dòng group ID: ${id}`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+    throw error;
+  }
+}
+
+export async function deleteCloudGroupRecord(id: string): Promise<void> {
+  const path = `${GROUP_RECORDS_COLLECTION}/${id}`;
+  try {
+    await deleteDoc(doc(db, GROUP_RECORDS_COLLECTION, id));
+    console.log(`[Firestore] Đã xóa thành công dòng group ID: ${id}`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
+  }
+}
+
+export async function batchSaveCloudGroupRecords(records: GroupRecord[]): Promise<void> {
+  if (!records.length) return;
+  const chunkSize = 400;
+  try {
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((rec) => {
+        const clean = sanitizeForFirestore(rec);
+        batch.set(doc(db, GROUP_RECORDS_COLLECTION, rec.id), clean);
+      });
+      await batch.commit();
+    }
+    console.log(`[Firestore] Đã lưu hàng loạt ${records.length} dòng group.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, GROUP_RECORDS_COLLECTION);
+    throw error;
+  }
+}
+
+export async function batchDeleteCloudGroupRecords(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const chunkSize = 400;
+  try {
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
+        batch.delete(doc(db, GROUP_RECORDS_COLLECTION, id));
+      });
+      await batch.commit();
+    }
+    console.log(`[Firestore] Đã xóa hàng loạt ${ids.length} dòng group.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, GROUP_RECORDS_COLLECTION);
     throw error;
   }
 }
