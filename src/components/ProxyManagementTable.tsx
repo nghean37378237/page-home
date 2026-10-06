@@ -292,18 +292,37 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
               </div>
               <div>
                 <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center space-x-2">
-                  <span>BẢNG QUẢN LÝ PROXY & KẾT NỐI MẠNG</span>
+                  <span>
+                    {isAdmin
+                      ? 'BẢNG QUẢN LÝ PROXY & KẾT NỐI MẠNG'
+                      : `BẢNG PROXY CỦA TÔI (${currentUser.name})`}
+                  </span>
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                    {scopedProxies.length} Proxy
+                    {scopedProxies.length} Proxy {isAdmin ? '' : 'Của Bạn'}
                   </span>
                 </h1>
                 <p className="text-xs text-slate-500">
                   {isAdmin
                     ? 'Chế độ Quản Trị Viên: Quản lý IP, Port, User, Pass và phân công Proxy cho nhân viên'
-                    : `Chế độ Nhân Viên: Hiển thị danh sách Proxy phân công cho ${currentUser.name} và proxy dùng chung`}
+                    : `Chế độ Nhân Viên: Chỉ hiển thị và thao tác các Proxy phân công cho tài khoản ${currentUser.name}`}
                 </p>
               </div>
             </div>
+
+            {/* Staff account scoping security notice banner */}
+            {!isAdmin && (
+              <div className="mt-2 p-2.5 bg-blue-50/90 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-950">
+                <div className="flex items-center space-x-2">
+                  <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>
+                    <strong>Phân quyền tài khoản:</strong> Bạn đang đăng nhập bằng tài khoản <strong>{currentUser.name}</strong>. Hệ thống tự động lọc và chỉ cho phép bạn thấy, sử dụng các Proxy của riêng bạn.
+                  </span>
+                </div>
+                <span className="font-bold text-[11px] bg-blue-200/80 text-blue-900 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                  {scopedProxies.length} Proxy
+                </span>
+              </div>
+            )}
 
             {/* Stats chips */}
             <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -724,7 +743,17 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
 
                       {/* Nhân viên sử dụng */}
                       <td className="py-2.5 px-3">
-                        {(p.assignedStaff || []).includes('ALL') ? (
+                        {!isAdmin ? (
+                          (p.assignedStaff || []).includes('ALL') ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                              🌐 Dùng Chung (ALL)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                              ⭐ Của Bạn ({currentUser.name})
+                            </span>
+                          )
+                        ) : (p.assignedStaff || []).includes('ALL') ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
                             Dùng Chung (ALL)
                           </span>
@@ -788,15 +817,20 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                             </button>
                           )}
 
-                          {/* Delete button */}
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteRow(p)}
-                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
-                            title="Xóa proxy này"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {/* Delete button: Admin can delete any, Staff can only delete proxy assigned to them */}
+                          {(isAdmin ||
+                            (p.assignedStaff || []).some(
+                              (s) => s.trim().toLowerCase() === myStaffNameLower
+                            )) && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteRow(p)}
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                              title="Xóa proxy này"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>

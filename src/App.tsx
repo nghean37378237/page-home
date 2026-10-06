@@ -1902,22 +1902,23 @@ export default function App() {
       <div className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
         <div className="max-w-[1700px] mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between overflow-x-auto scrollbar-thin py-2 gap-3">
-            <div className="flex items-center space-x-2 shrink-0">
-              {/* TAB 1: Bảng 1 Fanpage (Mặc định) */}
+            <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
+              {/* TAB 1: Bảng 1 Fanpage */}
               <button
                 type="button"
                 id="tab-btn-fanpage-table"
                 onClick={() => setActiveTab('fanpage')}
-                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'fanpage'
                     ? 'bg-[#2e7d32] text-white shadow-xs ring-2 ring-[#2e7d32]/25'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                 }`}
+                title="Bảng 1: Quản lý Fanpage & Tiến độ đăng bài"
               >
-                <FileSpreadsheet className="w-4 h-4" />
-                <span>BẢNG 1: QUẢN LÝ FANPAGE & TIẾN ĐỘ ĐĂNG BÀI</span>
+                <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                <span>Bảng 1: Fanpage</span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'fanpage'
                       ? 'bg-white/25 text-white'
                       : 'bg-white text-slate-800 border border-slate-200'
@@ -1927,21 +1928,22 @@ export default function App() {
                 </span>
               </button>
 
-              {/* TAB 2: Bảng Quản Lý Group Facebook */}
+              {/* TAB 2: Bảng 2 Group */}
               <button
                 type="button"
                 id="tab-btn-group-table"
                 onClick={() => setActiveTab('group')}
-                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'group'
                     ? 'bg-red-700 text-white shadow-xs ring-2 ring-red-500/25'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                 }`}
+                title="Bảng 2: Quản lý Group Facebook & Trạng thái tham gia"
               >
-                <Users className="w-4 h-4" />
-                <span>BẢNG 2: QUẢN LÝ GROUP FACEBOOK</span>
+                <Users className="w-4 h-4 shrink-0" />
+                <span>Bảng 2: Group</span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'group'
                       ? 'bg-white/25 text-white'
                       : 'bg-white text-slate-800 border border-slate-200'
@@ -1954,45 +1956,56 @@ export default function App() {
                 </span>
               </button>
 
-              {/* TAB 3: Bảng Quản Lý Proxy Mạng & IP Nuôi Via */}
+              {/* TAB 3: Bảng 3 Proxy */}
               <button
                 type="button"
                 id="tab-btn-proxy-table"
                 onClick={() => setActiveTab('proxy')}
-                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'proxy'
                     ? 'bg-teal-700 text-white shadow-xs ring-2 ring-teal-500/25'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                 }`}
+                title="Bảng 3: Quản lý Proxy mạng & IP nuôi Via"
               >
-                <Network className="w-4 h-4" />
-                <span>BẢNG 3: QUẢN LÝ PROXY (ProxySwitcher Pro)</span>
+                <Network className="w-4 h-4 shrink-0" />
+                <span>Bảng 3: Proxy</span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'proxy'
                       ? 'bg-white/25 text-white'
                       : 'bg-white text-slate-800 border border-slate-200'
                   }`}
                 >
-                  31 Cổng / Vercel
+                  {currentUser.role === 'admin'
+                    ? proxies.length
+                    : proxies.filter(
+                        (p) =>
+                          (p.assignedStaff || []).includes('ALL') ||
+                          (p.assignedStaff || []).some(
+                            (s) => s.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+                          )
+                      ).length}{' '}
+                  Proxy
                 </span>
               </button>
 
-              {/* TAB 4: Bảng 4 Full Via của nhân viên đó */}
+              {/* TAB 4: Bảng 4 Full Via */}
               <button
                 type="button"
                 id="tab-btn-fullvia-table"
                 onClick={() => setActiveTab('fullvia')}
-                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'fullvia'
                     ? 'bg-indigo-700 text-white shadow-xs ring-2 ring-indigo-500/25'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                 }`}
+                title="Bảng 4: Quản lý Full Via (UID|PASS|2FA)"
               >
-                <KeyRound className="w-4 h-4" />
-                <span>BẢNG 4: QUẢN LÝ FULL VIA (UID|PASS|2FA)</span>
+                <KeyRound className="w-4 h-4 shrink-0" />
+                <span>Bảng 4: Full Via</span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'fullvia'
                       ? 'bg-white/25 text-white'
                       : 'bg-white text-slate-800 border border-slate-200'
@@ -2005,21 +2018,53 @@ export default function App() {
                 </span>
               </button>
 
-              {/* TAB 5: Bảng 5 Quản Lý Tài Khoản Dùng Chung (Canva, GPT, Capcut...) */}
+              {/* TAB 5: Bảng 5 Tên, MK Tài Khoản (Staff Management: Admin toàn bộ | Staff của riêng mình) */}
+              <button
+                type="button"
+                id="tab-btn-staff-management"
+                onClick={() => setActiveTab('staff_management')}
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  activeTab === 'staff_management'
+                    ? 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
+                }`}
+                title="Bảng 5: Tên & Mật khẩu tài khoản nhân sự"
+              >
+                <Users className="w-4 h-4 shrink-0" />
+                <span>
+                  {currentUser.role === 'admin'
+                    ? 'Bảng 5: Tên, MK Tài Khoản'
+                    : 'Bảng 5: Tên & MK Của Tôi'}
+                </span>
+                <span
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    activeTab === 'staff_management'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-white text-slate-800 border border-slate-200'
+                  }`}
+                >
+                  {currentUser.role === 'admin'
+                    ? `${accounts.filter((a) => a.role === 'staff').length} NV`
+                    : currentUser.name}
+                </span>
+              </button>
+
+              {/* TAB 6: Bảng 6 Web Dùng Chung */}
               <button
                 type="button"
                 id="tab-btn-shared-accounts"
                 onClick={() => setActiveTab('shared_accounts')}
-                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                   activeTab === 'shared_accounts'
                     ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-500/25'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                 }`}
+                title="Bảng 6: Tài khoản Web dùng chung (Canva, GPT, Capcut...)"
               >
-                <Globe className="w-4 h-4" />
-                <span>BẢNG 5: TÀI KHOẢN WEB DÙNG CHUNG</span>
+                <Globe className="w-4 h-4 shrink-0" />
+                <span>Bảng 6: Web Dùng Chung</span>
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'shared_accounts'
                       ? 'bg-white/25 text-white'
                       : 'bg-white text-slate-800 border border-slate-200'
@@ -2035,36 +2080,6 @@ export default function App() {
                           )
                       ).length}{' '}
                   TK
-                </span>
-              </button>
-
-              {/* TAB 6: Bảng 6 Quản Lý Nhân Viên & Mật Khẩu (Admin: Toàn bộ | Staff: Của riêng mình) */}
-              <button
-                type="button"
-                id="tab-btn-staff-management"
-                onClick={() => setActiveTab('staff_management')}
-                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === 'staff_management'
-                    ? 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                }`}
-              >
-                <Users className="w-4 h-4" />
-                <span>
-                  {currentUser.role === 'admin'
-                    ? 'BẢNG 6: DANH SÁCH NHÂN VIÊN & MẬT KHẨU'
-                    : 'BẢNG 6: TÀI KHOẢN & MẬT KHẨU CỦA TÔI'}
-                </span>
-                <span
-                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                    activeTab === 'staff_management'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-white text-slate-800 border border-slate-200'
-                  }`}
-                >
-                  {currentUser.role === 'admin'
-                    ? `${accounts.filter((a) => a.role === 'staff').length} NV`
-                    : currentUser.name}
                 </span>
               </button>
             </div>

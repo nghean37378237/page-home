@@ -41,10 +41,20 @@ export const ProxyAppView: React.FC<ProxyAppViewProps> = ({
   onOpenBulkImportModal,
   onEditProxy,
 }) => {
-  const [activeSubView, setActiveSubView] = useState<'app' | 'cloud_table'>('app');
+  const [activeSubView, setActiveSubView] = useState<'app' | 'cloud_table'>('cloud_table');
   const [iframeKey, setIframeKey] = useState<number>(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const isAdmin = currentUser.role === 'admin';
+  const myStaffNameLower = (currentUser.name || '').trim().toLowerCase();
+  const scopedProxiesCount = isAdmin
+    ? proxies.length
+    : proxies.filter((p) => {
+        const assigned = p.assignedStaff || [];
+        if (assigned.includes('ALL')) return true;
+        return assigned.some((s) => s.trim().toLowerCase() === myStaffNameLower);
+      }).length;
 
   const handleRefreshIframe = () => {
     setIframeKey((prev) => prev + 1);
@@ -111,18 +121,6 @@ export const ProxyAppView: React.FC<ProxyAppViewProps> = ({
           <div className="inline-flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
             <button
               type="button"
-              onClick={() => setActiveSubView('app')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
-                activeSubView === 'app'
-                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <Server className="w-3.5 h-3.5" />
-              <span>ProxySwitcher Pro (Gốc)</span>
-            </button>
-            <button
-              type="button"
               onClick={() => setActiveSubView('cloud_table')}
               className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
                 activeSubView === 'cloud_table'
@@ -131,7 +129,23 @@ export const ProxyAppView: React.FC<ProxyAppViewProps> = ({
               }`}
             >
               <Layers className="w-3.5 h-3.5" />
-              <span>Bảng Cloud Firestore ({proxies.length})</span>
+              <span>
+                {isAdmin
+                  ? `Bảng Quản Lý Proxy (${proxies.length})`
+                  : `Proxy Của Tôi (${scopedProxiesCount})`}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubView('app')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                activeSubView === 'app'
+                  ? 'bg-cyan-600 text-white shadow-xs font-bold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Server className="w-3.5 h-3.5" />
+              <span>ProxySwitcher Pro (Tool)</span>
             </button>
           </div>
 

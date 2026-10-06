@@ -229,7 +229,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                     ? 'bg-blue-600 text-white border-blue-700 shadow-sm'
                     : 'bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100'
                 }`}
-                title="Bấm để mở trực tiếp Bảng 4: Quản lý danh sách nhân viên, tài khoản và mật khẩu"
+                title="Bấm để mở trực tiếp Bảng 5: Quản lý danh sách nhân viên, tài khoản và mật khẩu"
               >
                 <UserCheck className="w-3.5 h-3.5" />
                 <span className="font-bold">QL Nhân Sự</span>
