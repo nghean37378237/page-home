@@ -87,6 +87,69 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
   // Rotating state indicator (id -> boolean)
   const [rotatingId, setRotatingId] = useState<string | null>(null);
 
+  // Local state for inline reset link inputs in each row
+  const [inlineResetLinkMap, setInlineResetLinkMap] = useState<Record<string, string>>({});
+
+  const handleInlineLinkChange = (id: string, value: string) => {
+    setInlineResetLinkMap((prev) => ({ ...prev, [id]: value }));
+  };
+
+  const handleInlineLinkBlur = async (proxy: ProxyItem) => {
+    const currentVal = inlineResetLinkMap[proxy.id];
+    if (currentVal === undefined) return;
+    const trimmed = currentVal.trim();
+    if (trimmed !== (proxy.resetUrl || '')) {
+      await onUpdateProxy(proxy.id, {
+        resetUrl: trimmed,
+        rotateUrl: trimmed,
+        isRotating: Boolean(trimmed),
+      });
+      triggerCopyFeedback(`link-saved-${proxy.id}`, `Đã lưu link reset cho proxy ${proxy.ip}`);
+    }
+  };
+
+  const handleResetProxyWithCurrentLink = async (proxy: ProxyItem) => {
+    const currentLink = (
+      inlineResetLinkMap[proxy.id] !== undefined
+        ? inlineResetLinkMap[proxy.id]
+        : proxy.resetUrl || proxy.rotateUrl || ''
+    ).trim();
+
+    if (!currentLink) {
+      alert('Vui lòng nhập Link Reset Proxy vào ô trước khi ấn Reset!');
+      return;
+    }
+
+    // Nếu link đã sửa đổi, lưu ngay vào CSDL
+    if (currentLink !== (proxy.resetUrl || '')) {
+      onUpdateProxy(proxy.id, {
+        resetUrl: currentLink,
+        rotateUrl: currentLink,
+        isRotating: true,
+        lastResetTime: Date.now(),
+      }).catch(() => {});
+    } else {
+      onUpdateProxy(proxy.id, {
+        lastResetTime: Date.now(),
+      }).catch(() => {});
+    }
+
+    setRotatingId(proxy.id);
+    try {
+      await fetch(currentLink, { mode: 'no-cors' }).catch(() => {});
+      triggerCopyFeedback(
+        `reset-${proxy.id}`,
+        `Đã gửi lệnh Reset cho proxy ${proxy.ip}:${proxy.port} thành công!`
+      );
+    } catch (e: any) {
+      console.warn('Lỗi gọi API reset:', e);
+    } finally {
+      setTimeout(() => {
+        setRotatingId(null);
+      }, 1500);
+    }
+  };
+
   // Filtered list
   const filteredProxies = useMemo(() => {
     return scopedProxies.filter((p) => {
@@ -474,7 +537,7 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Tìm IP, Port, User, Nhà cung cấp, Quốc gia, Ghi chú..."
+                placeholder="Tìm IP, Port, User, Link Reset, Ghi chú..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all placeholder:text-slate-400"
@@ -519,17 +582,6 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
               <option value="active">🟢 Live (Hoạt Động)</option>
               <option value="die">🔴 Die (Lỗi / Chết)</option>
               <option value="expired">⚠️ Expired (Hết Hạn)</option>
-            </select>
-
-            {/* Protocol filter */}
-            <select
-              value={selectedProtocolFilter}
-              onChange={(e) => setSelectedProtocolFilter(e.target.value)}
-              className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="ALL">Mọi Giao Thức</option>
-              <option value="HTTP">HTTP / HTTPS</option>
-              <option value="SOCKS5">SOCKS5</option>
             </select>
 
             {/* Rotating only */}
@@ -646,15 +698,11 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                   </th>
                   <th className="py-3 px-3 w-12 text-center">STT</th>
                   <th className="py-3 px-3 font-mono">CHUỖI PROXY (IP:PORT:USER:PASS)</th>
-                  <th className="py-3 px-3">GIAO THỨC</th>
-                  <th className="py-3 px-3">QUỐC GIA</th>
-                  <th className="py-3 px-3">NHÀ CUNG CẤP</th>
                   <th className="py-3 px-3">NHÂN VIÊN SỬ DỤNG</th>
-                  <th className="py-3 px-3">LINK RESET & RESET IP</th>
+                  <th className="py-3 px-3 min-w-[380px]">NHẬP LINK RESET & ẤN RESET PROXY</th>
                   <th className="py-3 px-3 w-28 text-center">TRẠNG THÁI</th>
-                  <th className="py-3 px-3">HẠN DÙNG</th>
                   <th className="py-3 px-3">GHI CHÚ</th>
-                  <th className="py-3 px-3 w-24 text-center">THAO TÁC</th>
+                  <th className="py-3 px-3 w-20 text-center">THAO TÁC</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
@@ -748,54 +796,6 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                         )}
                       </td>
 
-                      {/* Giao thức */}
-                      <td className="py-2.5 px-3">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                            p.protocol === 'SOCKS5'
-                              ? 'bg-purple-100 text-purple-800 border border-purple-200'
-                              : 'bg-blue-100 text-blue-800 border border-blue-200'
-                          }`}
-                        >
-                          {p.protocol}
-                        </span>
-                      </td>
-
-                      {/* Quốc gia */}
-                      <td className="py-2.5 px-3 font-bold text-slate-800">
-                        <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[11px]">
-                          {p.location || 'VN'}
-                        </span>
-                      </td>
-
-                      {/* Nhà cung cấp */}
-                      <td className="py-2.5 px-3">
-                        <div className="font-semibold text-slate-800">{p.provider || '-'}</div>
-                        {p.isRotating && (
-                          <div className="flex items-center space-x-1 mt-0.5">
-                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                              Proxy Xoay
-                            </span>
-                            {p.rotateUrl && (
-                              <button
-                                type="button"
-                                disabled={rotatingId === p.id}
-                                onClick={() => handleResetProxy(p)}
-                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-700 text-white hover:bg-cyan-800 cursor-pointer disabled:opacity-50"
-                                title="Đổi IP / Reset ngay lập tức"
-                              >
-                                <RefreshCw
-                                  className={`w-2.5 h-2.5 ${
-                                    rotatingId === p.id ? 'animate-spin' : ''
-                                  }`}
-                                />
-                                <span>Reset</span>
-                              </button>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
                       {/* Nhân viên sử dụng */}
                       <td className="py-2.5 px-3">
                         {!isAdmin ? (
@@ -840,84 +840,121 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                         )}
                       </td>
 
-                      {/* Link Reset & Thao Tác Reset Proxy */}
-                      <td className="py-2.5 px-3">
-                        {p.resetUrl || p.rotateUrl ? (
-                          <div className="space-y-1">
-                            <div className="flex items-center space-x-1">
-                              <span
-                                onClick={() =>
-                                  handleCopyText(
-                                    p.resetUrl || p.rotateUrl || '',
-                                    `reset-link-${p.id}`,
-                                    p.resetUrl || p.rotateUrl || ''
-                                  )
+                      {/* Cột Nhập Link Reset & Ấn Reset Proxy (Do Người Dùng Tự Nhập/Dán) */}
+                      <td className="py-2.5 px-3 min-w-[380px]">
+                        <div className="space-y-1.5">
+                          <div className="flex items-center space-x-2">
+                            {/* Ô nhập link reset trực tiếp trên bảng */}
+                            <div className="relative flex-1">
+                              <input
+                                type="text"
+                                placeholder="Nhập/dán link reset proxy của bạn..."
+                                value={
+                                  inlineResetLinkMap[p.id] !== undefined
+                                    ? inlineResetLinkMap[p.id]
+                                    : p.resetUrl || p.rotateUrl || ''
                                 }
-                                className="font-mono text-[11px] text-cyan-800 hover:text-cyan-950 truncate max-w-[170px] bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 cursor-pointer hover:underline"
-                                title={p.resetUrl || p.rotateUrl}
-                              >
-                                {p.resetUrl || p.rotateUrl}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  handleCopyText(
-                                    p.resetUrl || p.rotateUrl || '',
-                                    `reset-link-${p.id}`,
-                                    p.resetUrl || p.rotateUrl || ''
-                                  )
-                                }
-                                className="p-1 text-slate-400 hover:text-cyan-700 rounded transition-colors cursor-pointer"
-                                title="Sao chép link reset"
-                              >
-                                {copiedKey === `reset-link-${p.id}` ? (
-                                  <Check className="w-3 h-3 text-emerald-600" />
-                                ) : (
-                                  <Copy className="w-3 h-3" />
-                                )}
-                              </button>
+                                onChange={(e) => handleInlineLinkChange(p.id, e.target.value)}
+                                onBlur={() => handleInlineLinkBlur(p)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    (e.target as HTMLInputElement).blur();
+                                  }
+                                }}
+                                className="w-full px-2.5 py-1.5 text-xs font-mono bg-cyan-50/70 hover:bg-white focus:bg-white border border-cyan-300 rounded-lg text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-cyan-500 shadow-2xs transition-all"
+                                title="Nhập hoặc dán link reset proxy của bạn tại đây (tự động lưu khi rời ô hoặc bấm Enter)"
+                              />
                             </div>
 
-                            <div className="flex items-center space-x-1.5">
-                              <button
-                                type="button"
-                                disabled={rotatingId === p.id}
-                                onClick={() => handleResetProxy(p)}
-                                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer ${
-                                  rotatingId === p.id
-                                    ? 'bg-amber-500 text-white animate-pulse'
-                                    : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white'
-                                }`}
-                                title="Bấm để gửi lệnh Reset Proxy / Đổi IP ngay lập tức"
-                              >
-                                <RefreshCw
-                                  className={`w-3 h-3 ${rotatingId === p.id ? 'animate-spin' : ''}`}
-                                />
-                                <span>{rotatingId === p.id ? 'Đang Reset...' : '🔄 Reset Proxy'}</span>
-                              </button>
+                            {/* Nút bấm Reset Proxy bằng link người dùng đã nhập */}
+                            <button
+                              type="button"
+                              disabled={rotatingId === p.id}
+                              onClick={() => handleResetProxyWithCurrentLink(p)}
+                              className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer ${
+                                rotatingId === p.id
+                                  ? 'bg-amber-500 text-white animate-pulse'
+                                  : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white active:scale-95'
+                              }`}
+                              title="Bấm để kích hoạt gửi lệnh Reset Proxy bằng link bạn đã nhập"
+                            >
+                              <RefreshCw
+                                className={`w-3.5 h-3.5 ${rotatingId === p.id ? 'animate-spin' : ''}`}
+                              />
+                              <span>{rotatingId === p.id ? 'Đang Reset...' : '🔄 Reset Proxy'}</span>
+                            </button>
+                          </div>
 
-                              {p.lastResetTime && (
-                                <span className="text-[10px] text-slate-500 font-mono">
+                          {/* Dòng tiện ích: Điền nhanh cổng + Chép link + Lần reset gần nhất */}
+                          <div className="flex items-center justify-between text-[11px] text-slate-500">
+                            <div className="flex items-center space-x-2">
+                              {/* Nút điền nhanh link cổng Dcom nếu ô đang trống */}
+                              {!(inlineResetLinkMap[p.id] || p.resetUrl || p.rotateUrl) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const generated = `http://192.168.1.27/reset?proxy=${p.port || '4000'}`;
+                                    handleInlineLinkChange(p.id, generated);
+                                    onUpdateProxy(p.id, {
+                                      resetUrl: generated,
+                                      rotateUrl: generated,
+                                      isRotating: true,
+                                    });
+                                    triggerCopyFeedback(`link-${p.id}`, `Đã điền link cổng ${p.port}`);
+                                  }}
+                                  className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-100 hover:bg-cyan-200 text-cyan-800 border border-cyan-300 cursor-pointer transition-colors"
+                                  title="Điền nhanh link reset theo cổng proxy Dcom"
+                                >
+                                  <Zap className="w-2.5 h-2.5 text-cyan-600" />
+                                  <span>+ Điền Link Cổng {p.port}</span>
+                                </button>
+                              )}
+
+                              {/* Nút sao chép link nếu đã có link */}
+                              {(inlineResetLinkMap[p.id] || p.resetUrl || p.rotateUrl) && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleCopyText(
+                                      (inlineResetLinkMap[p.id] || p.resetUrl || p.rotateUrl || '').trim(),
+                                      `reset-link-${p.id}`,
+                                      (inlineResetLinkMap[p.id] || p.resetUrl || p.rotateUrl || '').trim()
+                                    )
+                                  }
+                                  className="inline-flex items-center space-x-1 text-[10px] text-slate-500 hover:text-cyan-700 cursor-pointer"
+                                  title="Sao chép link reset"
+                                >
+                                  {copiedKey === `reset-link-${p.id}` ? (
+                                    <>
+                                      <Check className="w-3 h-3 text-emerald-600" />
+                                      <span className="text-emerald-600 font-bold">Đã chép link</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy className="w-3 h-3" />
+                                      <span>Chép link</span>
+                                    </>
+                                  )}
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Hiển thị mốc thời gian Reset gần nhất */}
+                            {p.lastResetTime && (
+                              <span className="text-[10px] text-slate-400 font-mono flex items-center space-x-1">
+                                <Clock className="w-2.5 h-2.5" />
+                                <span>
+                                  Lần cuối:{' '}
                                   {new Date(p.lastResetTime).toLocaleTimeString('vi-VN', {
                                     hour: '2-digit',
                                     minute: '2-digit',
                                     second: '2-digit',
                                   })}
                                 </span>
-                              )}
-                            </div>
+                              </span>
+                            )}
                           </div>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => handleQuickAssignResetUrl(p)}
-                            className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 cursor-pointer transition-colors"
-                            title="Tự động tạo link reset theo cổng proxy Dcom này"
-                          >
-                            <Zap className="w-3 h-3 text-cyan-600" />
-                            <span>+ Link Reset ({p.port})</span>
-                          </button>
-                        )}
+                        </div>
                       </td>
 
                       {/* Trạng thái Live / Die */}
@@ -939,11 +976,6 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                           ></span>
                           <span>{isLive ? 'Live (Sống)' : 'Die (Lỗi)'}</span>
                         </button>
-                      </td>
-
-                      {/* Hạn dùng */}
-                      <td className="py-2.5 px-3 text-slate-600 font-mono text-[11px]">
-                        {p.expireDate || '-'}
                       </td>
 
                       {/* Ghi chú */}
