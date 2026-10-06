@@ -180,6 +180,8 @@ export interface ProxyItem {
   note?: string; // Ghi chú (Proxy tĩnh, nuôi Via chính...)
   isRotating?: boolean; // Cờ proxy xoay đổi IP
   rotateUrl?: string; // Link API đổi IP nếu là proxy xoay
+  resetUrl?: string; // Link Reset Proxy (VD: http://192.168.1.27/reset?proxy=4000 hoặc link API đổi IP)
+  lastResetTime?: number; // Thời điểm bấm reset gần nhất
   lastChecked?: string; // Thời gian kiểm tra live
   createdAt?: string;
   updatedAt?: string;

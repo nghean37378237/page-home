@@ -217,25 +217,79 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
     });
   };
 
-  // Trigger rotate IP
-  const handleRotateProxy = async (proxy: ProxyItem) => {
-    if (!proxy.rotateUrl) {
-      alert('Proxy này chưa được cài đặt Link API Đổi IP (Rotate URL).');
+  // Trigger Reset Proxy / Đổi IP (Chuẩn Tool Proxy 192.168.1.27 & Dcom Farm)
+  const handleResetProxy = async (proxy: ProxyItem) => {
+    const targetUrl = proxy.resetUrl || proxy.rotateUrl;
+    if (!targetUrl) {
+      // Nếu chưa có link, hỏi người dùng tự động gán link theo cổng proxy
+      const generated = `http://192.168.1.27/reset?proxy=${proxy.port || '4000'}`;
+      if (
+        confirm(
+          `Proxy này chưa có Link Reset. Bạn có muốn tự động gán Link Reset: "${generated}" và kích hoạt reset ngay không?`
+        )
+      ) {
+        await onUpdateProxy(proxy.id, {
+          resetUrl: generated,
+          rotateUrl: generated,
+          isRotating: true,
+          lastResetTime: Date.now(),
+        });
+        await fetch(generated, { mode: 'no-cors' }).catch(() => {});
+        triggerCopyFeedback(`reset-${proxy.id}`, `Đã gán link & gửi lệnh reset cho proxy ${proxy.ip}:${proxy.port}`);
+      }
       return;
     }
 
     setRotatingId(proxy.id);
     try {
-      // Fetch rotate url
-      await fetch(proxy.rotateUrl, { mode: 'no-cors' }).catch(() => {});
-      triggerCopyFeedback(`rotate-${proxy.id}`, `Đã gửi lệnh đổi IP cho proxy ${proxy.ip}`);
+      // Gửi lệnh HTTP request reset tới Dcom / API
+      await fetch(targetUrl, { mode: 'no-cors' }).catch(() => {});
+      const now = Date.now();
+      await onUpdateProxy(proxy.id, {
+        lastResetTime: now,
+      });
+      triggerCopyFeedback(`reset-${proxy.id}`, `Đã gửi lệnh Reset cho Proxy ${proxy.ip}:${proxy.port} thành công!`);
     } catch (e: any) {
-      console.warn('Lỗi gọi API rotate:', e);
+      console.warn('Lỗi gọi API reset:', e);
     } finally {
       setTimeout(() => {
         setRotatingId(null);
       }, 1500);
     }
+  };
+
+  // Quick 1-click assign Reset URL for proxy
+  const handleQuickAssignResetUrl = async (proxy: ProxyItem) => {
+    const generated = `http://192.168.1.27/reset?proxy=${proxy.port || '4000'}`;
+    await onUpdateProxy(proxy.id, {
+      resetUrl: generated,
+      rotateUrl: generated,
+      isRotating: true,
+    });
+    triggerCopyFeedback(`reset-${proxy.id}`, `Đã gán link reset: ${generated}`);
+  };
+
+  // Batch Reset selected proxies
+  const handleBatchResetSelected = async () => {
+    const selectedProxies = filteredProxies.filter((p) => selectedIds.has(p.id));
+    if (selectedProxies.length === 0) return;
+
+    triggerCopyFeedback('batch-reset', `Đang gửi lệnh reset cho ${selectedProxies.length} proxy đã chọn...`);
+
+    for (const p of selectedProxies) {
+      const targetUrl = p.resetUrl || p.rotateUrl || `http://192.168.1.27/reset?proxy=${p.port || '4000'}`;
+      fetch(targetUrl, { mode: 'no-cors' }).catch(() => {});
+      onUpdateProxy(p.id, {
+        resetUrl: p.resetUrl || targetUrl,
+        rotateUrl: p.rotateUrl || targetUrl,
+        isRotating: true,
+        lastResetTime: Date.now(),
+      }).catch(() => {});
+    }
+
+    setTimeout(() => {
+      triggerCopyFeedback('batch-reset', `Đã gửi lệnh Reset thành công cho ${selectedProxies.length} proxy!`);
+    }, 1200);
   };
 
   // Delete row
@@ -596,6 +650,7 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                   <th className="py-3 px-3">QUỐC GIA</th>
                   <th className="py-3 px-3">NHÀ CUNG CẤP</th>
                   <th className="py-3 px-3">NHÂN VIÊN SỬ DỤNG</th>
+                  <th className="py-3 px-3">LINK RESET & RESET IP</th>
                   <th className="py-3 px-3 w-28 text-center">TRẠNG THÁI</th>
                   <th className="py-3 px-3">HẠN DÙNG</th>
                   <th className="py-3 px-3">GHI CHÚ</th>
@@ -725,16 +780,16 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                               <button
                                 type="button"
                                 disabled={rotatingId === p.id}
-                                onClick={() => handleRotateProxy(p)}
-                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white hover:bg-blue-700 cursor-pointer disabled:opacity-50"
-                                title="Đổi IP ngay lập tức qua API"
+                                onClick={() => handleResetProxy(p)}
+                                className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-700 text-white hover:bg-cyan-800 cursor-pointer disabled:opacity-50"
+                                title="Đổi IP / Reset ngay lập tức"
                               >
                                 <RefreshCw
                                   className={`w-2.5 h-2.5 ${
                                     rotatingId === p.id ? 'animate-spin' : ''
                                   }`}
                                 />
-                                <span>Đổi IP</span>
+                                <span>Reset</span>
                               </button>
                             )}
                           </div>
@@ -782,6 +837,86 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                               ))}
                             </select>
                           </div>
+                        )}
+                      </td>
+
+                      {/* Link Reset & Thao Tác Reset Proxy */}
+                      <td className="py-2.5 px-3">
+                        {p.resetUrl || p.rotateUrl ? (
+                          <div className="space-y-1">
+                            <div className="flex items-center space-x-1">
+                              <span
+                                onClick={() =>
+                                  handleCopyText(
+                                    p.resetUrl || p.rotateUrl || '',
+                                    `reset-link-${p.id}`,
+                                    p.resetUrl || p.rotateUrl || ''
+                                  )
+                                }
+                                className="font-mono text-[11px] text-cyan-800 hover:text-cyan-950 truncate max-w-[170px] bg-cyan-50 px-1.5 py-0.5 rounded border border-cyan-200 cursor-pointer hover:underline"
+                                title={p.resetUrl || p.rotateUrl}
+                              >
+                                {p.resetUrl || p.rotateUrl}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCopyText(
+                                    p.resetUrl || p.rotateUrl || '',
+                                    `reset-link-${p.id}`,
+                                    p.resetUrl || p.rotateUrl || ''
+                                  )
+                                }
+                                className="p-1 text-slate-400 hover:text-cyan-700 rounded transition-colors cursor-pointer"
+                                title="Sao chép link reset"
+                              >
+                                {copiedKey === `reset-link-${p.id}` ? (
+                                  <Check className="w-3 h-3 text-emerald-600" />
+                                ) : (
+                                  <Copy className="w-3 h-3" />
+                                )}
+                              </button>
+                            </div>
+
+                            <div className="flex items-center space-x-1.5">
+                              <button
+                                type="button"
+                                disabled={rotatingId === p.id}
+                                onClick={() => handleResetProxy(p)}
+                                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer ${
+                                  rotatingId === p.id
+                                    ? 'bg-amber-500 text-white animate-pulse'
+                                    : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white'
+                                }`}
+                                title="Bấm để gửi lệnh Reset Proxy / Đổi IP ngay lập tức"
+                              >
+                                <RefreshCw
+                                  className={`w-3 h-3 ${rotatingId === p.id ? 'animate-spin' : ''}`}
+                                />
+                                <span>{rotatingId === p.id ? 'Đang Reset...' : '🔄 Reset Proxy'}</span>
+                              </button>
+
+                              {p.lastResetTime && (
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  {new Date(p.lastResetTime).toLocaleTimeString('vi-VN', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    second: '2-digit',
+                                  })}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickAssignResetUrl(p)}
+                            className="inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-semibold text-cyan-700 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 cursor-pointer transition-colors"
+                            title="Tự động tạo link reset theo cổng proxy Dcom này"
+                          >
+                            <Zap className="w-3 h-3 text-cyan-600" />
+                            <span>+ Link Reset ({p.port})</span>
+                          </button>
                         )}
                       </td>
 
@@ -881,6 +1016,17 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
             className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold flex items-center space-x-1 cursor-pointer transition-colors"
           >
             <span>Copy IP:Port</span>
+          </button>
+
+          {/* Batch Reset IP */}
+          <button
+            type="button"
+            onClick={handleBatchResetSelected}
+            className="px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-xl font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+            title="Gửi lệnh Reset Proxy / Đổi IP đồng loạt cho các proxy đã chọn"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>🔄 Reset IP Đã Chọn</span>
           </button>
 
           {/* Admin Batch Reassign Staff from existing CSDL list */}

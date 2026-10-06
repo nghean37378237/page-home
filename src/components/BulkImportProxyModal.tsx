@@ -35,6 +35,7 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
   const [defaultStaff, setDefaultStaff] = useState<string>(isAdmin ? 'ALL' : currentUser.name);
   const [defaultProtocol, setDefaultProtocol] = useState<ProxyProtocol>('HTTP');
   const [defaultProvider, setDefaultProvider] = useState('Proxy Dân Cư');
+  const [autoGenerateResetUrl, setAutoGenerateResetUrl] = useState<boolean>(true);
   const [parsedProxies, setParsedProxies] = useState<ProxyItem[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -66,6 +67,7 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
       let note = '';
       let loc = 'VN';
 
+      let resetUrl = '';
       if (trimmed.includes('\t')) {
         const parts = trimmed.split('\t').map((p) => p.trim());
         ip = parts[0] || '';
@@ -75,12 +77,23 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
         if (parts[4]) protocol = parts[4].toUpperCase().includes('SOCKS') ? 'SOCKS5' : 'HTTP';
         if (parts[5]) loc = parts[5].toUpperCase();
         if (parts[6]) note = parts[6];
+        if (parts[7] && parts[7].startsWith('http')) resetUrl = parts[7];
       } else {
         const parts = trimmed.split(/[:|]/).map((p) => p.trim());
         ip = parts[0] || '';
         port = parts[1] || '';
         user = parts[2] || '';
         pass = parts[3] || '';
+        for (let i = 4; i < parts.length; i++) {
+          if (parts[i]?.startsWith('http')) {
+            resetUrl = parts.slice(i).join(':');
+            break;
+          }
+        }
+      }
+
+      if (!resetUrl && autoGenerateResetUrl && port) {
+        resetUrl = `http://192.168.1.27/reset?proxy=${port}`;
       }
 
       if (ip && port) {
@@ -100,7 +113,9 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
           status: 'active',
           expireDate: '30/11/2026',
           note,
-          isRotating: false,
+          resetUrl: resetUrl || undefined,
+          rotateUrl: resetUrl || undefined,
+          isRotating: Boolean(resetUrl),
           lastChecked: new Date().toLocaleDateString('vi-VN'),
           createdAt: new Date().toLocaleDateString('vi-VN'),
           updatedAt: new Date().toLocaleDateString('vi-VN'),
@@ -172,6 +187,20 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
             : effectiveStaff;
           const note = (row['GHI CHÚ'] || row['Note'] || '').toString().trim();
           const expire = (row['HẠN DÙNG'] || row['Expire'] || '30/11/2026').toString().trim();
+          let resetUrl = (
+            row['LINK RESET'] ||
+            row['Link Reset'] ||
+            row['RESET LINK'] ||
+            row['Reset Link'] ||
+            row['LINK'] ||
+            row['Link'] ||
+            row['Rotate Url'] ||
+            ''
+          ).toString().trim();
+
+          if (!resetUrl && autoGenerateResetUrl && port) {
+            resetUrl = `http://192.168.1.27/reset?proxy=${port}`;
+          }
 
           if (ip && port) {
             const fullProxy = user && pass ? `${ip}:${port}:${user}:${pass}` : `${ip}:${port}`;
@@ -190,7 +219,9 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
               status: 'active',
               expireDate: expire,
               note,
-              isRotating: false,
+              resetUrl: resetUrl || undefined,
+              rotateUrl: resetUrl || undefined,
+              isRotating: Boolean(resetUrl),
               lastChecked: new Date().toLocaleDateString('vi-VN'),
               createdAt: new Date().toLocaleDateString('vi-VN'),
               updatedAt: new Date().toLocaleDateString('vi-VN'),
@@ -426,6 +457,7 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
                       <th className="p-2">Giao Thức</th>
                       <th className="p-2">Quốc Gia</th>
                       <th className="p-2">Nhân Viên</th>
+                      <th className="p-2">Link Reset</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 text-slate-700 font-medium">
@@ -442,6 +474,9 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
                         <td className="p-2 font-bold">{p.location || 'VN'}</td>
                         <td className="p-2 font-bold text-blue-800">
                           {p.assignedStaff.join(', ')}
+                        </td>
+                        <td className="p-2 font-mono text-[11px] text-cyan-700 max-w-[150px] truncate" title={p.resetUrl}>
+                          {p.resetUrl || '-'}
                         </td>
                       </tr>
                     ))}

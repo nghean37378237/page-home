@@ -383,6 +383,7 @@ export function exportProxiesToXLSX(proxies: ProxyItem[]): void {
     'QUỐC GIA': p.location || '',
     'NHÀ CUNG CẤP': p.provider || '',
     'NHÂN VIÊN': (p.assignedStaff || []).join(', '),
+    'LINK RESET': p.resetUrl || p.rotateUrl || '',
     'TRẠNG THÁI': p.status === 'active' ? 'Hoạt Động' : p.status === 'die' ? 'Chết / Lỗi' : 'Hết Hạn',
     'HẠN DÙNG': p.expireDate || '',
     'LOẠI': p.isRotating ? 'Proxy Xoay' : 'Proxy Tĩnh',
@@ -418,6 +419,19 @@ export function exportProxiesToXLSX(proxies: ProxyItem[]): void {
 export function downloadProxyExcelTemplate(): void {
   const sampleData = [
     {
+      'IP': '192.168.1.27',
+      'PORT': '4000',
+      'USER': '',
+      'PASS': '',
+      'GIAO THỨC': 'HTTP',
+      'QUỐC GIA': 'VN',
+      'NHÀ CUNG CẤP': 'Proxy Dcom Farm',
+      'NHÂN VIÊN': 'Anh Quỳnh',
+      'LINK RESET': 'http://192.168.1.27/reset?proxy=4000',
+      'HẠN DÙNG': '25/10/2026',
+      'GHI CHÚ': 'Proxy Dcom cổng 4000',
+    },
+    {
       'IP': '103.145.22.10',
       'PORT': '9080',
       'USER': 'user01',
@@ -425,7 +439,8 @@ export function downloadProxyExcelTemplate(): void {
       'GIAO THỨC': 'HTTP',
       'QUỐC GIA': 'VN',
       'NHÀ CUNG CẤP': 'Viettel Dân Cư',
-      'NHÂN VIÊN': 'Anh Quỳnh',
+      'NHÂN VIÊN': 'Bảo',
+      'LINK RESET': 'https://tmproxy.com/api/proxy/get-new-proxy?api_key=DEMO_KEY',
       'HẠN DÙNG': '25/10/2026',
       'GHI CHÚ': 'Proxy tĩnh nuôi via',
     },
@@ -438,6 +453,7 @@ export function downloadProxyExcelTemplate(): void {
       'QUỐC GIA': 'US',
       'NHÀ CUNG CẤP': 'ProxyNo1',
       'NHÂN VIÊN': 'Phương My',
+      'LINK RESET': 'http://192.168.1.27/reset?proxy=4020',
       'HẠN DÙNG': '30/10/2026',
       'GHI CHÚ': 'Proxy US dân cư',
     },
@@ -453,6 +469,7 @@ export function downloadProxyExcelTemplate(): void {
     { wch: 10 },
     { wch: 20 },
     { wch: 18 },
+    { wch: 40 },
     { wch: 15 },
     { wch: 25 },
   ];
