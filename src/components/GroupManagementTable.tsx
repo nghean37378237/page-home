@@ -467,9 +467,9 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               </div>
               <div>
                 <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center space-x-2">
-                  <span>BẢNG QUẢN LÝ GROUP & VIA THÀNH VIÊN</span>
+                  <span>BẢNG QUẢN LÝ GROUP FACEBOOK</span>
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
-                    {scopedRecords.length} Dòng Via
+                    {scopedRecords.length} Dòng Group
                   </span>
                 </h1>
                 <div className="flex flex-wrap items-center gap-2 pt-0.5">
@@ -839,27 +839,34 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                           {group.rows.length} Nick Via
                         </span>
 
-                        {/* Interactive staff button on group card header */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setStaffChangeTarget({
-                              type: 'group',
-                              title: `Đổi NV chăm sóc nhóm "${group.groupName}"`,
-                              groupName: group.groupName,
-                              count: group.rows.length,
-                              recordIds: group.rows.map((r) => r.id),
-                              currentStaff: group.staffName || '',
-                            });
-                            setTargetStaffInput(group.staffName || currentUser.name || '');
-                          }}
-                          className="inline-flex items-center space-x-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-0.5 rounded-full border border-blue-200 hover:border-blue-300 transition-all cursor-pointer shadow-2xs group"
-                          title="Nhấp để đổi nhân viên chăm sóc cho TOÀN BỘ nhóm này"
-                        >
-                          <UserCheck className="w-3 h-3 text-blue-600 group-hover:scale-110 transition-transform" />
-                          <span>NV: <b>{group.staffName || 'Chưa gán'}</b></span>
-                          <ChevronDown className="w-2.5 h-2.5 text-blue-500 opacity-60 group-hover:opacity-100" />
-                        </button>
+                        {/* Staff display / change on group card header */}
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStaffChangeTarget({
+                                type: 'group',
+                                title: `Đổi NV chăm sóc nhóm "${group.groupName}"`,
+                                groupName: group.groupName,
+                                count: group.rows.length,
+                                recordIds: group.rows.map((r) => r.id),
+                                currentStaff: group.staffName || '',
+                              });
+                              setTargetStaffInput(group.staffName || currentUser.name || '');
+                            }}
+                            className="inline-flex items-center space-x-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-0.5 rounded-full border border-blue-200 hover:border-blue-300 transition-all cursor-pointer shadow-2xs group"
+                            title="Nhấp để đổi nhân viên chăm sóc cho TOÀN BỘ nhóm này"
+                          >
+                            <UserCheck className="w-3 h-3 text-blue-600 group-hover:scale-110 transition-transform" />
+                            <span>NV: <b>{group.staffName || 'Chưa gán'}</b></span>
+                            <ChevronDown className="w-2.5 h-2.5 text-blue-500 opacity-60 group-hover:opacity-100" />
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center space-x-1 text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                            <UserCheck className="w-3 h-3 text-blue-600" />
+                            <span>NV: <b>{group.staffName || currentUser.name}</b></span>
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -1057,28 +1064,35 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                 </button>
                               </td>
 
-                              {/* Nhân viên - Interactive Click to Change */}
+                              {/* Nhân viên - Interactive Click to Change (Admin only) */}
                               <td className="py-2.5 px-3">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setStaffChangeTarget({
-                                      type: 'single',
-                                      title: `Đổi NV chăm sóc UID ${row.uid || row.viaName}`,
-                                      groupName: row.groupName,
-                                      count: 1,
-                                      recordIds: [row.id],
-                                      currentStaff: row.staffName || '',
-                                    });
-                                    setTargetStaffInput(row.staffName || currentUser.name || '');
-                                  }}
-                                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 hover:border-blue-300 transition-all cursor-pointer group"
-                                  title="Nhấp để chọn / đổi nhân viên cho dòng này"
-                                >
-                                  <UserCheck className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
-                                  <span>{row.staffName || 'Chưa gán'}</span>
-                                  <ChevronDown className="w-3 h-3 text-blue-400 opacity-60 group-hover:opacity-100" />
-                                </button>
+                                {isAdmin ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setStaffChangeTarget({
+                                        type: 'single',
+                                        title: `Đổi NV chăm sóc UID ${row.uid || row.viaName}`,
+                                        groupName: row.groupName,
+                                        count: 1,
+                                        recordIds: [row.id],
+                                        currentStaff: row.staffName || '',
+                                      });
+                                      setTargetStaffInput(row.staffName || currentUser.name || '');
+                                    }}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 hover:border-blue-300 transition-all cursor-pointer group"
+                                    title="Nhấp để chọn / đổi nhân viên cho dòng này"
+                                  >
+                                    <UserCheck className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
+                                    <span>{row.staffName || 'Chưa gán'}</span>
+                                    <ChevronDown className="w-3 h-3 text-blue-400 opacity-60 group-hover:opacity-100" />
+                                  </button>
+                                ) : (
+                                  <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                    <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+                                    <span>{row.staffName || currentUser.name}</span>
+                                  </span>
+                                )}
                               </td>
 
                               {/* Thao tác */}
@@ -1287,28 +1301,35 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         </button>
                       </td>
 
-                      {/* Nhân viên - Interactive Click to Change */}
+                      {/* Nhân viên - Interactive Click to Change (Admin only) */}
                       <td className="py-2.5 px-3">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setStaffChangeTarget({
-                              type: 'single',
-                              title: `Đổi NV chăm sóc UID ${r.uid || r.viaName}`,
-                              groupName: r.groupName,
-                              count: 1,
-                              recordIds: [r.id],
-                              currentStaff: r.staffName || '',
-                            });
-                            setTargetStaffInput(r.staffName || currentUser.name || '');
-                          }}
-                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 hover:border-blue-300 transition-all cursor-pointer group"
-                          title="Nhấp để chọn / đổi nhân viên cho dòng này"
-                        >
-                          <UserCheck className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
-                          <span>{r.staffName || 'Chưa gán'}</span>
-                          <ChevronDown className="w-3 h-3 text-blue-400 opacity-60 group-hover:opacity-100" />
-                        </button>
+                        {isAdmin ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStaffChangeTarget({
+                                type: 'single',
+                                title: `Đổi NV chăm sóc UID ${r.uid || r.viaName}`,
+                                groupName: r.groupName,
+                                count: 1,
+                                recordIds: [r.id],
+                                currentStaff: r.staffName || '',
+                              });
+                              setTargetStaffInput(r.staffName || currentUser.name || '');
+                            }}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 hover:border-blue-300 transition-all cursor-pointer group"
+                            title="Nhấp để chọn / đổi nhân viên cho dòng này"
+                          >
+                            <UserCheck className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
+                            <span>{r.staffName || 'Chưa gán'}</span>
+                            <ChevronDown className="w-3 h-3 text-blue-400 opacity-60 group-hover:opacity-100" />
+                          </button>
+                        ) : (
+                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                            <UserCheck className="w-3.5 h-3.5 text-blue-500" />
+                            <span>{r.staffName || currentUser.name}</span>
+                          </span>
+                        )}
                       </td>
 
                       <td className="py-2.5 px-3 text-center">
@@ -1371,27 +1392,31 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
           <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
 
-          {/* Quick Batch Staff Assignment */}
-          <button
-            type="button"
-            onClick={() => {
-              setStaffChangeTarget({
-                type: 'bulk',
-                title: `Đổi nhân viên phụ trách cho ${selectedIds.size} UID đã chọn`,
-                count: selectedIds.size,
-                recordIds: Array.from(selectedIds),
-                currentStaff: '',
-              });
-              setTargetStaffInput(currentUser.name || availableStaffNames[0] || '');
-            }}
-            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
-            title="Chuyển nhân viên phụ trách cho tất cả UID đang chọn"
-          >
-            <UserCheck className="w-3.5 h-3.5" />
-            <span>Đổi NV ({selectedIds.size} UID)</span>
-          </button>
+          {/* Quick Batch Staff Assignment (Admin only) */}
+          {isAdmin && (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setStaffChangeTarget({
+                    type: 'bulk',
+                    title: `Đổi nhân viên phụ trách cho ${selectedIds.size} UID đã chọn`,
+                    count: selectedIds.size,
+                    recordIds: Array.from(selectedIds),
+                    currentStaff: '',
+                  });
+                  setTargetStaffInput(currentUser.name || availableStaffNames[0] || '');
+                }}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+                title="Chuyển nhân viên phụ trách cho tất cả UID đang chọn"
+              >
+                <UserCheck className="w-3.5 h-3.5" />
+                <span>Đổi NV ({selectedIds.size} UID)</span>
+              </button>
 
-          <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
+              <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
+            </>
+          )}
 
           {/* Quick Batch Note Assignment */}
           <div className="flex items-center space-x-1 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800">

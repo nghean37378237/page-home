@@ -179,11 +179,11 @@ export default function App() {
         await seedCloudFirestoreIfEmpty();
 
         // Xóa trắng dữ liệu group mặc định theo yêu cầu của người dùng
-        const hasClearedGroups = localStorage.getItem('user_requested_clear_group_records_v1');
+        const hasClearedGroups = localStorage.getItem('user_requested_clear_group_records_v2');
         if (!hasClearedGroups) {
           try {
             await clearAllCloudGroupRecords();
-            localStorage.setItem('user_requested_clear_group_records_v1', 'true');
+            localStorage.setItem('user_requested_clear_group_records_v2', 'true');
             setGroupRecords([]);
             console.log('[App] Đã xóa trắng dữ liệu group theo yêu cầu của người dùng');
           } catch (e) {
@@ -551,6 +551,7 @@ export default function App() {
 
   // Authentication & Approval Handlers
   const handleLoginSuccess = (user: AppUser) => {
+    saveCurrentUserSession(user);
     setCurrentUser(user);
     setIsAuthModalOpen(false);
   };

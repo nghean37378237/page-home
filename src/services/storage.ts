@@ -156,21 +156,30 @@ export function migrateAndPreserveLocalStorage(): {
   return { foundRecords, foundVias };
 }
 
-// Giữ hàm để tương thích nhưng tuyệt đối KHÔNG xóa dữ liệu người dùng
+// Giữ hàm để tương thích và xóa phiên đăng nhập cũ trong localStorage để bắt buộc đăng nhập
 export function clearAllLegacyLocalStorage(): void {
-  // Không xóa dữ liệu để tránh mất mát dữ liệu cũ của người dùng
-  console.log('[Storage] Chế độ bảo toàn dữ liệu đang kích hoạt.');
+  try {
+    localStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem('fanpage_current_user_session_v1');
+    localStorage.removeItem('fanpage_current_user_session');
+  } catch (e) {
+    console.warn(e);
+  }
+  console.log('[Storage] Chế độ bảo mật đăng nhập đã kích hoạt.');
 }
 
-// User active session in browser tab: Mặc định luôn là Quản Lý (Admin) để không bị chặn bởi màn hình đăng nhập
+// User active session in browser tab: Mặc định là GUEST_USER để bắt buộc đăng nhập
 export function loadCurrentUserSession(): AppUser {
   try {
-    const raw = sessionStorage.getItem(USER_STORAGE_KEY) || localStorage.getItem(USER_STORAGE_KEY);
-    if (!raw) return DEFAULT_ADMIN_USER;
+    const raw = sessionStorage.getItem(USER_STORAGE_KEY);
+    if (!raw) return GUEST_USER;
     const parsed = JSON.parse(raw);
-    return parsed?.name && parsed?.isAuthenticated ? parsed : DEFAULT_ADMIN_USER;
+    if (parsed && parsed.isAuthenticated && parsed.id !== 'guest') {
+      return parsed;
+    }
+    return GUEST_USER;
   } catch {
-    return DEFAULT_ADMIN_USER;
+    return GUEST_USER;
   }
 }
 
@@ -185,6 +194,7 @@ export function saveCurrentUserSession(user: AppUser): void {
 export function clearCurrentUserSession(): void {
   try {
     sessionStorage.removeItem(USER_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
   } catch (error) {
     console.error('Lỗi khi xóa phiên đăng nhập:', error);
   }
