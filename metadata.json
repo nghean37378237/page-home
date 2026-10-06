@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix Remix Remix Quản Lý Đăng Bài Fanpage Nhân Viên",
+  "description": "Quản lý số lượng nick cầm page, số page và theo dõi tiến độ hoàn thành bài đăng mỗi ngày của nhân viên.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

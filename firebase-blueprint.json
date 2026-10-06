@@ -1,0 +1,121 @@
+{
+  "entities": {
+    "PageRecord": {
+      "title": "PageRecord",
+      "description": "Fanpage and daily posting progress record",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "staffName": { "type": "string", "maxLength": 100 },
+        "viaUid": { "type": "string", "maxLength": 100 },
+        "fullVia": { "type": "string", "maxLength": 500 },
+        "pageName": { "type": "string", "maxLength": 200 },
+        "pageLink": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["Đề Xuất", "Mất Đề Xuất", "Đình Chỉ", "Bị Back"] },
+        "date": { "type": "string", "maxLength": 50 },
+        "blockStatus": { "type": "string", "enum": ["Không Chặn", "Chặn VN", "Chặn Bản Quyền", "Chặn Quốc Tế"] },
+        "likeCountStatus": { "type": "string", "enum": ["Đếm Like", "Bỏ Đếm Like"] },
+        "postingMethod": { "type": "string", "enum": ["Đăng Tay", "Tool", "Hẹn Giờ"] },
+        "postingDate": { "type": "string", "maxLength": 50 },
+        "interaction": { "type": "string", "enum": ["TỐT", "Bình Thường", "Kém", "Mất Tương Tác"] },
+        "interactionDate": { "type": "string", "maxLength": 50 },
+        "bmNote": { "type": "string", "maxLength": 500 },
+        "targetPosts": { "type": "number" },
+        "actualPosts": { "type": "number" },
+        "isCompleted": { "type": "boolean" },
+        "isViaError": { "type": "boolean" },
+        "viaStatus": { "type": "string", "enum": ["active", "checkpoint", "dead", "error"] },
+        "viaErrorNote": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "staffName", "pageName", "targetPosts", "actualPosts", "isCompleted"]
+    },
+    "FullViaItem": {
+      "title": "FullViaItem",
+      "description": "Facebook Via account credentials and assignment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "uid": { "type": "string", "maxLength": 100 },
+        "pass": { "type": "string", "maxLength": 200 },
+        "twoFa": { "type": "string", "maxLength": 200 },
+        "staffName": { "type": "string", "maxLength": 100 },
+        "note": { "type": "string", "maxLength": 500 },
+        "status": { "type": "string", "enum": ["active", "checkpoint", "dead", "error"] },
+        "isError": { "type": "boolean" },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "rawFullVia": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "uid", "staffName"]
+    },
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "User account for staff or admin with access control",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "username": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 200 },
+        "role": { "type": "string", "enum": ["admin", "staff"] },
+        "status": { "type": "string", "enum": ["approved", "pending", "blocked"] },
+        "pin": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "approvedAt": { "type": "string", "maxLength": 50 },
+        "requestNote": { "type": "string", "maxLength": 500 },
+        "adminNote": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "username", "role", "status", "pin"]
+    },
+    "AppSetting": {
+      "title": "AppSetting",
+      "description": "Application security settings and staff master list",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "adminPin": { "type": "string", "maxLength": 50 },
+        "requireApproval": { "type": "boolean" },
+        "customStaffList": { "type": "array" }
+      },
+      "required": ["id"]
+    },
+    "SharedAccount": {
+      "title": "SharedAccount",
+      "description": "Shared tool or website credentials for staff with assignment permissions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "websiteName": { "type": "string", "maxLength": 200 },
+        "websiteUrl": { "type": "string", "maxLength": 500 },
+        "username": { "type": "string", "maxLength": 200 },
+        "password": { "type": "string", "maxLength": 200 },
+        "twoFa": { "type": "string", "maxLength": 200 },
+        "assignedStaff": { "type": "array", "items": { "type": "string" } },
+        "note": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "websiteName", "username", "password"]
+    }
+  },
+  "firestore": {
+    "/pageRecords/{recordId}": {
+      "schema": "PageRecord",
+      "description": "Collection storing fanpage tracking records and posting progress"
+    },
+    "/vias/{viaId}": {
+      "schema": "FullViaItem",
+      "description": "Collection storing full via accounts and assignments"
+    },
+    "/accounts/{accountId}": {
+      "schema": "UserAccount",
+      "description": "Collection storing staff and admin accounts"
+    },
+    "/settings/{settingId}": {
+      "schema": "AppSetting",
+      "description": "Collection storing global system settings"
+    },
+    "/sharedAccounts/{accountId}": {
+      "schema": "SharedAccount",
+      "description": "Collection storing shared tool and website accounts"
+    }
+  }
+}

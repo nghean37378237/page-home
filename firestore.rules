@@ -1,0 +1,87 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Health / connection test doc
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isValidPageRecord(data) {
+      return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             data.staffName is string && data.staffName.size() <= 100 &&
+             data.pageName is string && data.pageName.size() <= 200 &&
+             data.targetPosts is number &&
+             data.actualPosts is number &&
+             data.isCompleted is bool;
+    }
+
+    function isValidViaItem(data) {
+      return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             data.uid is string && data.uid.size() <= 100 &&
+             data.staffName is string && data.staffName.size() <= 100;
+    }
+
+    function isValidAccount(data) {
+      return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             data.username is string && data.username.size() <= 100 &&
+             data.role in ['admin', 'staff'] &&
+             data.status in ['approved', 'pending', 'blocked'] &&
+             (!('pin' in data) || (data.pin is string && data.pin.size() <= 50));
+    }
+
+    function isValidSetting(data) {
+      return data.id is string && data.id.size() <= 128;
+    }
+
+    function isValidSharedAccount(data) {
+      return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             data.websiteName is string && data.websiteName.size() <= 200 &&
+             data.username is string && data.username.size() <= 200 &&
+             data.password is string && data.password.size() <= 200;
+    }
+
+    match /pageRecords/{recordId} {
+      allow read: if true;
+      allow create: if isValidId(recordId) && isValidPageRecord(request.resource.data);
+      allow update: if isValidId(recordId) && isValidPageRecord(request.resource.data);
+      allow delete: if isValidId(recordId);
+    }
+
+    match /vias/{viaId} {
+      allow read: if true;
+      allow create: if isValidId(viaId) && isValidViaItem(request.resource.data);
+      allow update: if isValidId(viaId) && isValidViaItem(request.resource.data);
+      allow delete: if isValidId(viaId);
+    }
+
+    match /accounts/{accountId} {
+      allow read: if true;
+      allow create: if isValidId(accountId) && isValidAccount(request.resource.data);
+      allow update: if isValidId(accountId) && isValidAccount(request.resource.data);
+      allow delete: if isValidId(accountId);
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create: if isValidId(settingId) && isValidSetting(request.resource.data);
+      allow update: if isValidId(settingId) && isValidSetting(request.resource.data);
+      allow delete: if isValidId(settingId);
+    }
+
+    match /sharedAccounts/{accountId} {
+      allow read: if true;
+      allow create: if isValidId(accountId) && isValidSharedAccount(request.resource.data);
+      allow update: if isValidId(accountId) && isValidSharedAccount(request.resource.data);
+      allow delete: if isValidId(accountId);
+    }
+  }
+}
