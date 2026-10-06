@@ -1,5 +1,5 @@
 import * as XLSX from 'xlsx';
-import { PageRecord, FullViaItem, GroupRecord } from '../types';
+import { PageRecord, FullViaItem, GroupRecord, ProxyItem } from '../types';
 
 export const SAMPLE_FANPAGE_ROWS = [
   {
@@ -313,7 +313,7 @@ export function downloadGroupExcelTemplate(): void {
       'TÊN VIA': 'Lucas Santos',
       'LINK GROUP': 'https://www.facebook.com/groups/289880638621489',
       'TÊN NHÓM': 'Beautifull World ✅',
-      'GHI CHÚ': '',
+      'GHI CHÚ': '282',
       'VIA CHÍNH': 'Không',
       'NHÂN VIÊN': 'Anh Quỳnh',
     },
@@ -322,7 +322,7 @@ export function downloadGroupExcelTemplate(): void {
       'TÊN VIA': 'Tolga Yagmur',
       'LINK GROUP': 'https://www.facebook.com/groups/289880638621489',
       'TÊN NHÓM': 'Beautifull World ✅',
-      'GHI CHÚ': 'vhh',
+      'GHI CHÚ': 'VHH',
       'VIA CHÍNH': 'Có',
       'NHÂN VIÊN': 'Anh Quỳnh',
     },
@@ -331,9 +331,18 @@ export function downloadGroupExcelTemplate(): void {
       'TÊN VIA': 'Ansh Patial',
       'LINK GROUP': 'https://www.facebook.com/groups/1055686641112045',
       'TÊN NHÓM': 'Movies World ✅',
-      'GHI CHÚ': '',
+      'GHI CHÚ': '956',
       'VIA CHÍNH': 'Không',
       'NHÂN VIÊN': 'Bảo',
+    },
+    {
+      'UID VIA': '100091827364512',
+      'TÊN VIA': 'David Miller',
+      'LINK GROUP': 'https://www.facebook.com/groups/1055686641112045',
+      'TÊN NHÓM': 'Movies World ✅',
+      'GHI CHÚ': 'Hạn Chế',
+      'VIA CHÍNH': 'Không',
+      'NHÂN VIÊN': 'Phương My',
     },
   ];
 
@@ -351,4 +360,98 @@ export function downloadGroupExcelTemplate(): void {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'Mau_Group');
   XLSX.writeFile(wb, 'Mau_Nhap_Group_Facebook.xlsx');
+}
+
+/**
+ * Xuất danh sách Proxy ra file Excel .xlsx
+ */
+export function exportProxiesToXLSX(proxies: ProxyItem[]): void {
+  const data = proxies.map((p, idx) => ({
+    'STT': idx + 1,
+    'IP': p.ip || '',
+    'PORT': p.port || '',
+    'USER': p.username || '',
+    'PASS': p.password || '',
+    'GIAO THỨC': p.protocol || 'HTTP',
+    'CHUỖI PROXY': p.fullProxy || '',
+    'QUỐC GIA': p.location || '',
+    'NHÀ CUNG CẤP': p.provider || '',
+    'NHÂN VIÊN': (p.assignedStaff || []).join(', '),
+    'TRẠNG THÁI': p.status === 'active' ? 'Hoạt Động' : p.status === 'die' ? 'Chết / Lỗi' : 'Hết Hạn',
+    'HẠN DÙNG': p.expireDate || '',
+    'LOẠI': p.isRotating ? 'Proxy Xoay' : 'Proxy Tĩnh',
+    'GHI CHÚ': p.note || '',
+  }));
+
+  const ws = XLSX.utils.json_to_sheet(data);
+  ws['!cols'] = [
+    { wch: 8 },
+    { wch: 18 },
+    { wch: 10 },
+    { wch: 18 },
+    { wch: 18 },
+    { wch: 12 },
+    { wch: 35 },
+    { wch: 12 },
+    { wch: 20 },
+    { wch: 20 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 30 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Danh_Sach_Proxy');
+  XLSX.writeFile(wb, `Danh_Sach_Proxy_${new Date().toISOString().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * Tải file Excel mẫu Proxy
+ */
+export function downloadProxyExcelTemplate(): void {
+  const sampleData = [
+    {
+      'IP': '103.145.22.10',
+      'PORT': '9080',
+      'USER': 'user01',
+      'PASS': 'pass123',
+      'GIAO THỨC': 'HTTP',
+      'QUỐC GIA': 'VN',
+      'NHÀ CUNG CẤP': 'Viettel Dân Cư',
+      'NHÂN VIÊN': 'Anh Quỳnh',
+      'HẠN DÙNG': '25/10/2026',
+      'GHI CHÚ': 'Proxy tĩnh nuôi via',
+    },
+    {
+      'IP': '154.213.189.70',
+      'PORT': '1080',
+      'USER': 'us_user',
+      'PASS': 'pass456',
+      'GIAO THỨC': 'SOCKS5',
+      'QUỐC GIA': 'US',
+      'NHÀ CUNG CẤP': 'ProxyNo1',
+      'NHÂN VIÊN': 'Phương My',
+      'HẠN DÙNG': '30/10/2026',
+      'GHI CHÚ': 'Proxy US dân cư',
+    },
+  ];
+
+  const ws = XLSX.utils.json_to_sheet(sampleData);
+  ws['!cols'] = [
+    { wch: 18 },
+    { wch: 10 },
+    { wch: 15 },
+    { wch: 15 },
+    { wch: 12 },
+    { wch: 10 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 15 },
+    { wch: 25 },
+  ];
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Mau_Proxy');
+  XLSX.writeFile(wb, 'Mau_Nhap_Proxy.xlsx');
 }

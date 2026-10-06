@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { PageRecord, SheetFilter, AppUser, UserAccount, FullViaItem, SharedAccount, GroupRecord } from './types';
+import { PageRecord, SheetFilter, AppUser, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem } from './types';
 import {
   testFirestoreConnection,
   seedCloudFirestoreIfEmpty,
@@ -9,6 +9,7 @@ import {
   subscribeToSettings,
   subscribeToSharedAccounts,
   subscribeToGroupRecords,
+  subscribeToProxies,
   setCloudPageRecord,
   updateCloudPageRecord,
   deleteCloudPageRecord,
@@ -30,6 +31,11 @@ import {
   deleteCloudGroupRecord,
   batchSaveCloudGroupRecords,
   batchDeleteCloudGroupRecords,
+  setCloudProxy,
+  updateCloudProxy,
+  deleteCloudProxy,
+  batchSaveCloudProxies,
+  batchDeleteCloudProxies,
   saveCloudSettings,
   resetCloudFirestoreToDefaults,
 } from './services/firebase';
@@ -46,6 +52,7 @@ import {
   DEFAULT_ADMIN_SETTINGS,
   AdminSecuritySettings,
 } from './services/storage';
+import { INITIAL_PROXIES } from './data/initialData';
 import { SheetHeader } from './components/SheetHeader';
 import { SheetFilterBar } from './components/SheetFilterBar';
 import { FanpageSheetTable } from './components/FanpageSheetTable';
@@ -65,7 +72,11 @@ import { FetchPagesFromViaModal } from './components/FetchPagesFromViaModal';
 import { GroupManagementTable } from './components/GroupManagementTable';
 import { AddEditGroupModal } from './components/AddEditGroupModal';
 import { BulkImportGroupModal } from './components/BulkImportGroupModal';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus } from 'lucide-react';
+import { ProxyManagementTable } from './components/ProxyManagementTable';
+import { ProxyAppView } from './components/ProxyAppView';
+import { AddEditProxyModal } from './components/AddEditProxyModal';
+import { BulkImportProxyModal } from './components/BulkImportProxyModal';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network } from 'lucide-react';
 
 export default function App() {
   // Application data stored purely in Cloud Firestore
@@ -74,6 +85,7 @@ export default function App() {
   const [accounts, setAccounts] = useState<UserAccount[]>([]);
   const [sharedAccounts, setSharedAccounts] = useState<SharedAccount[]>([]);
   const [groupRecords, setGroupRecords] = useState<GroupRecord[]>([]);
+  const [proxies, setProxies] = useState<ProxyItem[]>(INITIAL_PROXIES);
   const [customStaffList, setCustomStaffList] = useState<string[]>([]);
   const [adminSettings, setAdminSettings] = useState<AdminSecuritySettings>(DEFAULT_ADMIN_SETTINGS);
   
@@ -113,15 +125,21 @@ export default function App() {
   const [isGroupModalOpen, setIsGroupModalOpen] = useState(false);
   const [editingGroupRecord, setEditingGroupRecord] = useState<GroupRecord | null>(null);
   const [presetGroupData, setPresetGroupData] = useState<{
-    groupId: string;
-    groupName: string;
-    groupLink: string;
+    groupId?: string;
+    groupName?: string;
+    groupLink?: string;
     staffName?: string;
+    initialMode?: 'single' | 'batch';
   } | null>(null);
   const [isBulkImportGroupOpen, setIsBulkImportGroupOpen] = useState(false);
 
-  // Tab State: Tab 1 = Quản lý Fanpage, Tab 2 = Quản lý Group, Tab 3 = Quản lý Full Via, Tab 4 = Quản lý Tài Khoản Dùng Chung, Tab 5 = Quản lý Nhân Viên
-  const [activeTab, setActiveTab] = useState<'fanpage' | 'group' | 'fullvia' | 'shared_accounts' | 'staff_management'>('fanpage');
+  // Proxy Management Modals state
+  const [isAddProxyModalOpen, setIsAddProxyModalOpen] = useState(false);
+  const [editingProxy, setEditingProxy] = useState<ProxyItem | null>(null);
+  const [isBulkImportProxyModalOpen, setIsBulkImportProxyModalOpen] = useState(false);
+
+  // Tab State: Tab 1 = Quản lý Fanpage, Tab 2 = Quản lý Group, Tab 3 = Quản lý Proxy, Tab 4 = Quản lý Full Via, Tab 5 = Quản lý Tài Khoản Dùng Chung, Tab 6 = Quản lý Nhân Viên
+  const [activeTab, setActiveTab] = useState<'fanpage' | 'group' | 'proxy' | 'fullvia' | 'shared_accounts' | 'staff_management'>('fanpage');
 
   const [filter, setFilter] = useState<SheetFilter>({
     search: '',
@@ -149,6 +167,7 @@ export default function App() {
     let unsubSettings: (() => void) | undefined;
     let unsubSharedAccounts: (() => void) | undefined;
     let unsubGroups: (() => void) | undefined;
+    let unsubProxies: (() => void) | undefined;
 
     async function initCloudFirestore() {
       try {
@@ -199,7 +218,14 @@ export default function App() {
           setGroupRecords(cloudGroups);
         });
 
-        // 6. Listen to live settings in Cloud Firestore
+        // 6. Listen to live proxies in Cloud Firestore
+        unsubProxies = subscribeToProxies((cloudProxies) => {
+          if (cloudProxies && cloudProxies.length > 0) {
+            setProxies(cloudProxies);
+          }
+        });
+
+        // 7. Listen to live settings in Cloud Firestore
         unsubSettings = subscribeToSettings((cloudSettings) => {
           if (cloudSettings) {
             setAdminSettings({
@@ -227,6 +253,7 @@ export default function App() {
       unsubAccounts?.();
       unsubSharedAccounts?.();
       unsubGroups?.();
+      unsubProxies?.();
       unsubSettings?.();
     };
   }, []);
@@ -1382,6 +1409,44 @@ export default function App() {
     await batchDeleteCloudGroupRecords(ids);
   };
 
+  // Proxy handlers (Add, Update, Delete, Batch, Edit)
+  const handleAddProxy = async (proxy: ProxyItem) => {
+    setProxies((prev) => [...prev.filter((p) => p.id !== proxy.id), proxy]);
+    await setCloudProxy(proxy);
+  };
+
+  const handleUpdateProxy = async (id: string, updates: Partial<ProxyItem>) => {
+    setProxies((prev) =>
+      prev.map((p) => (p.id === id ? { ...p, ...updates } : p))
+    );
+    await updateCloudProxy(id, updates);
+  };
+
+  const handleDeleteProxy = async (id: string) => {
+    setProxies((prev) => prev.filter((p) => p.id !== id));
+    await deleteCloudProxy(id);
+  };
+
+  const handleAddBatchProxies = async (newProxies: ProxyItem[]) => {
+    setProxies((prev) => {
+      const incomingMap = new Map(newProxies.map((p) => [p.id, p]));
+      const kept = prev.filter((p) => !incomingMap.has(p.id));
+      return [...kept, ...newProxies];
+    });
+    await batchSaveCloudProxies(newProxies);
+  };
+
+  const handleDeleteBatchProxies = async (ids: string[]) => {
+    const idSet = new Set(ids);
+    setProxies((prev) => prev.filter((p) => !idSet.has(p.id)));
+    await batchDeleteCloudProxies(ids);
+  };
+
+  const handleOpenEditProxy = (proxy: ProxyItem) => {
+    setEditingProxy(proxy);
+    setIsAddProxyModalOpen(true);
+  };
+
   const handleImportBulkVia = async (
     newVias: FullViaItem[],
     overwriteExisting: boolean
@@ -1869,7 +1934,31 @@ export default function App() {
                 </span>
               </button>
 
-              {/* TAB 3: Bảng 3 Full Via của nhân viên đó */}
+              {/* TAB 3: Bảng Quản Lý Proxy Mạng & IP Nuôi Via */}
+              <button
+                type="button"
+                id="tab-btn-proxy-table"
+                onClick={() => setActiveTab('proxy')}
+                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'proxy'
+                    ? 'bg-teal-700 text-white shadow-xs ring-2 ring-teal-500/25'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
+                }`}
+              >
+                <Network className="w-4 h-4" />
+                <span>BẢNG 3: QUẢN LÝ PROXY (ProxySwitcher Pro)</span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                    activeTab === 'proxy'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-white text-slate-800 border border-slate-200'
+                  }`}
+                >
+                  31 Cổng / Vercel
+                </span>
+              </button>
+
+              {/* TAB 4: Bảng 4 Full Via của nhân viên đó */}
               <button
                 type="button"
                 id="tab-btn-fullvia-table"
@@ -1881,7 +1970,7 @@ export default function App() {
                 }`}
               >
                 <KeyRound className="w-4 h-4" />
-                <span>BẢNG 3: QUẢN LÝ FULL VIA (UID|PASS|2FA)</span>
+                <span>BẢNG 4: QUẢN LÝ FULL VIA (UID|PASS|2FA)</span>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'fullvia'
@@ -1896,7 +1985,7 @@ export default function App() {
                 </span>
               </button>
 
-              {/* TAB 4: Bảng 4 Quản Lý Tài Khoản Dùng Chung (Canva, GPT, Capcut...) */}
+              {/* TAB 5: Bảng 5 Quản Lý Tài Khoản Dùng Chung (Canva, GPT, Capcut...) */}
               <button
                 type="button"
                 id="tab-btn-shared-accounts"
@@ -1908,7 +1997,7 @@ export default function App() {
                 }`}
               >
                 <Globe className="w-4 h-4" />
-                <span>BẢNG 4: TÀI KHOẢN WEB DÙNG CHUNG</span>
+                <span>BẢNG 5: TÀI KHOẢN WEB DÙNG CHUNG</span>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'shared_accounts'
@@ -1929,7 +2018,7 @@ export default function App() {
                 </span>
               </button>
 
-              {/* TAB 5: Bảng 5 Quản Lý Danh Sách Nhân Viên & Mật Khẩu (Dành cho Quản Lý / Admin) */}
+              {/* TAB 6: Bảng 6 Quản Lý Danh Sách Nhân Viên & Mật Khẩu (Dành cho Quản Lý / Admin) */}
               {currentUser.role === 'admin' && (
                 <button
                   type="button"
@@ -1942,7 +2031,7 @@ export default function App() {
                   }`}
                 >
                   <Users className="w-4 h-4" />
-                  <span>BẢNG 5: DANH SÁCH NHÂN VIÊN & MẬT KHẨU</span>
+                  <span>BẢNG 6: DANH SÁCH NHÂN VIÊN & MẬT KHẨU</span>
                   <span
                     className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                       activeTab === 'staff_management'
@@ -1958,7 +2047,25 @@ export default function App() {
 
             {/* Quick Bulk Import Trigger */}
             <div className="flex items-center space-x-2 shrink-0">
-              {activeTab === 'group' ? (
+              {activeTab === 'proxy' ? (
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => window.open('/proxy-app/index.html', '_blank')}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-cyan-300 rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>Mở Tab Riêng</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => window.open('https://nghean37378237-proxy-37-ce87.vercel.app/', '_blank')}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <span>Link Vercel App</span>
+                  </button>
+                </div>
+              ) : activeTab === 'group' ? (
                 <div className="flex items-center space-x-2">
                   <button
                     type="button"
@@ -2091,6 +2198,23 @@ export default function App() {
             }}
             onOpenBulkImportModal={() => setIsBulkImportGroupOpen(true)}
           />
+        ) : activeTab === 'proxy' ? (
+          <ProxyAppView
+            proxies={proxies}
+            currentUser={currentUser}
+            availableStaffNames={allStaffNames}
+            onAddProxy={handleAddProxy}
+            onAddBatchProxies={handleAddBatchProxies}
+            onUpdateProxy={handleUpdateProxy}
+            onDeleteProxy={handleDeleteProxy}
+            onDeleteBatchProxies={handleDeleteBatchProxies}
+            onOpenAddModal={() => {
+              setEditingProxy(null);
+              setIsAddProxyModalOpen(true);
+            }}
+            onOpenBulkImportModal={() => setIsBulkImportProxyModalOpen(true)}
+            onEditProxy={handleOpenEditProxy}
+          />
         ) : activeTab === 'fullvia' ? (
           <FullViaErrorBoundary onReset={() => setActiveTab('fanpage')}>
             <FullViaTable
@@ -2222,6 +2346,7 @@ export default function App() {
         currentUser={currentUser}
         availableStaffNames={allStaffNames}
         presetGroup={presetGroupData}
+        initialMode={presetGroupData?.initialMode || 'single'}
       />
 
       {/* Bulk Import Group Modal */}
@@ -2229,6 +2354,39 @@ export default function App() {
         isOpen={isBulkImportGroupOpen}
         onClose={() => setIsBulkImportGroupOpen(false)}
         onImport={handleBatchSaveGroupRecords}
+        currentUser={currentUser}
+        availableStaffNames={allStaffNames}
+      />
+
+      {/* Add / Edit Proxy Modal */}
+      <AddEditProxyModal
+        isOpen={isAddProxyModalOpen}
+        onClose={() => {
+          setIsAddProxyModalOpen(false);
+          setEditingProxy(null);
+        }}
+        onSave={async (proxy) => {
+          if (editingProxy) {
+            await handleUpdateProxy(proxy.id, proxy);
+          } else {
+            await handleAddProxy(proxy);
+          }
+          setIsAddProxyModalOpen(false);
+          setEditingProxy(null);
+        }}
+        initialProxy={editingProxy}
+        currentUser={currentUser}
+        availableStaffNames={allStaffNames}
+      />
+
+      {/* Bulk Import Proxy Modal */}
+      <BulkImportProxyModal
+        isOpen={isBulkImportProxyModalOpen}
+        onClose={() => setIsBulkImportProxyModalOpen(false)}
+        onImport={async (newProxies) => {
+          await handleAddBatchProxies(newProxies);
+          setIsBulkImportProxyModalOpen(false);
+        }}
         currentUser={currentUser}
         availableStaffNames={allStaffNames}
       />

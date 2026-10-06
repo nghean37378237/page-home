@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Save,
@@ -13,6 +13,41 @@ import {
 } from 'lucide-react';
 import { GroupRecord, AppUser } from '../types';
 
+export const GROUP_NOTE_CHOICES = [
+  {
+    key: 'VHH',
+    label: 'VHH',
+    fullName: 'Vô Hiệu Hóa',
+    color: 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100',
+    activeColor: 'bg-rose-600 text-white border-rose-700 shadow-sm ring-2 ring-rose-500/25',
+    dot: 'bg-rose-500',
+  },
+  {
+    key: '282',
+    label: '282',
+    fullName: 'Checkpoint 282',
+    color: 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100',
+    activeColor: 'bg-amber-600 text-white border-amber-700 shadow-sm ring-2 ring-amber-500/25',
+    dot: 'bg-amber-500',
+  },
+  {
+    key: '956',
+    label: '956',
+    fullName: 'Checkpoint 956 (Két Sắt)',
+    color: 'bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100',
+    activeColor: 'bg-purple-600 text-white border-purple-700 shadow-sm ring-2 ring-purple-500/25',
+    dot: 'bg-purple-500',
+  },
+  {
+    key: 'Hạn Chế',
+    label: 'Hạn Chế',
+    fullName: 'Hạn Chế Tính Năng',
+    color: 'bg-yellow-50 text-yellow-800 border-yellow-300 hover:bg-yellow-100',
+    activeColor: 'bg-yellow-600 text-white border-yellow-700 shadow-sm ring-2 ring-yellow-500/25',
+    dot: 'bg-yellow-500',
+  },
+];
+
 interface AddEditGroupModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -23,11 +58,13 @@ interface AddEditGroupModalProps {
   currentUser: AppUser;
   availableStaffNames: string[];
   presetGroup?: {
-    groupId: string;
-    groupName: string;
-    groupLink: string;
+    groupId?: string;
+    groupName?: string;
+    groupLink?: string;
     staffName?: string;
+    initialMode?: 'single' | 'batch';
   } | null;
+  initialMode?: 'single' | 'batch';
 }
 
 export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
@@ -40,12 +77,13 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   currentUser,
   availableStaffNames,
   presetGroup,
+  initialMode,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const isEditing = Boolean(initialRecord);
 
   // Form states
-  const [mode, setMode] = useState<'single' | 'batch'>('single');
+  const [mode, setMode] = useState<'single' | 'batch'>(initialMode || 'single');
   const [groupName, setGroupName] = useState('');
   const [groupLink, setGroupLink] = useState('');
   const [uid, setUid] = useState('');
@@ -54,14 +92,16 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   const [isHighlighted, setIsHighlighted] = useState(false);
   const [staffName, setStaffName] = useState('');
 
-  // Batch text area state
+  // Batch states
   const [batchRawText, setBatchRawText] = useState('');
+  const [batchDefaultNote, setBatchDefaultNote] = useState<string>('');
+  const [batchDefaultHighlighted, setBatchDefaultHighlighted] = useState<boolean>(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Collect unique existing groups for quick selection
-  const existingGroups = React.useMemo(() => {
+  const existingGroups = useMemo(() => {
     const map = new Map<string, { groupName: string; groupLink: string; groupId: string }>();
     allRecords.forEach((r) => {
       if (r.groupName && !map.has(r.groupName.trim().toLowerCase())) {
@@ -80,6 +120,8 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
     if (!isOpen) {
       setErrorMessage(null);
       setBatchRawText('');
+      setBatchDefaultNote('');
+      setBatchDefaultHighlighted(false);
       return;
     }
 
@@ -93,7 +135,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setIsHighlighted(Boolean(initialRecord.isHighlighted));
       setStaffName(initialRecord.staffName || (isAdmin ? 'Anh Quỳnh' : currentUser.name));
     } else if (presetGroup) {
-      setMode('single');
+      setMode(presetGroup.initialMode || initialMode || 'single');
       setGroupName(presetGroup.groupName || '');
       setGroupLink(presetGroup.groupLink || '');
       setUid('');
@@ -102,7 +144,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setIsHighlighted(false);
       setStaffName(presetGroup.staffName || (isAdmin ? 'Anh Quỳnh' : currentUser.name));
     } else {
-      setMode('single');
+      setMode(initialMode || 'single');
       setGroupName('');
       setGroupLink('');
       setUid('');
@@ -112,7 +154,59 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setStaffName(isAdmin ? (availableStaffNames[0] || 'Anh Quỳnh') : currentUser.name);
     }
     setErrorMessage(null);
-  }, [isOpen, initialRecord, presetGroup, isAdmin, currentUser.name, availableStaffNames]);
+  }, [isOpen, initialRecord, presetGroup, initialMode, isAdmin, currentUser.name, availableStaffNames]);
+
+  // Live parsed items for batch mode
+  const parsedBatchItems = useMemo(() => {
+    if (!batchRawText.trim()) return [];
+    const lines = batchRawText.split('\n').map((l) => l.trim()).filter(Boolean);
+    const items: { uid: string; viaName: string; note: string; isHighlighted: boolean }[] = [];
+
+    lines.forEach((line) => {
+      let lineUid = '';
+      let lineViaName = '';
+      let lineNote = batchDefaultNote;
+      let lineHighlighted = batchDefaultHighlighted;
+
+      const separator = line.includes('\t') ? '\t' : line.includes('|') ? '|' : null;
+
+      if (separator) {
+        const parts = line.split(separator).map((p) => p.trim());
+        lineUid = parts[0] || '';
+        lineViaName = parts[1] || '';
+        if (parts[2]) {
+          lineNote = parts[2];
+        }
+        if (parts[3]) {
+          const hl = parts[3].toLowerCase();
+          if (hl.includes('có') || hl.includes('true') || hl.includes('1') || hl.includes('chính')) {
+            lineHighlighted = true;
+          }
+        }
+      } else {
+        // Space separated or pure UID
+        const spaceParts = line.split(/\s+/);
+        lineUid = spaceParts[0] || '';
+        if (spaceParts.length > 1) {
+          lineViaName = spaceParts.slice(1).join(' ');
+        }
+      }
+
+      // Sanitize uid: remove leading/trailing non-alphanumeric chars
+      lineUid = lineUid.replace(/[^\w]/g, '');
+
+      if (lineUid) {
+        items.push({
+          uid: lineUid,
+          viaName: lineViaName || `Via ${lineUid.slice(-4)}`,
+          note: lineNote,
+          isHighlighted: lineHighlighted,
+        });
+      }
+    });
+
+    return items;
+  }, [batchRawText, batchDefaultNote, batchDefaultHighlighted]);
 
   if (!isOpen) return null;
 
@@ -150,7 +244,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
     setIsSubmitting(true);
     try {
       if (mode === 'single') {
-        const cleanUid = uid.trim();
+        const cleanUid = uid.trim().replace(/[^\w]/g, '');
         const cleanViaName = viaName.trim();
 
         if (!cleanUid) {
@@ -176,72 +270,30 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
         await onSave(recordToSave);
         onClose();
       } else {
-        // Batch mode: parse lines
+        // Batch mode: add multiple UIDs into this single group
         if (!onSaveBatch) {
           throw new Error('Tính năng lưu hàng loạt không được hỗ trợ');
         }
 
-        const lines = batchRawText
-          .split('\n')
-          .map((l) => l.trim())
-          .filter(Boolean);
-
-        if (lines.length === 0) {
-          setErrorMessage('Vui lòng nhập ít nhất 1 dòng UID để thêm hàng loạt.');
+        if (parsedBatchItems.length === 0) {
+          setErrorMessage('Vui lòng nhập ít nhất 1 UID hợp lệ để thêm vào nhóm.');
           setIsSubmitting(false);
           return;
         }
 
-        const batchRecords: GroupRecord[] = [];
-        lines.forEach((line, idx) => {
-          // Supports formats:
-          // 1. UID|Tên Via|Ghi chú
-          // 2. UID\tTên Via\tGhi chú (từ Excel copy sang)
-          // 3. Chỉ UID
-          let lineUid = '';
-          let lineViaName = '';
-          let lineNote = '';
-          let lineHighlighted = false;
-
-          const separator = line.includes('\t') ? '\t' : line.includes('|') ? '|' : null;
-
-          if (separator) {
-            const parts = line.split(separator).map((p) => p.trim());
-            lineUid = parts[0] || '';
-            lineViaName = parts[1] || '';
-            lineNote = parts[2] || '';
-            if (lineNote.toLowerCase().includes('vhh') || lineNote.toLowerCase().includes('chính')) {
-              lineHighlighted = true;
-            }
-          } else {
-            // Just UID or space separated
-            const spaceParts = line.split(/\s+/);
-            lineUid = spaceParts[0] || '';
-            lineViaName = spaceParts.slice(1).join(' ') || '';
-          }
-
-          if (lineUid) {
-            batchRecords.push({
-              id: `grp-row-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
-              groupId: resolvedGroupId,
-              groupName: cleanGroupName,
-              groupLink: cleanGroupLink,
-              uid: lineUid,
-              viaName: lineViaName || `Via ${lineUid.slice(-4)}`,
-              note: lineNote,
-              isHighlighted: lineHighlighted,
-              staffName: effectiveStaff,
-              createdAt: new Date().toLocaleDateString('vi-VN'),
-              updatedAt: new Date().toLocaleDateString('vi-VN'),
-            });
-          }
-        });
-
-        if (batchRecords.length === 0) {
-          setErrorMessage('Không trích xuất được UID hợp lệ từ nội dung đã nhập.');
-          setIsSubmitting(false);
-          return;
-        }
+        const batchRecords: GroupRecord[] = parsedBatchItems.map((item, idx) => ({
+          id: `grp-row-${Date.now()}-${idx}-${Math.floor(Math.random() * 1000)}`,
+          groupId: resolvedGroupId,
+          groupName: cleanGroupName,
+          groupLink: cleanGroupLink || `https://www.facebook.com/groups/`,
+          uid: item.uid,
+          viaName: item.viaName,
+          note: item.note,
+          isHighlighted: item.isHighlighted,
+          staffName: effectiveStaff,
+          createdAt: new Date().toLocaleDateString('vi-VN'),
+          updatedAt: new Date().toLocaleDateString('vi-VN'),
+        }));
 
         await onSaveBatch(batchRecords);
         onClose();
@@ -265,17 +317,21 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold">
-                {isEditing ? 'Chỉnh Sửa Dòng Group Facebook' : 'Thêm Dòng Nick Vào Group Facebook'}
+                {isEditing
+                  ? 'Chỉnh Sửa Dòng Group Facebook'
+                  : presetGroup
+                  ? `Thêm Nick Vào Nhóm: ${presetGroup.groupName}`
+                  : 'Quản Lý Thêm Nick Vào Group Facebook'}
               </h2>
               <p className="text-xs text-red-100">
-                Quản lý các tài khoản Nick Via cầm nhóm và trạng thái kiểm duyệt
+                Thêm 1 nick hoặc nhập hàng loạt danh sách UID vào 1 group tiện lợi
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+            className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -305,7 +361,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span>Thêm Nhiều Via Cùng Lúc</span>
+              <span>Nhập Hàng Loạt UID Vào 1 Group</span>
             </button>
           </div>
         )}
@@ -332,9 +388,9 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                 <div className="flex items-center space-x-1 text-[11px] text-slate-500">
                   <span>Chọn nhóm có sẵn:</span>
                   <select
-                    className="text-xs bg-white border border-slate-200 rounded-md px-1.5 py-0.5 text-slate-700 focus:outline-hidden"
+                    className="text-xs bg-white border border-slate-200 rounded-md px-1.5 py-0.5 text-slate-700 focus:outline-hidden font-bold"
                     onChange={(e) => handleSelectExistingGroup(e.target.value)}
-                    defaultValue=""
+                    value={existingGroups.some((g) => g.groupName === groupName) ? groupName : ''}
                   >
                     <option value="" disabled>
                       -- Chọn nhóm --
@@ -360,7 +416,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                   placeholder="VD: Beautifull World ✅, Movies World..."
                   value={groupName}
                   onChange={(e) => setGroupName(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-red-700 font-bold placeholder:text-slate-400 placeholder:font-normal"
+                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-red-700 font-bold placeholder:text-slate-400 placeholder:font-normal bg-white"
                 />
               </div>
 
@@ -374,7 +430,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                     placeholder="https://www.facebook.com/groups/..."
                     value={groupLink}
                     onChange={(e) => setGroupLink(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-blue-700"
+                    className="w-full pl-8 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-blue-700 bg-white"
                   />
                   <LinkIcon className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                 </div>
@@ -382,7 +438,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Thông tin Nick Via */}
+          {/* Section 2: Thông tin Nick Via (Single Mode) */}
           {mode === 'single' ? (
             <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
               <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
@@ -401,7 +457,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                     placeholder="VD: 100060665184656"
                     value={uid}
                     onChange={(e) => setUid(e.target.value)}
-                    className="w-full px-3 py-2 text-xs font-mono font-bold text-indigo-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full px-3 py-2 text-xs font-mono font-bold text-indigo-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                   />
                 </div>
 
@@ -414,85 +470,211 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                     placeholder="VD: Lucas Santos, Tolga Yagmur..."
                     value={viaName}
                     onChange={(e) => setViaName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 font-semibold"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 font-semibold bg-white"
                   />
                 </div>
               </div>
 
-              {/* Ghi chú & Via Chính */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Ghi Chú Tình Trạng (Cột F)
-                  </label>
+              {/* Ghi chú & Lựa chọn VHH, 282, 956, Hạn Chế */}
+              <div className="pt-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Ghi Chú Tình Trạng (Cột F)
+                </label>
+                <div className="relative">
                   <input
                     type="text"
-                    placeholder="VD: vhh, hạn chế, đình chỉ..."
+                    placeholder="Nhập ghi chú hoặc bấm chọn nhanh bên dưới..."
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 font-semibold text-slate-800 bg-white"
                   />
-                  {/* Quick tag suggestions */}
-                  <div className="flex items-center space-x-1.5 mt-1.5">
-                    {['vhh', 'hạn chế', 'đình chỉ', 'hoạt động'].map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => setNote(tag)}
-                        className="px-2 py-0.5 text-[10px] font-bold bg-white border border-slate-200 text-slate-600 rounded-md hover:bg-slate-100 transition-colors"
-                      >
-                        {tag}
-                      </button>
-                    ))}
-                  </div>
+                  {note && (
+                    <button
+                      type="button"
+                      onClick={() => setNote('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                      title="Xóa ghi chú"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Đánh Dấu Via Chính / Duyệt Bài
-                  </label>
-                  <div
-                    onClick={() => setIsHighlighted(!isHighlighted)}
-                    className={`mt-1 p-2.5 rounded-lg border flex items-center space-x-2.5 cursor-pointer transition-all ${
-                      isHighlighted
-                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-500/20'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isHighlighted}
-                      onChange={(e) => setIsHighlighted(e.target.checked)}
-                      className="w-4 h-4 rounded-sm text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                    />
-                    <div className="text-xs">
-                      <span className="font-bold">Bôi xanh lá (Dòng Via chính)</span>
-                      <p className="text-[10px] text-slate-500">
-                        Đánh dấu nick cầm quyền duyệt bài / quản trị chính
-                      </p>
-                    </div>
+                {/* 4 Lựa chọn ghi chú theo yêu cầu: VHH, 282, 956, Hạn Chế */}
+                <div className="mt-2">
+                  <div className="text-[11px] font-semibold text-slate-500 mb-1.5 flex items-center justify-between">
+                    <span>Chọn nhanh tình trạng:</span>
+                    <span className="text-[10px] text-slate-400">(Nhấp để chọn / bỏ chọn)</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    {GROUP_NOTE_CHOICES.map((choice) => {
+                      const isSelected = note.trim() === choice.key;
+                      return (
+                        <button
+                          key={choice.key}
+                          type="button"
+                          onClick={() => setNote(isSelected ? '' : choice.key)}
+                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                            isSelected ? choice.activeColor : choice.color
+                          }`}
+                        >
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              isSelected ? 'bg-white' : choice.dot
+                            }`}
+                          ></span>
+                          <span>{choice.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Via Chính (Bôi xanh lá) */}
+              <div className="pt-1">
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Đánh Dấu Via Chính / Quản Trị Duyệt Bài
+                </label>
+                <div
+                  onClick={() => setIsHighlighted(!isHighlighted)}
+                  className={`p-2.5 rounded-lg border flex items-center space-x-2.5 cursor-pointer transition-all ${
+                    isHighlighted
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-500/20'
+                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isHighlighted}
+                    onChange={(e) => setIsHighlighted(e.target.checked)}
+                    className="w-4 h-4 rounded-sm text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <div className="text-xs">
+                    <span className="font-bold">Bôi xanh lá (Dòng Via chính)</span>
+                    <p className="text-[10px] text-slate-500">
+                      Đánh dấu nick cầm quyền duyệt bài / quản trị chính của nhóm
+                    </p>
                   </div>
                 </div>
               </div>
             </div>
           ) : (
-            /* Batch Input Section */
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                <span>2. Danh Sách Nick Cần Thêm (Hàng Loạt)</span>
-              </label>
+            /* Batch Mode: Nhập hàng loạt UID vào 1 group */
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-red-600" />
+                  <span>2. Nhập Hàng Loạt UID Vào Nhóm "{groupName || 'Nhóm này'}"</span>
+                </label>
+                <span className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                  Đã nhận diện: <b>{parsedBatchItems.length}</b> UID
+                </span>
+              </div>
+
               <p className="text-[11px] text-slate-500">
-                Mỗi dòng 1 nick theo định dạng: <code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-[10px]">UID | Tên Via | Ghi chú</code> hoặc dán trực tiếp từ file Excel:
+                Dán danh sách UID vào ô bên dưới (mỗi dòng 1 UID), hoặc định dạng: <code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-[10px]">UID | Tên Via | Ghi chú</code>:
               </p>
+
               <textarea
-                rows={5}
+                rows={6}
                 required
-                placeholder="100060665184656 | Lucas Santos&#10;100067576758991 | Rupesh Yadav&#10;100023228976334 | Tolga Yagmur | vhh"
+                placeholder="100060665184656&#10;100067576758991&#10;100023228976334&#10;100091827364512 | Lucas Santos | VHH"
                 value={batchRawText}
                 onChange={(e) => setBatchRawText(e.target.value)}
-                className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
               />
+
+              {/* Lựa chọn ghi chú mặc định cho cả danh sách: VHH, 282, 956, Hạn Chế */}
+              <div className="pt-1 border-t border-slate-200/80">
+                <div className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                  <span>Ghi chú mặc định áp dụng cho các UID trên (nếu dòng chưa có):</span>
+                  {batchDefaultNote && (
+                    <button
+                      type="button"
+                      onClick={() => setBatchDefaultNote('')}
+                      className="text-[11px] text-red-600 hover:underline cursor-pointer"
+                    >
+                      Bỏ chọn (Trống)
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {GROUP_NOTE_CHOICES.map((choice) => {
+                    const isSelected = batchDefaultNote === choice.key;
+                    return (
+                      <button
+                        key={choice.key}
+                        type="button"
+                        onClick={() => setBatchDefaultNote(isSelected ? '' : choice.key)}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                          isSelected ? choice.activeColor : choice.color
+                        }`}
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            isSelected ? 'bg-white' : choice.dot
+                          }`}
+                        ></span>
+                        <span>{choice.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Đánh dấu tất cả via chính */}
+              <div
+                onClick={() => setBatchDefaultHighlighted(!batchDefaultHighlighted)}
+                className={`p-2.5 rounded-lg border flex items-center space-x-2.5 cursor-pointer transition-all ${
+                  batchDefaultHighlighted
+                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-500/20'
+                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                <input
+                  type="checkbox"
+                  checked={batchDefaultHighlighted}
+                  onChange={(e) => setBatchDefaultHighlighted(e.target.checked)}
+                  className="w-4 h-4 rounded-sm text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                />
+                <div className="text-xs">
+                  <span className="font-bold">Bôi xanh lá (Dòng Via chính) cho toàn bộ danh sách</span>
+                </div>
+              </div>
+
+              {/* Preview Box if UIDs detected */}
+              {parsedBatchItems.length > 0 && (
+                <div className="p-3 bg-red-50/60 border border-red-200 rounded-lg max-h-36 overflow-y-auto text-[11px]">
+                  <div className="font-bold text-red-800 mb-1.5 flex items-center justify-between">
+                    <span>
+                      Xem trước ({parsedBatchItems.length} UID sẽ được lưu vào nhóm "{groupName || 'Nhóm này'}"):
+                    </span>
+                  </div>
+                  <div className="space-y-1 text-slate-700 font-mono">
+                    {parsedBatchItems.slice(0, 6).map((item, idx) => (
+                      <div key={idx} className="flex items-center space-x-2">
+                        <span className="text-slate-400 w-6">#{idx + 1}</span>
+                        <span className="font-bold text-indigo-700">{item.uid}</span>
+                        <span className="text-slate-500 text-[10px]">({item.viaName})</span>
+                        {item.note && (
+                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-white border border-slate-300 text-slate-800">
+                            {item.note}
+                          </span>
+                        )}
+                        {item.isHighlighted && (
+                          <span className="text-emerald-700 font-bold text-[10px]">★ Via chính</span>
+                        )}
+                      </div>
+                    ))}
+                    {parsedBatchItems.length > 6 && (
+                      <div className="text-slate-400 italic pt-0.5">
+                        ...và {parsedBatchItems.length - 6} UID khác nữa
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -505,7 +687,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
               </span>
               {!isAdmin && (
                 <span className="text-[11px] text-emerald-600 font-bold">
-                  (Khóa theo tài khoản của bạn)
+                  (Khóa theo tài khoản của bạn: {currentUser.name})
                 </span>
               )}
             </label>
@@ -514,7 +696,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
               <select
                 value={staffName}
                 onChange={(e) => setStaffName(e.target.value)}
-                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold text-slate-800"
+                className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-semibold text-slate-800 bg-white"
               >
                 {availableStaffNames.map((name) => (
                   <option key={name} value={name}>
@@ -548,7 +730,15 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
               className="inline-flex items-center space-x-1.5 px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
             >
               <Save className="w-4 h-4" />
-              <span>{isSubmitting ? 'Đang lưu...' : isEditing ? 'Cập Nhật' : 'Lưu Vào Bảng'}</span>
+              <span>
+                {isSubmitting
+                  ? 'Đang lưu...'
+                  : isEditing
+                  ? 'Cập Nhật'
+                  : mode === 'batch'
+                  ? `Lưu ${parsedBatchItems.length} UID Vào Nhóm`
+                  : 'Lưu Vào Nhóm'}
+              </span>
             </button>
           </div>
         </form>

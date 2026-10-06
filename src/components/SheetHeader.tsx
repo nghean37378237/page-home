@@ -38,7 +38,7 @@ interface SheetHeaderProps {
   currentUser: AppUser;
   availableUsers: AppUser[];
   pendingRequestsCount: number;
-  activeTab?: 'fanpage' | 'group' | 'fullvia' | 'shared_accounts' | 'staff_management';
+  activeTab?: 'fanpage' | 'group' | 'proxy' | 'fullvia' | 'shared_accounts' | 'staff_management';
   viaList?: FullViaItem[];
   errorViaUids?: Set<string>;
   errorViaCount?: number;

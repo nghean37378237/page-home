@@ -55,6 +55,11 @@ service cloud.firestore {
              (!('groupName' in data) || (data.groupName is string && data.groupName.size() <= 200));
     }
 
+    function isValidProxyItem(data) {
+      return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             (!('ip' in data) || (data.ip is string && data.ip.size() <= 200));
+    }
+
     match /pageRecords/{recordId} {
       allow read: if true;
       allow create: if isValidId(recordId) && isValidPageRecord(request.resource.data);
@@ -95,6 +100,13 @@ service cloud.firestore {
       allow create: if isValidId(recordId) && isValidGroupRecord(request.resource.data);
       allow update: if isValidId(recordId) && isValidGroupRecord(request.resource.data);
       allow delete: if isValidId(recordId);
+    }
+
+    match /proxies/{proxyId} {
+      allow read: if true;
+      allow create: if isValidId(proxyId) && isValidProxyItem(request.resource.data);
+      allow update: if isValidId(proxyId) && isValidProxyItem(request.resource.data);
+      allow delete: if isValidId(proxyId);
     }
   }
 }

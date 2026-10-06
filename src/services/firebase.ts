@@ -17,10 +17,11 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord } from '../types';
+import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem } from '../types';
 import {
   INITIAL_PAGE_RECORDS,
   INITIAL_GROUP_RECORDS,
+  INITIAL_PROXIES,
 } from '../data/initialData';
 import {
   INITIAL_ACCOUNTS,
@@ -184,6 +185,7 @@ export const SETTINGS_COLLECTION = 'settings';
 export const GENERAL_SETTINGS_DOC = 'general';
 export const SHARED_ACCOUNTS_COLLECTION = 'sharedAccounts';
 export const GROUP_RECORDS_COLLECTION = 'groupRecords';
+export const PROXIES_COLLECTION = 'proxies';
 
 export const INITIAL_SHARED_ACCOUNTS: SharedAccount[] = [
   {
@@ -324,6 +326,18 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       INITIAL_GROUP_RECORDS.forEach((grp) => {
         const ref = doc(db, GROUP_RECORDS_COLLECTION, grp.id);
         batch.set(ref, sanitizeForFirestore(grp));
+      });
+      await batch.commit();
+    }
+
+    // Check if proxies collection has data
+    const proxiesSnapshot = await getDocs(collection(db, PROXIES_COLLECTION));
+    if (proxiesSnapshot.empty) {
+      console.log('[Firestore] Seeding Proxies to Cloud Firestore...');
+      const batch = writeBatch(db);
+      INITIAL_PROXIES.forEach((prx) => {
+        const ref = doc(db, PROXIES_COLLECTION, prx.id);
+        batch.set(ref, sanitizeForFirestore(prx));
       });
       await batch.commit();
     }
@@ -499,6 +513,40 @@ export async function getCloudGroupRecords(): Promise<GroupRecord[]> {
     return list;
   } catch (error) {
     console.error('[Firestore] Lỗi đọc group records trực tiếp:', error);
+    return [];
+  }
+}
+
+export function subscribeToProxies(
+  onData: (proxies: ProxyItem[]) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, PROXIES_COLLECTION),
+    (snapshot) => {
+      const list: ProxyItem[] = [];
+      snapshot.forEach((d) => {
+        list.push({ id: d.id, ...d.data() } as ProxyItem);
+      });
+      onData(list);
+    },
+    (error) => {
+      if (onError) onError(error);
+      handleFirestoreError(error, OperationType.LIST, PROXIES_COLLECTION);
+    }
+  );
+}
+
+export async function getCloudProxies(): Promise<ProxyItem[]> {
+  try {
+    const snapshot = await getDocs(collection(db, PROXIES_COLLECTION));
+    const list: ProxyItem[] = [];
+    snapshot.forEach((d) => {
+      list.push({ id: d.id, ...d.data() } as ProxyItem);
+    });
+    return list;
+  } catch (error) {
+    console.error('[Firestore] Lỗi đọc proxies trực tiếp:', error);
     return [];
   }
 }
@@ -789,6 +837,81 @@ export async function batchDeleteCloudGroupRecords(ids: string[]): Promise<void>
     console.log(`[Firestore] Đã xóa hàng loạt ${ids.length} dòng group.`);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, GROUP_RECORDS_COLLECTION);
+    throw error;
+  }
+}
+
+// --- Proxy Operations ---
+export async function setCloudProxy(proxy: ProxyItem): Promise<void> {
+  const path = `${PROXIES_COLLECTION}/${proxy.id}`;
+  try {
+    const clean = sanitizeForFirestore(proxy);
+    await setDoc(doc(db, PROXIES_COLLECTION, proxy.id), clean);
+    console.log(`[Firestore] Đã lưu proxy: ${proxy.ip}:${proxy.port}`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
+export async function updateCloudProxy(id: string, updates: Partial<ProxyItem>): Promise<void> {
+  const path = `${PROXIES_COLLECTION}/${id}`;
+  try {
+    const clean = sanitizeForFirestore(updates);
+    await updateDoc(doc(db, PROXIES_COLLECTION, id), clean as DocumentData);
+    console.log(`[Firestore] Đã cập nhật proxy ID: ${id}`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+    throw error;
+  }
+}
+
+export async function deleteCloudProxy(id: string): Promise<void> {
+  const path = `${PROXIES_COLLECTION}/${id}`;
+  try {
+    await deleteDoc(doc(db, PROXIES_COLLECTION, id));
+    console.log(`[Firestore] Đã xóa proxy ID: ${id}`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
+  }
+}
+
+export async function batchSaveCloudProxies(proxies: ProxyItem[]): Promise<void> {
+  if (!proxies.length) return;
+  const chunkSize = 400;
+  try {
+    for (let i = 0; i < proxies.length; i += chunkSize) {
+      const chunk = proxies.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((prx) => {
+        const clean = sanitizeForFirestore(prx);
+        batch.set(doc(db, PROXIES_COLLECTION, prx.id), clean);
+      });
+      await batch.commit();
+    }
+    console.log(`[Firestore] Đã lưu hàng loạt ${proxies.length} proxy.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, PROXIES_COLLECTION);
+    throw error;
+  }
+}
+
+export async function batchDeleteCloudProxies(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const chunkSize = 400;
+  try {
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
+        batch.delete(doc(db, PROXIES_COLLECTION, id));
+      });
+      await batch.commit();
+    }
+    console.log(`[Firestore] Đã xóa hàng loạt ${ids.length} proxy.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, PROXIES_COLLECTION);
     throw error;
   }
 }

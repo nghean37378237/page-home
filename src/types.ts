@@ -145,11 +145,48 @@ export interface GroupRecord {
   updatedAt?: string;
 }
 
+export const GROUP_NOTE_OPTIONS = ['VHH', '282', '956', 'Hạn Chế'] as const;
+export type GroupNoteType = (typeof GROUP_NOTE_OPTIONS)[number];
+
 export interface GroupFilter {
   search: string;
   staffName: string;
+  noteFilter?: string; // 'ALL' | 'VHH' | '282' | '956' | 'Hạn Chế' | 'HAS_NOTE'
   highlightedOnly: boolean;
   hasNoteOnly: boolean;
+}
+
+export type ProxyProtocol = 'HTTP' | 'HTTPS' | 'SOCKS5';
+export type ProxyStatus = 'active' | 'die' | 'expired' | 'checking';
+
+export interface ProxyItem {
+  id: string;
+  ip: string; // IP host (VD: 103.145.22.10)
+  port: string; // Port (VD: 8080, 1080)
+  username?: string; // User xác thực (nếu có)
+  password?: string; // Pass xác thực (nếu có)
+  protocol: ProxyProtocol; // HTTP / HTTPS / SOCKS5
+  fullProxy: string; // Chuỗi chuẩn: IP:Port:User:Pass hoặc IP:Port
+  location?: string; // Quốc gia / Vị trí (VN, US, SG, ...)
+  provider?: string; // Nhà cung cấp (ProxyNo1, Tinsoft, Viettel, FPT...)
+  assignedStaff: string[]; // Nhân viên phụ trách (hoặc ['ALL'] cho tất cả)
+  assignedViaUids?: string[]; // Danh sách UID nick Facebook đang dùng
+  status: ProxyStatus; // 'active' (Sống) | 'die' (Chết) | 'expired' (Hết hạn)
+  expireDate?: string; // Ngày hết hạn (VD: 30/10/2026)
+  note?: string; // Ghi chú (Proxy tĩnh, nuôi Via chính...)
+  isRotating?: boolean; // Cờ proxy xoay đổi IP
+  rotateUrl?: string; // Link API đổi IP nếu là proxy xoay
+  lastChecked?: string; // Thời gian kiểm tra live
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ProxyFilter {
+  search: string;
+  staffName: string;
+  status: string;
+  protocol: string;
+  location: string;
 }
 
 

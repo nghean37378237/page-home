@@ -12,6 +12,7 @@ import {
 import * as XLSX from 'xlsx';
 import { GroupRecord, AppUser } from '../types';
 import { downloadGroupExcelTemplate } from '../utils/excelTemplates';
+import { GROUP_NOTE_CHOICES } from './AddEditGroupModal';
 
 interface BulkImportGroupModalProps {
   isOpen: boolean;
@@ -32,6 +33,7 @@ export const BulkImportGroupModal: React.FC<BulkImportGroupModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<'text' | 'file'>('text');
   const [pastedText, setPastedText] = useState('');
+  const [defaultNote, setDefaultNote] = useState('');
   const [selectedStaff, setSelectedStaff] = useState(
     isAdmin ? (availableStaffNames[0] || 'Anh Quỳnh') : currentUser.name
   );
@@ -85,6 +87,10 @@ export const BulkImportGroupModal: React.FC<BulkImportGroupModalProps> = ({
       // If groupName is missing but groupLink exists, formulate default groupName
       if (!groupName && groupLink) {
         groupName = 'Nhóm Facebook';
+      }
+
+      if (!note && defaultNote) {
+        note = defaultNote;
       }
 
       if (uid) {
@@ -275,6 +281,40 @@ export const BulkImportGroupModal: React.FC<BulkImportGroupModalProps> = ({
               </select>
             </div>
           )}
+
+          {/* Lựa chọn ghi chú mặc định: VHH, 282, 956, Hạn Chế */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+            <div className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+              <span>Ghi chú mặc định (nếu dòng trống):</span>
+              {defaultNote && (
+                <button
+                  type="button"
+                  onClick={() => setDefaultNote('')}
+                  className="text-[11px] text-red-600 hover:underline cursor-pointer"
+                >
+                  Bỏ chọn
+                </button>
+              )}
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {GROUP_NOTE_CHOICES.map((choice) => {
+                const isSelected = defaultNote === choice.key;
+                return (
+                  <button
+                    key={choice.key}
+                    type="button"
+                    onClick={() => setDefaultNote(isSelected ? '' : choice.key)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      isSelected ? choice.activeColor : choice.color
+                    }`}
+                  >
+                    <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : choice.dot}`}></span>
+                    <span>{choice.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {activeTab === 'text' ? (
             <div className="space-y-2">

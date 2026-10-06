@@ -17,6 +17,13 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      proxy: {
+        '/api/proxy': {
+          target: 'https://nghean37378237-proxy-37-ce87.vercel.app',
+          changeOrigin: true,
+          secure: false,
+        },
+      },
     },
     build: {
       // Tắt hoàn toàn sourcemap để chống dịch ngược mã nguồn gốc
