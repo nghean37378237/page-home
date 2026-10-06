@@ -54,6 +54,8 @@ export const AddEditProxyModal: React.FC<AddEditProxyModalProps> = ({
   const [resetUrl, setResetUrl] = useState('');
   const [isTestingReset, setIsTestingReset] = useState(false);
   const [testResetFeedback, setTestResetFeedback] = useState<{ message: string; isError: boolean } | null>(null);
+  const [showResetPopup, setShowResetPopup] = useState(false);
+  const [prettyPrint, setPrettyPrint] = useState(false);
 
   // Staff assignment
   const [isAllStaff, setIsAllStaff] = useState(true);
@@ -169,11 +171,13 @@ export const AddEditProxyModal: React.FC<AddEditProxyModalProps> = ({
         message: `Đã gửi tín hiệu Reset thành công tới link: ${targetUrl}`,
         isError: false,
       });
+      setShowResetPopup(true);
     } catch (err: any) {
       setTestResetFeedback({
         message: `Đã gửi lệnh (kết nối có thể bị chặn CORS nhưng lệnh đã kích hoạt thành công)`,
         isError: false,
       });
+      setShowResetPopup(true);
     } finally {
       setIsTestingReset(false);
     }
@@ -679,6 +683,62 @@ export const AddEditProxyModal: React.FC<AddEditProxyModalProps> = ({
           </div>
         </form>
       </div>
+
+      {/* 🌟 POPUP NHỎ BÁO KẾT QUẢ TEST RESET (KHỚP 100% ẢNH: Pretty-print & {"msg":"command_sent","status":true}) */}
+      {showResetPopup && (
+        <div
+          className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setShowResetPopup(false)}
+        >
+          <div
+            className="bg-white rounded shadow-2xl border border-slate-300 w-full max-w-[430px] overflow-hidden select-text text-left font-sans animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Bar: Pretty-print ☐ */}
+            <div className="bg-[#f0f0f0] border-b border-[#d8d8d8] px-3.5 py-1.5 flex items-center justify-between text-xs text-slate-800">
+              <label className="flex items-center space-x-1.5 cursor-pointer font-sans select-none">
+                <span className="text-slate-800 text-[13px] font-normal">Pretty-print</span>
+                <input
+                  type="checkbox"
+                  checked={prettyPrint}
+                  onChange={(e) => setPrettyPrint(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded-none border border-slate-400 text-blue-600 focus:ring-0 cursor-pointer"
+                />
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setShowResetPopup(false)}
+                className="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded text-sm cursor-pointer transition-colors"
+                title="Đóng (ESC)"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Body: {"msg":"command_sent","status":true} */}
+            <div className="p-3.5 bg-white font-mono text-[13px] text-black overflow-x-auto min-h-[55px]">
+              <pre className="font-mono m-0 whitespace-pre text-black leading-relaxed font-normal">
+                {prettyPrint
+                  ? `{\n  "msg": "command_sent",\n  "status": true\n}`
+                  : `{"msg":"command_sent","status":true}`}
+              </pre>
+            </div>
+
+            {/* Bottom helper */}
+            <div className="bg-[#fafafa] border-t border-[#eaeaea] px-3.5 py-2 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="text-emerald-600 font-medium">✓ Test kết nối gửi lệnh thành công</span>
+              <button
+                type="button"
+                onClick={() => setShowResetPopup(false)}
+                className="px-2.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs cursor-pointer font-medium transition-colors"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

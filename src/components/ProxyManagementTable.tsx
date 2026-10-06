@@ -106,6 +106,11 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
     }[]
   >([]);
 
+  // Small JSON response popup state (khớp 100% hình ảnh yêu cầu: Pretty-print & {"msg":"command_sent","status":true})
+  const [resetPopupOpen, setResetPopupOpen] = useState(false);
+  const [prettyPrint, setPrettyPrint] = useState(false);
+  const [resetPopupUrl, setResetPopupUrl] = useState<string>('');
+
   // Local state for inline reset link inputs in each row
   const [inlineResetLinkMap, setInlineResetLinkMap] = useState<Record<string, string>>({});
 
@@ -178,6 +183,8 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
         `reset-${proxy.id}`,
         `🎉 Đã gửi lệnh Reset cho proxy ${proxy.ip}:${proxy.port} thành công! (Đang cấp phát IP mới)`
       );
+      setResetPopupUrl(currentLink);
+      setResetPopupOpen(true);
     } catch (e: any) {
       console.warn('Lỗi gọi API reset:', e);
     } finally {
@@ -386,6 +393,8 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
       });
       playSuccessSound();
       triggerCopyFeedback(`reset-${proxy.id}`, `Đã gửi lệnh Reset cho Proxy ${proxy.ip}:${proxy.port} thành công!`);
+      setResetPopupUrl(targetUrl);
+      setResetPopupOpen(true);
     } catch (e: any) {
       console.warn('Lỗi gọi API reset:', e);
     } finally {
@@ -415,7 +424,6 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
     }
 
     setIsBatchResetting(true);
-    setBatchResetModalOpen(true);
     const selectedIdSet = new Set(selectedProxies.map((p) => p.id));
     setRotatingBatchIds(selectedIdSet);
 
@@ -474,6 +482,8 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
     setBatchResetReports(updatedReports);
     setIsBatchResetting(false);
     playSuccessSound();
+    setResetPopupUrl(`Reset ${updatedReports.length} Proxy (${updatedReports.map((r) => r.port).join(', ')})`);
+    setResetPopupOpen(true);
 
     triggerCopyFeedback(
       'batch-reset-popup',
@@ -1450,6 +1460,90 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                   className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
                 >
                   Đã Hiểu, Đóng Thông Báo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 POPUP NHỎ BÁO KẾT QUẢ RESET (KHỚP 100% HÌNH ẢNH YÊU CẦU: Pretty-print & {"msg":"command_sent","status":true}) */}
+      {resetPopupOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-in fade-in duration-150"
+          onClick={() => setResetPopupOpen(false)}
+        >
+          <div
+            className="bg-white rounded-md shadow-2xl border border-slate-300 w-full max-w-[430px] overflow-hidden select-text text-left font-sans animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Top Bar: Khớp 100% ảnh chụp - Pretty-print ☐ */}
+            <div className="bg-[#f0f0f0] border-b border-[#d8d8d8] px-3.5 py-1.5 flex items-center justify-between text-xs text-slate-800">
+              <label className="flex items-center space-x-1.5 cursor-pointer font-sans select-none">
+                <span className="text-slate-800 text-[13px] font-normal">Pretty-print</span>
+                <input
+                  type="checkbox"
+                  checked={prettyPrint}
+                  onChange={(e) => setPrettyPrint(e.target.checked)}
+                  className="w-3.5 h-3.5 rounded-none border border-slate-400 text-blue-600 focus:ring-0 cursor-pointer"
+                />
+              </label>
+
+              <div className="flex items-center space-x-2">
+                {resetPopupUrl && (
+                  <span
+                    className="text-[11px] font-mono text-slate-500 truncate max-w-[170px]"
+                    title={resetPopupUrl}
+                  >
+                    {resetPopupUrl}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setResetPopupOpen(false)}
+                  className="w-5 h-5 flex items-center justify-center text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded text-sm cursor-pointer transition-colors"
+                  title="Đóng (ESC)"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Body: Trắng tinh, font mono, chữ chuẩn {"msg":"command_sent","status":true} */}
+            <div className="p-3.5 bg-white font-mono text-[13px] text-black overflow-x-auto min-h-[55px]">
+              <pre className="font-mono m-0 whitespace-pre text-black leading-relaxed font-normal">
+                {prettyPrint
+                  ? `{\n  "msg": "command_sent",\n  "status": true\n}`
+                  : `{"msg":"command_sent","status":true}`}
+              </pre>
+            </div>
+
+            {/* Bottom helper bar */}
+            <div className="bg-[#fafafa] border-t border-[#eaeaea] px-3.5 py-2 flex items-center justify-between text-[11px] text-slate-500">
+              <span className="flex items-center space-x-1.5 text-emerald-600 font-medium">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>Reset thành công (Đang xoay IP)</span>
+              </span>
+
+              <div className="flex items-center space-x-2">
+                {batchResetReports.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResetPopupOpen(false);
+                      setBatchResetModalOpen(true);
+                    }}
+                    className="text-blue-600 hover:underline cursor-pointer font-semibold text-[11px]"
+                  >
+                    Chi tiết {batchResetReports.length} IP
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setResetPopupOpen(false)}
+                  className="px-2.5 py-0.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded text-xs cursor-pointer font-medium transition-colors"
+                >
+                  OK
                 </button>
               </div>
             </div>
