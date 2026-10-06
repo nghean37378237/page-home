@@ -162,7 +162,9 @@ export const AddEditProxyModal: React.FC<AddEditProxyModalProps> = ({
     } else if (isAllStaff) {
       finalStaff = ['ALL'];
     } else {
-      finalStaff = assignedStaffList.length > 0 ? assignedStaffList : ['ALL'];
+      // Chỉ lấy nhân viên có sẵn trong CSDL (availableStaffNames), không tạo mới
+      const validStaff = assignedStaffList.filter((s) => availableStaffNames.includes(s));
+      finalStaff = validStaff.length > 0 ? validStaff : ['ALL'];
     }
 
     // Build standard full proxy string
@@ -500,24 +502,33 @@ export const AddEditProxyModal: React.FC<AddEditProxyModalProps> = ({
                     className="w-4 h-4 text-blue-600 cursor-pointer mt-0.5"
                   />
                   <div className="text-xs w-full">
-                    <span className="font-bold">Chỉ Phân Công Cho Nhân Viên Cụ Thể:</span>
+                    <span className="font-bold">Chỉ Phân Công Cho Nhân Viên Cụ Thể (Có Sẵn Trong CSDL):</span>
+                    <p className="text-[10px] text-slate-500 mb-1">
+                      Danh sách chọn nhân viên được lấy từ tài khoản nhân sự có sẵn trong hệ thống (Bảng 5)
+                    </p>
                     {!isAllStaff && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-200">
-                        {availableStaffNames.map((s) => (
-                          <label
-                            key={s}
-                            className="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-800 bg-white p-1.5 rounded-md border border-slate-200 cursor-pointer"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={assignedStaffList.includes(s)}
-                              onChange={() => handleToggleStaff(s)}
-                              className="w-3.5 h-3.5 rounded-sm text-blue-600"
-                            />
-                            <span className="truncate">{s}</span>
-                          </label>
-                        ))}
-                      </div>
+                      availableStaffNames.length === 0 ? (
+                        <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800 mt-1">
+                          Chưa có tài khoản nhân viên nào trong CSDL. Vui lòng tạo tài khoản nhân viên tại Bảng 5.
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-2 pt-2 border-t border-blue-200">
+                          {availableStaffNames.map((s) => (
+                            <label
+                              key={s}
+                              className="inline-flex items-center space-x-1.5 text-xs font-semibold text-slate-800 bg-white p-1.5 rounded-md border border-slate-200 cursor-pointer hover:bg-slate-50"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={assignedStaffList.includes(s)}
+                                onChange={() => handleToggleStaff(s)}
+                                className="w-3.5 h-3.5 rounded-sm text-blue-600"
+                              />
+                              <span className="truncate">{s}</span>
+                            </label>
+                          ))}
+                        </div>
+                      )
                     )}
                   </div>
                 </div>

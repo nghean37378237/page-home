@@ -753,20 +753,34 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                               ⭐ Của Bạn ({currentUser.name})
                             </span>
                           )
-                        ) : (p.assignedStaff || []).includes('ALL') ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            Dùng Chung (ALL)
-                          </span>
                         ) : (
-                          <div className="flex flex-wrap gap-1">
-                            {(p.assignedStaff || []).map((s) => (
-                              <span
-                                key={s}
-                                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200"
-                              >
-                                {s}
-                              </span>
-                            ))}
+                          <div className="relative inline-flex items-center">
+                            <select
+                              value={
+                                (p.assignedStaff || []).includes('ALL')
+                                  ? 'ALL'
+                                  : (p.assignedStaff || [])[0] || 'ALL'
+                              }
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                onUpdateProxy(p.id, {
+                                  assignedStaff: val === 'ALL' ? ['ALL'] : [val],
+                                });
+                                triggerCopyFeedback(
+                                  `staff-${p.id}`,
+                                  `Đã gán proxy ${p.ip} cho: ${val === 'ALL' ? 'Dùng Chung (ALL)' : val}`
+                                );
+                              }}
+                              className="text-[11px] font-bold rounded-lg px-2.5 py-1 border border-slate-300 bg-white text-slate-800 hover:border-blue-500 focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-2xs"
+                              title="Chọn nhân viên có sẵn trong CSDL để phân công proxy này"
+                            >
+                              <option value="ALL">🌐 Dùng Chung (ALL)</option>
+                              {availableStaffNames.map((s) => (
+                                <option key={s} value={s}>
+                                  👤 {s} (CSDL)
+                                </option>
+                              ))}
+                            </select>
                           </div>
                         )}
                       </td>
@@ -868,6 +882,43 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
           >
             <span>Copy IP:Port</span>
           </button>
+
+          {/* Admin Batch Reassign Staff from existing CSDL list */}
+          {isAdmin && (
+            <>
+              <div className="h-4 w-px bg-slate-700"></div>
+              <div className="flex items-center space-x-1.5 bg-slate-900 px-2 py-1 rounded-xl border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-semibold pr-0.5">Gán NV (CSDL):</span>
+                <select
+                  onChange={async (e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    const ids = Array.from(selectedIds);
+                    for (const id of ids) {
+                      await onUpdateProxy(id, {
+                        assignedStaff: val === 'ALL' ? ['ALL'] : [val],
+                      });
+                    }
+                    triggerCopyFeedback(
+                      'batch-staff',
+                      `Đã gán ${ids.length} proxy cho: ${val === 'ALL' ? 'Dùng Chung (ALL)' : val}`
+                    );
+                    setSelectedIds(new Set());
+                  }}
+                  defaultValue=""
+                  className="text-[10px] font-bold bg-slate-800 text-white border border-slate-700 rounded-lg px-2 py-1 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                >
+                  <option value="" disabled>-- Chọn NV CSDL ({availableStaffNames.length}) --</option>
+                  <option value="ALL">🌐 Dùng Chung (ALL)</option>
+                  {availableStaffNames.map((s) => (
+                    <option key={s} value={s}>
+                      👤 {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
           <button
             type="button"

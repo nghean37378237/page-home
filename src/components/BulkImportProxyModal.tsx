@@ -161,7 +161,15 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
           const loc = (row['QUỐC GIA'] || row['Location'] || 'VN').toString().trim().toUpperCase();
           const prov = (row['NHÀ CUNG CẤP'] || row['Provider'] || defaultProvider).toString().trim();
           const rawStaff = (row['NHÂN VIÊN'] || row['Staff'] || '').toString().trim();
-          const staffArr = rawStaff ? [rawStaff] : effectiveStaff;
+          // Chỉ nhận nhân viên nếu có sẵn trong danh sách CSDL (availableStaffNames), không tạo mới
+          const matchedStaff = availableStaffNames.find(
+            (s) => s.trim().toLowerCase() === rawStaff.toLowerCase()
+          );
+          const staffArr = matchedStaff
+            ? [matchedStaff]
+            : rawStaff.toUpperCase() === 'ALL'
+            ? ['ALL']
+            : effectiveStaff;
           const note = (row['GHI CHÚ'] || row['Note'] || '').toString().trim();
           const expire = (row['HẠN DÙNG'] || row['Expire'] || '30/11/2026').toString().trim();
 
@@ -300,17 +308,17 @@ export const BulkImportProxyModal: React.FC<BulkImportProxyModalProps> = ({
             {isAdmin && (
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Gán Cho Nhân Viên:
+                  Gán Cho Nhân Viên (Có sẵn trong CSDL):
                 </label>
                 <select
                   value={defaultStaff}
                   onChange={(e) => setDefaultStaff(e.target.value)}
                   className="w-full text-xs font-bold bg-white border border-slate-300 rounded-lg p-2"
                 >
-                  <option value="ALL">Dùng Chung (ALL)</option>
+                  <option value="ALL">🌐 Dùng Chung (ALL)</option>
                   {availableStaffNames.map((s) => (
                     <option key={s} value={s}>
-                      {s}
+                      👤 {s} (CSDL)
                     </option>
                   ))}
                 </select>
