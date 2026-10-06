@@ -10,7 +10,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { GroupRecord, AppUser } from '../types';
+import { GroupRecord, AppUser, GroupJoinStatus } from '../types';
 import { downloadGroupExcelTemplate } from '../utils/excelTemplates';
 import { GROUP_NOTE_CHOICES } from './AddEditGroupModal';
 
@@ -84,6 +84,28 @@ export const BulkImportGroupModal: React.FC<BulkImportGroupModalProps> = ({
         }
       }
 
+      // Parse Trạng Thái: Đã Jon, Jon chờ duyệt, Chưa
+      let joinStatus: GroupJoinStatus = 'Chưa';
+      const rawStatus = (
+        row['TRẠNG THÁI'] ||
+        row['Trạng Thái'] ||
+        row['trạng thái'] ||
+        row['status'] ||
+        row['joinStatus'] ||
+        ''
+      )
+        .toString()
+        .trim()
+        .toLowerCase();
+
+      if (rawStatus.includes('đã') || rawStatus === 'đã jon' || rawStatus === 'đã join') {
+        joinStatus = 'Đã Jon';
+      } else if (rawStatus.includes('chờ') || rawStatus.includes('duyệt') || rawStatus === 'jon chờ duyệt') {
+        joinStatus = 'Jon chờ duyệt';
+      } else if (rawStatus.includes('chưa')) {
+        joinStatus = 'Chưa';
+      }
+
       // If groupName is missing but groupLink exists, formulate default groupName
       if (!groupName && groupLink) {
         groupName = 'Nhóm Facebook';
@@ -101,6 +123,7 @@ export const BulkImportGroupModal: React.FC<BulkImportGroupModalProps> = ({
           groupLink: groupLink || 'https://www.facebook.com/groups/',
           uid,
           viaName: viaName || `Via ${uid.slice(-4)}`,
+          joinStatus,
           note,
           isHighlighted,
           staffName: rowStaff,

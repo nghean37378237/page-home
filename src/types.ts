@@ -131,6 +131,9 @@ export interface SharedAccount {
   updatedAt?: string; // Ngày cập nhật
 }
 
+export type GroupJoinStatus = 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa';
+export const GROUP_JOIN_STATUS_OPTIONS: GroupJoinStatus[] = ['Đã Jon', 'Jon chờ duyệt', 'Chưa'];
+
 export interface GroupRecord {
   id: string;
   groupId: string; // Mã nhóm duy nhất để gộp ô các Via trong cùng 1 Group
@@ -138,6 +141,7 @@ export interface GroupRecord {
   groupLink: string; // Cột D: GROUP (Link nhóm Facebook: https://www.facebook.com/groups/...)
   uid: string; // Cột B: UID nick Facebook (VD: '100060665184656')
   viaName: string; // Cột C: TÊN VIA (VD: 'Lucas Santos', 'Rupesh Yadav'...)
+  joinStatus?: GroupJoinStatus; // Cột TRẠNG THÁI: 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa'
   note: string; // Cột F: Ghi Chú (VD: 'vhh', 'hạn chế', 'đình chỉ'...)
   isHighlighted?: boolean; // Ô bôi xanh lá (dòng via chính / via duyệt theo yêu cầu hình ảnh)
   staffName: string; // TÊN NV (Quản lý phân quyền tài khoản tương tự như Page)

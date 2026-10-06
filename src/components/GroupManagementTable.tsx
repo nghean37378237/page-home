@@ -27,8 +27,10 @@ import {
   ChevronDown,
   CheckCircle2,
   X,
+  Clock,
+  XCircle,
 } from 'lucide-react';
-import { GroupRecord, AppUser } from '../types';
+import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS } from '../types';
 import { exportGroupToXLSX } from '../utils/excelTemplates';
 
 interface GroupManagementTableProps {
@@ -81,6 +83,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState('ALL');
   const [selectedNoteFilter, setSelectedNoteFilter] = useState<'ALL' | 'VHH' | '282' | '956' | 'Hạn Chế' | 'NONE'>('ALL');
+  const [selectedJoinStatusFilter, setSelectedJoinStatusFilter] = useState<'ALL' | 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa'>('ALL');
   const [highlightedOnly, setHighlightedOnly] = useState(false);
   const [hasNoteOnly, setHasNoteOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
@@ -140,6 +143,22 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     return { vhh, c282, c956, hanChe, none };
   }, [scopedRecords]);
 
+  // Join status counts
+  const joinStatusCounts = useMemo(() => {
+    let daJon = 0;
+    let choDuyet = 0;
+    let chua = 0;
+
+    scopedRecords.forEach((r) => {
+      const s = r.joinStatus || 'Chưa';
+      if (s === 'Đã Jon') daJon++;
+      else if (s === 'Jon chờ duyệt') choDuyet++;
+      else chua++;
+    });
+
+    return { daJon, choDuyet, chua };
+  }, [scopedRecords]);
+
   // Filtered list
   const filteredRecords = useMemo(() => {
     return scopedRecords.filter((r) => {
@@ -152,7 +171,16 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
         const matchVia = (r.viaName || '').toLowerCase().includes(q);
         const matchNote = (r.note || '').toLowerCase().includes(q);
         const matchStaff = (r.staffName || '').toLowerCase().includes(q);
-        if (!matchGroup && !matchLink && !matchUid && !matchVia && !matchNote && !matchStaff) {
+        const matchJoinStatus = (r.joinStatus || 'Chưa').toLowerCase().includes(q);
+        if (!matchGroup && !matchLink && !matchUid && !matchVia && !matchNote && !matchStaff && !matchJoinStatus) {
+          return false;
+        }
+      }
+
+      // Join status filter: 'ALL' | 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa'
+      if (selectedJoinStatusFilter !== 'ALL') {
+        const st = r.joinStatus || 'Chưa';
+        if (st !== selectedJoinStatusFilter) {
           return false;
         }
       }
@@ -192,7 +220,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
       return true;
     });
-  }, [scopedRecords, searchQuery, selectedStaffFilter, selectedNoteFilter, highlightedOnly, hasNoteOnly, isAdmin]);
+  }, [scopedRecords, searchQuery, selectedStaffFilter, selectedNoteFilter, selectedJoinStatusFilter, highlightedOnly, hasNoteOnly, isAdmin]);
 
   // Grouped structure by groupId or groupName
   const groupedData = useMemo(() => {
@@ -362,6 +390,35 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     }
   };
 
+  // Update Join Status for a single row
+  const handleUpdateJoinStatus = async (id: string, newStatus: GroupJoinStatus) => {
+    await onUpdateRecord(id, { joinStatus: newStatus });
+    triggerCopyFeedback(`status-${id}`, `Đã chuyển: ${newStatus}`);
+  };
+
+  // Batch update Join Status
+  const handleBatchUpdateJoinStatus = async (newStatus: GroupJoinStatus) => {
+    if (selectedIds.size === 0) return;
+    try {
+      const ids = Array.from(selectedIds);
+      const updatedList = records
+        .filter((r) => selectedIds.has(r.id))
+        .map((r) => ({ ...r, joinStatus: newStatus }));
+
+      if (onAddBatchRecords) {
+        await onAddBatchRecords(updatedList);
+      } else {
+        for (const id of ids) {
+          await onUpdateRecord(id, { joinStatus: newStatus });
+        }
+      }
+
+      triggerCopyFeedback('batch-status', `Đã gán trạng thái "${newStatus}" cho ${selectedIds.size} UID!`);
+    } catch (err) {
+      console.error('Lỗi cập nhật trạng thái hàng loạt:', err);
+    }
+  };
+
   // Toggle Highlight (Via chính / Bôi xanh)
   const handleToggleHighlight = async (r: GroupRecord) => {
     const nextVal = !r.isHighlighted;
@@ -489,12 +546,20 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                 <span>Tổng: <b>{totalGroupsCount}</b> Nhóm</span>
               </span>
               <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Via Chính (Bôi xanh): <b>{totalHighlightedCount}</b></span>
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Đã Jon: <b>{joinStatusCounts.daJon}</b></span>
               </span>
               <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
-                <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                <span>Có Ghi Chú: <b>{totalWithNotesCount}</b></span>
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>Jon chờ duyệt: <b>{joinStatusCounts.choDuyet}</b></span>
+              </span>
+              <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
+                <XCircle className="w-3.5 h-3.5 text-slate-500" />
+                <span>Chưa: <b>{joinStatusCounts.chua}</b></span>
+              </span>
+              <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Via Chính: <b>{totalHighlightedCount}</b></span>
               </span>
             </div>
           </div>
@@ -645,6 +710,21 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                 </select>
               </div>
             )}
+
+            {/* Join status filter: Đã Jon, Jon chờ duyệt, Chưa */}
+            <div className="flex items-center space-x-1.5 text-xs">
+              <span className="text-slate-500 font-semibold text-[11px]">Trạng thái:</span>
+              <select
+                value={selectedJoinStatusFilter}
+                onChange={(e) => setSelectedJoinStatusFilter(e.target.value as any)}
+                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-red-500"
+              >
+                <option value="ALL">Tất Cả ({scopedRecords.length})</option>
+                <option value="Đã Jon">✅ Đã Jon ({joinStatusCounts.daJon})</option>
+                <option value="Jon chờ duyệt">⏳ Jon chờ duyệt ({joinStatusCounts.choDuyet})</option>
+                <option value="Chưa">✕ Chưa ({joinStatusCounts.chua})</option>
+              </select>
+            </div>
 
             {/* Note filter: VHH, 282, 956, Hạn Chế */}
             <div className="flex items-center space-x-1.5 text-xs">
@@ -936,6 +1016,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                           <th className="py-2 px-3 w-12 text-center">STT</th>
                           <th className="py-2 px-3 font-mono">UID FACEBOOK (Cột B)</th>
                           <th className="py-2 px-3">TÊN VIA (Cột C)</th>
+                          <th className="py-2 px-3 w-36">TRẠNG THÁI</th>
                           <th className="py-2 px-3">GHI CHÚ (Cột F)</th>
                           <th className="py-2 px-3 w-28 text-center">VIA CHÍNH</th>
                           <th className="py-2 px-3">NHÂN VIÊN</th>
@@ -1008,6 +1089,30 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                 <span className="font-bold text-slate-800">
                                   {row.viaName || `Via ${row.uid.slice(-4)}`}
                                 </span>
+                              </td>
+
+                              {/* Cột Trạng Thái: Đã Jon, Jon chờ duyệt, Chưa */}
+                              <td className="py-2.5 px-3">
+                                <div className="relative inline-flex items-center">
+                                  <select
+                                    value={row.joinStatus || 'Chưa'}
+                                    onChange={(e) =>
+                                      handleUpdateJoinStatus(row.id, e.target.value as GroupJoinStatus)
+                                    }
+                                    className={`text-[11px] font-bold rounded-lg px-2.5 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
+                                      row.joinStatus === 'Đã Jon'
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                        : row.joinStatus === 'Jon chờ duyệt'
+                                        ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                                        : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                                    }`}
+                                    title="Nhấp để đổi trạng thái tham gia: Đã Jon / Jon chờ duyệt / Chưa"
+                                  >
+                                    <option value="Đã Jon">✅ Đã Jon</option>
+                                    <option value="Jon chờ duyệt">⏳ Jon chờ duyệt</option>
+                                    <option value="Chưa">✕ Chưa</option>
+                                  </select>
+                                </div>
                               </td>
 
                               {/* Ghi chú: dropdown tương tác nhanh VHH, 282, 956, Hạn Chế */}
@@ -1160,6 +1265,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                   <th className="py-3 px-3 w-12 text-center">STT</th>
                   <th className="py-3 px-3 font-mono">UID FACEBOOK (Cột B)</th>
                   <th className="py-3 px-3">TÊN VIA (Cột C)</th>
+                  <th className="py-3 px-3 w-36">TRẠNG THÁI</th>
                   <th className="py-3 px-3">GROUP LINK (Cột D)</th>
                   <th className="py-3 px-3">NHÓM (Cột E)</th>
                   <th className="py-3 px-3">GHI CHÚ (Cột F)</th>
@@ -1226,6 +1332,30 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
                       <td className="py-2.5 px-3 font-bold text-slate-800">
                         {r.viaName || `Via ${r.uid.slice(-4)}`}
+                      </td>
+
+                      {/* Trạng Thái trong Flat View */}
+                      <td className="py-2.5 px-3">
+                        <div className="relative inline-flex items-center">
+                          <select
+                            value={r.joinStatus || 'Chưa'}
+                            onChange={(e) =>
+                              handleUpdateJoinStatus(r.id, e.target.value as GroupJoinStatus)
+                            }
+                            className={`text-[11px] font-bold rounded-lg px-2.5 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
+                              r.joinStatus === 'Đã Jon'
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                : r.joinStatus === 'Jon chờ duyệt'
+                                ? 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                                : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                            }`}
+                            title="Nhấp để đổi trạng thái tham gia: Đã Jon / Jon chờ duyệt / Chưa"
+                          >
+                            <option value="Đã Jon">✅ Đã Jon</option>
+                            <option value="Jon chờ duyệt">⏳ Jon chờ duyệt</option>
+                            <option value="Chưa">✕ Chưa</option>
+                          </select>
+                        </div>
                       </td>
 
                       <td className="py-2.5 px-3">
@@ -1417,6 +1547,37 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
             </>
           )}
+
+          {/* Quick Batch Join Status Assignment */}
+          <div className="flex items-center space-x-1 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800">
+            <span className="text-[11px] text-slate-400 font-semibold pr-1">Trạng Thái:</span>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateJoinStatus('Đã Jon')}
+              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer transition-colors shadow-2xs"
+              title="Gán trạng thái Đã Jon cho các UID đã chọn"
+            >
+              Đã Jon
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateJoinStatus('Jon chờ duyệt')}
+              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-500 text-white hover:bg-amber-400 cursor-pointer transition-colors shadow-2xs"
+              title="Gán trạng thái Jon chờ duyệt cho các UID đã chọn"
+            >
+              Chờ Duyệt
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateJoinStatus('Chưa')}
+              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-slate-600 text-white hover:bg-slate-500 cursor-pointer transition-colors shadow-2xs"
+              title="Gán trạng thái Chưa cho các UID đã chọn"
+            >
+              Chưa
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
 
           {/* Quick Batch Note Assignment */}
           <div className="flex items-center space-x-1 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800">

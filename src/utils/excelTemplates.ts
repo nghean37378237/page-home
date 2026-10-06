@@ -277,6 +277,7 @@ export function exportGroupToXLSX(groups: GroupRecord[]): void {
     'STT': idx + 1,
     'UID VIA': g.uid || '',
     'TÊN VIA': g.viaName || '',
+    'TRẠNG THÁI': g.joinStatus || 'Chưa',
     'LINK GROUP': g.groupLink || '',
     'TÊN NHÓM': g.groupName || '',
     'GHI CHÚ': g.note || '',
@@ -290,6 +291,7 @@ export function exportGroupToXLSX(groups: GroupRecord[]): void {
     { wch: 8 },
     { wch: 22 },
     { wch: 25 },
+    { wch: 18 },
     { wch: 45 },
     { wch: 35 },
     { wch: 20 },
@@ -311,6 +313,7 @@ export function downloadGroupExcelTemplate(): void {
     {
       'UID VIA': '100060665184656',
       'TÊN VIA': 'Lucas Santos',
+      'TRẠNG THÁI': 'Đã Jon',
       'LINK GROUP': 'https://www.facebook.com/groups/289880638621489',
       'TÊN NHÓM': 'Beautifull World ✅',
       'GHI CHÚ': '282',
@@ -320,6 +323,7 @@ export function downloadGroupExcelTemplate(): void {
     {
       'UID VIA': '100023228976334',
       'TÊN VIA': 'Tolga Yagmur',
+      'TRẠNG THÁI': 'Jon chờ duyệt',
       'LINK GROUP': 'https://www.facebook.com/groups/289880638621489',
       'TÊN NHÓM': 'Beautifull World ✅',
       'GHI CHÚ': 'VHH',
@@ -329,6 +333,7 @@ export function downloadGroupExcelTemplate(): void {
     {
       'UID VIA': '100060467292965',
       'TÊN VIA': 'Ansh Patial',
+      'TRẠNG THÁI': 'Chưa',
       'LINK GROUP': 'https://www.facebook.com/groups/1055686641112045',
       'TÊN NHÓM': 'Movies World ✅',
       'GHI CHÚ': '956',
@@ -338,6 +343,7 @@ export function downloadGroupExcelTemplate(): void {
     {
       'UID VIA': '100091827364512',
       'TÊN VIA': 'David Miller',
+      'TRẠNG THÁI': 'Đã Jon',
       'LINK GROUP': 'https://www.facebook.com/groups/1055686641112045',
       'TÊN NHÓM': 'Movies World ✅',
       'GHI CHÚ': 'Hạn Chế',
