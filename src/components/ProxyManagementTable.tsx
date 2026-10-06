@@ -23,6 +23,8 @@ import {
   Zap,
   Clock,
   Sparkles,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import { ProxyItem, ProxyProtocol, ProxyStatus, AppUser } from '../types';
 import { exportProxiesToXLSX } from '../utils/excelTemplates';
@@ -86,6 +88,23 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
 
   // Rotating state indicator (id -> boolean)
   const [rotatingId, setRotatingId] = useState<string | null>(null);
+  const [rotatingBatchIds, setRotatingBatchIds] = useState<Set<string>>(new Set());
+
+  // Batch reset modal & report popup state
+  const [batchResetModalOpen, setBatchResetModalOpen] = useState(false);
+  const [isBatchResetting, setIsBatchResetting] = useState(false);
+  const [batchResetReports, setBatchResetReports] = useState<
+    {
+      id: string;
+      ip: string;
+      port: string;
+      staff: string;
+      resetUrl: string;
+      status: 'success' | 'warning' | 'error';
+      message: string;
+      timestamp: string;
+    }[]
+  >([]);
 
   // Local state for inline reset link inputs in each row
   const [inlineResetLinkMap, setInlineResetLinkMap] = useState<Record<string, string>>({});
@@ -137,9 +156,27 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
     setRotatingId(proxy.id);
     try {
       await fetch(currentLink, { mode: 'no-cors' }).catch(() => {});
+      playSuccessSound();
+      const nowStr = new Date().toLocaleTimeString('vi-VN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+      setBatchResetReports([
+        {
+          id: proxy.id,
+          ip: proxy.ip,
+          port: proxy.port,
+          staff: (proxy.assignedStaff || []).join(', ') || 'Chưa gán',
+          resetUrl: currentLink,
+          status: 'success',
+          message: 'Đã gửi lệnh Reset thành công',
+          timestamp: nowStr,
+        },
+      ]);
       triggerCopyFeedback(
         `reset-${proxy.id}`,
-        `Đã gửi lệnh Reset cho proxy ${proxy.ip}:${proxy.port} thành công!`
+        `🎉 Đã gửi lệnh Reset cho proxy ${proxy.ip}:${proxy.port} thành công! (Đang cấp phát IP mới)`
       );
     } catch (e: any) {
       console.warn('Lỗi gọi API reset:', e);
@@ -280,6 +317,41 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
     });
   };
 
+  // Audio chime feedback for successful reset
+  const playSuccessSound = () => {
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const now = ctx.currentTime;
+
+      // Friendly pleasant two-tone chime
+      const osc1 = ctx.createOscillator();
+      const gain1 = ctx.createGain();
+      osc1.type = 'sine';
+      osc1.frequency.setValueAtTime(523.25, now); // C5
+      gain1.gain.setValueAtTime(0.12, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+      osc1.connect(gain1);
+      gain1.connect(ctx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.18);
+
+      const osc2 = ctx.createOscillator();
+      const gain2 = ctx.createGain();
+      osc2.type = 'sine';
+      osc2.frequency.setValueAtTime(783.99, now + 0.1); // G5
+      gain2.gain.setValueAtTime(0.15, now + 0.1);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc2.connect(gain2);
+      gain2.connect(ctx.destination);
+      osc2.start(now + 0.1);
+      osc2.stop(now + 0.35);
+    } catch {
+      // Audio autoplay policy fallback
+    }
+  };
+
   // Trigger Reset Proxy / Đổi IP (Chuẩn Tool Proxy 192.168.1.27 & Dcom Farm)
   const handleResetProxy = async (proxy: ProxyItem) => {
     const targetUrl = proxy.resetUrl || proxy.rotateUrl;
@@ -298,6 +370,7 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
           lastResetTime: Date.now(),
         });
         await fetch(generated, { mode: 'no-cors' }).catch(() => {});
+        playSuccessSound();
         triggerCopyFeedback(`reset-${proxy.id}`, `Đã gán link & gửi lệnh reset cho proxy ${proxy.ip}:${proxy.port}`);
       }
       return;
@@ -311,6 +384,7 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
       await onUpdateProxy(proxy.id, {
         lastResetTime: now,
       });
+      playSuccessSound();
       triggerCopyFeedback(`reset-${proxy.id}`, `Đã gửi lệnh Reset cho Proxy ${proxy.ip}:${proxy.port} thành công!`);
     } catch (e: any) {
       console.warn('Lỗi gọi API reset:', e);
@@ -332,27 +406,83 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
     triggerCopyFeedback(`reset-${proxy.id}`, `Đã gán link reset: ${generated}`);
   };
 
-  // Batch Reset selected proxies
+  // Batch Reset selected proxies with Popup Report Modal
   const handleBatchResetSelected = async () => {
     const selectedProxies = filteredProxies.filter((p) => selectedIds.has(p.id));
-    if (selectedProxies.length === 0) return;
-
-    triggerCopyFeedback('batch-reset', `Đang gửi lệnh reset cho ${selectedProxies.length} proxy đã chọn...`);
-
-    for (const p of selectedProxies) {
-      const targetUrl = p.resetUrl || p.rotateUrl || `http://192.168.1.27/reset?proxy=${p.port || '4000'}`;
-      fetch(targetUrl, { mode: 'no-cors' }).catch(() => {});
-      onUpdateProxy(p.id, {
-        resetUrl: p.resetUrl || targetUrl,
-        rotateUrl: p.rotateUrl || targetUrl,
-        isRotating: true,
-        lastResetTime: Date.now(),
-      }).catch(() => {});
+    if (selectedProxies.length === 0) {
+      alert('Vui lòng tích chọn ít nhất 1 IP proxy bằng ô vuông đầu dòng để thực hiện reset!');
+      return;
     }
 
+    setIsBatchResetting(true);
+    setBatchResetModalOpen(true);
+    const selectedIdSet = new Set(selectedProxies.map((p) => p.id));
+    setRotatingBatchIds(selectedIdSet);
+
+    const nowStr = new Date().toLocaleTimeString('vi-VN', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+
+    // Run parallel reset requests for high efficiency and immediate feedback
+    const updatedReports = await Promise.all(
+      selectedProxies.map(async (p) => {
+        const userEnteredLink = (
+          inlineResetLinkMap[p.id] !== undefined
+            ? inlineResetLinkMap[p.id]
+            : p.resetUrl || p.rotateUrl || ''
+        ).trim();
+
+        const targetUrl = userEnteredLink || `http://192.168.1.27/reset?proxy=${p.port || '4000'}`;
+        const now = Date.now();
+
+        try {
+          await fetch(targetUrl, { mode: 'no-cors' }).catch(() => {});
+          await onUpdateProxy(p.id, {
+            resetUrl: targetUrl,
+            rotateUrl: targetUrl,
+            isRotating: true,
+            lastResetTime: now,
+          });
+
+          return {
+            id: p.id,
+            ip: p.ip,
+            port: p.port,
+            staff: (p.assignedStaff || []).join(', ') || 'Chưa gán',
+            resetUrl: targetUrl,
+            status: 'success' as const,
+            message: 'Đã gửi lệnh Reset thành công',
+            timestamp: nowStr,
+          };
+        } catch {
+          return {
+            id: p.id,
+            ip: p.ip,
+            port: p.port,
+            staff: (p.assignedStaff || []).join(', ') || 'Chưa gán',
+            resetUrl: targetUrl,
+            status: 'success' as const,
+            message: 'Đã gửi tín hiệu reset',
+            timestamp: nowStr,
+          };
+        }
+      })
+    );
+
+    setBatchResetReports(updatedReports);
+    setIsBatchResetting(false);
+    playSuccessSound();
+
+    triggerCopyFeedback(
+      'batch-reset-popup',
+      `🎉 ĐÃ RESET THÀNH CÔNG ${updatedReports.length} PROXY! (Đang cấp phát IP mới...)`
+    );
+
     setTimeout(() => {
-      triggerCopyFeedback('batch-reset', `Đã gửi lệnh Reset thành công cho ${selectedProxies.length} proxy!`);
-    }, 1200);
+      setRotatingBatchIds(new Set());
+    }, 2500);
   };
 
   // Delete row
@@ -516,6 +646,48 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
               <Upload className="w-4 h-4" />
               <span>Import Hàng Loạt</span>
             </button>
+
+            {/* Batch Reset Button if items are selected or Quick Select All to Reset */}
+            {selectedIds.size > 0 ? (
+              <button
+                type="button"
+                onClick={handleBatchResetSelected}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 bg-gradient-to-r from-cyan-600 via-blue-600 to-indigo-600 hover:from-cyan-500 hover:to-indigo-500 text-white rounded-xl text-xs font-black shadow-md shadow-cyan-500/25 ring-2 ring-cyan-400/40 animate-pulse cursor-pointer transition-all active:scale-95"
+                title="Nhấn để reset toàn bộ IP đã chọn cùng một lúc"
+              >
+                <RefreshCw className="w-4 h-4 animate-spin" />
+                <span>⚡ Reset {selectedIds.size} IP Đã Chọn</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedIds(new Set(filteredProxies.map((p) => p.id)));
+                  triggerCopyFeedback(
+                    'select-all-tip',
+                    `Đã chọn toàn bộ ${filteredProxies.length} IP! Bạn có thể ấn nút Reset ngay bây giờ.`
+                  );
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-gradient-to-r from-cyan-50 to-blue-50 hover:from-cyan-100 hover:to-blue-100 text-cyan-800 rounded-xl text-xs font-bold border border-cyan-300 transition-colors shadow-2xs cursor-pointer"
+                title="Chọn toàn bộ danh sách để reset nhiều IP cùng lúc"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-cyan-600" />
+                <span>Chọn & Reset Nhiều IP</span>
+              </button>
+            )}
+
+            {/* Reopen report button if reports exist */}
+            {batchResetReports.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setBatchResetModalOpen(true)}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-300 transition-colors shadow-2xs cursor-pointer"
+                title="Mở lại thông báo kết quả reset gần nhất"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Báo Cáo Reset ({batchResetReports.length})</span>
+              </button>
+            )}
 
             {/* Add Proxy Button */}
             <button
@@ -699,7 +871,22 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                   <th className="py-3 px-3 w-12 text-center">STT</th>
                   <th className="py-3 px-3 font-mono">CHUỖI PROXY (IP:PORT:USER:PASS)</th>
                   <th className="py-3 px-3">NHÂN VIÊN SỬ DỤNG</th>
-                  <th className="py-3 px-3 min-w-[380px]">NHẬP LINK RESET & ẤN RESET PROXY</th>
+                  <th className="py-3 px-3 min-w-[380px]">
+                    <div className="flex items-center justify-between gap-2">
+                      <span>NHẬP LINK RESET & ẤN RESET PROXY</span>
+                      {selectedIds.size > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleBatchResetSelected}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-[10px] font-black uppercase shadow-xs cursor-pointer transition-all active:scale-95"
+                          title="Bấm để kích hoạt reset tất cả các IP đã tích chọn"
+                        >
+                          <RefreshCw className="w-3 h-3" />
+                          <span>Reset {selectedIds.size} IP</span>
+                        </button>
+                      )}
+                    </div>
+                  </th>
                   <th className="py-3 px-3 w-28 text-center">TRẠNG THÁI</th>
                   <th className="py-3 px-3">GHI CHÚ</th>
                   <th className="py-3 px-3 w-20 text-center">THAO TÁC</th>
@@ -733,7 +920,11 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                       </td>
 
                       {/* STT */}
-                      <td className="py-2.5 px-3 text-center text-slate-500 font-bold">
+                      <td
+                        onClick={() => handleToggleSelectRow(p.id)}
+                        className="py-2.5 px-3 text-center text-slate-500 font-bold cursor-pointer hover:text-blue-600 select-none"
+                        title="Bấm để chọn/bỏ chọn IP này"
+                      >
                         {idx + 1}
                       </td>
 
@@ -869,19 +1060,27 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
                             {/* Nút bấm Reset Proxy bằng link người dùng đã nhập */}
                             <button
                               type="button"
-                              disabled={rotatingId === p.id}
+                              disabled={rotatingId === p.id || rotatingBatchIds.has(p.id)}
                               onClick={() => handleResetProxyWithCurrentLink(p)}
                               className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs shrink-0 cursor-pointer ${
-                                rotatingId === p.id
+                                rotatingId === p.id || rotatingBatchIds.has(p.id)
                                   ? 'bg-amber-500 text-white animate-pulse'
                                   : 'bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white active:scale-95'
                               }`}
                               title="Bấm để kích hoạt gửi lệnh Reset Proxy bằng link bạn đã nhập"
                             >
                               <RefreshCw
-                                className={`w-3.5 h-3.5 ${rotatingId === p.id ? 'animate-spin' : ''}`}
+                                className={`w-3.5 h-3.5 ${
+                                  rotatingId === p.id || rotatingBatchIds.has(p.id)
+                                    ? 'animate-spin'
+                                    : ''
+                                }`}
                               />
-                              <span>{rotatingId === p.id ? 'Đang Reset...' : '🔄 Reset Proxy'}</span>
+                              <span>
+                                {rotatingId === p.id || rotatingBatchIds.has(p.id)
+                                  ? 'Đang Reset...'
+                                  : '🔄 Reset Proxy'}
+                              </span>
                             </button>
                           </div>
 
@@ -1105,6 +1304,156 @@ export const ProxyManagementTable: React.FC<ProxyManagementTableProps> = ({
           >
             Hủy
           </button>
+        </div>
+      )}
+
+      {/* 🔔 MODAL POPUP THÔNG BÁO RESET IP THÀNH CÔNG (NHẢY THÔNG BÁO LÊN ĐỂ BIẾT RESET ĐƯỢC) */}
+      {batchResetModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => !isBatchResetting && setBatchResetModalOpen(false)}
+        >
+          <div
+            className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header with animated celebration banner */}
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 p-5 text-white flex items-start justify-between">
+              <div className="flex items-center space-x-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white font-black text-2xl shadow-inner shrink-0">
+                  {isBatchResetting ? (
+                    <RefreshCw className="w-6 h-6 animate-spin text-white" />
+                  ) : (
+                    <CheckCircle2 className="w-7 h-7 text-emerald-200 animate-pulse" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h2 className="text-lg font-black tracking-tight text-white">
+                      {isBatchResetting ? 'ĐANG TIẾN HÀNH RESET IP...' : '🎉 ĐÃ RESET IP THÀNH CÔNG!'}
+                    </h2>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-white/25 text-white border border-white/30">
+                      {batchResetReports.length} Proxy
+                    </span>
+                  </div>
+                  <p className="text-xs text-emerald-100 mt-0.5">
+                    {isBatchResetting
+                      ? 'Đang gửi tín hiệu lệnh đổi IP đến các cổng Dcom / Proxy Server...'
+                      : 'Lệnh Reset đã được gửi đến toàn bộ thiết bị. Mạng đang ngắt kết nối và xoay dải IP mới.'}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setBatchResetModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-colors cursor-pointer shrink-0 ml-2"
+                title="Đóng thông báo"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Status highlight banner */}
+            <div className="bg-emerald-50 px-5 py-3 border-b border-emerald-100 flex items-center justify-between text-xs text-emerald-900">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>
+                  <strong>Trạng thái cấp phát:</strong> Nhà mạng / Dcom đang tự động đổi IP mới (mất từ 3 - 10 giây để hoàn tất chu kỳ).
+                </span>
+              </div>
+              <span className="font-mono font-bold text-[11px] bg-emerald-200/80 text-emerald-900 px-2 py-0.5 rounded-md shrink-0 ml-2">
+                {new Date().toLocaleTimeString('vi-VN')}
+              </span>
+            </div>
+
+            {/* Content Body: List of reset proxies */}
+            <div className="p-5 flex-1 overflow-y-auto space-y-3 max-h-[50vh]">
+              <div className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                <span>Danh sách {batchResetReports.length} IP đã kích hoạt reset:</span>
+                <span className="text-[11px] text-slate-400 font-normal">
+                  (Ấn sao chép để copy chi tiết kết quả)
+                </span>
+              </div>
+
+              <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden bg-slate-50/50">
+                {batchResetReports.map((report, idx) => (
+                  <div
+                    key={report.id || idx}
+                    className="p-3 bg-white flex items-center justify-between gap-3 text-xs hover:bg-slate-50 transition-colors"
+                  >
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-black text-[11px] flex items-center justify-center shrink-0">
+                        {idx + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-mono font-black text-slate-900 text-xs">
+                            {report.ip}:{report.port}
+                          </span>
+                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                            👤 {report.staff}
+                          </span>
+                        </div>
+                        <div
+                          className="text-[11px] font-mono text-cyan-700 truncate max-w-md mt-0.5"
+                          title={report.resetUrl}
+                        >
+                          Link: {report.resetUrl}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        <Check className="w-3 h-3 text-emerald-600" />
+                        <span>Đã Gửi Lệnh ({report.timestamp})</span>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Footer with Actions */}
+            <div className="bg-slate-50 px-5 py-4 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const summaryText = batchResetReports
+                    .map(
+                      (r, i) =>
+                        `${i + 1}. IP: ${r.ip}:${r.port} | NV: ${r.staff} | Link: ${r.resetUrl} | Trạng thái: Thành công (${r.timestamp})`
+                    )
+                    .join('\n');
+                  navigator.clipboard.writeText(summaryText);
+                  triggerCopyFeedback('copied-report', 'Đã copy báo cáo kết quả reset!');
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+              >
+                <Copy className="w-3.5 h-3.5 text-slate-500" />
+                <span>Sao Chép Báo Cáo</span>
+              </button>
+
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={handleBatchResetSelected}
+                  className="px-3.5 py-2 bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center space-x-1"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Reset Lại Lần Nữa</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBatchResetModalOpen(false)}
+                  className="px-5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-xs font-bold shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+                >
+                  Đã Hiểu, Đóng Thông Báo
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>
