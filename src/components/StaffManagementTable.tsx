@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { UserAccount, PageRecord, FullViaItem } from '../types';
+import { UserAccount, PageRecord, FullViaItem, GroupRecord, AppUser } from '../types';
 import {
   Users,
   UserPlus,
@@ -23,12 +23,18 @@ import {
   KeyRound,
   Sparkles,
   X,
+  User,
+  UserCheck,
+  ShieldAlert,
+  FolderOpen,
 } from 'lucide-react';
 
 interface StaffManagementTableProps {
+  currentUser: AppUser;
   accounts: UserAccount[];
   records: PageRecord[];
   viaList: FullViaItem[];
+  groupRecords?: GroupRecord[];
   adminPin: string;
   adminName?: string;
   adminEmail?: string;
@@ -48,9 +54,11 @@ interface StaffManagementTableProps {
 }
 
 export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
+  currentUser,
   accounts,
   records,
   viaList,
+  groupRecords = [],
   adminPin,
   adminName = 'Quản Lý (Admin)',
   adminEmail = 'myphuong2295@gmail.com',
@@ -68,12 +76,15 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   onOpenAdminModal,
   onOpenDeleteStaffModal,
 }) => {
+  const isAdmin = currentUser.role === 'admin';
+  const myStaffNameLower = (currentUser.name || '').trim().toLowerCase();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'approved' | 'pending' | 'blocked'>('all');
   const [visiblePins, setVisiblePins] = useState<Record<string, boolean>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-  // Add staff modal state
+  // Add staff modal state (Admin only)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addName, setAddName] = useState('');
   const [addPin, setAddPin] = useState('123456');
@@ -82,18 +93,21 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  // Change PIN modal state
+  // Change PIN modal state (both Admin and Staff for their own account)
   const [pinModalAccount, setPinModalAccount] = useState<UserAccount | null>(null);
   const [newPinValue, setNewPinValue] = useState('');
+  const [confirmPinValue, setConfirmPinValue] = useState('');
+  const [pinChangeError, setPinChangeError] = useState<string | null>(null);
+  const [pinChangeSuccess, setPinChangeSuccess] = useState<string | null>(null);
   const [isSubmittingPin, setIsSubmittingPin] = useState(false);
 
-  // Delete modal state
+  // Delete modal state (Admin only)
   const [deleteAccountTarget, setDeleteAccountTarget] = useState<UserAccount | null>(null);
   const [deletePostsOption, setDeletePostsOption] = useState(false);
   const [deleteViasOption, setDeleteViasOption] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Admin Profile & Master PIN state
+  // Admin Profile & Master PIN state (Admin only)
   const [isAdminProfileModalOpen, setIsAdminProfileModalOpen] = useState(false);
   const [editAdminPin, setEditAdminPin] = useState(adminPin);
   const [editAdminName, setEditAdminName] = useState(adminName);
@@ -103,10 +117,53 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const [isSubmittingAdminProfile, setIsSubmittingAdminProfile] = useState(false);
   const [adminProfileSuccess, setAdminProfileSuccess] = useState(false);
 
-  // Filter accounts: Only staff (or all accounts)
+  // SCIPING: Admin sees all staff accounts.
+  // When currentUser is a staff member, they ONLY see their own account!
   const staffAccounts = useMemo(() => {
-    return accounts.filter((a) => a.role === 'staff');
-  }, [accounts]);
+    if (isAdmin) {
+      return accounts.filter((a) => a.role === 'staff');
+    }
+    // Staff member sees ONLY their own account
+    const matched = accounts.filter(
+      (a) => a.role === 'staff' && a.username.trim().toLowerCase() === myStaffNameLower
+    );
+    if (matched.length > 0) return matched;
+
+    // Fallback: create virtual object if not found in live accounts
+    return [
+      {
+        id: currentUser.id || 'my-staff-account',
+        username: currentUser.name,
+        email: currentUser.email || '',
+        role: 'staff',
+        status: 'approved',
+        pin: '123456',
+        createdAt: 'Hệ thống',
+        adminNote: 'Tài khoản nhân viên chính thức',
+      } as UserAccount,
+    ];
+  }, [accounts, isAdmin, myStaffNameLower, currentUser]);
+
+  // Current staff's personal account for quick view
+  const myCurrentAccount = useMemo(() => {
+    return staffAccounts.find(
+      (a) => a.username.trim().toLowerCase() === myStaffNameLower
+    ) || staffAccounts[0] || null;
+  }, [staffAccounts, myStaffNameLower]);
+
+  // Personal work statistics for current employee
+  const myWorkStats = useMemo(() => {
+    const pagesCount = records.filter(
+      (r) => (r.staffName || '').trim().toLowerCase() === myStaffNameLower
+    ).length;
+    const viasCount = viaList.filter(
+      (v) => (v.staffName || '').trim().toLowerCase() === myStaffNameLower
+    ).length;
+    const groupsCount = groupRecords.filter(
+      (g) => (g.staffName || '').trim().toLowerCase() === myStaffNameLower
+    ).length;
+    return { pagesCount, viasCount, groupsCount };
+  }, [records, viaList, groupRecords, myStaffNameLower]);
 
   const filteredStaff = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -231,307 +288,485 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
 
   return (
     <div className="max-w-[1700px] mx-auto px-4 sm:px-6 py-6 space-y-6">
-      {/* Top Banner & Title */}
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center space-x-3 mb-1.5">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md">
-              <Users className="w-5 h-5" />
-            </div>
+      {isAdmin ? (
+        <>
+          {/* Admin Top Banner & Title */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                <span>Quản Lý Danh Sách Nhân Viên & Mật Khẩu</span>
-                <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                  Cloud Firestore Real-time
-                </span>
-              </h1>
-              <p className="text-xs text-slate-500 font-medium">
-                Toàn bộ danh sách nhân viên, tài khoản phân quyền và mật khẩu đăng nhập đồng bộ thời gian thực trên Cloud Firestore.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-          <button
-            type="button"
-            id="btn-add-staff-top"
-            onClick={() => {
-              setAddName('');
-              setAddPin('123456');
-              setAddEmail('');
-              setAddNote('');
-              setAddError(null);
-              setIsAddModalOpen(true);
-            }}
-            className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
-          >
-            <UserPlus className="w-4 h-4" />
-            <span>Thêm Nhân Viên Mới</span>
-          </button>
-
-          {onOpenDeleteStaffModal && (
-            <button
-              type="button"
-              id="btn-delete-staff-data-top"
-              onClick={() => onOpenDeleteStaffModal()}
-              className="inline-flex items-center space-x-2 px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition-colors cursor-pointer"
-              title="Chọn xóa toàn bộ dữ liệu của 1 nhân viên bất kỳ"
-            >
-              <Trash2 className="w-4 h-4 text-rose-600" />
-              <span>Xóa Toàn Bộ Dữ Liệu 1 NV</span>
-            </button>
-          )}
-
-          {onOpenAdminModal && (
-            <button
-              type="button"
-              id="btn-open-advanced-security"
-              onClick={() => onOpenAdminModal('security_db')}
-              className="inline-flex items-center space-x-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors cursor-pointer"
-            >
-              <Shield className="w-4 h-4 text-indigo-600" />
-              <span>Bảo Mật & CSDL Cloud</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* MASTER ADMIN SECURITY & APP LOCKDOWN BANNER */}
-      <div className="bg-gradient-to-r from-slate-900 via-[#0f1d3a] to-slate-900 border border-slate-700/80 rounded-2xl p-5 shadow-xl text-white">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Left info */}
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black uppercase tracking-wider">
-                <Shield className="w-3.5 h-3.5 text-amber-400" />
-                <span>Tài Khoản Quản Trị Tối Cao</span>
-              </div>
-              <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
-                <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                <span>Khóa Bảo Vệ Ứng Dụng Đang BẬT</span>
-              </div>
-              <div
-                className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold ${
-                  requireGoogleOnly
-                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                    : 'bg-slate-800/80 text-slate-400 border border-slate-700'
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5 text-sky-400" />
-                <span>Bắt Buộc Đăng Nhập Google: {requireGoogleOnly ? 'ĐANG BẬT' : 'ĐANG TẮT'}</span>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-xs">
-              <div>
-                <span className="text-slate-400 block text-[11px]">Tên Quản Trị Admin:</span>
-                <span className="font-bold text-white text-sm">{adminName}</span>
-              </div>
-
-              <div>
-                <span className="text-slate-400 block text-[11px]">Email Admin Chính Thức:</span>
-                <span className="font-mono text-sky-300 text-sm font-semibold">{adminEmail}</span>
-              </div>
-
-              <div>
-                <span className="text-slate-400 block text-[11px]">Mật Khẩu Master Admin:</span>
-                <div className="flex items-center space-x-2 mt-0.5">
-                  <span className="font-mono font-bold text-amber-300 bg-black/40 px-2.5 py-0.5 rounded-md border border-slate-700">
-                    {showAdminPinInBanner ? adminPin : '••••••••'}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdminPinInBanner(!showAdminPinInBanner)}
-                    className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                    title={showAdminPinInBanner ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                  >
-                    {showAdminPinInBanner ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleCopy(adminPin, 'admin-master-pin')}
-                    className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                    title="Sao chép mật khẩu"
-                  >
-                    {copiedKey === 'admin-master-pin' ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    ) : (
-                      <Copy className="w-3.5 h-3.5" />
-                    )}
-                  </button>
+              <div className="flex items-center space-x-3 mb-1.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    <span>Quản Lý Danh Sách Nhân Viên & Mật Khẩu</span>
+                    <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                      Cloud Firestore Real-time
+                    </span>
+                  </h1>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Toàn bộ danh sách nhân viên, tài khoản phân quyền và mật khẩu đăng nhập đồng bộ thời gian thực trên Cloud Firestore.
+                  </p>
                 </div>
               </div>
             </div>
 
-            <p className="text-[11px] text-slate-300/90 leading-relaxed pt-1">
-              🛡️ <strong>Chính sách khóa app:</strong> Người dùng chung email trình duyệt vẫn <em>không thể</em> truy cập vào app nếu không biết đúng Mật khẩu Admin hoặc Mã PIN nhân viên.
-            </p>
-          </div>
-
-          {/* Right Action Button */}
-          <div className="shrink-0 flex flex-wrap items-center gap-2">
-            {onToggleRequireGoogleOnly && (
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
               <button
                 type="button"
-                id="btn-toggle-google-only"
-                onClick={() => onToggleRequireGoogleOnly(!requireGoogleOnly)}
-                className={`inline-flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl font-black text-xs shadow-md transition-all cursor-pointer ${
-                  requireGoogleOnly
-                    ? 'bg-sky-600 hover:bg-sky-500 text-white'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
-                }`}
-                title={
-                  requireGoogleOnly
-                    ? 'Đang bắt buộc 100% nhân viên & admin đăng nhập bằng Google. Bấm để chuyển sang chế độ linh hoạt.'
-                    : 'Bấm để bật chế độ BẮT BUỘC ĐĂNG NHẬP GOOGLE.'
-                }
+                id="btn-add-staff-top"
+                onClick={() => {
+                  setAddName('');
+                  setAddPin('123456');
+                  setAddEmail('');
+                  setAddNote('');
+                  setAddError(null);
+                  setIsAddModalOpen(true);
+                }}
+                className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
               >
-                <Shield className="w-4 h-4 text-sky-300" />
-                <span>Google SSO: {requireGoogleOnly ? 'Đang Bắt Buộc' : 'Tắt'}</span>
+                <UserPlus className="w-4 h-4" />
+                <span>Thêm Nhân Viên Mới</span>
               </button>
-            )}
 
-            <button
-              type="button"
-              id="btn-edit-admin-profile"
-              onClick={() => {
-                setEditAdminPin(adminPin);
-                setEditAdminName(adminName);
-                setEditAdminEmail(adminEmail);
-                setIsAdminProfileModalOpen(true);
-              }}
-              className="inline-flex items-center space-x-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer hover:scale-[1.02]"
-            >
-              <KeyRound className="w-4 h-4 text-slate-950" />
-              <span>Đổi Mật Khẩu & Quản Trị Admin</span>
-            </button>
+              {onOpenDeleteStaffModal && (
+                <button
+                  type="button"
+                  id="btn-delete-staff-data-top"
+                  onClick={() => onOpenDeleteStaffModal()}
+                  className="inline-flex items-center space-x-2 px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition-colors cursor-pointer"
+                  title="Chọn xóa toàn bộ dữ liệu của 1 nhân viên bất kỳ"
+                >
+                  <Trash2 className="w-4 h-4 text-rose-600" />
+                  <span>Xóa Toàn Bộ Dữ Liệu 1 NV</span>
+                </button>
+              )}
+
+              {onOpenAdminModal && (
+                <button
+                  type="button"
+                  id="btn-open-advanced-security"
+                  onClick={() => onOpenAdminModal('security_db')}
+                  className="inline-flex items-center space-x-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                >
+                  <Shield className="w-4 h-4 text-indigo-600" />
+                  <span>Bảo Mật & CSDL Cloud</span>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Metrics Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-        <div
-          onClick={() => setStatusFilter('all')}
-          className={`p-4 rounded-xl border transition-all cursor-pointer ${
-            statusFilter === 'all'
-              ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-500/20 shadow-xs'
-              : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-slate-500">Tổng Nhân Sự</span>
-            <Users className="w-4 h-4 text-blue-600" />
+          {/* MASTER ADMIN SECURITY & APP LOCKDOWN BANNER */}
+          <div className="bg-gradient-to-r from-slate-900 via-[#0f1d3a] to-slate-900 border border-slate-700/80 rounded-2xl p-5 shadow-xl text-white">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              {/* Left info */}
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black uppercase tracking-wider">
+                    <Shield className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Tài Khoản Quản Trị Tối Cao</span>
+                  </div>
+                  <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
+                    <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Khóa Bảo Vệ Ứng Dụng Đang BẬT</span>
+                  </div>
+                  <div
+                    className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold ${
+                      requireGoogleOnly
+                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
+                        : 'bg-slate-800/80 text-slate-400 border border-slate-700'
+                    }`}
+                  >
+                    <Shield className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Bắt Buộc Đăng Nhập Google: {requireGoogleOnly ? 'ĐANG BẬT' : 'ĐANG TẮT'}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-xs">
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Tên Quản Trị Admin:</span>
+                    <span className="font-bold text-white text-sm">{adminName}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Email Admin Chính Thức:</span>
+                    <span className="font-mono text-sky-300 text-sm font-semibold">{adminEmail}</span>
+                  </div>
+
+                  <div>
+                    <span className="text-slate-400 block text-[11px]">Mật Khẩu Master Admin:</span>
+                    <div className="flex items-center space-x-2 mt-0.5">
+                      <span className="font-mono font-bold text-amber-300 bg-black/40 px-2.5 py-0.5 rounded-md border border-slate-700">
+                        {showAdminPinInBanner ? adminPin : '••••••••'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setShowAdminPinInBanner(!showAdminPinInBanner)}
+                        className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                        title={showAdminPinInBanner ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                      >
+                        {showAdminPinInBanner ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleCopy(adminPin, 'admin-master-pin')}
+                        className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                        title="Sao chép mật khẩu"
+                      >
+                        {copiedKey === 'admin-master-pin' ? (
+                          <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        ) : (
+                          <Copy className="w-3.5 h-3.5" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-300/90 leading-relaxed pt-1">
+                  🛡️ <strong>Chính sách khóa app:</strong> Người dùng chung email trình duyệt vẫn <em>không thể</em> truy cập vào app nếu không biết đúng Mật khẩu Admin hoặc Mã PIN nhân viên.
+                </p>
+              </div>
+
+              {/* Right Action Button */}
+              <div className="shrink-0 flex flex-wrap items-center gap-2">
+                {onToggleRequireGoogleOnly && (
+                  <button
+                    type="button"
+                    id="btn-toggle-google-only"
+                    onClick={() => onToggleRequireGoogleOnly(!requireGoogleOnly)}
+                    className={`inline-flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl font-black text-xs shadow-md transition-all cursor-pointer ${
+                      requireGoogleOnly
+                        ? 'bg-sky-600 hover:bg-sky-500 text-white'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                    }`}
+                    title={
+                      requireGoogleOnly
+                        ? 'Đang bắt buộc 100% nhân viên & admin đăng nhập bằng Google. Bấm để chuyển sang chế độ linh hoạt.'
+                        : 'Bấm để bật chế độ BẮT BUỘC ĐĂNG NHẬP GOOGLE.'
+                    }
+                  >
+                    <Shield className="w-4 h-4 text-sky-300" />
+                    <span>Google SSO: {requireGoogleOnly ? 'Đang Bắt Buộc' : 'Tắt'}</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  id="btn-edit-admin-profile"
+                  onClick={() => {
+                    setEditAdminPin(adminPin);
+                    setEditAdminName(adminName);
+                    setEditAdminEmail(adminEmail);
+                    setIsAdminProfileModalOpen(true);
+                  }}
+                  className="inline-flex items-center space-x-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer hover:scale-[1.02]"
+                >
+                  <KeyRound className="w-4 h-4 text-slate-950" />
+                  <span>Đổi Mật Khẩu & Quản Trị Admin</span>
+                </button>
+              </div>
+            </div>
           </div>
-          <div className="text-2xl font-black text-slate-900 mt-1">{counts.total}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Tất cả nhân sự trong hệ thống</div>
-        </div>
 
-        <div
-          onClick={() => setStatusFilter('approved')}
-          className={`p-4 rounded-xl border transition-all cursor-pointer ${
-            statusFilter === 'approved'
-              ? 'bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
-              : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-emerald-700">Đang Hoạt Động</span>
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="text-2xl font-black text-emerald-700 mt-1">{counts.active}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Có quyền đăng nhập & quản lý</div>
-        </div>
-
-        <div
-          onClick={() => setStatusFilter('pending')}
-          className={`p-4 rounded-xl border transition-all cursor-pointer ${
-            statusFilter === 'pending'
-              ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-500/20 shadow-xs'
-              : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-amber-700">Chờ Quản Lý Duyệt</span>
-            <Clock className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="text-2xl font-black text-amber-700 mt-1">{counts.pending}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Cần phê duyệt để vào hệ thống</div>
-        </div>
-
-        <div
-          onClick={() => setStatusFilter('blocked')}
-          className={`p-4 rounded-xl border transition-all cursor-pointer ${
-            statusFilter === 'blocked'
-              ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 shadow-xs'
-              : 'bg-white border-slate-200 hover:border-slate-300'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold text-rose-700">Tạm Khóa Quyền</span>
-            <Lock className="w-4 h-4 text-rose-600" />
-          </div>
-          <div className="text-2xl font-black text-rose-700 mt-1">{counts.blocked}</div>
-          <div className="text-[11px] text-slate-400 mt-0.5">Không thể đăng nhập</div>
-        </div>
-      </div>
-
-      {/* Filter and Search Bar */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            id="input-search-staff-table"
-            placeholder="Tìm theo tên nhân viên, email, ghi chú..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-blue-500 focus:outline-hidden"
-          />
-        </div>
-
-        <div className="flex items-center space-x-2 w-full sm:w-auto justify-between sm:justify-end">
-          <div className="flex items-center space-x-1 text-xs font-semibold bg-slate-100 p-1 rounded-lg border border-slate-200">
-            <button
-              type="button"
+          {/* Metrics Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            <div
               onClick={() => setStatusFilter('all')}
-              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                statusFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
+              className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                statusFilter === 'all'
+                  ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-500/20 shadow-xs'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              Tất cả ({counts.total})
-            </button>
-            <button
-              type="button"
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-500">Tổng Nhân Sự</span>
+                <Users className="w-4 h-4 text-blue-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900 mt-1">{counts.total}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Tất cả nhân sự trong hệ thống</div>
+            </div>
+
+            <div
               onClick={() => setStatusFilter('approved')}
-              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                statusFilter === 'approved' ? 'bg-emerald-600 text-white shadow-2xs font-bold' : 'text-slate-600 hover:text-emerald-700'
+              className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                statusFilter === 'approved'
+                  ? 'bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              Hoạt động ({counts.active})
-            </button>
-            <button
-              type="button"
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-700">Đang Hoạt Động</span>
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              </div>
+              <div className="text-2xl font-black text-emerald-700 mt-1">{counts.active}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Có quyền đăng nhập & quản lý</div>
+            </div>
+
+            <div
               onClick={() => setStatusFilter('pending')}
-              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                statusFilter === 'pending' ? 'bg-amber-500 text-white shadow-2xs font-bold' : 'text-slate-600 hover:text-amber-700'
+              className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                statusFilter === 'pending'
+                  ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-500/20 shadow-xs'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              Chờ duyệt ({counts.pending})
-            </button>
-            <button
-              type="button"
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-700">Chờ Quản Lý Duyệt</span>
+                <Clock className="w-4 h-4 text-amber-600" />
+              </div>
+              <div className="text-2xl font-black text-amber-700 mt-1">{counts.pending}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Cần phê duyệt để vào hệ thống</div>
+            </div>
+
+            <div
               onClick={() => setStatusFilter('blocked')}
-              className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                statusFilter === 'blocked' ? 'bg-rose-600 text-white shadow-2xs font-bold' : 'text-slate-600 hover:text-rose-700'
+              className={`p-4 rounded-xl border transition-all cursor-pointer ${
+                statusFilter === 'blocked'
+                  ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 shadow-xs'
+                  : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              Tạm khóa ({counts.blocked})
-            </button>
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-rose-700">Tạm Khóa Quyền</span>
+                <Lock className="w-4 h-4 text-rose-600" />
+              </div>
+              <div className="text-2xl font-black text-rose-700 mt-1">{counts.blocked}</div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Không thể đăng nhập</div>
+            </div>
           </div>
+
+          {/* Filter and Search Bar for Admin */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="relative w-full sm:w-80">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                id="input-search-staff-table"
+                placeholder="Tìm theo tên nhân viên, email, ghi chú..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-blue-500 focus:outline-hidden"
+              />
+            </div>
+
+            <div className="flex items-center space-x-2 w-full sm:w-auto justify-between sm:justify-end">
+              <div className="flex items-center space-x-1 text-xs font-semibold bg-slate-100 p-1 rounded-lg border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('all')}
+                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                    statusFilter === 'all' ? 'bg-white text-slate-900 shadow-2xs font-bold' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Tất cả ({counts.total})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('approved')}
+                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                    statusFilter === 'approved' ? 'bg-emerald-600 text-white shadow-2xs font-bold' : 'text-slate-600 hover:text-emerald-700'
+                  }`}
+                >
+                  Hoạt động ({counts.active})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('pending')}
+                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                    statusFilter === 'pending' ? 'bg-amber-500 text-white shadow-2xs font-bold' : 'text-slate-600 hover:text-amber-700'
+                  }`}
+                >
+                  Chờ duyệt ({counts.pending})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter('blocked')}
+                  className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                    statusFilter === 'blocked' ? 'bg-rose-600 text-white shadow-2xs font-bold' : 'text-slate-600 hover:text-rose-700'
+                  }`}
+                >
+                  Tạm khóa ({counts.blocked})
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        /* CHẾ ĐỘ NHÂN VIÊN: NHÂN VIÊN NÀO THẤY NHÂN VIÊN ĐÓ */
+        <div className="space-y-6">
+          {/* Staff Top Banner */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center space-x-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-md font-black text-lg">
+                {currentUser.name.charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                    Tài Khoản & Mật Khẩu Cá Nhân
+                  </h1>
+                  <span className="text-xs font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200 flex items-center space-x-1">
+                    <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Nhân Viên: {currentUser.name}</span>
+                  </span>
+                  <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center space-x-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Đang Hoạt Động</span>
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  🔒 Phân quyền bảo mật: Bạn chỉ xem và quản lý thông tin tài khoản của riêng mình ({currentUser.name}). Dữ liệu nhân viên khác được bảo vệ tuyệt mật.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {myCurrentAccount && (
+                <button
+                  type="button"
+                  id="btn-staff-change-pin-top"
+                  onClick={() => {
+                    setPinModalAccount(myCurrentAccount);
+                    setNewPinValue(myCurrentAccount.pin || '123456');
+                    setConfirmPinValue(myCurrentAccount.pin || '123456');
+                    setPinChangeError(null);
+                    setPinChangeSuccess(null);
+                  }}
+                  className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>Đổi Mật Khẩu / PIN Của Tôi</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Personal Account Information Card */}
+          {myCurrentAccount && (
+            <div className="bg-gradient-to-br from-slate-900 via-[#0d1b33] to-slate-900 border border-slate-700/80 rounded-2xl p-6 text-white shadow-xl">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                {/* Account info & Password */}
+                <div className="space-y-4 max-w-xl">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center font-black">
+                      <User className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <div className="text-xs text-slate-400 font-semibold uppercase tracking-wider">
+                        Thông Tin Đăng Nhập Hệ Thống
+                      </div>
+                      <div className="text-lg font-black text-white flex items-center gap-2">
+                        <span>{myCurrentAccount.username}</span>
+                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          Đã Duyệt Vào Hệ Thống
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Password / PIN Section */}
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 backdrop-blur-xs space-y-2">
+                    <div className="text-xs text-slate-300 font-bold flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Mã PIN / Mật Khẩu Đăng Nhập Của Bạn:</span>
+                      </span>
+                      <span className="text-[11px] text-slate-400 font-normal">
+                        Dùng khi mở khóa ứng dụng
+                      </span>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-3 pt-1">
+                      <div className="flex items-center space-x-2 bg-black/40 px-3 py-1.5 rounded-lg border border-slate-700">
+                        <span className="font-mono text-base font-black text-amber-300 tracking-widest">
+                          {visiblePins[myCurrentAccount.id] ? myCurrentAccount.pin || '123456' : '••••••'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => togglePinVisibility(myCurrentAccount.id)}
+                          className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                          title={visiblePins[myCurrentAccount.id] ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
+                        >
+                          {visiblePins[myCurrentAccount.id] ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(myCurrentAccount.pin || '123456', `pin-${myCurrentAccount.id}`)}
+                          className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                          title="Sao chép mã PIN"
+                        >
+                          {copiedKey === `pin-${myCurrentAccount.id}` ? (
+                            <Check className="w-4 h-4 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPinModalAccount(myCurrentAccount);
+                          setNewPinValue(myCurrentAccount.pin || '123456');
+                          setConfirmPinValue(myCurrentAccount.pin || '123456');
+                          setPinChangeError(null);
+                          setPinChangeSuccess(null);
+                        }}
+                        className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-black rounded-lg shadow-sm transition-all cursor-pointer"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>Đổi Mã PIN Ngay</span>
+                      </button>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 pt-1 flex items-center gap-2">
+                      <span>Email liên kết Google:</span>
+                      <span className="font-mono text-sky-300 font-semibold">
+                        {myCurrentAccount.email || 'Chưa liên kết email'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3 Work counters for this employee */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 shrink-0">
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto mb-1.5">
+                      <FileSpreadsheet className="w-4 h-4" />
+                    </div>
+                    <div className="text-2xl font-black text-white">{myWorkStats.pagesCount}</div>
+                    <div className="text-xs text-slate-300 font-semibold mt-0.5">Fanpage Quản Lý</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Bảng 1 (Tiến độ bài)</div>
+                  </div>
+
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center mx-auto mb-1.5">
+                      <KeyRound className="w-4 h-4" />
+                    </div>
+                    <div className="text-2xl font-black text-white">{myWorkStats.viasCount}</div>
+                    <div className="text-xs text-slate-300 font-semibold mt-0.5">Nick Via Đang Giữ</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Bảng 4 (Full Via 2FA)</div>
+                  </div>
+
+                  <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
+                    <div className="w-8 h-8 rounded-lg bg-red-500/20 text-red-400 flex items-center justify-center mx-auto mb-1.5">
+                      <Users className="w-4 h-4" />
+                    </div>
+                    <div className="text-2xl font-black text-white">{myWorkStats.groupsCount}</div>
+                    <div className="text-xs text-slate-300 font-semibold mt-0.5">Group Đang Chăm</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">Bảng 2 (Group Facebook)</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Staff Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
@@ -680,82 +915,104 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
 
                       {/* Thao Tác Quản Lý */}
                       <td className="py-3 px-4 text-right">
-                        <div className="flex items-center justify-end space-x-1.5">
-                          {/* Đổi PIN */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPinModalAccount(acc);
-                              setNewPinValue(acc.pin || '123456');
-                            }}
-                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors cursor-pointer"
-                            title="Đổi mật khẩu PIN"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Phê Duyệt nếu Pending */}
-                          {acc.status === 'pending' && (
+                        {isAdmin ? (
+                          <div className="flex items-center justify-end space-x-1.5">
+                            {/* Đổi PIN */}
                             <button
                               type="button"
-                              onClick={() => onApproveAccount(acc.id)}
-                              className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                              onClick={() => {
+                                setPinModalAccount(acc);
+                                setNewPinValue(acc.pin || '123456');
+                                setConfirmPinValue(acc.pin || '123456');
+                                setPinChangeError(null);
+                                setPinChangeSuccess(null);
+                              }}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors cursor-pointer"
+                              title="Đổi mật khẩu PIN"
                             >
-                              Duyệt Vào
+                              <Edit2 className="w-3.5 h-3.5" />
                             </button>
-                          )}
 
-                          {/* Khóa / Mở Khóa */}
-                          {acc.status === 'approved' ? (
+                            {/* Phê Duyệt nếu Pending */}
+                            {acc.status === 'pending' && (
+                              <button
+                                type="button"
+                                onClick={() => onApproveAccount(acc.id)}
+                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                              >
+                                Duyệt Vào
+                              </button>
+                            )}
+
+                            {/* Khóa / Mở Khóa */}
+                            {acc.status === 'approved' ? (
+                              <button
+                                type="button"
+                                onClick={() => onBlockAccount(acc.id)}
+                                className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-lg border border-amber-200 transition-colors cursor-pointer"
+                                title="Tạm khóa quyền truy cập"
+                              >
+                                <Lock className="w-3.5 h-3.5" />
+                              </button>
+                            ) : acc.status === 'blocked' ? (
+                              <button
+                                type="button"
+                                onClick={() => onUnblockAccount(acc.id)}
+                                className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
+                                title="Mở khóa tài khoản"
+                              >
+                                <Unlock className="w-3.5 h-3.5" />
+                              </button>
+                            ) : null}
+
+                            {/* Chuyển sang góc nhìn NV */}
+                            {onSwitchToStaffView && acc.status === 'approved' && (
+                              <button
+                                type="button"
+                                onClick={() => onSwitchToStaffView(acc.username)}
+                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                                title={`Xem dưới góc nhìn của ${acc.username}`}
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {/* Xóa Nhân Viên */}
                             <button
                               type="button"
-                              onClick={() => onBlockAccount(acc.id)}
-                              className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-lg border border-amber-200 transition-colors cursor-pointer"
-                              title="Tạm khóa quyền truy cập"
+                              onClick={() => {
+                                if (onOpenDeleteStaffModal) {
+                                  onOpenDeleteStaffModal(acc.username);
+                                } else {
+                                  setDeleteAccountTarget(acc);
+                                  setDeletePostsOption(true);
+                                  setDeleteViasOption(true);
+                                }
+                              }}
+                              className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
+                              title={`Xóa toàn bộ dữ liệu của nhân viên ${acc.username}`}
                             >
-                              <Lock className="w-3.5 h-3.5" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
-                          ) : acc.status === 'blocked' ? (
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-end">
                             <button
                               type="button"
-                              onClick={() => onUnblockAccount(acc.id)}
-                              className="p-1.5 text-emerald-700 hover:bg-emerald-50 rounded-lg border border-emerald-200 transition-colors cursor-pointer"
-                              title="Mở khóa tài khoản"
+                              onClick={() => {
+                                setPinModalAccount(acc);
+                                setNewPinValue(acc.pin || '123456');
+                                setConfirmPinValue(acc.pin || '123456');
+                                setPinChangeError(null);
+                                setPinChangeSuccess(null);
+                              }}
+                              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg border border-blue-200 transition-colors cursor-pointer shadow-2xs"
                             >
-                              <Unlock className="w-3.5 h-3.5" />
+                              <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+                              <span>Đổi Mật Khẩu PIN</span>
                             </button>
-                          ) : null}
-
-                          {/* Chuyển sang góc nhìn NV */}
-                          {onSwitchToStaffView && acc.status === 'approved' && (
-                            <button
-                              type="button"
-                              onClick={() => onSwitchToStaffView(acc.username)}
-                              className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
-                              title={`Xem dưới góc nhìn của ${acc.username}`}
-                            >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-
-                          {/* Xóa Nhân Viên */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (onOpenDeleteStaffModal) {
-                                onOpenDeleteStaffModal(acc.username);
-                              } else {
-                                setDeleteAccountTarget(acc);
-                                setDeletePostsOption(true);
-                                setDeleteViasOption(true);
-                              }
-                            }}
-                            className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
-                            title={`Xóa toàn bộ dữ liệu của nhân viên ${acc.username}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   );

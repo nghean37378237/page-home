@@ -31,6 +31,7 @@ import {
   deleteCloudGroupRecord,
   batchSaveCloudGroupRecords,
   batchDeleteCloudGroupRecords,
+  clearAllCloudGroupRecords,
   setCloudProxy,
   updateCloudProxy,
   deleteCloudProxy,
@@ -76,7 +77,7 @@ import { ProxyManagementTable } from './components/ProxyManagementTable';
 import { ProxyAppView } from './components/ProxyAppView';
 import { AddEditProxyModal } from './components/AddEditProxyModal';
 import { BulkImportProxyModal } from './components/BulkImportProxyModal';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network } from 'lucide-react';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck } from 'lucide-react';
 
 export default function App() {
   // Application data stored purely in Cloud Firestore
@@ -176,6 +177,19 @@ export default function App() {
 
         // Seed default initial data into Firestore if database is empty
         await seedCloudFirestoreIfEmpty();
+
+        // Xóa trắng dữ liệu group mặc định theo yêu cầu của người dùng
+        const hasClearedGroups = localStorage.getItem('user_requested_clear_group_records_v1');
+        if (!hasClearedGroups) {
+          try {
+            await clearAllCloudGroupRecords();
+            localStorage.setItem('user_requested_clear_group_records_v1', 'true');
+            setGroupRecords([]);
+            console.log('[App] Đã xóa trắng dữ liệu group theo yêu cầu của người dùng');
+          } catch (e) {
+            console.error('[App] Lỗi xóa trắng group records:', e);
+          }
+        }
 
         // Tự động khôi phục dữ liệu từ localStorage cũ (Vercel) nếu có
         try {
@@ -1409,6 +1423,11 @@ export default function App() {
     await batchDeleteCloudGroupRecords(ids);
   };
 
+  const handleClearAllGroupRecords = async () => {
+    setGroupRecords([]);
+    await clearAllCloudGroupRecords();
+  };
+
   // Proxy handlers (Add, Update, Delete, Batch, Edit)
   const handleAddProxy = async (proxy: ProxyItem) => {
     setProxies((prev) => [...prev.filter((p) => p.id !== proxy.id), proxy]);
@@ -1919,7 +1938,7 @@ export default function App() {
                 }`}
               >
                 <Users className="w-4 h-4" />
-                <span>BẢNG 2: QUẢN LÝ GROUP & VIA</span>
+                <span>BẢNG 2: QUẢN LÝ GROUP FACEBOOK</span>
                 <span
                   className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'group'
@@ -2018,31 +2037,35 @@ export default function App() {
                 </span>
               </button>
 
-              {/* TAB 6: Bảng 6 Quản Lý Danh Sách Nhân Viên & Mật Khẩu (Dành cho Quản Lý / Admin) */}
-              {currentUser.role === 'admin' && (
-                <button
-                  type="button"
-                  id="tab-btn-staff-management"
-                  onClick={() => setActiveTab('staff_management')}
-                  className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+              {/* TAB 6: Bảng 6 Quản Lý Nhân Viên & Mật Khẩu (Admin: Toàn bộ | Staff: Của riêng mình) */}
+              <button
+                type="button"
+                id="tab-btn-staff-management"
+                onClick={() => setActiveTab('staff_management')}
+                className={`inline-flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  activeTab === 'staff_management'
+                    ? 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
+                }`}
+              >
+                <Users className="w-4 h-4" />
+                <span>
+                  {currentUser.role === 'admin'
+                    ? 'BẢNG 6: DANH SÁCH NHÂN VIÊN & MẬT KHẨU'
+                    : 'BẢNG 6: TÀI KHOẢN & MẬT KHẨU CỦA TÔI'}
+                </span>
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
                     activeTab === 'staff_management'
-                      ? 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25'
-                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
+                      ? 'bg-white/25 text-white'
+                      : 'bg-white text-slate-800 border border-slate-200'
                   }`}
                 >
-                  <Users className="w-4 h-4" />
-                  <span>BẢNG 6: DANH SÁCH NHÂN VIÊN & MẬT KHẨU</span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                      activeTab === 'staff_management'
-                        ? 'bg-white/25 text-white'
-                        : 'bg-white text-slate-800 border border-slate-200'
-                    }`}
-                  >
-                    {accounts.filter((a) => a.role === 'staff').length} NV
-                  </span>
-                </button>
-              )}
+                  {currentUser.role === 'admin'
+                    ? `${accounts.filter((a) => a.role === 'staff').length} NV`
+                    : currentUser.name}
+                </span>
+              </button>
             </div>
 
             {/* Quick Bulk Import Trigger */}
@@ -2114,18 +2137,25 @@ export default function App() {
                   <span>Import Excel Fanpage</span>
                 </button>
               ) : activeTab === 'staff_management' ? (
-                <button
-                  type="button"
-                  id="btn-trigger-add-staff"
-                  onClick={() => {
-                    setAdminApprovalModalTab('staff');
-                    setIsAdminApprovalModalOpen(true);
-                  }}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                >
-                  <Users className="w-3.5 h-3.5" />
-                  <span>+ Thêm Nhân Viên Mới</span>
-                </button>
+                currentUser.role === 'admin' ? (
+                  <button
+                    type="button"
+                    id="btn-trigger-add-staff"
+                    onClick={() => {
+                      setAdminApprovalModalTab('staff');
+                      setIsAdminApprovalModalOpen(true);
+                    }}
+                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  >
+                    <Users className="w-3.5 h-3.5" />
+                    <span>+ Thêm Nhân Viên Mới</span>
+                  </button>
+                ) : (
+                  <div className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 flex items-center space-x-1.5 shadow-2xs">
+                    <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Nhân Viên: {currentUser.name}</span>
+                  </div>
+                )
               ) : (
                 <div className="text-xs font-semibold text-slate-500 hidden sm:block">
                   Đồng bộ Realtime Firestore
@@ -2196,7 +2226,13 @@ export default function App() {
               setPresetGroupData(preset || null);
               setIsGroupModalOpen(true);
             }}
+            onEditRecord={(record) => {
+              setEditingGroupRecord(record);
+              setPresetGroupData(null);
+              setIsGroupModalOpen(true);
+            }}
             onOpenBulkImportModal={() => setIsBulkImportGroupOpen(true)}
+            onClearAllRecords={handleClearAllGroupRecords}
           />
         ) : activeTab === 'proxy' ? (
           <ProxyAppView
@@ -2250,9 +2286,11 @@ export default function App() {
           </FullViaErrorBoundary>
         ) : activeTab === 'staff_management' ? (
           <StaffManagementTable
+            currentUser={currentUser}
             accounts={accounts}
             records={records}
             viaList={viaList}
+            groupRecords={groupRecords}
             adminPin={adminSettings.adminPin}
             adminName={adminSettings.adminName}
             adminEmail={adminSettings.adminEmail}

@@ -23,6 +23,10 @@ import {
   Eye,
   RefreshCw,
   FolderPlus,
+  UserCheck,
+  ChevronDown,
+  CheckCircle2,
+  X,
 } from 'lucide-react';
 import { GroupRecord, AppUser } from '../types';
 import { exportGroupToXLSX } from '../utils/excelTemplates';
@@ -44,6 +48,8 @@ interface GroupManagementTableProps {
     initialMode?: 'single' | 'batch';
   }) => void;
   onOpenBulkImportModal: () => void;
+  onEditRecord?: (record: GroupRecord) => void;
+  onClearAllRecords?: () => Promise<void>;
 }
 
 export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
@@ -57,6 +63,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   onDeleteBatchRecords,
   onOpenAddModal,
   onOpenBulkImportModal,
+  onEditRecord,
+  onClearAllRecords,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const myStaffNameLower = (currentUser.name || '').trim().toLowerCase();
@@ -83,6 +91,28 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   // Copy feedback state
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
+
+  // Staff change modal state
+  const [staffChangeTarget, setStaffChangeTarget] = useState<{
+    type: 'single' | 'group' | 'bulk';
+    title: string;
+    groupName?: string;
+    count: number;
+    recordIds: string[];
+    currentStaff: string;
+  } | null>(null);
+  const [targetStaffInput, setTargetStaffInput] = useState('');
+  const [applyToWholeGroupInModal, setApplyToWholeGroupInModal] = useState(false);
+  const [staffActionToast, setStaffActionToast] = useState<string | null>(null);
+
+  // Collect all known staff across the application and existing groups
+  const allKnownStaff = useMemo(() => {
+    const set = new Set<string>();
+    if (currentUser.name) set.add(currentUser.name.trim());
+    availableStaffNames.forEach((n) => n && set.add(n.trim()));
+    records.forEach((r) => r.staffName && set.add(r.staffName.trim()));
+    return Array.from(set).filter(Boolean);
+  }, [availableStaffNames, records, currentUser.name]);
 
   // Note counts
   const noteCounts = useMemo(() => {
@@ -366,6 +396,42 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     }
   };
 
+  // Apply staff change for single, group, or bulk selection
+  const handleApplyStaffChange = async (newStaff: string) => {
+    if (!staffChangeTarget || !newStaff.trim()) return;
+    const staff = newStaff.trim();
+    let idsToUpdate = [...staffChangeTarget.recordIds];
+
+    // If single row but user checked "apply to whole group"
+    if (applyToWholeGroupInModal && staffChangeTarget.groupName) {
+      const gNameLower = staffChangeTarget.groupName.trim().toLowerCase();
+      const groupRowIds = records
+        .filter((r) => (r.groupName || '').trim().toLowerCase() === gNameLower)
+        .map((r) => r.id);
+      idsToUpdate = Array.from(new Set([...idsToUpdate, ...groupRowIds]));
+    }
+
+    const idSet = new Set(idsToUpdate);
+    if (idsToUpdate.length === 1) {
+      await onUpdateRecord(idsToUpdate[0], { staffName: staff });
+    } else if (onAddBatchRecords) {
+      const updated = records
+        .filter((r) => idSet.has(r.id))
+        .map((r) => ({ ...r, staffName: staff }));
+      await onAddBatchRecords(updated);
+    } else {
+      for (const id of idsToUpdate) {
+        await onUpdateRecord(id, { staffName: staff });
+      }
+    }
+
+    setStaffActionToast(`Đã chuyển ${idsToUpdate.length} UID cho nhân viên: "${staff}"`);
+    setTimeout(() => setStaffActionToast(null), 3500);
+    setStaffChangeTarget(null);
+    setTargetStaffInput('');
+    setApplyToWholeGroupInModal(false);
+  };
+
   // Quick stats
   const totalGroupsCount = useMemo(() => {
     const set = new Set(scopedRecords.map((r) => r.groupName?.trim().toLowerCase()).filter(Boolean));
@@ -383,10 +449,10 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   return (
     <div className="space-y-4">
       {/* Toast notification */}
-      {copyToast && (
-        <div className="fixed top-20 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl border border-slate-700 flex items-center space-x-2 text-xs font-bold animate-bounce">
+      {(copyToast || staffActionToast) && (
+        <div className="fixed top-20 right-6 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-xl shadow-xl border border-blue-500 flex items-center space-x-2 text-xs font-bold animate-bounce">
           <Check className="w-4 h-4 text-emerald-400" />
-          <span>{copyToast}</span>
+          <span>{staffActionToast || copyToast}</span>
         </div>
       )}
 
@@ -406,11 +472,13 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                     {scopedRecords.length} Dòng Via
                   </span>
                 </h1>
-                <p className="text-xs text-slate-500">
-                  {isAdmin
-                    ? 'Chế độ Quản Trị Viên: Quản lý toàn bộ Group và phân quyền nhân viên phụ trách'
-                    : `Chế độ Nhân Viên: Đang hiển thị các Group và Nick Via do ${currentUser.name} quản lý`}
-                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  <p className="text-xs text-slate-500">
+                    {isAdmin
+                      ? 'Chế độ Quản Trị Viên: Quản lý toàn bộ Group và phân quyền nhân viên phụ trách'
+                      : `Chế độ Nhân Viên: Chỉ hiển thị các Group Facebook do ${currentUser.name} phụ trách chăm sóc`}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -490,6 +558,27 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <span>Import Hàng Loạt</span>
             </button>
 
+            {/* Clear All Group Records */}
+            {records.length > 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (confirm('Bạn có chắc chắn muốn XÓA TRẮNG toàn bộ dữ liệu trong bảng Group không? Thao tác này sẽ xóa sạch dữ liệu nhóm để bạn tự nhập lại từ đầu.')) {
+                    if (onClearAllRecords) {
+                      await onClearAllRecords();
+                    } else if (onDeleteBatchRecords) {
+                      await onDeleteBatchRecords(records.map((r) => r.id));
+                    }
+                  }
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200 transition-colors shadow-2xs cursor-pointer"
+                title="Xóa trắng toàn bộ dữ liệu group để bạn tự nhập mới từ đầu"
+              >
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                <span>Xóa Trắng Bảng Group</span>
+              </button>
+            )}
+
             {/* Add Batch UIDs to Group Button */}
             <button
               type="button"
@@ -538,17 +627,17 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               )}
             </div>
 
-            {/* Staff filter for Admin */}
+            {/* Staff filter */}
             {isAdmin && (
               <div className="flex items-center space-x-1.5 text-xs">
                 <span className="text-slate-500 font-semibold text-[11px]">Nhân viên:</span>
                 <select
                   value={selectedStaffFilter}
                   onChange={(e) => setSelectedStaffFilter(e.target.value)}
-                  className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-red-500"
+                  className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-red-500 cursor-pointer"
                 >
-                  <option value="ALL">Tất Cả Nhân Viên ({availableStaffNames.length})</option>
-                  {availableStaffNames.map((s) => (
+                  <option value="ALL">Tất Cả Nhân Viên ({allKnownStaff.length})</option>
+                  {allKnownStaff.map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -750,11 +839,27 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                           {group.rows.length} Nick Via
                         </span>
 
-                        {group.staffName && (
-                          <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
-                            NV: {group.staffName}
-                          </span>
-                        )}
+                        {/* Interactive staff button on group card header */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStaffChangeTarget({
+                              type: 'group',
+                              title: `Đổi NV chăm sóc nhóm "${group.groupName}"`,
+                              groupName: group.groupName,
+                              count: group.rows.length,
+                              recordIds: group.rows.map((r) => r.id),
+                              currentStaff: group.staffName || '',
+                            });
+                            setTargetStaffInput(group.staffName || currentUser.name || '');
+                          }}
+                          className="inline-flex items-center space-x-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2.5 py-0.5 rounded-full border border-blue-200 hover:border-blue-300 transition-all cursor-pointer shadow-2xs group"
+                          title="Nhấp để đổi nhân viên chăm sóc cho TOÀN BỘ nhóm này"
+                        >
+                          <UserCheck className="w-3 h-3 text-blue-600 group-hover:scale-110 transition-transform" />
+                          <span>NV: <b>{group.staffName || 'Chưa gán'}</b></span>
+                          <ChevronDown className="w-2.5 h-2.5 text-blue-500 opacity-60 group-hover:opacity-100" />
+                        </button>
                       </div>
                     </div>
 
@@ -952,11 +1057,28 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                 </button>
                               </td>
 
-                              {/* Nhân viên */}
+                              {/* Nhân viên - Interactive Click to Change */}
                               <td className="py-2.5 px-3">
-                                <span className="font-bold text-blue-700 text-xs">
-                                  {row.staffName || '-'}
-                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setStaffChangeTarget({
+                                      type: 'single',
+                                      title: `Đổi NV chăm sóc UID ${row.uid || row.viaName}`,
+                                      groupName: row.groupName,
+                                      count: 1,
+                                      recordIds: [row.id],
+                                      currentStaff: row.staffName || '',
+                                    });
+                                    setTargetStaffInput(row.staffName || currentUser.name || '');
+                                  }}
+                                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 hover:border-blue-300 transition-all cursor-pointer group"
+                                  title="Nhấp để chọn / đổi nhân viên cho dòng này"
+                                >
+                                  <UserCheck className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
+                                  <span>{row.staffName || 'Chưa gán'}</span>
+                                  <ChevronDown className="w-3 h-3 text-blue-400 opacity-60 group-hover:opacity-100" />
+                                </button>
                               </td>
 
                               {/* Thao tác */}
@@ -965,9 +1087,19 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                   {/* Edit button */}
                                   <button
                                     type="button"
-                                    onClick={() => onOpenAddModal(undefined)}
+                                    onClick={() =>
+                                      onEditRecord
+                                        ? onEditRecord(row)
+                                        : onOpenAddModal({
+                                            groupId: row.groupId,
+                                            groupName: row.groupName,
+                                            groupLink: row.groupLink,
+                                            staffName: row.staffName,
+                                            initialMode: 'single',
+                                          })
+                                    }
                                     className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
-                                    title="Sửa dòng này"
+                                    title="Sửa thông tin dòng này (kèm nhân viên & ghi chú)"
                                   >
                                     <Edit2 className="w-3.5 h-3.5" />
                                   </button>
@@ -1155,12 +1287,50 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         </button>
                       </td>
 
-                      <td className="py-2.5 px-3 font-bold text-blue-700">
-                        {r.staffName || '-'}
+                      {/* Nhân viên - Interactive Click to Change */}
+                      <td className="py-2.5 px-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStaffChangeTarget({
+                              type: 'single',
+                              title: `Đổi NV chăm sóc UID ${r.uid || r.viaName}`,
+                              groupName: r.groupName,
+                              count: 1,
+                              recordIds: [r.id],
+                              currentStaff: r.staffName || '',
+                            });
+                            setTargetStaffInput(r.staffName || currentUser.name || '');
+                          }}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 hover:border-blue-300 transition-all cursor-pointer group"
+                          title="Nhấp để chọn / đổi nhân viên cho dòng này"
+                        >
+                          <UserCheck className="w-3.5 h-3.5 text-blue-500 group-hover:scale-110 transition-transform" />
+                          <span>{r.staffName || 'Chưa gán'}</span>
+                          <ChevronDown className="w-3 h-3 text-blue-400 opacity-60 group-hover:opacity-100" />
+                        </button>
                       </td>
 
                       <td className="py-2.5 px-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onEditRecord
+                                ? onEditRecord(r)
+                                : onOpenAddModal({
+                                    groupId: r.groupId,
+                                    groupName: r.groupName,
+                                    groupLink: r.groupLink,
+                                    staffName: r.staffName,
+                                    initialMode: 'single',
+                                  })
+                            }
+                            className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+                            title="Sửa thông tin dòng này"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteRow(r)}
@@ -1197,6 +1367,28 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
           >
             <Copy className="w-3.5 h-3.5" />
             <span>Copy UID Đã Chọn</span>
+          </button>
+
+          <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
+
+          {/* Quick Batch Staff Assignment */}
+          <button
+            type="button"
+            onClick={() => {
+              setStaffChangeTarget({
+                type: 'bulk',
+                title: `Đổi nhân viên phụ trách cho ${selectedIds.size} UID đã chọn`,
+                count: selectedIds.size,
+                recordIds: Array.from(selectedIds),
+                currentStaff: '',
+              });
+              setTargetStaffInput(currentUser.name || availableStaffNames[0] || '');
+            }}
+            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+            title="Chuyển nhân viên phụ trách cho tất cả UID đang chọn"
+          >
+            <UserCheck className="w-3.5 h-3.5" />
+            <span>Đổi NV ({selectedIds.size} UID)</span>
           </button>
 
           <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
@@ -1266,6 +1458,142 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
           >
             Hủy
           </button>
+        </div>
+      )}
+      {/* Modal: Đổi Nhân Viên Chăm Sóc Group */}
+      {staffChangeTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-blue-700 to-indigo-700 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-lg bg-white/20 flex items-center justify-center font-bold">
+                  <UserCheck className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold leading-tight">
+                    Đổi Nhân Viên Chăm Sóc Group
+                  </h3>
+                  <p className="text-[11px] text-blue-100">
+                    {staffChangeTarget.title} ({staffChangeTarget.count} UID)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStaffChangeTarget(null)}
+                className="text-white/80 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  1. Chọn nhanh nhân viên:
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {allKnownStaff.map((staff) => {
+                    const isSelected = targetStaffInput.trim().toLowerCase() === staff.toLowerCase();
+                    return (
+                      <button
+                        key={staff}
+                        type="button"
+                        onClick={() => setTargetStaffInput(staff)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center space-x-1.5 ${
+                          isSelected
+                            ? 'bg-blue-600 text-white border-blue-700 shadow-xs ring-2 ring-blue-500/25'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        <UserCheck className="w-3.5 h-3.5" />
+                        <span>{staff}</span>
+                        {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    2. Hoặc nhập / chọn tên nhân viên:
+                  </label>
+                  {currentUser.name && (
+                    <button
+                      type="button"
+                      onClick={() => setTargetStaffInput(currentUser.name)}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
+                    >
+                      Gán cho tôi ({currentUser.name})
+                    </button>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    list="staff-quick-picker"
+                    value={targetStaffInput}
+                    onChange={(e) => setTargetStaffInput(e.target.value)}
+                    placeholder="Nhập tên nhân viên mới..."
+                    className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl font-bold text-slate-800 bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <datalist id="staff-quick-picker">
+                    {allKnownStaff.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
+                </div>
+              </div>
+
+              {/* Option to apply to whole group if single row */}
+              {staffChangeTarget.type === 'single' && staffChangeTarget.groupName && (
+                <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200">
+                  <label className="flex items-start space-x-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={applyToWholeGroupInModal}
+                      onChange={(e) => setApplyToWholeGroupInModal(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded-sm text-blue-600 focus:ring-blue-500"
+                    />
+                    <div className="text-xs">
+                      <span className="font-bold text-blue-900">
+                        Áp dụng cho TOÀN BỘ các UID khác trong nhóm "{staffChangeTarget.groupName}"
+                      </span>
+                      <p className="text-[10px] text-blue-700">
+                        Đổi nhân viên phụ trách cho tất cả các nick thuộc nhóm này cùng lúc
+                      </p>
+                    </div>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-5 py-3 border-t border-slate-200 flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setStaffChangeTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-xl transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={!targetStaffInput.trim()}
+                onClick={() => handleApplyStaffChange(targetStaffInput)}
+                className="inline-flex items-center space-x-1.5 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  Lưu & Chuyển Cho "{targetStaffInput || '...'}"
+                </span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

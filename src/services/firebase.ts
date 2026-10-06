@@ -318,18 +318,6 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       await batch.commit();
     }
 
-    // Check if groupRecords collection has data
-    const groupsSnapshot = await getDocs(collection(db, GROUP_RECORDS_COLLECTION));
-    if (groupsSnapshot.empty) {
-      console.log('[Firestore] Seeding Group Records to Cloud Firestore...');
-      const batch = writeBatch(db);
-      INITIAL_GROUP_RECORDS.forEach((grp) => {
-        const ref = doc(db, GROUP_RECORDS_COLLECTION, grp.id);
-        batch.set(ref, sanitizeForFirestore(grp));
-      });
-      await batch.commit();
-    }
-
     // Check if proxies collection has data
     const proxiesSnapshot = await getDocs(collection(db, PROXIES_COLLECTION));
     if (proxiesSnapshot.empty) {
@@ -835,6 +823,27 @@ export async function batchDeleteCloudGroupRecords(ids: string[]): Promise<void>
       await batch.commit();
     }
     console.log(`[Firestore] Đã xóa hàng loạt ${ids.length} dòng group.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, GROUP_RECORDS_COLLECTION);
+    throw error;
+  }
+}
+
+export async function clearAllCloudGroupRecords(): Promise<void> {
+  try {
+    const snapshot = await getDocs(collection(db, GROUP_RECORDS_COLLECTION));
+    if (snapshot.empty) return;
+    const chunkSize = 400;
+    const docs = snapshot.docs;
+    for (let i = 0; i < docs.length; i += chunkSize) {
+      const chunk = docs.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((d) => {
+        batch.delete(d.ref);
+      });
+      await batch.commit();
+    }
+    console.log(`[Firestore] Đã xóa trắng toàn bộ ${docs.length} dòng group.`);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, GROUP_RECORDS_COLLECTION);
     throw error;
