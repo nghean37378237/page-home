@@ -1252,11 +1252,46 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                 </div>
                               </td>
 
-                              {/* Tên Via */}
+                              {/* Tên Via (Cột C) */}
                               <td className="py-2.5 px-3">
-                                <span className="font-bold text-slate-800">
-                                  {row.viaName || `Via ${row.uid.slice(-4)}`}
-                                </span>
+                                <div className="flex items-center space-x-2">
+                                  <span
+                                    onClick={() =>
+                                      handleCopyText(
+                                        row.viaName || `Via ${row.uid.slice(-4)}`,
+                                        `via-${row.id}`,
+                                        row.viaName || `Via ${row.uid.slice(-4)}`
+                                      )
+                                    }
+                                    className="font-bold text-slate-800 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
+                                    title="Nhấp để copy Tên Via"
+                                  >
+                                    {row.viaName || `Via ${row.uid.slice(-4)}`}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleCopyText(
+                                        row.viaName || `Via ${row.uid.slice(-4)}`,
+                                        `via-${row.id}`,
+                                        row.viaName || `Via ${row.uid.slice(-4)}`
+                                      )
+                                    }
+                                    className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                      copiedKey === `via-${row.id}`
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                    }`}
+                                    title="Copy Tên Via"
+                                  >
+                                    {copiedKey === `via-${row.id}` ? (
+                                      <Check className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <Copy className="w-3.5 h-3.5" />
+                                    )}
+                                  </button>
+                                </div>
                               </td>
 
                               {/* Cột Trạng Thái: Đã Jon, Jon chờ duyệt, Chưa */}
@@ -1524,8 +1559,45 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         </div>
                       </td>
 
-                      <td className="py-2.5 px-3 font-bold text-slate-800">
-                        {r.viaName || `Via ${r.uid.slice(-4)}`}
+                      {/* Tên Via (Cột C) */}
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center space-x-1.5">
+                          <span
+                            onClick={() =>
+                              handleCopyText(
+                                r.viaName || `Via ${r.uid.slice(-4)}`,
+                                `via-${r.id}`,
+                                r.viaName || `Via ${r.uid.slice(-4)}`
+                              )
+                            }
+                            className="font-bold text-slate-800 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
+                            title="Nhấp để copy Tên Via"
+                          >
+                            {r.viaName || `Via ${r.uid.slice(-4)}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleCopyText(
+                                r.viaName || `Via ${r.uid.slice(-4)}`,
+                                `via-${r.id}`,
+                                r.viaName || `Via ${r.uid.slice(-4)}`
+                              )
+                            }
+                            className={`p-1 rounded-md transition-colors cursor-pointer ${
+                              copiedKey === `via-${r.id}`
+                                ? 'bg-emerald-100 text-emerald-700'
+                                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                            }`}
+                            title="Copy Tên Via"
+                          >
+                            {copiedKey === `via-${r.id}` ? (
+                              <Check className="w-3.5 h-3.5" />
+                            ) : (
+                              <Copy className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        </div>
                       </td>
 
                       {/* Trạng Thái trong Flat View */}
