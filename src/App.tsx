@@ -182,7 +182,7 @@ export default function App() {
 
         // Tự động khôi phục dữ liệu từ localStorage cũ (Vercel) nếu có
         try {
-          const { foundRecords, foundVias, foundGroups } = migrateAndPreserveLocalStorage();
+          const { foundRecords, foundVias } = migrateAndPreserveLocalStorage();
           if (foundRecords.length > 0) {
             console.log(`[App] Tự động bảo toàn và đồng bộ ${foundRecords.length} dòng dữ liệu từ localStorage`);
             await batchSaveCloudPageRecords(foundRecords);
@@ -190,10 +190,6 @@ export default function App() {
           if (foundVias.length > 0) {
             console.log(`[App] Tự động bảo toàn và đồng bộ ${foundVias.length} nick via từ localStorage`);
             await batchSaveCloudVias(foundVias);
-          }
-          if (foundGroups && foundGroups.length > 0) {
-            console.log(`[App] Tự động bảo toàn và đồng bộ ${foundGroups.length} nhóm Group từ localStorage`);
-            await batchSaveCloudGroupRecords(foundGroups);
           }
         } catch (migErr) {
           console.warn('[App] Không có dữ liệu cũ cần migrate:', migErr);
@@ -222,19 +218,9 @@ export default function App() {
 
         // 5. Listen to live group records in Cloud Firestore
         unsubGroups = subscribeToGroupRecords((cloudGroups) => {
-          if (cloudGroups && cloudGroups.length > 0) {
-            setGroupRecords(cloudGroups);
-            saveLocalGroupBackup(cloudGroups);
-          } else {
-            // Nếu Firestore trống, kiểm tra bản sao lưu an toàn trong localStorage
-            const localBackup = getLocalGroupBackup();
-            if (localBackup && localBackup.length > 0) {
-              setGroupRecords(localBackup);
-              batchSaveCloudGroupRecords(localBackup).catch(console.error);
-            } else {
-              setGroupRecords([]);
-            }
-          }
+          const list = cloudGroups || [];
+          setGroupRecords(list);
+          saveLocalGroupBackup(list);
         });
 
         // 6. Listen to live proxies in Cloud Firestore
@@ -1451,12 +1437,6 @@ export default function App() {
     await clearAllCloudGroupRecords();
   };
 
-  const handleRestoreSampleGroupRecords = async () => {
-    setGroupRecords(INITIAL_GROUP_RECORDS);
-    saveLocalGroupBackup(INITIAL_GROUP_RECORDS);
-    await batchSaveCloudGroupRecords(INITIAL_GROUP_RECORDS);
-  };
-
   // Proxy handlers (Add, Update, Delete, Batch, Edit)
   const handleAddProxy = async (proxy: ProxyItem) => {
     setProxies((prev) => [...prev.filter((p) => p.id !== proxy.id), proxy]);
@@ -2278,7 +2258,6 @@ export default function App() {
             }}
             onOpenBulkImportModal={() => setIsBulkImportGroupOpen(true)}
             onClearAllRecords={handleClearAllGroupRecords}
-            onRestoreSampleRecords={handleRestoreSampleGroupRecords}
           />
         ) : activeTab === 'proxy' ? (
           <ProxyAppView

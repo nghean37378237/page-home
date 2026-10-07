@@ -330,17 +330,8 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       await batch.commit();
     }
 
-    // Check if groupRecords collection has data
-    const groupsSnapshot = await getDocs(collection(db, GROUP_RECORDS_COLLECTION));
-    if (groupsSnapshot.empty && INITIAL_GROUP_RECORDS.length > 0) {
-      console.log('[Firestore] Seeding initial Group Records to Cloud Firestore...');
-      const batch = writeBatch(db);
-      INITIAL_GROUP_RECORDS.forEach((grp) => {
-        const ref = doc(db, GROUP_RECORDS_COLLECTION, grp.id);
-        batch.set(ref, sanitizeForFirestore(grp));
-      });
-      await batch.commit();
-    }
+    // groupRecords: Do NOT auto-seed if empty. User manages their own group records.
+    // If the user wants sample groups, they can click "Nạp Lại Dữ Liệu Mẫu" in the UI.
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'seed_data');
   }

@@ -53,7 +53,6 @@ interface GroupManagementTableProps {
   onOpenBulkImportModal: () => void;
   onEditRecord?: (record: GroupRecord) => void;
   onClearAllRecords?: () => Promise<void>;
-  onRestoreSampleRecords?: () => Promise<void>;
 }
 
 export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
@@ -70,7 +69,6 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   onOpenBulkImportModal,
   onEditRecord,
   onClearAllRecords,
-  onRestoreSampleRecords,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const myStaffNameLower = (currentUser.name || '').trim().toLowerCase();
@@ -773,23 +771,6 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <span>Import Hàng Loạt</span>
             </button>
 
-            {/* Restore Sample Records when empty or on demand */}
-            {onRestoreSampleRecords && records.length === 0 && (
-              <button
-                type="button"
-                onClick={async () => {
-                  await onRestoreSampleRecords();
-                  setStaffActionToast('🎉 Đã nạp lại dữ liệu nhóm mẫu thành công!');
-                  setTimeout(() => setStaffActionToast(null), 3000);
-                }}
-                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-300 transition-colors shadow-2xs cursor-pointer"
-                title="Nạp lại dữ liệu mẫu các nhóm Facebook (Beautifull World, Movies World...)"
-              >
-                <Sparkles className="w-4 h-4 text-emerald-600" />
-                <span>Nạp Lại Dữ Liệu Mẫu</span>
-              </button>
-            )}
-
             {/* Clear All Group Records - Admin Only */}
             {records.length > 0 && isAdmin && (
               <button
@@ -1037,29 +1018,14 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <Users className="w-6 h-6" />
             </div>
             <div>
-              <p className="text-sm font-bold text-slate-700">Chưa có dữ liệu Group Facebook nào</p>
-              <p className="text-xs text-slate-500 mt-1">
+              <p className="text-sm font-bold text-slate-700">Bảng Quản Lý Group Hiện Đang Trống</p>
+              <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
                 {searchQuery || selectedStaffFilter !== 'ALL'
                   ? 'Không tìm thấy kết quả phù hợp với bộ lọc hiện tại'
-                  : 'Hãy bấm "Nạp Lại Dữ Liệu Mẫu", "Import Hàng Loạt", hoặc "+ Thêm Dòng Group Mới" để bắt đầu'}
+                  : 'Bảng đã được xóa trắng sẵn sàng để bạn tự nhập hoặc xóa dữ liệu. Mọi thay đổi đều được lưu trực tiếp vào cơ sở dữ liệu Cloud Firestore.'}
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
-              {onRestoreSampleRecords && (
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await onRestoreSampleRecords();
-                    setStaffActionToast('🎉 Đã nạp lại dữ liệu nhóm mẫu thành công!');
-                    setTimeout(() => setStaffActionToast(null), 3000);
-                  }}
-                  className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                  title="Nạp lại các nhóm Facebook mẫu ban đầu (Beautifull World, Movies World...)"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>Nạp Lại Dữ Liệu Mẫu (4 Nhóm)</span>
-                </button>
-              )}
               <button
                 type="button"
                 onClick={onOpenBulkImportModal}
@@ -1074,7 +1040,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                 className="inline-flex items-center space-x-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
-                <span>Thêm Dòng Group Đầu Tiên</span>
+                <span>+ Thêm Dòng Group Mới</span>
               </button>
             </div>
           </div>

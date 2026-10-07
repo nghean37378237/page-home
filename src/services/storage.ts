@@ -8,7 +8,7 @@ export const ACCOUNTS_STORAGE_KEY = 'fanpage_accounts_list_v1';
 export const ADMIN_SECURITY_KEY = 'fanpage_admin_security_v1';
 export const FULL_VIA_STORAGE_KEY = 'fanpage_full_vias_list_v2';
 export const CUSTOM_STAFF_KEY = 'fanpage_custom_staff_v1';
-export const GROUP_RECORDS_BACKUP_KEY = 'fanpage_group_records_safe_backup_v2';
+export const GROUP_RECORDS_BACKUP_KEY = 'fanpage_group_records_safe_backup_v3';
 
 export const DEFAULT_STAFF_MEMBERS = ['Anh Quỳnh', 'Bảo', 'Phương My'];
 
@@ -153,30 +153,24 @@ export function migrateAndPreserveLocalStorage(): {
       }
     }
 
-    const groupKeys = [
+    // Dữ liệu bảng Group do người dùng tự nhập và xóa trên Firestore,
+    // xóa bỏ toàn bộ cache / backup cục bộ cũ để không tự động khôi phục lại dòng đã xóa
+    const allGroupLegacyKeys = [
       GROUP_RECORDS_BACKUP_KEY,
+      'fanpage_group_records_safe_backup_v3',
+      'fanpage_group_records_safe_backup_v2',
       'fanpage_group_records_backup_v1',
       'fanpage_group_records',
       'fanpage_groups_list',
       'group_records',
       'fanpage_safe_backup_groups',
     ];
-
-    for (const key of groupKeys) {
-      const raw = localStorage.getItem(key);
-      if (raw) {
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            foundGroups = parsed;
-            localStorage.setItem(GROUP_RECORDS_BACKUP_KEY, raw);
-            break;
-          }
-        } catch {
-          // continue
-        }
-      }
-    }
+    allGroupLegacyKeys.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {}
+    });
+    foundGroups = [];
   } catch (error) {
     console.error('Lỗi kiểm tra localStorage cũ:', error);
   }
@@ -184,11 +178,28 @@ export function migrateAndPreserveLocalStorage(): {
   return { foundRecords, foundVias, foundGroups };
 }
 
-// Lưu bản sao an toàn dữ liệu Group vào localStorage để bảo toàn vĩnh viễn
+// Lưu bản sao dữ liệu Group vào localStorage (chỉ khi có dữ liệu)
 export function saveLocalGroupBackup(groups: GroupRecord[]): void {
   try {
+    const allGroupLegacyKeys = [
+      'fanpage_group_records_safe_backup_v2',
+      'fanpage_group_records_backup_v1',
+      'fanpage_group_records',
+      'fanpage_groups_list',
+      'group_records',
+      'fanpage_safe_backup_groups',
+    ];
+    allGroupLegacyKeys.forEach((k) => {
+      try {
+        localStorage.removeItem(k);
+      } catch {}
+    });
+
     if (groups && Array.isArray(groups) && groups.length > 0) {
       localStorage.setItem(GROUP_RECORDS_BACKUP_KEY, JSON.stringify(groups));
+    } else {
+      localStorage.removeItem(GROUP_RECORDS_BACKUP_KEY);
+      localStorage.removeItem('fanpage_group_records_safe_backup_v3');
     }
   } catch (e) {
     console.warn('[Storage] Lỗi lưu bản sao lưu groups vào localStorage:', e);
@@ -215,6 +226,14 @@ export function clearAllLegacyLocalStorage(): void {
     localStorage.removeItem(USER_STORAGE_KEY);
     localStorage.removeItem('fanpage_current_user_session_v1');
     localStorage.removeItem('fanpage_current_user_session');
+    localStorage.removeItem(GROUP_RECORDS_BACKUP_KEY);
+    localStorage.removeItem('fanpage_group_records_safe_backup_v3');
+    localStorage.removeItem('fanpage_group_records_safe_backup_v2');
+    localStorage.removeItem('fanpage_group_records_backup_v1');
+    localStorage.removeItem('fanpage_group_records');
+    localStorage.removeItem('fanpage_groups_list');
+    localStorage.removeItem('group_records');
+    localStorage.removeItem('fanpage_safe_backup_groups');
   } catch (e) {
     console.warn(e);
   }
