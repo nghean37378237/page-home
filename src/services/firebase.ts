@@ -488,8 +488,8 @@ export function subscribeToGroupRecords(
       onData(list);
     },
     (error) => {
+      console.warn('[Firestore] Live groupRecords listener warning:', error);
       if (onError) onError(error);
-      handleFirestoreError(error, OperationType.LIST, GROUP_RECORDS_COLLECTION);
     }
   );
 }

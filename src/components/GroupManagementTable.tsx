@@ -53,6 +53,7 @@ interface GroupManagementTableProps {
   onOpenBulkImportModal: () => void;
   onEditRecord?: (record: GroupRecord) => void;
   onClearAllRecords?: () => Promise<void>;
+  onRefreshRecords?: () => Promise<void>;
 }
 
 export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
@@ -69,6 +70,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   onOpenBulkImportModal,
   onEditRecord,
   onClearAllRecords,
+  onRefreshRecords,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const myStaffNameLower = (currentUser.name || '').trim().toLowerCase();
@@ -770,6 +772,27 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <Upload className="w-4 h-4" />
               <span>Import Hàng Loạt</span>
             </button>
+
+            {/* Refresh / Sync Live Database */}
+            {onRefreshRecords && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    await onRefreshRecords();
+                    setStaffActionToast('🔄 Đã làm mới & đồng bộ trực tiếp với CSDL Google Cloud Firestore!');
+                    setTimeout(() => setStaffActionToast(null), 3000);
+                  } catch (e) {
+                    console.error(e);
+                  }
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-white hover:bg-slate-100 text-sky-700 rounded-xl text-xs font-bold border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+                title="Làm mới và đồng bộ dữ liệu nhóm tức thì từ Cloud Firestore"
+              >
+                <RefreshCw className="w-4 h-4 text-sky-600" />
+                <span>Làm Mới CSDL</span>
+              </button>
+            )}
 
             {/* Clear All Group Records - Admin Only */}
             {records.length > 0 && isAdmin && (

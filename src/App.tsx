@@ -32,6 +32,7 @@ import {
   batchSaveCloudGroupRecords,
   batchDeleteCloudGroupRecords,
   clearAllCloudGroupRecords,
+  getCloudGroupRecords,
   setCloudProxy,
   updateCloudProxy,
   deleteCloudProxy,
@@ -222,6 +223,14 @@ export default function App() {
           setGroupRecords(list);
           saveLocalGroupBackup(list);
         });
+
+        // Fetch direct group records immediately on connect
+        getCloudGroupRecords()
+          .then((list) => {
+            setGroupRecords(list || []);
+            saveLocalGroupBackup(list || []);
+          })
+          .catch((err) => console.warn('[App] Direct group fetch warning:', err));
 
         // 6. Listen to live proxies in Cloud Firestore
         unsubProxies = subscribeToProxies((cloudProxies) => {
@@ -1407,7 +1416,11 @@ export default function App() {
       saveLocalGroupBackup(next);
       return next;
     });
-    await deleteCloudGroupRecord(id);
+    try {
+      await deleteCloudGroupRecord(id);
+    } catch (err) {
+      console.warn('Lỗi khi xóa trên cloud (đã xóa cục bộ):', err);
+    }
   };
 
   const handleBatchSaveGroupRecords = async (newRecords: GroupRecord[]) => {
@@ -1428,13 +1441,21 @@ export default function App() {
       saveLocalGroupBackup(next);
       return next;
     });
-    await batchDeleteCloudGroupRecords(ids);
+    try {
+      await batchDeleteCloudGroupRecords(ids);
+    } catch (err) {
+      console.warn('Lỗi khi xóa hàng loạt trên cloud (đã xóa cục bộ):', err);
+    }
   };
 
   const handleClearAllGroupRecords = async () => {
     setGroupRecords([]);
     saveLocalGroupBackup([]);
-    await clearAllCloudGroupRecords();
+    try {
+      await clearAllCloudGroupRecords();
+    } catch (err) {
+      console.warn('Lỗi khi xóa trắng trên cloud (đã xóa cục bộ):', err);
+    }
   };
 
   // Proxy handlers (Add, Update, Delete, Batch, Edit)
@@ -2258,6 +2279,11 @@ export default function App() {
             }}
             onOpenBulkImportModal={() => setIsBulkImportGroupOpen(true)}
             onClearAllRecords={handleClearAllGroupRecords}
+            onRefreshRecords={async () => {
+              const list = await getCloudGroupRecords();
+              setGroupRecords(list || []);
+              saveLocalGroupBackup(list || []);
+            }}
           />
         ) : activeTab === 'proxy' ? (
           <ProxyAppView
