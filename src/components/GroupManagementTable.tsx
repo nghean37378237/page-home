@@ -52,6 +52,7 @@ interface GroupManagementTableProps {
   onOpenBulkImportModal: () => void;
   onEditRecord?: (record: GroupRecord) => void;
   onClearAllRecords?: () => Promise<void>;
+  onRestoreSampleRecords?: () => Promise<void>;
 }
 
 export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
@@ -67,6 +68,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   onOpenBulkImportModal,
   onEditRecord,
   onClearAllRecords,
+  onRestoreSampleRecords,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const myStaffNameLower = (currentUser.name || '').trim().toLowerCase();
@@ -623,6 +625,23 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <span>Import Hàng Loạt</span>
             </button>
 
+            {/* Restore Sample Records when empty or on demand */}
+            {onRestoreSampleRecords && records.length === 0 && (
+              <button
+                type="button"
+                onClick={async () => {
+                  await onRestoreSampleRecords();
+                  setStaffActionToast('🎉 Đã nạp lại dữ liệu nhóm mẫu thành công!');
+                  setTimeout(() => setStaffActionToast(null), 3000);
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold border border-emerald-300 transition-colors shadow-2xs cursor-pointer"
+                title="Nạp lại dữ liệu mẫu các nhóm Facebook (Beautifull World, Movies World...)"
+              >
+                <Sparkles className="w-4 h-4 text-emerald-600" />
+                <span>Nạp Lại Dữ Liệu Mẫu</span>
+              </button>
+            )}
+
             {/* Clear All Group Records */}
             {records.length > 0 && (
               <button
@@ -857,17 +876,42 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <p className="text-xs text-slate-500 mt-1">
                 {searchQuery || selectedStaffFilter !== 'ALL'
                   ? 'Không tìm thấy kết quả phù hợp với bộ lọc hiện tại'
-                  : 'Hãy bấm "+ Thêm Dòng Group Mới" hoặc "Import Hàng Loạt" để bắt đầu'}
+                  : 'Hãy bấm "Nạp Lại Dữ Liệu Mẫu", "Import Hàng Loạt", hoặc "+ Thêm Dòng Group Mới" để bắt đầu'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => onOpenAddModal()}
-              className="inline-flex items-center space-x-1.5 px-4 py-2 bg-red-600 text-white rounded-xl text-xs font-bold hover:bg-red-700 transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Thêm Dòng Group Đầu Tiên</span>
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2 pt-2">
+              {onRestoreSampleRecords && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await onRestoreSampleRecords();
+                    setStaffActionToast('🎉 Đã nạp lại dữ liệu nhóm mẫu thành công!');
+                    setTimeout(() => setStaffActionToast(null), 3000);
+                  }}
+                  className="inline-flex items-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+                  title="Nạp lại các nhóm Facebook mẫu ban đầu (Beautifull World, Movies World...)"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Nạp Lại Dữ Liệu Mẫu (4 Nhóm)</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onOpenBulkImportModal}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+              >
+                <Upload className="w-4 h-4" />
+                <span>Import Hàng Loạt Từ Excel / Text</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenAddModal()}
+                className="inline-flex items-center space-x-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-2xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Thêm Dòng Group Đầu Tiên</span>
+              </button>
+            </div>
           </div>
         ) : viewMode === 'grouped' ? (
           /* GROUPED VIEW */

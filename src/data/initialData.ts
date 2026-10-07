@@ -1,6 +1,63 @@
 import { PageRecord, GroupRecord, ProxyItem } from '../types';
 
-export const INITIAL_GROUP_RECORDS: GroupRecord[] = [];
+export const INITIAL_GROUP_RECORDS: GroupRecord[] = [
+  {
+    id: 'grp-seed-1',
+    groupId: 'grp-289880638621489',
+    groupName: 'Beautifull World ✅',
+    groupLink: 'https://www.facebook.com/groups/289880638621489',
+    uid: '100060665184656',
+    viaName: 'Lucas Santos',
+    joinStatus: 'Đã Jon',
+    note: '282',
+    isHighlighted: false,
+    staffName: 'Anh Quỳnh',
+    createdAt: '16/09/2026',
+    updatedAt: '16/09/2026',
+  },
+  {
+    id: 'grp-seed-2',
+    groupId: 'grp-289880638621489',
+    groupName: 'Beautifull World ✅',
+    groupLink: 'https://www.facebook.com/groups/289880638621489',
+    uid: '100023228976334',
+    viaName: 'Tolga Yagmur',
+    joinStatus: 'Jon chờ duyệt',
+    note: 'VHH',
+    isHighlighted: true,
+    staffName: 'Anh Quỳnh',
+    createdAt: '16/09/2026',
+    updatedAt: '16/09/2026',
+  },
+  {
+    id: 'grp-seed-3',
+    groupId: 'grp-1055686641112045',
+    groupName: 'Movies World ✅',
+    groupLink: 'https://www.facebook.com/groups/1055686641112045',
+    uid: '100060467292965',
+    viaName: 'Ansh Patial',
+    joinStatus: 'Chưa',
+    note: '956',
+    isHighlighted: false,
+    staffName: 'Bảo',
+    createdAt: '16/09/2026',
+    updatedAt: '16/09/2026',
+  },
+  {
+    id: 'grp-seed-4',
+    groupId: 'grp-1055686641112045',
+    groupName: 'Movies World ✅',
+    groupLink: 'https://www.facebook.com/groups/1055686641112045',
+    uid: '100091827364512',
+    viaName: 'David Miller',
+    joinStatus: 'Đã Jon',
+    note: 'Hạn Chế',
+    isHighlighted: false,
+    staffName: 'Phương My',
+    createdAt: '16/09/2026',
+    updatedAt: '16/09/2026',
+  },
+];
 
 export const INITIAL_PAGE_RECORDS: PageRecord[] = [
   {

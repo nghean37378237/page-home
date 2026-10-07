@@ -46,6 +46,8 @@ import {
   clearCurrentUserSession,
   clearAllLegacyLocalStorage,
   migrateAndPreserveLocalStorage,
+  saveLocalGroupBackup,
+  getLocalGroupBackup,
   DEFAULT_STAFF_MEMBERS,
   INITIAL_ACCOUNTS,
   DEFAULT_ADMIN_USER,
@@ -53,7 +55,7 @@ import {
   DEFAULT_ADMIN_SETTINGS,
   AdminSecuritySettings,
 } from './services/storage';
-import { INITIAL_PROXIES } from './data/initialData';
+import { INITIAL_PROXIES, INITIAL_GROUP_RECORDS } from './data/initialData';
 import { SheetHeader } from './components/SheetHeader';
 import { SheetFilterBar } from './components/SheetFilterBar';
 import { FanpageSheetTable } from './components/FanpageSheetTable';
@@ -178,22 +180,9 @@ export default function App() {
         // Seed default initial data into Firestore if database is empty
         await seedCloudFirestoreIfEmpty();
 
-        // Xóa trắng dữ liệu group mặc định theo yêu cầu của người dùng
-        const hasClearedGroups = localStorage.getItem('user_requested_clear_group_records_v2');
-        if (!hasClearedGroups) {
-          try {
-            await clearAllCloudGroupRecords();
-            localStorage.setItem('user_requested_clear_group_records_v2', 'true');
-            setGroupRecords([]);
-            console.log('[App] Đã xóa trắng dữ liệu group theo yêu cầu của người dùng');
-          } catch (e) {
-            console.error('[App] Lỗi xóa trắng group records:', e);
-          }
-        }
-
         // Tự động khôi phục dữ liệu từ localStorage cũ (Vercel) nếu có
         try {
-          const { foundRecords, foundVias } = migrateAndPreserveLocalStorage();
+          const { foundRecords, foundVias, foundGroups } = migrateAndPreserveLocalStorage();
           if (foundRecords.length > 0) {
             console.log(`[App] Tự động bảo toàn và đồng bộ ${foundRecords.length} dòng dữ liệu từ localStorage`);
             await batchSaveCloudPageRecords(foundRecords);
@@ -201,6 +190,10 @@ export default function App() {
           if (foundVias.length > 0) {
             console.log(`[App] Tự động bảo toàn và đồng bộ ${foundVias.length} nick via từ localStorage`);
             await batchSaveCloudVias(foundVias);
+          }
+          if (foundGroups && foundGroups.length > 0) {
+            console.log(`[App] Tự động bảo toàn và đồng bộ ${foundGroups.length} nhóm Group từ localStorage`);
+            await batchSaveCloudGroupRecords(foundGroups);
           }
         } catch (migErr) {
           console.warn('[App] Không có dữ liệu cũ cần migrate:', migErr);
@@ -229,7 +222,19 @@ export default function App() {
 
         // 5. Listen to live group records in Cloud Firestore
         unsubGroups = subscribeToGroupRecords((cloudGroups) => {
-          setGroupRecords(cloudGroups);
+          if (cloudGroups && cloudGroups.length > 0) {
+            setGroupRecords(cloudGroups);
+            saveLocalGroupBackup(cloudGroups);
+          } else {
+            // Nếu Firestore trống, kiểm tra bản sao lưu an toàn trong localStorage
+            const localBackup = getLocalGroupBackup();
+            if (localBackup && localBackup.length > 0) {
+              setGroupRecords(localBackup);
+              batchSaveCloudGroupRecords(localBackup).catch(console.error);
+            } else {
+              setGroupRecords([]);
+            }
+          }
         });
 
         // 6. Listen to live proxies in Cloud Firestore
@@ -1393,19 +1398,29 @@ export default function App() {
 
   // Group Records handlers (Add, Update, Delete, Batch)
   const handleAddGroupRecord = async (record: GroupRecord) => {
-    setGroupRecords((prev) => [...prev.filter((g) => g.id !== record.id), record]);
+    setGroupRecords((prev) => {
+      const next = [...prev.filter((g) => g.id !== record.id), record];
+      saveLocalGroupBackup(next);
+      return next;
+    });
     await setCloudGroupRecord(record);
   };
 
   const handleUpdateGroupRecord = async (id: string, updates: Partial<GroupRecord>) => {
-    setGroupRecords((prev) =>
-      prev.map((g) => (g.id === id ? { ...g, ...updates } : g))
-    );
+    setGroupRecords((prev) => {
+      const next = prev.map((g) => (g.id === id ? { ...g, ...updates } : g));
+      saveLocalGroupBackup(next);
+      return next;
+    });
     await updateCloudGroupRecord(id, updates);
   };
 
   const handleDeleteGroupRecord = async (id: string) => {
-    setGroupRecords((prev) => prev.filter((g) => g.id !== id));
+    setGroupRecords((prev) => {
+      const next = prev.filter((g) => g.id !== id);
+      saveLocalGroupBackup(next);
+      return next;
+    });
     await deleteCloudGroupRecord(id);
   };
 
@@ -1413,20 +1428,33 @@ export default function App() {
     setGroupRecords((prev) => {
       const incomingMap = new Map(newRecords.map((r) => [r.id, r]));
       const kept = prev.filter((r) => !incomingMap.has(r.id));
-      return [...kept, ...newRecords];
+      const next = [...kept, ...newRecords];
+      saveLocalGroupBackup(next);
+      return next;
     });
     await batchSaveCloudGroupRecords(newRecords);
   };
 
   const handleBatchDeleteGroupRecords = async (ids: string[]) => {
     const idSet = new Set(ids);
-    setGroupRecords((prev) => prev.filter((g) => !idSet.has(g.id)));
+    setGroupRecords((prev) => {
+      const next = prev.filter((g) => !idSet.has(g.id));
+      saveLocalGroupBackup(next);
+      return next;
+    });
     await batchDeleteCloudGroupRecords(ids);
   };
 
   const handleClearAllGroupRecords = async () => {
     setGroupRecords([]);
+    saveLocalGroupBackup([]);
     await clearAllCloudGroupRecords();
+  };
+
+  const handleRestoreSampleGroupRecords = async () => {
+    setGroupRecords(INITIAL_GROUP_RECORDS);
+    saveLocalGroupBackup(INITIAL_GROUP_RECORDS);
+    await batchSaveCloudGroupRecords(INITIAL_GROUP_RECORDS);
   };
 
   // Proxy handlers (Add, Update, Delete, Batch, Edit)
@@ -2249,6 +2277,7 @@ export default function App() {
             }}
             onOpenBulkImportModal={() => setIsBulkImportGroupOpen(true)}
             onClearAllRecords={handleClearAllGroupRecords}
+            onRestoreSampleRecords={handleRestoreSampleGroupRecords}
           />
         ) : activeTab === 'proxy' ? (
           <ProxyAppView

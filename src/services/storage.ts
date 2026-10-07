@@ -1,4 +1,4 @@
-import { PageRecord, AppUser, UserAccount, FullViaItem } from '../types';
+import { PageRecord, AppUser, UserAccount, FullViaItem, GroupRecord } from '../types';
 import { INITIAL_PAGE_RECORDS } from '../data/initialData';
 
 // Storage keys previously used for local storage - retained to purge legacy cache
@@ -8,6 +8,7 @@ export const ACCOUNTS_STORAGE_KEY = 'fanpage_accounts_list_v1';
 export const ADMIN_SECURITY_KEY = 'fanpage_admin_security_v1';
 export const FULL_VIA_STORAGE_KEY = 'fanpage_full_vias_list_v2';
 export const CUSTOM_STAFF_KEY = 'fanpage_custom_staff_v1';
+export const GROUP_RECORDS_BACKUP_KEY = 'fanpage_group_records_safe_backup_v2';
 
 export const DEFAULT_STAFF_MEMBERS = ['Anh Quỳnh', 'Bảo', 'Phương My'];
 
@@ -97,9 +98,11 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSecuritySettings = {
 export function migrateAndPreserveLocalStorage(): {
   foundRecords: PageRecord[];
   foundVias: FullViaItem[];
+  foundGroups: GroupRecord[];
 } {
   let foundRecords: PageRecord[] = [];
   let foundVias: FullViaItem[] = [];
+  let foundGroups: GroupRecord[] = [];
 
   try {
     const recordKeys = [
@@ -149,11 +152,61 @@ export function migrateAndPreserveLocalStorage(): {
         }
       }
     }
+
+    const groupKeys = [
+      GROUP_RECORDS_BACKUP_KEY,
+      'fanpage_group_records_backup_v1',
+      'fanpage_group_records',
+      'fanpage_groups_list',
+      'group_records',
+      'fanpage_safe_backup_groups',
+    ];
+
+    for (const key of groupKeys) {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            foundGroups = parsed;
+            localStorage.setItem(GROUP_RECORDS_BACKUP_KEY, raw);
+            break;
+          }
+        } catch {
+          // continue
+        }
+      }
+    }
   } catch (error) {
     console.error('Lỗi kiểm tra localStorage cũ:', error);
   }
 
-  return { foundRecords, foundVias };
+  return { foundRecords, foundVias, foundGroups };
+}
+
+// Lưu bản sao an toàn dữ liệu Group vào localStorage để bảo toàn vĩnh viễn
+export function saveLocalGroupBackup(groups: GroupRecord[]): void {
+  try {
+    if (groups && Array.isArray(groups) && groups.length > 0) {
+      localStorage.setItem(GROUP_RECORDS_BACKUP_KEY, JSON.stringify(groups));
+    }
+  } catch (e) {
+    console.warn('[Storage] Lỗi lưu bản sao lưu groups vào localStorage:', e);
+  }
+}
+
+// Đọc bản sao an toàn dữ liệu Group từ localStorage
+export function getLocalGroupBackup(): GroupRecord[] {
+  try {
+    const raw = localStorage.getItem(GROUP_RECORDS_BACKUP_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('[Storage] Lỗi đọc bản sao lưu groups từ localStorage:', e);
+  }
+  return [];
 }
 
 // Giữ hàm để tương thích và xóa phiên đăng nhập cũ trong localStorage để bắt buộc đăng nhập

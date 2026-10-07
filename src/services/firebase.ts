@@ -329,6 +329,18 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       });
       await batch.commit();
     }
+
+    // Check if groupRecords collection has data
+    const groupsSnapshot = await getDocs(collection(db, GROUP_RECORDS_COLLECTION));
+    if (groupsSnapshot.empty && INITIAL_GROUP_RECORDS.length > 0) {
+      console.log('[Firestore] Seeding initial Group Records to Cloud Firestore...');
+      const batch = writeBatch(db);
+      INITIAL_GROUP_RECORDS.forEach((grp) => {
+        const ref = doc(db, GROUP_RECORDS_COLLECTION, grp.id);
+        batch.set(ref, sanitizeForFirestore(grp));
+      });
+      await batch.commit();
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'seed_data');
   }
