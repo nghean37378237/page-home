@@ -26,6 +26,7 @@ import {
   setCloudSharedAccount,
   updateCloudSharedAccount,
   deleteCloudSharedAccount,
+  batchSaveCloudSharedAccounts,
   setCloudGroupRecord,
   updateCloudGroupRecord,
   deleteCloudGroupRecord,
@@ -161,63 +162,94 @@ export default function App() {
   const [editingRecord, setEditingRecord] = useState<PageRecord | null>(null);
   const [presetViaData, setPresetViaData] = useState<{ viaUid: string; staffName: string } | null>(null);
 
-  // 1. Initial boot: purge old localStorage and establish real-time connection with Cloud Firestore
+  // 1. Initial boot: purge legacy localStorage and establish basic auth/settings connection
   useEffect(() => {
     clearAllLegacyLocalStorage();
 
-    let unsubRecords: (() => void) | undefined;
-    let unsubVias: (() => void) | undefined;
     let unsubAccounts: (() => void) | undefined;
     let unsubSettings: (() => void) | undefined;
-    let unsubSharedAccounts: (() => void) | undefined;
-    let unsubGroups: (() => void) | undefined;
-    let unsubProxies: (() => void) | undefined;
 
-    async function initCloudFirestore() {
+    async function initBaseCloudFirestore() {
       try {
         const connected = await testFirestoreConnection();
         setIsFirestoreConnected(connected);
 
-        // Seed default initial data into Firestore if database is empty
-        await seedCloudFirestoreIfEmpty();
-
-        // Tự động khôi phục dữ liệu từ localStorage cũ (Vercel) nếu có
-        try {
-          const { foundRecords, foundVias } = migrateAndPreserveLocalStorage();
-          if (foundRecords.length > 0) {
-            console.log(`[App] Tự động bảo toàn và đồng bộ ${foundRecords.length} dòng dữ liệu từ localStorage`);
-            await batchSaveCloudPageRecords(foundRecords);
-          }
-          if (foundVias.length > 0) {
-            console.log(`[App] Tự động bảo toàn và đồng bộ ${foundVias.length} nick via từ localStorage`);
-            await batchSaveCloudVias(foundVias);
-          }
-        } catch (migErr) {
-          console.warn('[App] Không có dữ liệu cũ cần migrate:', migErr);
-        }
-
-        // 1. Listen to live page records in Cloud Firestore
-        unsubRecords = subscribeToPageRecords((cloudRecords) => {
-          setRecords(cloudRecords);
-          setIsLoadingFirestore(false);
-        });
-
-        // 2. Listen to live full vias in Cloud Firestore
-        unsubVias = subscribeToVias((cloudVias) => {
-          setViaList(cloudVias);
-        });
-
-        // 3. Listen to live accounts in Cloud Firestore
+        // 1. Listen to live accounts (needed by login screen)
         unsubAccounts = subscribeToAccounts((cloudAccounts) => {
           setAccounts(cloudAccounts);
         });
 
-        // 4. Listen to live shared website accounts in Cloud Firestore
+        // 2. Listen to live settings (branding & Google login policy)
+        unsubSettings = subscribeToSettings((cloudSettings) => {
+          if (cloudSettings) {
+            setAdminSettings({
+              adminPin: cloudSettings.adminPin || DEFAULT_ADMIN_SETTINGS.adminPin,
+              adminName: cloudSettings.adminName || DEFAULT_ADMIN_SETTINGS.adminName,
+              adminEmail: cloudSettings.adminEmail || DEFAULT_ADMIN_SETTINGS.adminEmail,
+              requireApproval: cloudSettings.requireApproval ?? DEFAULT_ADMIN_SETTINGS.requireApproval,
+              requireGoogleLoginOnly: cloudSettings.requireGoogleLoginOnly ?? DEFAULT_ADMIN_SETTINGS.requireGoogleLoginOnly,
+            });
+            if (Array.isArray(cloudSettings.customStaffList)) {
+              setCustomStaffList(cloudSettings.customStaffList);
+            }
+          }
+        });
+
+        setIsLoadingFirestore(false);
+      } catch (err) {
+        console.error('[App] Lỗi kết nối Cloud Firestore ban đầu:', err);
+        setIsLoadingFirestore(false);
+      }
+    }
+
+    initBaseCloudFirestore();
+
+    return () => {
+      unsubAccounts?.();
+      unsubSettings?.();
+    };
+  }, []);
+
+  // 2. Authenticated Data Lifecycle: ZERO-LEAK MEMORY SHIELD
+  // Only subscribe to sensitive database tables (Fanpages, Vias, Passwords, 2FA, Groups, Proxies)
+  // AFTER a user is successfully verified. When logged out, automatically cancel listeners and wipe in-memory data!
+  useEffect(() => {
+    if (!currentUser.isAuthenticated || currentUser.id === 'guest') {
+      // Zero-out sensitive data arrays from RAM if not authenticated
+      setRecords([]);
+      setViaList([]);
+      setSharedAccounts([]);
+      setGroupRecords([]);
+      return;
+    }
+
+    let unsubRecords: (() => void) | undefined;
+    let unsubVias: (() => void) | undefined;
+    let unsubSharedAccounts: (() => void) | undefined;
+    let unsubGroups: (() => void) | undefined;
+    let unsubProxies: (() => void) | undefined;
+
+    async function initAuthenticatedSubscriptions() {
+      try {
+        // Seed default initial data into Firestore if database is empty (only when authenticated)
+        await seedCloudFirestoreIfEmpty();
+
+        // 1. Listen to live page records in Cloud Firestore
+        unsubRecords = subscribeToPageRecords((cloudRecords) => {
+          setRecords(cloudRecords);
+        });
+
+        // 2. Listen to live full vias (passwords, 2FA, raw strings)
+        unsubVias = subscribeToVias((cloudVias) => {
+          setViaList(cloudVias);
+        });
+
+        // 3. Listen to live shared website accounts
         unsubSharedAccounts = subscribeToSharedAccounts((cloudShared) => {
           setSharedAccounts(cloudShared);
         });
 
-        // 5. Listen to live group records in Cloud Firestore
+        // 4. Listen to live group records in Cloud Firestore
         unsubGroups = subscribeToGroupRecords((cloudGroups) => {
           const list = cloudGroups || [];
           setGroupRecords(list);
@@ -232,45 +264,28 @@ export default function App() {
           })
           .catch((err) => console.warn('[App] Direct group fetch warning:', err));
 
-        // 6. Listen to live proxies in Cloud Firestore
+        // 5. Listen to live proxies in Cloud Firestore
         unsubProxies = subscribeToProxies((cloudProxies) => {
           if (cloudProxies && cloudProxies.length > 0) {
             setProxies(cloudProxies);
           }
         });
-
-        // 7. Listen to live settings in Cloud Firestore
-        unsubSettings = subscribeToSettings((cloudSettings) => {
-          if (cloudSettings) {
-            setAdminSettings({
-              adminPin: cloudSettings.adminPin || DEFAULT_ADMIN_SETTINGS.adminPin,
-              adminName: cloudSettings.adminName || DEFAULT_ADMIN_SETTINGS.adminName,
-              adminEmail: cloudSettings.adminEmail || DEFAULT_ADMIN_SETTINGS.adminEmail,
-              requireApproval: cloudSettings.requireApproval ?? DEFAULT_ADMIN_SETTINGS.requireApproval,
-            });
-            if (Array.isArray(cloudSettings.customStaffList)) {
-              setCustomStaffList(cloudSettings.customStaffList);
-            }
-          }
-        });
       } catch (err) {
-        console.error('[App] Lỗi kết nối Cloud Firestore:', err);
-        setIsLoadingFirestore(false);
+        console.error('[App] Lỗi kết nối cơ sở dữ liệu đã xác thực:', err);
       }
     }
 
-    initCloudFirestore();
+    initAuthenticatedSubscriptions();
 
     return () => {
+      // Unsubscribe all active listeners on logout or session change
       unsubRecords?.();
       unsubVias?.();
-      unsubAccounts?.();
       unsubSharedAccounts?.();
       unsubGroups?.();
       unsubProxies?.();
-      unsubSettings?.();
     };
-  }, []);
+  }, [currentUser.isAuthenticated]);
 
   // Save current active tab session
   useEffect(() => {
@@ -559,6 +574,12 @@ export default function App() {
   const handleLogout = () => {
     clearCurrentUserSession();
     setCurrentUser(GUEST_USER);
+    // Sanitize in-memory sensitive collections immediately to prevent memory leaks
+    setRecords([]);
+    setViaList([]);
+    setSharedAccounts([]);
+    setGroupRecords([]);
+    setProxies([]);
     setAuthModalTab('login');
     setIsAuthModalOpen(true);
   };
@@ -1859,7 +1880,7 @@ export default function App() {
     return (
       <LoginScreen
         accounts={accounts}
-        adminPin={adminSettings.adminPin}
+        onVerifyAdminPin={(inputPin) => inputPin.trim() === adminSettings.adminPin.trim()}
         adminName={adminSettings.adminName}
         adminEmail={adminSettings.adminEmail}
         requireGoogleOnly={adminSettings.requireGoogleLoginOnly}

@@ -26,7 +26,8 @@ import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
 interface LoginScreenProps {
   accounts: UserAccount[];
-  adminPin: string;
+  adminPin?: string;
+  onVerifyAdminPin?: (pin: string) => boolean | Promise<boolean>;
   adminName?: string;
   adminEmail?: string;
   requireGoogleOnly?: boolean;
@@ -43,6 +44,7 @@ interface LoginScreenProps {
 export const LoginScreen: React.FC<LoginScreenProps> = ({
   accounts: propAccounts,
   adminPin,
+  onVerifyAdminPin,
   adminName,
   adminEmail,
   requireGoogleOnly = true,
@@ -105,6 +107,30 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [adminPinInput, setAdminPinInput] = useState<string>('');
   const [showAdminPin, setShowAdminPin] = useState<boolean>(false);
   const [adminError, setAdminError] = useState<string | null>(null);
+
+  // Anti-Brute Force Protection States & Lockout Timers
+  const [adminFailedAttempts, setAdminFailedAttempts] = useState<number>(0);
+  const [adminLockoutSeconds, setAdminLockoutSeconds] = useState<number>(0);
+  const [staffFailedAttempts, setStaffFailedAttempts] = useState<number>(0);
+  const [staffLockoutSeconds, setStaffLockoutSeconds] = useState<number>(0);
+
+  // Countdown timer for Admin Lockout
+  useEffect(() => {
+    if (adminLockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setAdminLockoutSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [adminLockoutSeconds]);
+
+  // Countdown timer for Staff Lockout
+  useEffect(() => {
+    if (staffLockoutSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setStaffLockoutSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [staffLockoutSeconds]);
 
   // Google Sign-In Flow
   const [isGoogleChooserOpen, setIsGoogleChooserOpen] = useState(false);
@@ -232,12 +258,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       return;
     }
 
-    // Verify PIN safely (string comparison)
+    // Verify PIN safely with anti-brute force lock
     const expectedPin = String(account.pin ?? '123456').trim();
     if (expectedPin !== staffPinInput.trim()) {
-      setStaffError(`Mã PIN không chính xác cho tài khoản "${account.username}". Vui lòng thử lại hoặc yêu cầu Admin xem lại mã PIN.`);
+      const nextFails = staffFailedAttempts + 1;
+      setStaffFailedAttempts(nextFails);
+      if (nextFails >= 5) {
+        setStaffLockoutSeconds(60);
+        setStaffError('Hệ thống phát hiện nhập sai mã PIN quá 5 lần. Tạm khóa bảo vệ 60 giây để phòng chống dò mật khẩu!');
+      } else {
+        setStaffError(`Mã PIN không chính xác cho tài khoản "${account.username}". (Sai ${nextFails}/5 lần, nhập sai 5 lần sẽ khóa 60s)`);
+      }
       return;
     }
+
+    // Reset failed counter on successful staff login
+    setStaffFailedAttempts(0);
+    setStaffLockoutSeconds(0);
 
     // Login successful
     onLoginSuccess({
@@ -251,16 +288,27 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   };
 
   // 2. Handle Admin Login Submit
-  const handleAdminLogin = (e: React.FormEvent) => {
+  const handleAdminLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdminError(null);
+
+    if (adminLockoutSeconds > 0) {
+      setAdminError(`Tài khoản Admin đang tạm khóa. Vui lòng chờ ${adminLockoutSeconds} giây để thử lại.`);
+      return;
+    }
 
     if (!adminPinInput.trim()) {
       setAdminError('Vui lòng nhập mật khẩu Quản Lý (Admin)');
       return;
     }
 
-    if (adminPinInput.trim() === adminPin.trim()) {
+    const isPinValid = onVerifyAdminPin
+      ? await onVerifyAdminPin(adminPinInput.trim())
+      : (adminPin !== undefined && adminPinInput.trim() === adminPin.trim());
+
+    if (isPinValid) {
+      setAdminFailedAttempts(0);
+      setAdminLockoutSeconds(0);
       onLoginSuccess({
         id: 'admin',
         name: adminName || 'Quản Lý (Admin)',
@@ -270,7 +318,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         isAuthenticated: true,
       });
     } else {
-      setAdminError('Mật khẩu Quản Lý (Admin) không chính xác! Vui lòng nhập đúng mật khẩu đã thiết lập.');
+      const nextFails = adminFailedAttempts + 1;
+      setAdminFailedAttempts(nextFails);
+      if (nextFails >= 5) {
+        setAdminLockoutSeconds(60);
+        setAdminError('Hệ thống phát hiện nhập sai mật khẩu Quản Lý quá 5 lần. Tạm khóa bảo vệ 60 giây để phòng chống dò mật khẩu!');
+      } else {
+        setAdminError(`Mật khẩu Quản Lý (Admin) không chính xác! (Sai ${nextFails}/5 lần, nhập sai 5 lần sẽ khóa 60s)`);
+      }
     }
   };
 
@@ -462,7 +517,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     // Admin Verification
     if (pendingGoogleAuth.role === 'admin') {
-      if (googlePasswordInput.trim() === adminPin.trim()) {
+      const isPinValid = onVerifyAdminPin
+        ? onVerifyAdminPin(googlePasswordInput.trim())
+        : (adminPin !== undefined && googlePasswordInput.trim() === adminPin.trim());
+
+      if (isPinValid) {
         onLoginSuccess({
           id: 'admin',
           name: pendingGoogleAuth.adminName || adminName || 'Quản Lý (Admin)',
@@ -834,10 +893,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   <input
                     type={showStaffPin ? 'text' : 'password'}
                     id="input-staff-pin"
-                    placeholder="Nhập mã PIN của bạn..."
+                    disabled={staffLockoutSeconds > 0}
+                    placeholder={staffLockoutSeconds > 0 ? `Đang khóa (${staffLockoutSeconds}s)...` : "Nhập mã PIN của bạn..."}
                     value={staffPinInput}
                     onChange={(e) => setStaffPinInput(e.target.value)}
-                    className="w-full px-3 py-2.5 pr-10 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs font-mono focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                    className="w-full px-3 py-2.5 pr-10 bg-slate-950 border border-slate-700 disabled:opacity-50 rounded-xl text-white text-xs font-mono focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
                   />
                   <button
                     type="button"
@@ -853,10 +913,15 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <button
                 type="submit"
                 id="btn-submit-staff-login"
-                disabled={isCheckingLogin}
+                disabled={isCheckingLogin || staffLockoutSeconds > 0}
                 className="w-full py-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-2 group hover:scale-[1.01]"
               >
-                {isCheckingLogin ? (
+                {staffLockoutSeconds > 0 ? (
+                  <>
+                    <Clock className="w-4 h-4 animate-spin text-blue-200" />
+                    <span>⏳ Tạm Khóa Bảo Vệ ({staffLockoutSeconds}s)</span>
+                  </>
+                ) : isCheckingLogin ? (
                   <>
                     <Clock className="w-4 h-4 animate-spin" />
                     <span>Đang Xác Thực Tài Khoản...</span>
@@ -1304,10 +1369,11 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   <input
                     type={showAdminPin ? 'text' : 'password'}
                     id="input-admin-password"
-                    placeholder="Nhập mật khẩu Admin..."
+                    disabled={adminLockoutSeconds > 0}
+                    placeholder={adminLockoutSeconds > 0 ? `Đang khóa (${adminLockoutSeconds}s)...` : "Nhập mật khẩu Admin..."}
                     value={adminPinInput}
                     onChange={(e) => setAdminPinInput(e.target.value)}
-                    className="w-full px-3 py-2.5 pr-10 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs font-mono focus:ring-1 focus:ring-amber-500 focus:outline-hidden"
+                    className="w-full px-3 py-2.5 pr-10 bg-slate-950 border border-slate-700 disabled:opacity-50 rounded-xl text-white text-xs font-mono focus:ring-1 focus:ring-amber-500 focus:outline-hidden"
                     autoFocus
                   />
                   <button
@@ -1323,11 +1389,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <button
                 type="submit"
                 id="btn-submit-admin-login"
-                className="w-full py-3 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 text-white font-bold rounded-xl text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-2"
+                disabled={adminLockoutSeconds > 0}
+                className="w-full py-3 bg-amber-600 hover:bg-amber-500 active:bg-amber-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-2"
               >
-                <Shield className="w-4 h-4" />
-                <span>Đăng Nhập Quản Trị Viên (Admin)</span>
-                <ArrowRight className="w-4 h-4" />
+                {adminLockoutSeconds > 0 ? (
+                  <>
+                    <Clock className="w-4 h-4 animate-spin text-amber-200" />
+                    <span>⏳ Tạm Khóa An Toàn ({adminLockoutSeconds}s)</span>
+                  </>
+                ) : (
+                  <>
+                    <Shield className="w-4 h-4" />
+                    <span>Đăng Nhập Quản Trị Viên (Admin)</span>
+                    <ArrowRight className="w-4 h-4" />
+                  </>
+                )}
               </button>
 
               <div className="pt-1 text-center text-xs text-slate-400">

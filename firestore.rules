@@ -1,19 +1,33 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default-deny catch-all
+    // 1. Global Catch-All: Default-deny all unmatched paths
     match /{document=**} {
       allow read, write: if false;
     }
 
-    // Health / connection test doc
+    // 2. Health & Connection Ping Document
     match /test/{docId} {
-      allow read, write: if true;
+      allow read, write: if isValidId(docId);
     }
 
+    // --- Helper Functions for Security & Validation ---
     function isValidId(id) {
-      return id is string && id.size() > 0 && id.size() <= 128;
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-\\.]+$');
     }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn() && (
+        request.auth.token.email.lower() == 'myphuong2295@gmail.com' ||
+        request.auth.token.email.lower() == 'admin@gmail.com'
+      );
+    }
+
+    // --- Validation Helpers for Each Entity ---
 
     function isValidPageRecord(data) {
       return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
@@ -21,45 +35,105 @@ service cloud.firestore {
              data.pageName is string && data.pageName.size() <= 200 &&
              data.targetPosts is number &&
              data.actualPosts is number &&
-             data.isCompleted is bool;
+             data.isCompleted is bool &&
+             (!('pageLink' in data) || (data.pageLink is string && data.pageLink.size() <= 500)) &&
+             (!('viaUid' in data) || (data.viaUid is string && data.viaUid.size() <= 100)) &&
+             (!('fullVia' in data) || (data.fullVia is string && data.fullVia.size() <= 500)) &&
+             (!('bmNote' in data) || (data.bmNote is string && data.bmNote.size() <= 500)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+             (!('blockStatus' in data) || (data.blockStatus is string && data.blockStatus.size() <= 50)) &&
+             (!('postingMethod' in data) || (data.postingMethod is string && data.postingMethod.size() <= 50)) &&
+             (!('interaction' in data) || (data.interaction is string && data.interaction.size() <= 50)) &&
+             (!('date' in data) || (data.date is string && data.date.size() <= 50)) &&
+             (!('postingDate' in data) || (data.postingDate is string && data.postingDate.size() <= 50)) &&
+             (!('interactionDate' in data) || (data.interactionDate is string && data.interactionDate.size() <= 50)) &&
+             (!('likeCountStatus' in data) || (data.likeCountStatus is string && data.likeCountStatus.size() <= 50)) &&
+             (!('isViaError' in data) || data.isViaError is bool) &&
+             (!('viaStatus' in data) || (data.viaStatus is string && data.viaStatus.size() <= 50)) &&
+             (!('viaErrorNote' in data) || (data.viaErrorNote is string && data.viaErrorNote.size() <= 500));
     }
 
     function isValidViaItem(data) {
       return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
              data.uid is string && data.uid.size() <= 100 &&
-             data.staffName is string && data.staffName.size() <= 100;
+             data.staffName is string && data.staffName.size() <= 100 &&
+             (!('pass' in data) || (data.pass is string && data.pass.size() <= 200)) &&
+             (!('twoFa' in data) || (data.twoFa is string && data.twoFa.size() <= 200)) &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+             (!('isError' in data) || data.isError is bool) &&
+             (!('rawFullVia' in data) || (data.rawFullVia is string && data.rawFullVia.size() <= 500)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50));
     }
 
     function isValidAccount(data) {
       return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
-             data.username is string && data.username.size() <= 100 &&
+             data.username is string && data.username.size() > 0 && data.username.size() <= 100 &&
              data.role in ['admin', 'staff'] &&
              data.status in ['approved', 'pending', 'blocked'] &&
-             (!('pin' in data) || (data.pin is string && data.pin.size() <= 50));
+             (!('pin' in data) || (data.pin is string && data.pin.size() <= 50)) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 200)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
+             (!('approvedAt' in data) || (data.approvedAt is string && data.approvedAt.size() <= 50)) &&
+             (!('requestNote' in data) || (data.requestNote is string && data.requestNote.size() <= 500)) &&
+             (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 500));
     }
 
     function isValidSetting(data) {
-      return data.id is string && data.id.size() <= 128;
+      return data.id is string && data.id.size() <= 128 &&
+             (!('adminPin' in data) || (data.adminPin is string && data.adminPin.size() <= 50)) &&
+             (!('adminEmail' in data) || (data.adminEmail is string && data.adminEmail.size() <= 200)) &&
+             (!('adminName' in data) || (data.adminName is string && data.adminName.size() <= 100)) &&
+             (!('requireApproval' in data) || data.requireApproval is bool) &&
+             (!('requireGoogleLoginOnly' in data) || data.requireGoogleLoginOnly is bool) &&
+             (!('customStaffList' in data) || (data.customStaffList is list && data.customStaffList.size() <= 200));
     }
 
     function isValidSharedAccount(data) {
       return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
              data.websiteName is string && data.websiteName.size() <= 200 &&
              data.username is string && data.username.size() <= 200 &&
-             data.password is string && data.password.size() <= 200;
+             data.password is string && data.password.size() <= 200 &&
+             (!('websiteUrl' in data) || (data.websiteUrl is string && data.websiteUrl.size() <= 500)) &&
+             (!('twoFa' in data) || (data.twoFa is string && data.twoFa.size() <= 200)) &&
+             (!('assignedStaff' in data) || (data.assignedStaff is list && data.assignedStaff.size() <= 100)) &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
     }
 
     function isValidGroupRecord(data) {
       return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
-             (!('uid' in data) || (data.uid is string && data.uid.size() <= 100)) &&
-             (!('groupName' in data) || (data.groupName is string && data.groupName.size() <= 200));
+             data.groupName is string && data.groupName.size() <= 200 &&
+             data.uid is string && data.uid.size() <= 100 &&
+             (!('groupId' in data) || (data.groupId is string && data.groupId.size() <= 100)) &&
+             (!('groupLink' in data) || (data.groupLink is string && data.groupLink.size() <= 500)) &&
+             (!('viaName' in data) || (data.viaName is string && data.viaName.size() <= 100)) &&
+             (!('staffName' in data) || (data.staffName is string && data.staffName.size() <= 100)) &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
+             (!('joinStatus' in data) || (data.joinStatus in ['Đã Jon', 'Jon chờ duyệt', 'Chưa'])) &&
+             (!('isHighlighted' in data) || data.isHighlighted is bool) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
     }
 
     function isValidProxyItem(data) {
       return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
-             (!('ip' in data) || (data.ip is string && data.ip.size() <= 200));
+             data.ip is string && data.ip.size() <= 100 &&
+             data.port is string && data.port.size() <= 20 &&
+             (!('username' in data) || (data.username is string && data.username.size() <= 100)) &&
+             (!('password' in data) || (data.password is string && data.password.size() <= 100)) &&
+             (!('type' in data) || (data.type in ['http', 'socks5', 'https'])) &&
+             (!('status' in data) || (data.status in ['live', 'die', 'slow', 'unknown'])) &&
+             (!('assignedStaff' in data) || (data.assignedStaff is string && data.assignedStaff.size() <= 100)) &&
+             (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
     }
 
+    // --- Collection Match Rules ---
+
+    // 1. Page Records (Fanpages & Daily Progress)
     match /pageRecords/{recordId} {
       allow read: if true;
       allow create: if isValidId(recordId) && isValidPageRecord(request.resource.data);
@@ -67,6 +141,7 @@ service cloud.firestore {
       allow delete: if isValidId(recordId);
     }
 
+    // 2. Full Vias
     match /vias/{viaId} {
       allow read: if true;
       allow create: if isValidId(viaId) && isValidViaItem(request.resource.data);
@@ -74,20 +149,29 @@ service cloud.firestore {
       allow delete: if isValidId(viaId);
     }
 
+    // 3. User Accounts (Staff and Admin)
     match /accounts/{accountId} {
       allow read: if true;
-      allow create: if isValidId(accountId) && isValidAccount(request.resource.data);
-      allow update: if isValidId(accountId) && isValidAccount(request.resource.data);
-      allow delete: if isValidId(accountId);
+      // Prevent unauthorized creation of approved admin accounts
+      allow create: if isValidId(accountId) && isValidAccount(request.resource.data) &&
+                       (request.resource.data.role == 'staff' || isSuperAdmin());
+      // Prevent unauthorized privilege escalation from staff to admin
+      allow update: if isValidId(accountId) && isValidAccount(request.resource.data) &&
+                       (request.resource.data.role == resource.data.role || isSuperAdmin());
+      // Protect master admin account from being deleted
+      allow delete: if isValidId(accountId) && accountId != 'admin' &&
+                       (!('role' in resource.data) || resource.data.role != 'admin' || isSuperAdmin());
     }
 
+    // 4. System Settings
     match /settings/{settingId} {
       allow read: if true;
       allow create: if isValidId(settingId) && isValidSetting(request.resource.data);
       allow update: if isValidId(settingId) && isValidSetting(request.resource.data);
-      allow delete: if isValidId(settingId);
+      allow delete: if isValidId(settingId) && isSuperAdmin();
     }
 
+    // 5. Shared Website & Tool Accounts
     match /sharedAccounts/{accountId} {
       allow read: if true;
       allow create: if isValidId(accountId) && isValidSharedAccount(request.resource.data);
@@ -95,6 +179,7 @@ service cloud.firestore {
       allow delete: if isValidId(accountId);
     }
 
+    // 6. Group Facebook Records
     match /groupRecords/{recordId} {
       allow read: if true;
       allow create: if isValidId(recordId) && isValidGroupRecord(request.resource.data);
@@ -102,6 +187,7 @@ service cloud.firestore {
       allow delete: if isValidId(recordId);
     }
 
+    // 7. Proxies
     match /proxies/{proxyId} {
       allow read: if true;
       allow create: if isValidId(proxyId) && isValidProxyItem(request.resource.data);

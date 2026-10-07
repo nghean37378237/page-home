@@ -94,6 +94,45 @@
         "updatedAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["id", "websiteName", "username", "password"]
+    },
+    "GroupRecord": {
+      "title": "GroupRecord",
+      "description": "Facebook group management record and via joining status",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "groupId": { "type": "string", "maxLength": 100 },
+        "groupName": { "type": "string", "maxLength": 200 },
+        "groupLink": { "type": "string", "maxLength": 500 },
+        "uid": { "type": "string", "maxLength": 100 },
+        "viaName": { "type": "string", "maxLength": 100 },
+        "joinStatus": { "type": "string", "enum": ["Đã Jon", "Jon chờ duyệt", "Chưa"] },
+        "note": { "type": "string", "maxLength": 500 },
+        "isHighlighted": { "type": "boolean" },
+        "staffName": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "groupName", "uid"]
+    },
+    "ProxyItem": {
+      "title": "ProxyItem",
+      "description": "Proxy connection details and staff assignment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "ip": { "type": "string", "maxLength": 100 },
+        "port": { "type": "string", "maxLength": 20 },
+        "username": { "type": "string", "maxLength": 100 },
+        "password": { "type": "string", "maxLength": 100 },
+        "type": { "type": "string", "enum": ["http", "socks5", "https"] },
+        "status": { "type": "string", "enum": ["live", "die", "slow", "unknown"] },
+        "assignedStaff": { "type": "string", "maxLength": 100 },
+        "note": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "ip", "port"]
     }
   },
   "firestore": {
@@ -116,6 +155,14 @@
     "/sharedAccounts/{accountId}": {
       "schema": "SharedAccount",
       "description": "Collection storing shared tool and website accounts"
+    },
+    "/groupRecords/{recordId}": {
+      "schema": "GroupRecord",
+      "description": "Collection storing Facebook group management records"
+    },
+    "/proxies/{proxyId}": {
+      "schema": "ProxyItem",
+      "description": "Collection storing proxy list and network configurations"
     }
   }
 }
