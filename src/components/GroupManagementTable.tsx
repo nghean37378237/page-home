@@ -130,6 +130,17 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   const [applyToWholeGroupInViaModal, setApplyToWholeGroupInViaModal] = useState(false);
   const [viaSearchQuery, setViaSearchQuery] = useState('');
 
+  // Delete confirm modal state (in-app modal replacing blocked window.confirm)
+  const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
+    type: 'single' | 'group' | 'batch' | 'clear-all';
+    title: string;
+    description: string;
+    record?: GroupRecord;
+    groupName?: string;
+    recordIds?: string[];
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   // Collect all known staff across the application and existing groups
   const allKnownStaff = useMemo(() => {
     const set = new Set<string>();
@@ -447,33 +458,101 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     await onUpdateRecord(r.id, { isHighlighted: nextVal });
   };
 
-  // Delete row
-  const handleDeleteRow = async (r: GroupRecord) => {
-    if (confirm(`Bạn có chắc muốn xóa dòng nick "${r.viaName || r.uid}" khỏi nhóm "${r.groupName}"?`)) {
-      await onDeleteRecord(r.id);
-      setSelectedIds((prev) => {
-        const next = new Set(prev);
-        next.delete(r.id);
-        return next;
-      });
+  // Delete request handlers (open safe in-app confirmation modal)
+  const handleRequestDeleteRow = (r: GroupRecord) => {
+    setDeleteConfirmTarget({
+      type: 'single',
+      title: 'Xác Nhận Xóa Dòng Nick Group',
+      description: `Bạn có chắc muốn xóa dòng nick "${r.viaName || r.uid}" (UID: ${r.uid}) khỏi nhóm "${r.groupName}" không? Dữ liệu sẽ được xóa khỏi hệ thống.`,
+      record: r,
+      recordIds: [r.id],
+    });
+  };
+
+  const handleRequestDeleteGroup = (groupName: string, rows: GroupRecord[]) => {
+    setDeleteConfirmTarget({
+      type: 'group',
+      title: `Xác Nhận Xóa Cả Nhóm "${groupName}"`,
+      description: `Bạn có chắc muốn xóa toàn bộ nhóm "${groupName}" gồm ${rows.length} nick Via không? Toàn bộ các dòng trong nhóm này sẽ bị xóa khỏi hệ thống.`,
+      groupName,
+      recordIds: rows.map((r) => r.id),
+    });
+  };
+
+  const handleRequestDeleteSelected = () => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    setDeleteConfirmTarget({
+      type: 'batch',
+      title: `Xác Nhận Xóa ${ids.length} Dòng Group Đã Chọn`,
+      description: `Bạn có chắc muốn xóa ${ids.length} dòng Group đang chọn khỏi hệ thống không? Dữ liệu sẽ được xóa vĩnh viễn khỏi Cloud Firestore.`,
+      recordIds: ids,
+    });
+  };
+
+  const handleRequestClearAll = () => {
+    if (!isAdmin || records.length === 0) return;
+    setDeleteConfirmTarget({
+      type: 'clear-all',
+      title: '⚠️ QUYỀN ADMIN: XÓA TRẮNG TOÀN BỘ BẢNG GROUP',
+      description: `Bạn có chắc chắn muốn XÓA TRẮNG toàn bộ ${records.length} dòng dữ liệu trong bảng Group không? Thao tác này sẽ xóa sạch dữ liệu nhóm để bạn tự nhập lại từ đầu.`,
+      recordIds: records.map((r) => r.id),
+    });
+  };
+
+  const handleExecuteDeleteConfirm = async () => {
+    if (!deleteConfirmTarget) return;
+    setIsDeleting(true);
+    try {
+      if (deleteConfirmTarget.type === 'clear-all') {
+        if (onClearAllRecords) {
+          await onClearAllRecords();
+        } else if (onDeleteBatchRecords) {
+          await onDeleteBatchRecords(records.map((r) => r.id));
+        }
+        setSelectedIds(new Set());
+        setStaffActionToast('🗑️ Admin đã xóa trắng toàn bộ bảng Group thành công!');
+      } else if (deleteConfirmTarget.type === 'single') {
+        if (deleteConfirmTarget.record) {
+          await onDeleteRecord(deleteConfirmTarget.record.id);
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            next.delete(deleteConfirmTarget.record!.id);
+            return next;
+          });
+          setStaffActionToast(`🗑️ Đã xóa nick "${deleteConfirmTarget.record.viaName || deleteConfirmTarget.record.uid}" thành công!`);
+        }
+      } else if (deleteConfirmTarget.type === 'group' || deleteConfirmTarget.type === 'batch') {
+        const ids = deleteConfirmTarget.recordIds || [];
+        if (ids.length > 0) {
+          if (onDeleteBatchRecords) {
+            await onDeleteBatchRecords(ids);
+          } else {
+            for (const id of ids) {
+              await onDeleteRecord(id);
+            }
+          }
+          setSelectedIds((prev) => {
+            const next = new Set(prev);
+            ids.forEach((id) => next.delete(id));
+            return next;
+          });
+          setStaffActionToast(`🗑️ Đã xóa ${ids.length} dòng Group thành công!`);
+        }
+      }
+    } catch (err) {
+      console.error('Lỗi khi xóa dữ liệu group:', err);
+      setStaffActionToast('❌ Có lỗi xảy ra khi xóa dữ liệu');
+    } finally {
+      setIsDeleting(false);
+      setDeleteConfirmTarget(null);
+      setTimeout(() => setStaffActionToast(null), 3500);
     }
   };
 
-  // Batch delete
-  const handleDeleteSelected = async () => {
-    if (selectedIds.size === 0) return;
-    if (confirm(`Bạn có chắc muốn xóa ${selectedIds.size} dòng Group đã chọn khỏi Cloud Firestore?`)) {
-      const ids = Array.from(selectedIds);
-      if (onDeleteBatchRecords) {
-        await onDeleteBatchRecords(ids);
-      } else {
-        for (const id of ids) {
-          await onDeleteRecord(id);
-        }
-      }
-      setSelectedIds(new Set());
-    }
-  };
+  // Aliases for compatibility
+  const handleDeleteRow = handleRequestDeleteRow;
+  const handleDeleteSelected = handleRequestDeleteSelected;
 
   // Apply staff change for single, group, or bulk selection
   const handleApplyStaffChange = async (newStaff: string) => {
@@ -715,18 +794,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
             {records.length > 0 && isAdmin && (
               <button
                 type="button"
-                onClick={async () => {
-                  if (confirm(`⚠️ QUYỀN ADMIN: Bạn có chắc chắn muốn XÓA TRẮNG toàn bộ ${records.length} dòng dữ liệu trong bảng Group không? Thao tác này sẽ xóa sạch dữ liệu để nhập lại từ đầu.`)) {
-                    if (onClearAllRecords) {
-                      await onClearAllRecords();
-                    } else if (onDeleteBatchRecords) {
-                      await onDeleteBatchRecords(records.map((r) => r.id));
-                    }
-                    setSelectedIds(new Set());
-                    setStaffActionToast('🗑️ Admin đã xóa trắng toàn bộ bảng Group thành công!');
-                    setTimeout(() => setStaffActionToast(null), 3000);
-                  }
-                }}
+                onClick={handleRequestClearAll}
                 className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-300 transition-colors shadow-2xs cursor-pointer"
                 title="Quyền Admin: Xóa trắng toàn bộ dữ liệu group để bạn tự nhập mới từ đầu"
               >
@@ -942,7 +1010,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
             {/* Delete selected */}
             <button
               type="button"
-              onClick={handleDeleteSelected}
+              onClick={handleRequestDeleteSelected}
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-red-800 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -1171,6 +1239,16 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                       >
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>+ Nhập Hàng Loạt UID</span>
+                      </button>
+
+                      {/* Delete this group */}
+                      <button
+                        type="button"
+                        onClick={() => handleRequestDeleteGroup(group.groupName, group.rows)}
+                        className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title={`Xóa toàn bộ nhóm "${group.groupName}" (${group.rows.length} nick)`}
+                      >
+                        <Trash2 className="w-4 h-4 text-slate-400 hover:text-red-600" />
                       </button>
                     </div>
                   </div>
@@ -1455,7 +1533,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                   {/* Delete button */}
                                   <button
                                     type="button"
-                                    onClick={() => handleDeleteRow(row)}
+                                    onClick={() => handleRequestDeleteRow(row)}
                                     className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
                                     title="Xóa dòng này"
                                   >
@@ -1776,7 +1854,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                           </button>
                           <button
                             type="button"
-                            onClick={() => handleDeleteRow(r)}
+                            onClick={() => handleRequestDeleteRow(r)}
                             className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
                             title="Xóa dòng này"
                           >
@@ -1948,7 +2026,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
           {onDeleteBatchRecords && (
             <button
               type="button"
-              onClick={handleDeleteSelected}
+              onClick={handleRequestDeleteSelected}
               className="px-2.5 py-1.5 bg-red-700/80 hover:bg-red-700 text-white rounded-xl font-bold flex items-center space-x-1 cursor-pointer transition-colors"
             >
               <Trash2 className="w-3.5 h-3.5" />
@@ -2336,6 +2414,102 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               >
                 <Check className="w-4 h-4" />
                 <span>Xác Nhận Update Via</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Modal: Xác Nhận Xóa Dữ Liệu An Toàn Trong App */}
+      {deleteConfirmTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-red-200 overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-600 to-rose-700 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center font-bold">
+                  <AlertTriangle className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold leading-tight">
+                    {deleteConfirmTarget.title}
+                  </h3>
+                  <p className="text-[11px] text-red-100">
+                    Xác nhận xóa an toàn trên hệ thống
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isDeleting && setDeleteConfirmTarget(null)}
+                className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              <div className="bg-red-50 border border-red-100 rounded-xl p-3 text-xs text-red-800 leading-relaxed font-medium">
+                {deleteConfirmTarget.description}
+              </div>
+
+              {deleteConfirmTarget.record && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5 font-mono">
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-sans">Tên nhóm:</span>
+                    <span className="font-bold text-slate-800 font-sans">{deleteConfirmTarget.record.groupName}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-500 font-sans">UID nick:</span>
+                    <span className="font-bold text-indigo-700">{deleteConfirmTarget.record.uid}</span>
+                  </div>
+                  {deleteConfirmTarget.record.viaName && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-sans">Tên Via:</span>
+                      <span className="font-bold text-slate-800 font-sans">{deleteConfirmTarget.record.viaName}</span>
+                    </div>
+                  )}
+                  {deleteConfirmTarget.record.staffName && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-500 font-sans">Nhân viên:</span>
+                      <span className="font-bold text-blue-700 font-sans">{deleteConfirmTarget.record.staffName}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <p className="text-[11px] text-slate-500 italic">
+                * Hành động xóa sẽ được cập nhật đồng bộ tức thì trên cơ sở dữ liệu Cloud Firestore và bộ nhớ sao lưu.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-5 py-3.5 border-t border-slate-200 flex items-center justify-end space-x-2.5">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setDeleteConfirmTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleExecuteDeleteConfirm}
+                className="inline-flex items-center space-x-1.5 px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang Xóa...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Xác Nhận Xóa</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
