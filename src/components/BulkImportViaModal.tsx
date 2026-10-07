@@ -319,6 +319,7 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
           ? `${batchNote}${row.extra ? ` - ${row.extra}` : ''}`
           : row.extra || 'Nhập hàng loạt',
         status: 'active',
+        adminReportStatus: 'None',
         createdAt: new Date().toLocaleDateString('vi-VN'),
         rawFullVia: `${row.uid}|${row.pass}|${row.twoFa}${row.extra ? `|${row.extra}` : ''}`,
       };

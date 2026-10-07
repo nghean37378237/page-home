@@ -97,14 +97,14 @@ export interface AppUser {
 
 export type ViaPageUpdateStatus = 'none' | 'pending' | 'updated';
 
-export type ViaAdminReportStatus = 'None' | 'Live' | 'VHH' | 'SDT' | 'Selfie' | 'Code mail';
+export type ViaAdminReportStatus = 'None' | 'Live' | 'VHH' | 'SDT' | 'Selfie' | 'Email code';
 export const VIA_ADMIN_REPORT_OPTIONS: ViaAdminReportStatus[] = [
   'None',
   'Live',
   'VHH',
   'SDT',
   'Selfie',
-  'Code mail',
+  'Email code',
 ];
 
 export interface FullViaItem {
@@ -115,7 +115,7 @@ export interface FullViaItem {
   staffName: string; // Tên nhân viên được giao phụ trách
   note?: string; // Ghi chú loại nick, BM, thông tin thêm (dùng chung cho các page của via)
   status?: 'active' | 'checkpoint' | 'dead' | 'error' | 'fixed'; // Trạng thái nick
-  adminReportStatus?: ViaAdminReportStatus; // Cột Báo Admin: 'Live' | 'VHH' | 'SDT' | 'Selfie' | 'Code mail'
+  adminReportStatus?: ViaAdminReportStatus; // Cột Báo Admin: 'Live' | 'VHH' | 'SDT' | 'Selfie' | 'Email code'
   isError?: boolean; // Tùy chọn bôi đỏ nếu via lỗi
   isFixed?: boolean; // Ô chọn: Admin đã sửa lỗi và thay via mới -> bôi màu xanh để dễ phân biệt
   sharedNote?: string; // Ghi chú chung cho các page

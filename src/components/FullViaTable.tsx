@@ -34,7 +34,7 @@ import {
   FileText,
   CheckSquare,
 } from 'lucide-react';
-import { FullViaItem, AppUser, PageRecord, ViaPageUpdateStatus } from '../types';
+import { FullViaItem, AppUser, PageRecord, ViaPageUpdateStatus, ViaAdminReportStatus, VIA_ADMIN_REPORT_OPTIONS } from '../types';
 import { generateTOTPCode } from '../utils/totp';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
 
@@ -124,6 +124,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'error' | 'checkpoint' | 'fixed' | 'pending_page' | 'has_page' | 'no_page'>('all');
+  const [adminReportFilter, setAdminReportFilter] = useState<'all' | ViaAdminReportStatus>('all');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>(
     currentUser.role === 'staff'
       ? currentUser.name
@@ -163,6 +164,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     isError?: boolean;
     isFixed?: boolean;
     pageUpdateStatus: ViaPageUpdateStatus;
+    adminReportStatus?: ViaAdminReportStatus;
   }>({
     uid: '',
     pass: '',
@@ -173,6 +175,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     isError: false,
     isFixed: false,
     pageUpdateStatus: 'none',
+    adminReportStatus: 'None',
   });
 
   // Calculate pages associated with each viaUid
@@ -387,6 +390,30 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     }).length;
   }, [currentBaseVias, pagesPerViaUid]);
 
+  // Counts for Báo Admin: Live, VHH, SDT, Selfie, Email code
+  const adminReportCounts = useMemo(() => {
+    const counts: Record<string, number> = {
+      all: currentBaseVias.length,
+      Live: 0,
+      VHH: 0,
+      SDT: 0,
+      Selfie: 0,
+      'Email code': 0,
+      None: 0,
+    };
+    currentBaseVias.forEach((v) => {
+      const rep = v.adminReportStatus || 'None';
+      if ((rep as string) === 'Code mail' || rep === 'Email code') {
+        counts['Email code']++;
+      } else if (rep in counts) {
+        counts[rep]++;
+      } else {
+        counts.None++;
+      }
+    });
+    return counts;
+  }, [currentBaseVias]);
+
   const scopedVias = useMemo(() => {
     let list = strictlyGuardedVias;
 
@@ -425,6 +452,17 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       });
     }
 
+    // Filter by Báo Admin
+    if (adminReportFilter !== 'all') {
+      if (adminReportFilter === 'None') {
+        list = list.filter((v) => !v.adminReportStatus || v.adminReportStatus === 'None');
+      } else if (adminReportFilter === 'Email code') {
+        list = list.filter((v) => v.adminReportStatus === 'Email code' || (v.adminReportStatus as any) === 'Code mail');
+      } else {
+        list = list.filter((v) => v.adminReportStatus === adminReportFilter);
+      }
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(
@@ -433,12 +471,13 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           v.pass.toLowerCase().includes(q) ||
           v.twoFa.toLowerCase().includes(q) ||
           v.staffName.toLowerCase().includes(q) ||
+          (v.adminReportStatus && v.adminReportStatus.toLowerCase().includes(q)) ||
           (v.note && v.note.toLowerCase().includes(q))
       );
     }
 
     return list;
-  }, [strictlyGuardedVias, currentUser, selectedStaffFilter, searchQuery, statusFilter, pagesPerViaUid]);
+  }, [strictlyGuardedVias, currentUser, selectedStaffFilter, searchQuery, statusFilter, adminReportFilter, pagesPerViaUid]);
 
   // Computed values for multi-selection
   const isAllSelected = useMemo(() => {
@@ -726,6 +765,26 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     }
   };
 
+  // Batch update Admin Report status for all selected vias
+  const handleBatchUpdateAdminReport = (status: ViaAdminReportStatus) => {
+    const selectedVias = scopedVias.filter((v) => selectedViaIds.has(v.id));
+    if (selectedVias.length === 0) return;
+
+    selectedVias.forEach((v) => {
+      onUpdateVia({
+        ...v,
+        adminReportStatus: status,
+      });
+    });
+
+    setCopyToastMessage(
+      status === 'None'
+        ? `Đã xóa Báo Admin cho ${selectedVias.length} nick đã chọn`
+        : `📢 Đã báo Admin [${status}] cho ${selectedVias.length} nick đã chọn!`
+    );
+    setTimeout(() => setCopyToastMessage(null), 3000);
+  };
+
   // Open modal for add
   const handleOpenAddModal = () => {
     setEditingVia(null);
@@ -748,6 +807,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       isError: false,
       isFixed: false,
       pageUpdateStatus: 'none',
+      adminReportStatus: 'None',
     });
     setIsEditModalOpen(true);
   };
@@ -766,6 +826,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       isError: false,
       isFixed: false,
       pageUpdateStatus: 'none',
+      adminReportStatus: 'None',
     });
     setIsEditModalOpen(true);
   };
@@ -795,6 +856,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       isError: isErr,
       isFixed: isFix,
       pageUpdateStatus: initialPageStatus,
+      adminReportStatus: via.adminReportStatus || 'None',
     });
     setIsEditModalOpen(true);
   };
@@ -849,6 +911,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         isFixed: isFix,
         rawFullVia: rawFull,
         pageUpdateStatus: modalForm.pageUpdateStatus,
+        adminReportStatus: modalForm.adminReportStatus || 'None',
         hasAdminAssignedPage: isPending || isUpdated ? true : false,
         ...(isPending ? { pageAssignedAt: editingVia.pageAssignedAt || new Date().toLocaleDateString('vi-VN') } : {}),
         ...(isUpdated ? { pageUpdatedAt: new Date().toLocaleDateString('vi-VN') } : {}),
@@ -867,6 +930,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         createdAt: new Date().toLocaleDateString('vi-VN'),
         rawFullVia: rawFull,
         pageUpdateStatus: modalForm.pageUpdateStatus,
+        adminReportStatus: modalForm.adminReportStatus || 'None',
         hasAdminAssignedPage: isPending || isUpdated ? true : false,
         ...(isPending ? { pageAssignedAt: new Date().toLocaleDateString('vi-VN') } : {}),
         ...(isUpdated ? { pageUpdatedAt: new Date().toLocaleDateString('vi-VN') } : {}),
@@ -879,7 +943,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
   // Real CSV export
   const executeExportCSV = () => {
-    const headers = ['STT', 'UID', 'PASS', '2FA', 'TÊN NHÂN VIÊN', 'TRẠNG THÁI', 'GHI CHÚ'];
+    const headers = ['STT', 'UID', 'PASS', '2FA', 'TÊN NHÂN VIÊN', 'TRẠNG THÁI', 'BÁO ADMIN', 'GHI CHÚ'];
     const rows = scopedVias.map((v, i) => [
       `"${i + 1}"`,
       `"${v.uid.replace(/"/g, '""')}"`,
@@ -887,6 +951,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       `"${v.twoFa.replace(/"/g, '""')}"`,
       `"${v.staffName.replace(/"/g, '""')}"`,
       `"${v.status || 'active'}"`,
+      `"${(v.adminReportStatus && v.adminReportStatus !== 'None' ? v.adminReportStatus : '').replace(/"/g, '""')}"`,
       `"${(v.note || '').replace(/"/g, '""')}"`,
     ]);
 
@@ -1643,7 +1708,110 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           </div>
         </td>
 
-        {/* 8. GHI CHÚ CHUNG CHO TẤT CẢ CÁC PAGE CÙNG VIA */}
+        {/* 8. BÁO ADMIN: Live, VHH, SDT, Selfie, Email code */}
+        <td
+          className={`py-1.5 px-2.5 border-r text-center transition-all ${
+            via.adminReportStatus === 'VHH'
+              ? 'bg-rose-50/90 border-rose-200'
+              : via.adminReportStatus === 'SDT'
+              ? 'bg-blue-50/80 border-blue-200'
+              : via.adminReportStatus === 'Selfie'
+              ? 'bg-purple-50/80 border-purple-200'
+              : via.adminReportStatus === 'Email code' || (via.adminReportStatus as any) === 'Code mail'
+              ? 'bg-amber-50/90 border-amber-200'
+              : via.adminReportStatus === 'Live'
+              ? 'bg-emerald-50/60 border-emerald-200'
+              : isRowError
+              ? 'border-red-200'
+              : 'border-slate-200'
+          }`}
+        >
+          <div className="flex flex-col items-center space-y-1 min-w-[155px] max-w-[205px] mx-auto">
+            <select
+              value={via.adminReportStatus || 'None'}
+              onChange={(e) => {
+                const val = e.target.value as ViaAdminReportStatus;
+                onUpdateVia({
+                  ...via,
+                  adminReportStatus: val,
+                });
+                setCopyToastMessage(
+                  val === 'None'
+                    ? `Đã xóa Báo Admin cho nick ${via.uid}`
+                    : `📢 Đã báo Admin: [${val}] cho nick ${via.uid}!`
+                );
+                setTimeout(() => setCopyToastMessage(null), 2500);
+              }}
+              className={`text-[11px] font-black rounded-lg px-2 py-1 border shadow-2xs cursor-pointer focus:outline-hidden transition-all w-full text-center ${
+                via.adminReportStatus === 'Live'
+                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                  : via.adminReportStatus === 'VHH'
+                  ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-300 animate-pulse'
+                  : via.adminReportStatus === 'SDT'
+                  ? 'bg-blue-600 text-white border-blue-700 shadow-xs ring-1 ring-blue-300'
+                  : via.adminReportStatus === 'Selfie'
+                  ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-1 ring-purple-300'
+                  : via.adminReportStatus === 'Email code' || (via.adminReportStatus as any) === 'Code mail'
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-1 ring-amber-300'
+                  : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400'
+              }`}
+              title="Báo tình trạng nick lên Admin: Live, VHH, SDT, Selfie, Email code"
+            >
+              <option value="None">⚪ -- Chưa báo Admin --</option>
+              <option value="Live">🟢 Live (Hoạt động tốt)</option>
+              <option value="VHH">🔴 VHH (Vô hiệu hóa)</option>
+              <option value="SDT">📱 SDT (Checkpoint SĐT)</option>
+              <option value="Selfie">🤳 Selfie (Checkpoint khuôn mặt)</option>
+              <option value="Email code">✉️ Email code (Code mail)</option>
+            </select>
+
+            {/* Quick 1-click badge pills */}
+            <div className="flex items-center justify-center flex-wrap gap-1 pt-0.5 w-full">
+              {(['Live', 'VHH', 'SDT', 'Selfie', 'Email code'] as const).map((st) => {
+                const isActive =
+                  via.adminReportStatus === st ||
+                  (st === 'Email code' && (via.adminReportStatus as any) === 'Code mail');
+                return (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => {
+                      const nextVal = isActive ? 'None' : st;
+                      onUpdateVia({
+                        ...via,
+                        adminReportStatus: nextVal,
+                      });
+                      setCopyToastMessage(
+                        nextVal === 'None'
+                          ? `Đã bỏ Báo Admin cho nick ${via.uid}`
+                          : `📢 Đã báo Admin: [${st}] cho nick ${via.uid}!`
+                      );
+                      setTimeout(() => setCopyToastMessage(null), 2500);
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold border transition-all cursor-pointer shadow-2xs ${
+                      isActive
+                        ? st === 'Live'
+                          ? 'bg-emerald-600 text-white border-emerald-700 font-black ring-1 ring-emerald-300'
+                          : st === 'VHH'
+                          ? 'bg-rose-600 text-white border-rose-700 font-black ring-1 ring-rose-300'
+                          : st === 'SDT'
+                          ? 'bg-blue-600 text-white border-blue-700 font-black ring-1 ring-blue-300'
+                          : st === 'Selfie'
+                          ? 'bg-purple-600 text-white border-purple-700 font-black ring-1 ring-purple-300'
+                          : 'bg-amber-500 text-white border-amber-600 font-black ring-1 ring-amber-300'
+                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                    }`}
+                    title={`Bấm để ${isActive ? 'hủy báo' : 'báo Admin: ' + st}`}
+                  >
+                    {st === 'Email code' ? 'Mail' : st}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </td>
+
+        {/* 9. GHI CHÚ CHUNG CHO TẤT CẢ CÁC PAGE CÙNG VIA */}
         <td
           className={`py-1.5 px-2.5 border-r text-xs min-w-[170px] max-w-[220px] ${
             isRowError
@@ -2273,6 +2441,98 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 <span>⚪ Chưa có page ({noPageCountInScope})</span>
               </button>
             </div>
+
+            {/* Quick Filter Tabs: BÁO ADMIN (Live, VHH, SDT, Selfie, Email code) */}
+            <div className="flex items-center space-x-1 bg-amber-950/70 p-1 rounded-lg border border-amber-700/80 overflow-x-auto scrollbar-none">
+              <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 px-1.5 flex items-center gap-1 shrink-0">
+                <AlertTriangle className="w-3 h-3 text-amber-400" />
+                <span>Báo Admin:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setAdminReportFilter('all')}
+                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+                  adminReportFilter === 'all'
+                    ? 'bg-amber-500 text-white shadow-2xs font-black'
+                    : 'text-amber-200 hover:text-white hover:bg-amber-900/60'
+                }`}
+                title="Xem tất cả nick"
+              >
+                Tất cả ({adminReportCounts.all})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminReportFilter('Live')}
+                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+                  adminReportFilter === 'Live'
+                    ? 'bg-emerald-600 text-white shadow-2xs font-black'
+                    : 'text-emerald-300 hover:text-white hover:bg-emerald-950/60'
+                }`}
+                title="Lọc các nick Báo Admin: Live"
+              >
+                🟢 Live ({adminReportCounts.Live})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminReportFilter('VHH')}
+                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+                  adminReportFilter === 'VHH'
+                    ? 'bg-red-600 text-white shadow-2xs font-black ring-1 ring-red-400 animate-pulse'
+                    : 'text-red-300 hover:text-white hover:bg-red-950/60'
+                }`}
+                title="Lọc các nick Báo Admin: VHH (Vô hiệu hóa)"
+              >
+                🔴 VHH ({adminReportCounts.VHH})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminReportFilter('SDT')}
+                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+                  adminReportFilter === 'SDT'
+                    ? 'bg-blue-600 text-white shadow-2xs font-black'
+                    : 'text-blue-300 hover:text-white hover:bg-blue-950/60'
+                }`}
+                title="Lọc các nick Báo Admin: SDT"
+              >
+                📱 SDT ({adminReportCounts.SDT})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminReportFilter('Selfie')}
+                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+                  adminReportFilter === 'Selfie'
+                    ? 'bg-purple-600 text-white shadow-2xs font-black'
+                    : 'text-purple-300 hover:text-white hover:bg-purple-950/60'
+                }`}
+                title="Lọc các nick Báo Admin: Selfie"
+              >
+                🤳 Selfie ({adminReportCounts.Selfie})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminReportFilter('Email code')}
+                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
+                  adminReportFilter === 'Email code'
+                    ? 'bg-amber-500 text-white shadow-2xs font-black'
+                    : 'text-amber-300 hover:text-white hover:bg-amber-900/60'
+                }`}
+                title="Lọc các nick Báo Admin: Email code (Code mail)"
+              >
+                ✉️ Email code ({adminReportCounts['Email code']})
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminReportFilter('None')}
+                className={`px-2 py-1 rounded text-[11px] font-medium transition-all cursor-pointer shrink-0 ${
+                  adminReportFilter === 'None'
+                    ? 'bg-slate-600 text-white shadow-2xs font-black'
+                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
+                }`}
+                title="Lọc các nick chưa báo Admin"
+              >
+                ⚪ Chưa báo ({adminReportCounts.None})
+              </button>
+            </div>
           </div>
 
           <div className="text-[11px] text-slate-300 flex items-center flex-wrap gap-2">
@@ -2509,6 +2769,61 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               <span>Copy Full Via</span>
             </button>
 
+            {/* Batch Báo Admin Quick Buttons */}
+            <div className="flex items-center space-x-1 pl-2 border-l border-indigo-600/70">
+              <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider hidden md:inline">
+                📢 Báo Admin:
+              </span>
+              <button
+                type="button"
+                onClick={() => handleBatchUpdateAdminReport('Live')}
+                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
+                title="Báo Admin: Live cho tất cả nick đã chọn"
+              >
+                🟢 Live
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchUpdateAdminReport('VHH')}
+                className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
+                title="Báo Admin: VHH cho tất cả nick đã chọn"
+              >
+                🔴 VHH
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchUpdateAdminReport('SDT')}
+                className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
+                title="Báo Admin: SDT cho tất cả nick đã chọn"
+              >
+                📱 SDT
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchUpdateAdminReport('Selfie')}
+                className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
+                title="Báo Admin: Selfie cho tất cả nick đã chọn"
+              >
+                🤳 Selfie
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchUpdateAdminReport('Email code')}
+                className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
+                title="Báo Admin: Email code cho tất cả nick đã chọn"
+              >
+                ✉️ Email code
+              </button>
+              <button
+                type="button"
+                onClick={() => handleBatchUpdateAdminReport('None')}
+                className="px-1.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-md text-[10px] font-medium transition-all cursor-pointer"
+                title="Xóa Báo Admin cho các nick đã chọn"
+              >
+                Xóa báo
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={handleSelectAll}
@@ -2587,6 +2902,15 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 </div>
               </th>
               <th className="py-2 px-2.5 w-36 border-r border-slate-200 text-center">TRẠNG THÁI</th>
+              <th className="py-2 px-2.5 min-w-[165px] max-w-[215px] border-r border-slate-200 text-center bg-amber-50/70">
+                <div className="flex items-center justify-center space-x-1 text-amber-950 font-black">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                  <span>BÁO ADMIN</span>
+                </div>
+                <div className="text-[9px] text-amber-800 font-bold lowercase tracking-tight mt-0.5">
+                  Live • VHH • SDT • Selfie • Email code
+                </div>
+              </th>
               <th className="py-2 px-2.5 min-w-[170px] max-w-[220px] border-r border-slate-200">GHI CHÚ CHUNG CẢ VIA</th>
               <th className="py-2 px-2 w-24 text-center">THAO TÁC</th>
             </tr>
@@ -2594,7 +2918,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           <tbody className="divide-y divide-slate-200/80 font-sans">
             {scopedVias.length === 0 ? (
               <tr>
-                <td colSpan={9} className="py-12 text-center text-slate-400">
+                <td colSpan={10} className="py-12 text-center text-slate-400">
                   <div className="max-w-xs mx-auto space-y-2">
                     <Key className="w-8 h-8 text-slate-300 mx-auto" />
                     <p className="font-semibold text-slate-600">Không có nick Full Via nào phù hợp</p>
@@ -2625,7 +2949,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   <React.Fragment key={staffName}>
                     {/* Staff Group Header Row */}
                     <tr className="bg-slate-100 border-y-2 border-slate-300">
-                      <td colSpan={9} className="py-2.5 px-4">
+                      <td colSpan={10} className="py-2.5 px-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-2">
                             <span className="text-xs font-black text-indigo-950 uppercase tracking-wide flex items-center gap-1.5">
@@ -2864,6 +3188,34 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 </div>
               </div>
 
+              {/* Báo Admin: Live, VHH, SDT, Selfie, Email code */}
+              <div className="p-3 rounded-xl border border-amber-300 bg-amber-50/70 space-y-1.5">
+                <label className="font-bold text-amber-950 text-xs flex items-center space-x-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                  <span>Báo Admin (Tình trạng Nick Via):</span>
+                </label>
+                <select
+                  value={modalForm.adminReportStatus || 'None'}
+                  onChange={(e) => {
+                    setModalForm({
+                      ...modalForm,
+                      adminReportStatus: e.target.value as ViaAdminReportStatus,
+                    });
+                  }}
+                  className="w-full px-3 py-2 border border-amber-300 rounded-lg bg-white font-bold text-xs"
+                >
+                  <option value="None">⚪ -- Chưa báo Admin --</option>
+                  <option value="Live">🟢 Live (Nick sống bình thường)</option>
+                  <option value="VHH">🔴 VHH (Vô hiệu hóa)</option>
+                  <option value="SDT">📱 SDT (Checkpoint số điện thoại)</option>
+                  <option value="Selfie">🤳 Selfie (Checkpoint quét mặt)</option>
+                  <option value="Email code">✉️ Email code (Code mail)</option>
+                </select>
+                <p className="text-[10px] text-amber-800 italic">
+                  💡 Cột Báo Admin giúp quản lý nhanh: Live, VHH, SDT, Selfie, Email code.
+                </p>
+              </div>
+
               {/* Ô chọn: Admin đã sửa lỗi và thay via mới -> bôi xanh */}
               <label className="flex items-center space-x-2 p-2.5 rounded-xl border border-emerald-300 bg-emerald-50 text-xs font-bold text-emerald-950 cursor-pointer select-none">
                 <input
@@ -3080,6 +3432,28 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             <Copy className="w-3.5 h-3.5" />
             <span>Copy Full</span>
           </button>
+
+          {/* Quick Báo Admin batch in floating pill */}
+          <div className="flex items-center space-x-1 pl-1 border-l border-slate-700 shrink-0">
+            <select
+              onChange={(e) => {
+                if (!e.target.value) return;
+                handleBatchUpdateAdminReport(e.target.value as ViaAdminReportStatus);
+                e.target.value = '';
+              }}
+              defaultValue=""
+              className="bg-amber-950/80 hover:bg-amber-900 border border-amber-500/70 text-amber-200 text-xs font-bold rounded-xl px-2 py-1.5 focus:outline-hidden cursor-pointer"
+              title="Cập nhật nhanh Báo Admin cho các nick đang chọn"
+            >
+              <option value="" disabled>📢 Báo Admin...</option>
+              <option value="Live">🟢 Live</option>
+              <option value="VHH">🔴 VHH</option>
+              <option value="SDT">📱 SDT</option>
+              <option value="Selfie">🤳 Selfie</option>
+              <option value="Email code">✉️ Email code</option>
+              <option value="None">⚪ Xóa báo</option>
+            </select>
+          </div>
 
           <button
             type="button"

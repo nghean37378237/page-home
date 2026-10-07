@@ -113,7 +113,7 @@ export const SAMPLE_VIA_ROWS = [
     'UID VIA': '100088921345678',
     'MẬT KHẨU (PASS)': 'PhuongMy#2024',
     'MÃ 2FA': 'H8J9K1L2M3N4P5Q6',
-    'BÁO ADMIN': 'Code mail',
+    'BÁO ADMIN': 'Email code',
     'GHI CHÚ': 'Via cầm page reels',
     'ĐỊNH DẠNG RAW': '100088921345678|PhuongMy#2024|H8J9K1L2M3N4P5Q6',
   },
