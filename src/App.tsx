@@ -2260,6 +2260,7 @@ export default function App() {
             records={groupRecords}
             currentUser={currentUser}
             availableStaffNames={allStaffNames}
+            existingVias={viaList}
             onAddRecord={handleAddGroupRecord}
             onAddBatchRecords={handleBatchSaveGroupRecords}
             onUpdateRecord={handleUpdateGroupRecord}
@@ -2428,6 +2429,7 @@ export default function App() {
         allRecords={groupRecords}
         currentUser={currentUser}
         availableStaffNames={allStaffNames}
+        existingVias={viaList}
         presetGroup={presetGroupData}
         initialMode={presetGroupData?.initialMode || 'single'}
       />

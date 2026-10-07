@@ -13,7 +13,7 @@ import {
   Clock,
   XCircle,
 } from 'lucide-react';
-import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS } from '../types';
+import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, FullViaItem } from '../types';
 
 export const GROUP_NOTE_CHOICES = [
   {
@@ -59,6 +59,7 @@ interface AddEditGroupModalProps {
   allRecords: GroupRecord[];
   currentUser: AppUser;
   availableStaffNames: string[];
+  existingVias?: FullViaItem[];
   presetGroup?: {
     groupId?: string;
     groupName?: string;
@@ -78,6 +79,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   allRecords,
   currentUser,
   availableStaffNames,
+  existingVias,
   presetGroup,
   initialMode,
 }) => {
@@ -464,11 +466,28 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                   <input
                     type="text"
                     required
+                    list="group-modal-via-datalist"
                     placeholder="VD: 100060665184656"
                     value={uid}
-                    onChange={(e) => setUid(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setUid(val);
+                      if (existingVias) {
+                        const matched = existingVias.find((v) => v.uid === val.trim());
+                        if (matched && matched.note && !viaName) {
+                          setViaName(matched.note);
+                        }
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs font-mono font-bold text-indigo-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
                   />
+                  {existingVias && existingVias.length > 0 && (
+                    <datalist id="group-modal-via-datalist">
+                      {existingVias.map((v) => (
+                        <option key={v.id || v.uid} value={v.uid} label={`${v.note || ''} (${v.staffName})`} />
+                      ))}
+                    </datalist>
+                  )}
                 </div>
 
                 <div>
@@ -484,6 +503,43 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Quick Via selector chips from existingVias */}
+              {existingVias && existingVias.length > 0 && (
+                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px] font-bold text-slate-600 flex items-center space-x-1">
+                      <Users className="w-3 h-3 text-indigo-600" />
+                      <span>Chọn nhanh Nick Via có sẵn trong kho ({existingVias.length} Via):</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                    {existingVias.slice(0, 30).map((v) => {
+                      const isSelected = uid.trim() === v.uid;
+                      return (
+                        <button
+                          key={v.id || v.uid}
+                          type="button"
+                          onClick={() => {
+                            setUid(v.uid);
+                            if (v.note) setViaName(v.note);
+                            if (v.staffName && isAdmin) setStaffName(v.staffName);
+                          }}
+                          className={`text-[10px] px-2 py-0.5 rounded-md font-mono border transition-all cursor-pointer flex items-center space-x-1 ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs font-bold'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300'
+                          }`}
+                          title={`UID: ${v.uid} | NV: ${v.staffName} | Ghi chú: ${v.note || 'None'}`}
+                        >
+                          <span>{v.uid}</span>
+                          {v.note && <span className="opacity-75 max-w-[80px] truncate">({v.note})</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Trạng Thái: Đã Jon, Jon chờ duyệt, Chưa */}
               <div className="pt-1">

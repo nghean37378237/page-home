@@ -30,13 +30,14 @@ import {
   Clock,
   XCircle,
 } from 'lucide-react';
-import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS } from '../types';
+import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, FullViaItem } from '../types';
 import { exportGroupToXLSX } from '../utils/excelTemplates';
 
 interface GroupManagementTableProps {
   records: GroupRecord[];
   currentUser: AppUser;
   availableStaffNames: string[];
+  existingVias?: FullViaItem[];
   onAddRecord: (record: GroupRecord) => Promise<void>;
   onAddBatchRecords?: (records: GroupRecord[]) => Promise<void>;
   onUpdateRecord: (id: string, updates: Partial<GroupRecord>) => Promise<void>;
@@ -59,6 +60,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   records,
   currentUser,
   availableStaffNames,
+  existingVias,
   onAddRecord,
   onAddBatchRecords,
   onUpdateRecord,
@@ -109,6 +111,24 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   const [targetStaffInput, setTargetStaffInput] = useState('');
   const [applyToWholeGroupInModal, setApplyToWholeGroupInModal] = useState(false);
   const [staffActionToast, setStaffActionToast] = useState<string | null>(null);
+
+  // Via update modal state
+  const [viaUpdateTarget, setViaUpdateTarget] = useState<{
+    type: 'single' | 'group' | 'bulk';
+    title: string;
+    groupName?: string;
+    groupId?: string;
+    count: number;
+    recordIds: string[];
+    currentUid: string;
+    currentViaName: string;
+  } | null>(null);
+  const [newViaUidInput, setNewViaUidInput] = useState('');
+  const [newViaNameInput, setNewViaNameInput] = useState('');
+  const [newViaJoinStatusInput, setNewViaJoinStatusInput] = useState<GroupJoinStatus | 'keep'>('keep');
+  const [newViaStaffInput, setNewViaStaffInput] = useState<string>('keep');
+  const [applyToWholeGroupInViaModal, setApplyToWholeGroupInViaModal] = useState(false);
+  const [viaSearchQuery, setViaSearchQuery] = useState('');
 
   // Collect all known staff across the application and existing groups
   const allKnownStaff = useMemo(() => {
@@ -491,6 +511,54 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     setApplyToWholeGroupInModal(false);
   };
 
+  // Apply Via update for single row, group, or bulk selection
+  const handleApplyViaUpdate = async () => {
+    if (!viaUpdateTarget || !newViaUidInput.trim()) return;
+
+    const trimmedUid = newViaUidInput.trim();
+    const trimmedViaName = newViaNameInput.trim();
+
+    let idsToUpdate = [...viaUpdateTarget.recordIds];
+
+    if (applyToWholeGroupInViaModal && viaUpdateTarget.groupName) {
+      const gNameLower = viaUpdateTarget.groupName.trim().toLowerCase();
+      const groupRowIds = records
+        .filter((r) => (r.groupName || '').trim().toLowerCase() === gNameLower)
+        .map((r) => r.id);
+      idsToUpdate = Array.from(new Set([...idsToUpdate, ...groupRowIds]));
+    }
+
+    const updates: Partial<GroupRecord> = {
+      uid: trimmedUid,
+      ...(trimmedViaName ? { viaName: trimmedViaName } : {}),
+      ...(newViaJoinStatusInput !== 'keep' ? { joinStatus: newViaJoinStatusInput as GroupJoinStatus } : {}),
+      ...(newViaStaffInput !== 'keep' && newViaStaffInput ? { staffName: newViaStaffInput } : {}),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const idSet = new Set(idsToUpdate);
+
+    if (idsToUpdate.length === 1) {
+      await onUpdateRecord(idsToUpdate[0], updates);
+    } else if (onAddBatchRecords) {
+      const updated = records
+        .filter((r) => idSet.has(r.id))
+        .map((r) => ({ ...r, ...updates }));
+      await onAddBatchRecords(updated);
+    } else {
+      for (const id of idsToUpdate) {
+        await onUpdateRecord(id, updates);
+      }
+    }
+
+    setStaffActionToast(`🎉 Đã update Via "${trimmedUid}" thành công cho ${idsToUpdate.length} dòng Group!`);
+    setTimeout(() => setStaffActionToast(null), 3500);
+    setViaUpdateTarget(null);
+    setNewViaUidInput('');
+    setNewViaNameInput('');
+    setApplyToWholeGroupInViaModal(false);
+  };
+
   // Quick stats
   const totalGroupsCount = useMemo(() => {
     const set = new Set(scopedRecords.map((r) => r.groupName?.trim().toLowerCase()).filter(Boolean));
@@ -582,25 +650,26 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <span>Copy Tất Cả UID ({filteredRecords.length})</span>
             </button>
 
-            {/* Select All Toggle */}
+            {/* Select All / Soát Tất Cả Toggle */}
             <button
               type="button"
               onClick={handleToggleSelectAll}
               className={`inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-colors shadow-2xs cursor-pointer ${
                 isAllSelected
-                  ? 'bg-slate-800 text-white border-slate-900'
+                  ? 'bg-slate-800 text-white border-slate-900 ring-2 ring-slate-400'
                   : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
               }`}
+              title="Soát / Chọn toàn bộ các dòng Nick Via trong danh sách hiện tại"
             >
               {isAllSelected ? (
                 <>
                   <CheckSquare className="w-4 h-4 text-emerald-400" />
-                  <span>Bỏ Chọn Tất Cả</span>
+                  <span>Bỏ Soát / Bỏ Chọn Tất Cả</span>
                 </>
               ) : (
                 <>
                   <Square className="w-4 h-4" />
-                  <span>Lựa Chọn Tất Cả</span>
+                  <span>Soát Tất Cả ({filteredRecords.length})</span>
                 </>
               )}
             </button>
@@ -642,24 +711,27 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               </button>
             )}
 
-            {/* Clear All Group Records */}
-            {records.length > 0 && (
+            {/* Clear All Group Records - Admin Only */}
+            {records.length > 0 && isAdmin && (
               <button
                 type="button"
                 onClick={async () => {
-                  if (confirm('Bạn có chắc chắn muốn XÓA TRẮNG toàn bộ dữ liệu trong bảng Group không? Thao tác này sẽ xóa sạch dữ liệu nhóm để bạn tự nhập lại từ đầu.')) {
+                  if (confirm(`⚠️ QUYỀN ADMIN: Bạn có chắc chắn muốn XÓA TRẮNG toàn bộ ${records.length} dòng dữ liệu trong bảng Group không? Thao tác này sẽ xóa sạch dữ liệu để nhập lại từ đầu.`)) {
                     if (onClearAllRecords) {
                       await onClearAllRecords();
                     } else if (onDeleteBatchRecords) {
                       await onDeleteBatchRecords(records.map((r) => r.id));
                     }
+                    setSelectedIds(new Set());
+                    setStaffActionToast('🗑️ Admin đã xóa trắng toàn bộ bảng Group thành công!');
+                    setTimeout(() => setStaffActionToast(null), 3000);
                   }
                 }}
-                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-200 transition-colors shadow-2xs cursor-pointer"
-                title="Xóa trắng toàn bộ dữ liệu group để bạn tự nhập mới từ đầu"
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-300 transition-colors shadow-2xs cursor-pointer"
+                title="Quyền Admin: Xóa trắng toàn bộ dữ liệu group để bạn tự nhập mới từ đầu"
               >
                 <Trash2 className="w-4 h-4 text-rose-600" />
-                <span>Xóa Trắng Bảng Group</span>
+                <span>Admin: Xóa Trắng Bảng Group</span>
               </button>
             )}
 
@@ -822,6 +894,31 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
+            {/* Update Via Button for Batch Selection */}
+            <button
+              type="button"
+              onClick={() => {
+                setViaUpdateTarget({
+                  type: 'bulk',
+                  title: `Cập nhật / Đổi Via hàng loạt cho ${selectedIds.size} dòng Group đã chọn`,
+                  count: selectedIds.size,
+                  recordIds: Array.from(selectedIds),
+                  currentUid: '',
+                  currentViaName: '',
+                });
+                setNewViaUidInput('');
+                setNewViaNameInput('');
+                setNewViaJoinStatusInput('keep');
+                setNewViaStaffInput('keep');
+                setApplyToWholeGroupInViaModal(false);
+              }}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white rounded-xl text-xs font-bold shadow-2xs transition-all cursor-pointer"
+              title="Cập nhật / Thay đổi UID và Tên Via cho tất cả các dòng đang chọn"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>🔄 Update Via ({selectedIds.size} dòng)</span>
+            </button>
+
             {/* Copy selected UIDs */}
             <button
               type="button"
@@ -849,7 +946,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-red-800 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>Xóa Đã Chọn</span>
+              <span>{isAdmin ? `Admin Xóa Đã Chọn (${selectedIds.size})` : `Xóa Đã Chọn (${selectedIds.size})`}</span>
             </button>
 
             {/* Deselect */}
@@ -1028,6 +1125,33 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                       >
                         <Plus className="w-3.5 h-3.5 text-slate-500" />
                         <span>+ Thêm 1 Nick</span>
+                      </button>
+
+                      {/* Update / Đổi Via cho nhóm */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setViaUpdateTarget({
+                            type: 'group',
+                            title: `Update / Đổi Nick Via cho nhóm "${group.groupName}"`,
+                            groupName: group.groupName,
+                            groupId: group.groupId,
+                            count: group.rows.length,
+                            recordIds: group.rows.map((r) => r.id),
+                            currentUid: group.rows[0]?.uid || '',
+                            currentViaName: group.rows[0]?.viaName || '',
+                          });
+                          setNewViaUidInput(group.rows[0]?.uid || '');
+                          setNewViaNameInput(group.rows[0]?.viaName || '');
+                          setNewViaJoinStatusInput('keep');
+                          setNewViaStaffInput(group.staffName || 'keep');
+                          setApplyToWholeGroupInViaModal(true);
+                        }}
+                        className="inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                        title="Cập nhật hoặc đổi Via cho các dòng trong nhóm này"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Đổi Via Nhóm</span>
                       </button>
 
                       {/* Batch add UIDs to this group */}
@@ -1247,6 +1371,32 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                               {/* Thao tác */}
                               <td className="py-2.5 px-3 text-center">
                                 <div className="flex items-center justify-center space-x-1">
+                                  {/* Update Via button */}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setViaUpdateTarget({
+                                        type: 'single',
+                                        title: `Update / Đổi Via cho nick "${row.viaName || row.uid}" (${row.groupName})`,
+                                        groupName: row.groupName,
+                                        groupId: row.groupId,
+                                        count: 1,
+                                        recordIds: [row.id],
+                                        currentUid: row.uid || '',
+                                        currentViaName: row.viaName || '',
+                                      });
+                                      setNewViaUidInput(row.uid || '');
+                                      setNewViaNameInput(row.viaName || '');
+                                      setNewViaJoinStatusInput(row.joinStatus || 'Đã Jon');
+                                      setNewViaStaffInput(row.staffName || 'keep');
+                                      setApplyToWholeGroupInViaModal(false);
+                                    }}
+                                    className="p-1 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors cursor-pointer"
+                                    title="Update / Đổi Nick Via cho dòng này"
+                                  >
+                                    <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                                  </button>
+
                                   {/* Edit button */}
                                   <button
                                     type="button"
@@ -1508,6 +1658,32 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
                       <td className="py-2.5 px-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
+                          {/* Update Via button */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setViaUpdateTarget({
+                                type: 'single',
+                                title: `Update / Đổi Via cho nick "${r.viaName || r.uid}" (${r.groupName})`,
+                                groupName: r.groupName,
+                                groupId: r.groupId,
+                                count: 1,
+                                recordIds: [r.id],
+                                currentUid: r.uid || '',
+                                currentViaName: r.viaName || '',
+                              });
+                              setNewViaUidInput(r.uid || '');
+                              setNewViaNameInput(r.viaName || '');
+                              setNewViaJoinStatusInput(r.joinStatus || 'Đã Jon');
+                              setNewViaStaffInput(r.staffName || 'keep');
+                              setApplyToWholeGroupInViaModal(false);
+                            }}
+                            className="p-1 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-colors cursor-pointer"
+                            title="Update / Đổi Nick Via cho dòng này"
+                          >
+                            <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
+                          </button>
+
                           <button
                             type="button"
                             onClick={() =>
@@ -1562,6 +1738,33 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
           >
             <Copy className="w-3.5 h-3.5" />
             <span>Copy UID Đã Chọn</span>
+          </button>
+
+          <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
+
+          {/* Quick Batch Update Via */}
+          <button
+            type="button"
+            onClick={() => {
+              setViaUpdateTarget({
+                type: 'bulk',
+                title: `Cập nhật / Đổi Via hàng loạt cho ${selectedIds.size} dòng đã chọn`,
+                count: selectedIds.size,
+                recordIds: Array.from(selectedIds),
+                currentUid: '',
+                currentViaName: '',
+              });
+              setNewViaUidInput('');
+              setNewViaNameInput('');
+              setNewViaJoinStatusInput('keep');
+              setNewViaStaffInput('keep');
+              setApplyToWholeGroupInViaModal(false);
+            }}
+            className="px-3 py-1.5 bg-teal-600 hover:bg-teal-500 text-white rounded-xl font-bold flex items-center space-x-1.5 shadow-xs cursor-pointer transition-colors"
+            title="Update hoặc đổi Via cho các dòng đang chọn"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Update Via ({selectedIds.size})</span>
           </button>
 
           <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
@@ -1821,6 +2024,246 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                 <span>
                   Lưu & Chuyển Cho "{targetStaffInput || '...'}"
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Update / Đổi Nick Via Cho Group */}
+      {viaUpdateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-indigo-700 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center font-bold">
+                  <RefreshCw className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold leading-tight">
+                    Update / Đổi Nick Via Cho Group
+                  </h3>
+                  <p className="text-[11px] text-emerald-100">
+                    {viaUpdateTarget.title} ({viaUpdateTarget.count} dòng)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViaUpdateTarget(null)}
+                className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 overflow-y-auto">
+              {/* Quick info banner */}
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-900 space-y-1">
+                <p className="font-semibold flex items-center space-x-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>
+                    {viaUpdateTarget.type === 'bulk'
+                      ? `Đang chọn ${viaUpdateTarget.count} dòng Group để cập nhật đồng loạt Via mới.`
+                      : viaUpdateTarget.type === 'group'
+                      ? `Đang chọn cả nhóm "${viaUpdateTarget.groupName}" (${viaUpdateTarget.count} dòng) để đổi Via.`
+                      : `Cập nhật hoặc đổi Via cho nick "${viaUpdateTarget.currentViaName || viaUpdateTarget.currentUid}".`}
+                  </span>
+                </p>
+                {viaUpdateTarget.currentUid && (
+                  <p className="text-[11px] text-emerald-700 font-mono">
+                    UID hiện tại: <b>{viaUpdateTarget.currentUid}</b> {viaUpdateTarget.currentViaName ? `(${viaUpdateTarget.currentViaName})` : ''}
+                  </p>
+                )}
+              </div>
+
+              {/* Existing Via quick picker if available */}
+              {existingVias && existingVias.length > 0 && (
+                <div className="space-y-2 bg-slate-50 border border-slate-200 p-3 rounded-xl">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-700 flex items-center space-x-1">
+                      <Users className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Chọn nhanh từ Kho Via hệ thống ({existingVias.length} Via):</span>
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="Tìm UID, tên, NV..."
+                      value={viaSearchQuery}
+                      onChange={(e) => setViaSearchQuery(e.target.value)}
+                      className="text-[11px] px-2 py-0.5 border border-slate-200 rounded-lg bg-white max-w-[140px]"
+                    />
+                  </div>
+                  <div className="max-h-36 overflow-y-auto divide-y divide-slate-100 border border-slate-200 rounded-lg bg-white">
+                    {existingVias
+                      .filter((v) => {
+                        if (!viaSearchQuery.trim()) return true;
+                        const q = viaSearchQuery.toLowerCase();
+                        return (
+                          (v.uid || '').toLowerCase().includes(q) ||
+                          (v.staffName || '').toLowerCase().includes(q) ||
+                          (v.note || '').toLowerCase().includes(q) ||
+                          (v.adminReportStatus || '').toLowerCase().includes(q)
+                        );
+                      })
+                      .slice(0, 20)
+                      .map((v) => (
+                        <button
+                          key={v.id || v.uid}
+                          type="button"
+                          onClick={() => {
+                            setNewViaUidInput(v.uid);
+                            setNewViaNameInput(v.note || v.uid);
+                            if (v.staffName && isAdmin) {
+                              setNewViaStaffInput(v.staffName);
+                            }
+                          }}
+                          className="w-full px-2.5 py-1.5 text-left text-xs hover:bg-emerald-50/70 flex items-center justify-between transition-colors group cursor-pointer"
+                        >
+                          <div className="flex items-center space-x-2">
+                            <span className="font-mono font-bold text-slate-900 group-hover:text-emerald-700">
+                              {v.uid}
+                            </span>
+                            {v.note && (
+                              <span className="text-[11px] text-slate-500 max-w-[150px] truncate">
+                                ({v.note})
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-1.5 shrink-0">
+                            {v.adminReportStatus && v.adminReportStatus !== 'None' && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded font-bold bg-amber-100 text-amber-800">
+                                {v.adminReportStatus}
+                              </span>
+                            )}
+                            <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-medium">
+                              {v.staffName}
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Inputs */}
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    UID Nick Facebook Mới <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    list="group-modal-update-via-list"
+                    placeholder="VD: 100060665184656"
+                    value={newViaUidInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewViaUidInput(val);
+                      if (existingVias) {
+                        const matched = existingVias.find((v) => v.uid === val.trim());
+                        if (matched && matched.note && !newViaNameInput) {
+                          setNewViaNameInput(matched.note);
+                        }
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-xs font-mono font-bold border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50 focus:bg-white"
+                  />
+                  {existingVias && existingVias.length > 0 && (
+                    <datalist id="group-modal-update-via-list">
+                      {existingVias.map((v) => (
+                        <option key={v.id || v.uid} value={v.uid} label={`${v.note || ''} (${v.staffName})`} />
+                      ))}
+                    </datalist>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Tên Via / Mô Tả Mới (Cột C)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="VD: Lucas Santos, Rupesh Yadav, Via Kháng..."
+                    value={newViaNameInput}
+                    onChange={(e) => setNewViaNameInput(e.target.value)}
+                    className="w-full px-3 py-2 text-xs font-medium border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-slate-50 focus:bg-white"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Trạng Thái Jon Nhóm
+                    </label>
+                    <select
+                      value={newViaJoinStatusInput}
+                      onChange={(e) => setNewViaJoinStatusInput(e.target.value as any)}
+                      className="w-full px-2.5 py-2 text-xs border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white"
+                    >
+                      <option value="keep">Giữ nguyên hiện tại</option>
+                      <option value="Đã Jon">Đã Jon</option>
+                      <option value="Jon chờ duyệt">Jon chờ duyệt</option>
+                      <option value="Chưa">Chưa</option>
+                    </select>
+                  </div>
+
+                  {isAdmin && (
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Nhân Viên Phụ Trách
+                      </label>
+                      <select
+                        value={newViaStaffInput}
+                        onChange={(e) => setNewViaStaffInput(e.target.value)}
+                        className="w-full px-2.5 py-2 text-xs border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-emerald-500 bg-slate-50 focus:bg-white"
+                      >
+                        <option value="keep">Giữ nguyên nhân viên</option>
+                        {allKnownStaff.map((s) => (
+                          <option key={s} value={s}>
+                            {s}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {/* Option to apply to whole group if editing a single row */}
+                {viaUpdateTarget.type === 'single' && viaUpdateTarget.groupName && (
+                  <label className="flex items-center space-x-2 pt-1 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={applyToWholeGroupInViaModal}
+                      onChange={(e) => setApplyToWholeGroupInViaModal(e.target.checked)}
+                      className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300"
+                    />
+                    <span className="text-xs text-slate-700 font-medium">
+                      Áp dụng thay đổi Via này cho <b>toàn bộ các dòng thuộc nhóm "{viaUpdateTarget.groupName}"</b>
+                    </span>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Footer buttons */}
+            <div className="bg-slate-50 px-5 py-3.5 border-t border-slate-200 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setViaUpdateTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-200 transition-colors"
+              >
+                Hủy Bỏ
+              </button>
+
+              <button
+                type="button"
+                onClick={handleApplyViaUpdate}
+                disabled={!newViaUidInput.trim()}
+                className="px-5 py-2 text-xs font-bold bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 disabled:opacity-50 text-white rounded-xl shadow-md transition-all flex items-center space-x-1.5 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Xác Nhận Update Via</span>
               </button>
             </div>
           </div>
