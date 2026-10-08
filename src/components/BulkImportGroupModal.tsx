@@ -10,7 +10,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { GroupRecord, AppUser, GroupJoinStatus } from '../types';
+import { GroupRecord, AppUser, GroupJoinStatus, GroupInteractionStatus } from '../types';
 import { downloadGroupExcelTemplate } from '../utils/excelTemplates';
 import { GROUP_NOTE_CHOICES } from './AddEditGroupModal';
 
@@ -106,6 +106,29 @@ export const BulkImportGroupModal: React.FC<BulkImportGroupModalProps> = ({
         joinStatus = 'Chưa';
       }
 
+      // Parse Mức Tương Tác
+      let interactionStatus: GroupInteractionStatus | undefined = undefined;
+      const rawInteraction = (
+        (row as any)['MỨC TƯƠNG TÁC'] ||
+        (row as any)['TƯƠNG TÁC'] ||
+        (row as any)['Mức Tương Tác'] ||
+        (row as any)['Tương Tác'] ||
+        (row as any)['interactionStatus'] ||
+        (row as any)['interaction'] ||
+        ''
+      )
+        .toString()
+        .trim()
+        .toLowerCase();
+
+      if (rawInteraction.includes('ổn') || rawInteraction.includes('tốt') || rawInteraction === 'tương tác ổn') {
+        interactionStatus = 'Tương tác ổn';
+      } else if (rawInteraction.includes('vừa') || rawInteraction.includes('bình thường') || rawInteraction === 'tương tác vừa') {
+        interactionStatus = 'Tương tác vừa';
+      } else if (rawInteraction.includes('không') || rawInteraction.includes('kém') || rawInteraction === 'không có tương tác') {
+        interactionStatus = 'Không có tương tác';
+      }
+
       // If groupName is missing but groupLink exists, formulate default groupName
       if (!groupName && groupLink) {
         groupName = 'Nhóm Facebook';
@@ -124,6 +147,7 @@ export const BulkImportGroupModal: React.FC<BulkImportGroupModalProps> = ({
           uid,
           viaName: viaName || `Via ${uid.slice(-4)}`,
           joinStatus,
+          interactionStatus,
           note,
           isHighlighted,
           staffName: rowStaff,

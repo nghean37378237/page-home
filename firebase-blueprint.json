@@ -107,6 +107,7 @@
         "uid": { "type": "string", "maxLength": 100 },
         "viaName": { "type": "string", "maxLength": 100 },
         "joinStatus": { "type": "string", "enum": ["Đã Jon", "Jon chờ duyệt", "Chưa"] },
+        "interactionStatus": { "type": "string", "enum": ["Tương tác ổn", "Tương tác vừa", "Không có tương tác"] },
         "note": { "type": "string", "maxLength": 500 },
         "isHighlighted": { "type": "boolean" },
         "staffName": { "type": "string", "maxLength": 100 },

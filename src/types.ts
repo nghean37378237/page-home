@@ -145,6 +145,13 @@ export interface SharedAccount {
 export type GroupJoinStatus = 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa';
 export const GROUP_JOIN_STATUS_OPTIONS: GroupJoinStatus[] = ['Đã Jon', 'Jon chờ duyệt', 'Chưa'];
 
+export type GroupInteractionStatus = 'Tương tác ổn' | 'Tương tác vừa' | 'Không có tương tác';
+export const GROUP_INTERACTION_STATUS_OPTIONS: GroupInteractionStatus[] = [
+  'Tương tác ổn',
+  'Tương tác vừa',
+  'Không có tương tác',
+];
+
 export interface GroupRecord {
   id: string;
   groupId: string; // Mã nhóm duy nhất để gộp ô các Via trong cùng 1 Group
@@ -153,6 +160,7 @@ export interface GroupRecord {
   uid: string; // Cột B: UID nick Facebook (VD: '100060665184656')
   viaName: string; // Cột C: TÊN VIA (VD: 'Lucas Santos', 'Rupesh Yadav'...)
   joinStatus?: GroupJoinStatus; // Cột TRẠNG THÁI: 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa'
+  interactionStatus?: GroupInteractionStatus; // Ô chọn màu tương tác: 'Tương tác ổn' (Xanh) | 'Tương tác vừa' (Vàng) | 'Không có tương tác' (Đỏ)
   note: string; // Cột F: Ghi Chú (VD: 'vhh', 'hạn chế', 'đình chỉ'...)
   isHighlighted?: boolean; // Ô bôi xanh lá (dòng via chính / via duyệt theo yêu cầu hình ảnh)
   staffName: string; // TÊN NV (Quản lý phân quyền tài khoản tương tự như Page)

@@ -17,7 +17,7 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem } from '../types';
+import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem, GroupInteractionStatus } from '../types';
 import {
   INITIAL_PAGE_RECORDS,
   INITIAL_GROUP_RECORDS,
@@ -778,6 +778,32 @@ export async function updateCloudGroupRecord(id: string, updates: Partial<GroupR
     console.log(`[Firestore] Đã cập nhật dòng group ID: ${id}`);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
+    throw error;
+  }
+}
+
+export async function batchUpdateGroupInteractionStatus(
+  ids: string[],
+  interactionStatus: GroupInteractionStatus | undefined
+): Promise<void> {
+  if (!ids.length) return;
+  const chunkSize = 400;
+  try {
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((id) => {
+        const ref = doc(db, GROUP_RECORDS_COLLECTION, id);
+        batch.update(ref, {
+          interactionStatus: interactionStatus || '',
+          updatedAt: new Date().toISOString(),
+        });
+      });
+      await batch.commit();
+    }
+    console.log(`[Firestore] Đã cập nhật trạng thái tương tác "${interactionStatus || 'bỏ chọn'}" cho ${ids.length} dòng.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, GROUP_RECORDS_COLLECTION);
     throw error;
   }
 }
