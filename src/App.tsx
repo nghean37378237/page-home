@@ -93,7 +93,7 @@ import { ProxyManagementTable } from './components/ProxyManagementTable';
 import { ProxyAppView } from './components/ProxyAppView';
 import { AddEditProxyModal } from './components/AddEditProxyModal';
 import { BulkImportProxyModal } from './components/BulkImportProxyModal';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck } from 'lucide-react';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw } from 'lucide-react';
 
 export default function App() {
   // Application data stored purely in Cloud Firestore
@@ -159,8 +159,9 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabKey>('fanpage');
 
   // Phân quyền Bảng hiển thị (Smart Tab Access Control):
-  // Admin: luôn xem toàn bộ 6 bảng.
-  // Nhân viên: CHỈ xem các bảng được Admin phân quyền, tự động ẩn toàn bộ bảng không cần thiết để giao diện gọn gàng.
+  // Admin: luôn xem toàn bộ 6 bảng, bao gồm Bảng 5 Quản Trị Nhân Viên.
+  // Nhân viên: CHỈ xem các bảng được Admin phân quyền (Bảng 1..4, 6), tự động ẩn toàn bộ bảng không cần thiết để giao diện gọn gàng.
+  // Bảng 5 Quản Trị Nhân Viên chỉ dành riêng cho Admin quản lý.
   const userAllowedTabs = useMemo<TabKey[]>(() => {
     if (currentUser.role === 'admin') {
       return ALL_TAB_KEYS;
@@ -171,11 +172,14 @@ export default function App() {
         a.username.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
     );
     const assigned = currentAcc?.allowedTabs || currentUser.allowedTabs;
+    let tabs: TabKey[] = [];
     if (Array.isArray(assigned) && assigned.length > 0) {
-      const valid = assigned.filter((t) => ALL_TAB_KEYS.includes(t as TabKey)) as TabKey[];
-      if (valid.length > 0) return valid;
+      tabs = assigned.filter((t) => ALL_TAB_KEYS.includes(t as TabKey)) as TabKey[];
+    } else {
+      tabs = ['fanpage', 'fullvia'];
     }
-    return ['fanpage', 'fullvia', 'staff_management'] as TabKey[];
+    // Bảng 5 (Quản trị nhân viên) chỉ có Admin quản lý - loại trừ khỏi danh sách bảng của nhân viên
+    return tabs.filter((t) => t !== 'staff_management');
   }, [currentUser, accounts]);
 
   // Tự động chuyển activeTab về bảng hợp lệ đầu tiên nếu bảng hiện tại không được phép
@@ -200,6 +204,39 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<PageRecord | null>(null);
   const [presetViaData, setPresetViaData] = useState<{ viaUid: string; staffName: string } | null>(null);
+
+  // Modal đổi PIN cá nhân cho nhân viên từ thanh Header
+  const [isStaffMyPinModalOpen, setIsStaffMyPinModalOpen] = useState(false);
+  const [myNewPinValue, setMyNewPinValue] = useState('');
+  const [isSavingMyPin, setIsSavingMyPin] = useState(false);
+  const [myPinSuccessNotice, setMyPinSuccessNotice] = useState<string | null>(null);
+
+  const handleSaveMyOwnPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!myNewPinValue.trim()) return;
+    setIsSavingMyPin(true);
+    setMyPinSuccessNotice(null);
+    try {
+      const myAccount = accounts.find(
+        (a) =>
+          a.id === currentUser.id ||
+          a.username.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+      );
+      if (myAccount) {
+        await handleUpdateAccountPin(myAccount.id, myNewPinValue.trim());
+      }
+      setMyPinSuccessNotice('Đã đổi mã PIN thành công! Mã PIN mới đã đồng bộ lên Cloud.');
+      setTimeout(() => {
+        setIsStaffMyPinModalOpen(false);
+        setMyPinSuccessNotice(null);
+        setMyNewPinValue('');
+      }, 1000);
+    } catch (err: any) {
+      alert('Lỗi: ' + (err.message || 'Không thể đổi PIN'));
+    } finally {
+      setIsSavingMyPin(false);
+    }
+  };
 
   // 1. Initial boot: purge legacy localStorage and establish basic auth/settings connection
   useEffect(() => {
@@ -2022,6 +2059,11 @@ export default function App() {
           setBulkImportPresetStaff(currentUser.role === 'staff' ? currentUser.name : undefined);
           setIsBulkImportOpen(true);
         }}
+        onOpenChangeMyPin={() => {
+          setMyNewPinValue('');
+          setMyPinSuccessNotice(null);
+          setIsStaffMyPinModalOpen(true);
+        }}
       />
 
       {/* 2 TABS CHÍNH: TAB 1 (MẶC ĐỊNH) = BẢNG FANPAGE & TIẾN ĐỘ | TAB 2 = BẢNG QUẢN LÝ FULL VIA */}
@@ -2152,7 +2194,7 @@ export default function App() {
                 </button>
               )}
 
-              {/* TAB 5: Bảng 5 Tên, MK Tài Khoản (Staff Management: Admin toàn bộ | Staff của riêng mình) */}
+              {/* TAB 5: Bảng 5 Quản Trị Nhân Viên (Chỉ Admin Quản Lý) */}
               {userAllowedTabs.includes('staff_management') && (
                 <button
                   type="button"
@@ -2163,14 +2205,10 @@ export default function App() {
                       ? 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25'
                       : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                   }`}
-                  title="Bảng 5: Tên & Mật khẩu tài khoản nhân sự"
+                  title="Bảng 5: Quản trị danh sách nhân sự, phân quyền bảng và bảo mật (Chỉ Admin)"
                 >
                   <Users className="w-4 h-4 shrink-0" />
-                  <span>
-                    {currentUser.role === 'admin'
-                      ? 'Bảng 5: Tên, MK Tài Khoản'
-                      : 'Bảng 5: Tên & MK Của Tôi'}
-                  </span>
+                  <span>Bảng 5: Quản Trị Nhân Viên</span>
                   <span
                     className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
                       activeTab === 'staff_management'
@@ -2178,9 +2216,7 @@ export default function App() {
                         : 'bg-white text-slate-800 border border-slate-200'
                     }`}
                   >
-                    {currentUser.role === 'admin'
-                      ? `${accounts.filter((a) => a.role === 'staff').length} NV`
-                      : currentUser.name}
+                    {accounts.filter((a) => a.role === 'staff').length} NV
                   </span>
                 </button>
               )}
@@ -2225,7 +2261,7 @@ export default function App() {
               {currentUser.role === 'staff' && (
                 <div className="hidden lg:flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200/80 shrink-0">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                  <span>Đã phân quyền {userAllowedTabs.length}/6 bảng</span>
+                  <span>Đã phân quyền {userAllowedTabs.length} bảng (Gọn gàng)</span>
                 </div>
               )}
             </div>
@@ -2681,6 +2717,73 @@ export default function App() {
           presetStaffName={fetchPagesStaffName}
           onAddRecords={handleBatchAddFetchedPages}
         />
+      )}
+
+      {/* Modal Đổi Mã PIN Cá Nhân Dành Cho Nhân Viên */}
+      {isStaffMyPinModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 animate-fadeIn">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+                  <KeyRound className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Đổi Mã PIN Cá Nhân</h3>
+                  <p className="text-xs text-slate-500">Tài khoản: {currentUser.name}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsStaffMyPinModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {myPinSuccessNotice && (
+              <div className="mb-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center space-x-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{myPinSuccessNotice}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveMyOwnPin} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Mã PIN Mới
+                </label>
+                <input
+                  type="text"
+                  placeholder="Nhập mã PIN mới (ví dụ: 123456)"
+                  value={myNewPinValue}
+                  onChange={(e) => setMyNewPinValue(e.target.value)}
+                  required
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-mono font-bold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center justify-end space-x-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsStaffMyPinModalOpen(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingMyPin}
+                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-60"
+                >
+                  {isSavingMyPin && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Lưu PIN Mới</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );

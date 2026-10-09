@@ -55,7 +55,7 @@ export const INITIAL_ACCOUNTS: UserAccount[] = [
     createdAt: '15/09/2026',
     approvedAt: '15/09/2026',
     adminNote: 'Nhân viên trực page chính',
-    allowedTabs: ['fanpage', 'fullvia', 'staff_management'],
+    allowedTabs: ['fanpage', 'fullvia'],
   },
   {
     id: 'account-bao',
@@ -67,7 +67,7 @@ export const INITIAL_ACCOUNTS: UserAccount[] = [
     createdAt: '15/09/2026',
     approvedAt: '15/09/2026',
     adminNote: 'Nhân viên quản lý via & page',
-    allowedTabs: ['fanpage', 'group', 'fullvia', 'staff_management'],
+    allowedTabs: ['fanpage', 'group', 'fullvia'],
   },
   {
     id: 'account-phuong-my',
@@ -79,7 +79,7 @@ export const INITIAL_ACCOUNTS: UserAccount[] = [
     createdAt: '15/09/2026',
     approvedAt: '15/09/2026',
     adminNote: 'Nhân viên trực ca ngày',
-    allowedTabs: ['fanpage', 'staff_management'],
+    allowedTabs: ['fanpage'],
   },
 ];
 

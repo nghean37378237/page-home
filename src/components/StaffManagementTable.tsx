@@ -279,19 +279,19 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const handleQuickPresetTabs = (preset: 'all' | 'fanpage_only' | 'fanpage_via' | 'fanpage_group' | 'minimal') => {
     switch (preset) {
       case 'all':
-        setSelectedAllowedTabs(ALL_TAB_KEYS);
+        setSelectedAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts']);
         break;
       case 'fanpage_only':
         setSelectedAllowedTabs(['fanpage']);
         break;
       case 'fanpage_via':
-        setSelectedAllowedTabs(['fanpage', 'fullvia', 'staff_management']);
+        setSelectedAllowedTabs(['fanpage', 'fullvia']);
         break;
       case 'fanpage_group':
-        setSelectedAllowedTabs(['fanpage', 'group', 'staff_management']);
+        setSelectedAllowedTabs(['fanpage', 'group']);
         break;
       case 'minimal':
-        setSelectedAllowedTabs(['fanpage', 'staff_management']);
+        setSelectedAllowedTabs(['fanpage']);
         break;
     }
   };
@@ -389,14 +389,18 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   <Users className="w-5 h-5" />
                 </div>
                 <div>
-                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                    <span>Quản Lý Danh Sách Nhân Viên & Mật Khẩu</span>
+                  <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2 flex-wrap">
+                    <span>Bảng Quản Trị Nhân Viên</span>
+                    <span className="text-xs font-black text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
+                      <Shield className="w-3.5 h-3.5 text-amber-700" />
+                      <span>Chỉ Admin Quản Lý</span>
+                    </span>
                     <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
                       Cloud Firestore Real-time
                     </span>
                   </h1>
-                  <p className="text-xs text-slate-500 font-medium">
-                    Toàn bộ danh sách nhân viên, tài khoản phân quyền và mật khẩu đăng nhập đồng bộ thời gian thực trên Cloud Firestore.
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Toàn quyền quản trị nhân sự: Thêm nhân viên, cấp mật khẩu PIN, phân quyền xem Bảng 1..6 và theo dõi phân công công việc.
                   </p>
                 </div>
               </div>
@@ -1017,8 +1021,8 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                             <div className="flex items-center justify-between">
                               <span className="text-[10px] text-slate-400 font-medium">
                                 {acc.role === 'admin'
-                                  ? 'Toàn quyền (6/6)'
-                                  : `${(acc.allowedTabs || ALL_TAB_KEYS).length}/6 Bảng`}
+                                  ? 'Toàn quyền (Admin)'
+                                  : `${(acc.allowedTabs || ['fanpage', 'fullvia']).filter((t) => t !== 'staff_management').length}/5 Bảng`}
                               </span>
                               {acc.role !== 'admin' && (
                                 <button
@@ -1267,16 +1271,16 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                     Phân Quyền Bảng Hiển Thị (1..6)
                   </label>
                   <span className="text-[11px] text-blue-600 font-semibold">
-                    Đã chọn {addAllowedTabs.length}/6 bảng
+                    Đã chọn {addAllowedTabs.filter((t) => t !== 'staff_management').length}/5 bảng
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1 mb-2">
                   <button
                     type="button"
-                    onClick={() => setAddAllowedTabs(ALL_TAB_KEYS)}
+                    onClick={() => setAddAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'])}
                     className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                   >
-                    Tất cả (1-6)
+                    Tất cả (5 bảng)
                   </button>
                   <button
                     type="button"
@@ -1287,21 +1291,21 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAddAllowedTabs(['fanpage', 'fullvia', 'staff_management'])}
+                    onClick={() => setAddAllowedTabs(['fanpage', 'fullvia'])}
                     className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer"
                   >
                     Fanpage + Via
                   </button>
                   <button
                     type="button"
-                    onClick={() => setAddAllowedTabs(['fanpage', 'group', 'staff_management'])}
+                    onClick={() => setAddAllowedTabs(['fanpage', 'group'])}
                     className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-700 cursor-pointer"
                   >
                     Fanpage + Group
                   </button>
                 </div>
                 <div className="grid grid-cols-2 gap-1.5">
-                  {ALL_TAB_KEYS.map((tabKey) => {
+                  {(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'] as TabKey[]).map((tabKey) => {
                     const tabDef = TAB_DEFINITIONS[tabKey];
                     const isChecked = addAllowedTabs.includes(tabKey);
                     return (
@@ -1663,13 +1667,9 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   <button
                     type="button"
                     onClick={() => handleQuickPresetTabs('all')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
-                      selectedAllowedTabs.length === ALL_TAB_KEYS.length
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                    }`}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 transition-all cursor-pointer"
                   >
-                    ⚡ Tất Cả Bảng (1..6)
+                    ⚡ Cấp 5 Bảng Nghiệp Vụ (B1..B4, B6)
                   </button>
                   <button
                     type="button"
@@ -1692,25 +1692,46 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   >
                     👥 Fanpage + Group (B1 & B2)
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickPresetTabs('minimal')}
-                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition-all cursor-pointer"
-                  >
-                    🛡️ Tối Giản (B1 & B5)
-                  </button>
                 </div>
               </div>
 
               {/* 6 Tab Checkbox Cards */}
               <div className="space-y-2">
                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                  Danh Sách 6 Bảng Quản Lý:
+                  Danh Sách Bảng Phân Quyền Cho Nhân Viên:
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
                   {ALL_TAB_KEYS.map((tabKey) => {
                     const tabDef = TAB_DEFINITIONS[tabKey];
-                    const isChecked = selectedAllowedTabs.includes(tabKey);
+                    const isAdminOnlyTab = tabKey === 'staff_management';
+                    const isChecked = !isAdminOnlyTab && selectedAllowedTabs.includes(tabKey);
+
+                    if (isAdminOnlyTab) {
+                      return (
+                        <div
+                          key={tabKey}
+                          className="p-3 rounded-xl border border-slate-200 bg-slate-100/70 select-none flex items-start space-x-2.5 opacity-60 cursor-not-allowed"
+                          title="Bảng Quản Trị Nhân Viên chỉ dành riêng cho Admin"
+                        >
+                          <div className="mt-0.5 w-4 h-4 rounded border border-slate-300 bg-slate-200 flex items-center justify-center text-[10px] text-slate-500 font-bold shrink-0">
+                            🔒
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-bold text-xs text-slate-600 truncate">
+                                {tabDef.label}
+                              </span>
+                              <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                Chỉ Admin
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">
+                              Bảng quản trị nhân sự chỉ Admin quản lý, tự động ẩn khỏi nhân viên.
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
 
                     return (
                       <div

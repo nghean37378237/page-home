@@ -2962,7 +2962,7 @@ export function AdminApprovalModal({
                     Phân Quyền Bảng Hiển Thị (1..6)
                   </label>
                   <span className="text-[11px] text-indigo-600 font-semibold">
-                    Đã chọn {(editStaffModalData.allowedTabs || ALL_TAB_KEYS).length}/6 bảng
+                    Đã chọn {(editStaffModalData.allowedTabs || ['fanpage', 'fullvia']).filter((t) => t !== 'staff_management').length}/5 bảng
                   </span>
                 </div>
 
@@ -2972,12 +2972,12 @@ export function AdminApprovalModal({
                     onClick={() =>
                       setEditStaffModalData({
                         ...editStaffModalData,
-                        allowedTabs: ALL_TAB_KEYS,
+                        allowedTabs: ['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'],
                       })
                     }
                     className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                   >
-                    Tất cả (1-6)
+                    Tất cả (5 bảng)
                   </button>
                   <button
                     type="button"
@@ -2996,7 +2996,7 @@ export function AdminApprovalModal({
                     onClick={() =>
                       setEditStaffModalData({
                         ...editStaffModalData,
-                        allowedTabs: ['fanpage', 'fullvia', 'staff_management'],
+                        allowedTabs: ['fanpage', 'fullvia'],
                       })
                     }
                     className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer"
@@ -3008,7 +3008,7 @@ export function AdminApprovalModal({
                     onClick={() =>
                       setEditStaffModalData({
                         ...editStaffModalData,
-                        allowedTabs: ['fanpage', 'group', 'staff_management'],
+                        allowedTabs: ['fanpage', 'group'],
                       })
                     }
                     className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-700 cursor-pointer"
@@ -3018,9 +3018,9 @@ export function AdminApprovalModal({
                 </div>
 
                 <div className="grid grid-cols-2 gap-1.5">
-                  {ALL_TAB_KEYS.map((tabKey) => {
+                  {(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'] as TabKey[]).map((tabKey) => {
                     const tabDef = TAB_DEFINITIONS[tabKey];
-                    const currentTabs = editStaffModalData.allowedTabs || ALL_TAB_KEYS;
+                    const currentTabs = editStaffModalData.allowedTabs || ['fanpage', 'fullvia'];
                     const isChecked = currentTabs.includes(tabKey);
 
                     return (

@@ -100,6 +100,15 @@ export const ALL_TAB_KEYS: TabKey[] = [
   'shared_accounts',
 ];
 
+// Các bảng phân quyền cho nhân viên (Bảng 5 là Quản Trị Nhân Viên chỉ dành riêng cho Admin quản lý)
+export const STAFF_ASSIGNABLE_TABS: TabKey[] = [
+  'fanpage',
+  'group',
+  'proxy',
+  'fullvia',
+  'shared_accounts',
+];
+
 export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
   fanpage: {
     id: 'fanpage',
@@ -140,11 +149,11 @@ export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
   staff_management: {
     id: 'staff_management',
     tabNumber: 5,
-    label: 'Bảng 5: Tên, MK Tài Khoản',
-    shortLabel: 'B5 Tên & MK',
-    badgeName: 'Tài Khoản',
+    label: 'Bảng 5: Quản Trị Nhân Viên',
+    shortLabel: 'B5 Quản Trị NV',
+    badgeName: 'Quản Trị NV',
     color: 'blue',
-    description: 'Tên nhân sự, mã PIN mật khẩu và bảo mật cá nhân',
+    description: 'Bảng quản trị nhân sự, phân quyền bảng và bảo mật hệ thống (Chỉ Admin)',
   },
   shared_accounts: {
     id: 'shared_accounts',

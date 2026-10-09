@@ -59,6 +59,7 @@ interface SheetHeaderProps {
   onOpenBulkImportViaModal?: () => void;
   onFilterViaErrorInFullVia?: () => void;
   isFilteringViaErrorInFullVia?: boolean;
+  onOpenChangeMyPin?: () => void;
 }
 
 export const SheetHeader: React.FC<SheetHeaderProps> = ({
@@ -88,6 +89,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
   onOpenBulkImportViaModal,
   onFilterViaErrorInFullVia,
   isFilteringViaErrorInFullVia = false,
+  onOpenChangeMyPin,
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [newStaffInput, setNewStaffInput] = useState('');
@@ -370,6 +372,23 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                               Tài khoản đã được Admin phê duyệt quyền truy cập.
                             </div>
                           </div>
+
+                          {onOpenChangeMyPin && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsUserMenuOpen(false);
+                                onOpenChangeMyPin();
+                              }}
+                              className="w-full text-left px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-900 rounded-lg flex items-center space-x-2 transition-colors cursor-pointer border border-blue-200"
+                            >
+                              <KeyRound className="w-4 h-4 text-blue-600 shrink-0" />
+                              <div>
+                                <div className="font-bold">Đổi Mật Khẩu / PIN Của Tôi</div>
+                                <div className="text-[10px] text-blue-700">Cập nhật mã PIN cá nhân</div>
+                              </div>
+                            </button>
+                          )}
 
                           <button
                             type="button"
