@@ -21,6 +21,9 @@ import {
   Clock,
   ArrowRightLeft,
   Zap,
+  Filter,
+  ArrowUpDown,
+  CheckCheck,
 } from 'lucide-react';
 import {
   PageRecord,
@@ -44,7 +47,7 @@ import {
   getInteractionBadgeStyle,
 } from '../utils/helpers';
 
-interface ViaTheme {
+export interface ViaTheme {
   name: string;
   rowBg: string;
   rowHover: string;
@@ -52,92 +55,182 @@ interface ViaTheme {
   borderLeft: string;
   badgeBg: string;
   topBorder: string;
+  bottomBorder: string;
+  innerBorder: string;
   dotColor: string;
+  ringColor: string;
+  softBadge: string;
+  chipBg: string;
+  chipText: string;
 }
 
-// 8 harmonious, clean pastel palettes for distinguishing different Vias (1 via 3 page chung 1 màu)
-const VIA_THEMES: ViaTheme[] = [
+// 8 bảng màu pastel thanh nhã, độ tương phản khoa học, làm nổi bật các khối Via cầm chung page
+export const VIA_THEMES: ViaTheme[] = [
   {
-    name: 'Xanh Lam (Sky)',
-    rowBg: 'bg-sky-50/80',
-    rowHover: 'hover:bg-sky-100/90',
-    cellBg: 'bg-sky-100/95',
+    name: 'Xanh Lam Nhạt (Sky Blue)',
+    rowBg: 'bg-sky-50/70',
+    rowHover: 'hover:bg-sky-100/80',
+    cellBg: 'bg-sky-100/80',
     borderLeft: 'border-l-4 border-l-sky-500',
     badgeBg: 'bg-sky-100 text-sky-900 border-sky-300',
-    topBorder: 'border-t-2 border-sky-300',
+    topBorder: 'border-t-2 border-sky-400',
+    bottomBorder: 'border-b-2 border-sky-300',
+    innerBorder: 'border-t border-dashed border-sky-200/80',
     dotColor: 'bg-sky-500',
+    ringColor: 'ring-sky-300',
+    softBadge: 'bg-sky-600 text-white',
+    chipBg: 'bg-sky-100',
+    chipText: 'text-sky-900',
   },
   {
-    name: 'Vàng Hổ Phách (Amber)',
-    rowBg: 'bg-amber-50/80',
-    rowHover: 'hover:bg-amber-100/90',
-    cellBg: 'bg-amber-100/95',
+    name: 'Vàng Cát Nhạt (Warm Amber)',
+    rowBg: 'bg-amber-50/70',
+    rowHover: 'hover:bg-amber-100/80',
+    cellBg: 'bg-amber-100/80',
     borderLeft: 'border-l-4 border-l-amber-500',
-    badgeBg: 'bg-amber-100 text-amber-900 border-amber-300',
-    topBorder: 'border-t-2 border-amber-300',
+    badgeBg: 'bg-amber-100 text-amber-950 border-amber-300',
+    topBorder: 'border-t-2 border-amber-400',
+    bottomBorder: 'border-b-2 border-amber-300',
+    innerBorder: 'border-t border-dashed border-amber-200/80',
     dotColor: 'bg-amber-500',
+    ringColor: 'ring-amber-300',
+    softBadge: 'bg-amber-600 text-white',
+    chipBg: 'bg-amber-100',
+    chipText: 'text-amber-950',
   },
   {
-    name: 'Xanh Lá (Emerald)',
-    rowBg: 'bg-emerald-50/75',
-    rowHover: 'hover:bg-emerald-100/90',
-    cellBg: 'bg-emerald-100/95',
-    borderLeft: 'border-l-4 border-l-emerald-600',
-    badgeBg: 'bg-emerald-100 text-emerald-900 border-emerald-300',
-    topBorder: 'border-t-2 border-emerald-300',
-    dotColor: 'bg-emerald-600',
+    name: 'Xanh Bạc Hà (Mint Emerald)',
+    rowBg: 'bg-emerald-50/70',
+    rowHover: 'hover:bg-emerald-100/80',
+    cellBg: 'bg-emerald-100/80',
+    borderLeft: 'border-l-4 border-l-emerald-500',
+    badgeBg: 'bg-emerald-100 text-emerald-950 border-emerald-300',
+    topBorder: 'border-t-2 border-emerald-400',
+    bottomBorder: 'border-b-2 border-emerald-300',
+    innerBorder: 'border-t border-dashed border-emerald-200/80',
+    dotColor: 'bg-emerald-500',
+    ringColor: 'ring-emerald-300',
+    softBadge: 'bg-emerald-600 text-white',
+    chipBg: 'bg-emerald-100',
+    chipText: 'text-emerald-950',
   },
   {
-    name: 'Tím Oải Hương (Purple)',
-    rowBg: 'bg-purple-50/80',
-    rowHover: 'hover:bg-purple-100/90',
-    cellBg: 'bg-purple-100/95',
+    name: 'Tím Oải Hương (Soft Violet)',
+    rowBg: 'bg-purple-50/70',
+    rowHover: 'hover:bg-purple-100/80',
+    cellBg: 'bg-purple-100/80',
     borderLeft: 'border-l-4 border-l-purple-500',
-    badgeBg: 'bg-purple-100 text-purple-900 border-purple-300',
-    topBorder: 'border-t-2 border-purple-300',
+    badgeBg: 'bg-purple-100 text-purple-950 border-purple-300',
+    topBorder: 'border-t-2 border-purple-400',
+    bottomBorder: 'border-b-2 border-purple-300',
+    innerBorder: 'border-t border-dashed border-purple-200/80',
     dotColor: 'bg-purple-500',
+    ringColor: 'ring-purple-300',
+    softBadge: 'bg-purple-600 text-white',
+    chipBg: 'bg-purple-100',
+    chipText: 'text-purple-950',
   },
   {
-    name: 'Hồng San Hô (Rose)',
-    rowBg: 'bg-rose-50/75',
-    rowHover: 'hover:bg-rose-100/90',
-    cellBg: 'bg-rose-100/95',
-    borderLeft: 'border-l-4 border-l-rose-500',
-    badgeBg: 'bg-rose-100 text-rose-900 border-rose-300',
-    topBorder: 'border-t-2 border-rose-300',
-    dotColor: 'bg-rose-500',
-  },
-  {
-    name: 'Xanh Mòng Két (Teal)',
-    rowBg: 'bg-teal-50/80',
-    rowHover: 'hover:bg-teal-100/90',
-    cellBg: 'bg-teal-100/95',
-    borderLeft: 'border-l-4 border-l-teal-500',
-    badgeBg: 'bg-teal-100 text-teal-900 border-teal-300',
-    topBorder: 'border-t-2 border-teal-300',
-    dotColor: 'bg-teal-500',
-  },
-  {
-    name: 'Cam Đào (Orange)',
-    rowBg: 'bg-orange-50/80',
-    rowHover: 'hover:bg-orange-100/90',
-    cellBg: 'bg-orange-100/95',
+    name: 'Cam Đào Nhạt (Soft Peach)',
+    rowBg: 'bg-orange-50/70',
+    rowHover: 'hover:bg-orange-100/80',
+    cellBg: 'bg-orange-100/80',
     borderLeft: 'border-l-4 border-l-orange-500',
-    badgeBg: 'bg-orange-100 text-orange-900 border-orange-300',
-    topBorder: 'border-t-2 border-orange-300',
+    badgeBg: 'bg-orange-100 text-orange-950 border-orange-300',
+    topBorder: 'border-t-2 border-orange-400',
+    bottomBorder: 'border-b-2 border-orange-300',
+    innerBorder: 'border-t border-dashed border-orange-200/80',
     dotColor: 'bg-orange-500',
+    ringColor: 'ring-orange-300',
+    softBadge: 'bg-orange-600 text-white',
+    chipBg: 'bg-orange-100',
+    chipText: 'text-orange-950',
   },
   {
-    name: 'Chàm Indigo (Indigo)',
-    rowBg: 'bg-indigo-50/80',
-    rowHover: 'hover:bg-indigo-100/90',
-    cellBg: 'bg-indigo-100/95',
+    name: 'Xanh Mòng Két (Teal Pastel)',
+    rowBg: 'bg-teal-50/70',
+    rowHover: 'hover:bg-teal-100/80',
+    cellBg: 'bg-teal-100/80',
+    borderLeft: 'border-l-4 border-l-teal-500',
+    badgeBg: 'bg-teal-100 text-teal-950 border-teal-300',
+    topBorder: 'border-t-2 border-teal-400',
+    bottomBorder: 'border-b-2 border-teal-300',
+    innerBorder: 'border-t border-dashed border-teal-200/80',
+    dotColor: 'bg-teal-500',
+    ringColor: 'ring-teal-300',
+    softBadge: 'bg-teal-600 text-white',
+    chipBg: 'bg-teal-100',
+    chipText: 'text-teal-950',
+  },
+  {
+    name: 'Hồng Phấn (Soft Rose)',
+    rowBg: 'bg-rose-50/70',
+    rowHover: 'hover:bg-rose-100/80',
+    cellBg: 'bg-rose-100/80',
+    borderLeft: 'border-l-4 border-l-rose-500',
+    badgeBg: 'bg-rose-100 text-rose-950 border-rose-300',
+    topBorder: 'border-t-2 border-rose-400',
+    bottomBorder: 'border-b-2 border-rose-300',
+    innerBorder: 'border-t border-dashed border-rose-200/80',
+    dotColor: 'bg-rose-500',
+    ringColor: 'ring-rose-300',
+    softBadge: 'bg-rose-600 text-white',
+    chipBg: 'bg-rose-100',
+    chipText: 'text-rose-950',
+  },
+  {
+    name: 'Chàm Indigo Nhạt (Soft Indigo)',
+    rowBg: 'bg-indigo-50/70',
+    rowHover: 'hover:bg-indigo-100/80',
+    cellBg: 'bg-indigo-100/80',
     borderLeft: 'border-l-4 border-l-indigo-500',
-    badgeBg: 'bg-indigo-100 text-indigo-900 border-indigo-300',
-    topBorder: 'border-t-2 border-indigo-300',
+    badgeBg: 'bg-indigo-100 text-indigo-950 border-indigo-300',
+    topBorder: 'border-t-2 border-indigo-400',
+    bottomBorder: 'border-b-2 border-indigo-300',
+    innerBorder: 'border-t border-dashed border-indigo-200/80',
     dotColor: 'bg-indigo-500',
+    ringColor: 'ring-indigo-300',
+    softBadge: 'bg-indigo-600 text-white',
+    chipBg: 'bg-indigo-100',
+    chipText: 'text-indigo-950',
   },
 ];
+
+// Theme nền trắng thanh lịch cho Via cầm 1 page riêng lẻ (dễ phân biệt với via cầm chung page)
+export const NEUTRAL_THEME: ViaTheme = {
+  name: 'Via 1 Page (Nền Trắng)',
+  rowBg: 'bg-white',
+  rowHover: 'hover:bg-slate-50/90',
+  cellBg: 'bg-white',
+  borderLeft: 'border-l-2 border-l-slate-200',
+  badgeBg: 'bg-slate-100 text-slate-700 border-slate-200',
+  topBorder: 'border-t border-slate-300',
+  bottomBorder: 'border-b border-slate-300',
+  innerBorder: 'border-t border-slate-200',
+  dotColor: 'bg-slate-400',
+  ringColor: 'ring-slate-200',
+  softBadge: 'bg-slate-600 text-white',
+  chipBg: 'bg-slate-100',
+  chipText: 'text-slate-700',
+};
+
+// Theme cho Page chưa gán nick Via
+export const UNASSIGNED_THEME: ViaTheme = {
+  name: 'Chưa Gán Nick Via',
+  rowBg: 'bg-slate-50/40',
+  rowHover: 'hover:bg-slate-100/60',
+  cellBg: 'bg-slate-50/60',
+  borderLeft: 'border-l-2 border-l-dashed border-l-slate-300',
+  badgeBg: 'bg-slate-100 text-slate-400 border-dashed border-slate-200',
+  topBorder: 'border-t border-slate-300',
+  bottomBorder: 'border-b border-slate-300',
+  innerBorder: 'border-t border-slate-200',
+  dotColor: 'bg-slate-300',
+  ringColor: 'ring-slate-100',
+  softBadge: 'bg-slate-400 text-white',
+  chipBg: 'bg-slate-100',
+  chipText: 'text-slate-400',
+};
 
 interface FanpageSheetTableProps {
   records: PageRecord[];
@@ -189,6 +282,17 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   const [editingStaffName, setEditingStaffName] = useState<{ [oldName: string]: string }>({});
   const [isEditingStaffNameMode, setIsEditingStaffNameMode] = useState<string | null>(null);
 
+  // Chế độ màu sắc: 'multi-only' (Tập trung khối màu cho Via cầm chung page - Chuẩn khoa học)
+  // 'all-vias' (Tô màu tất cả các Via riêng biệt) | 'monochrome' (Đơn sắc chuẩn bảng tính)
+  const [colorMode, setColorMode] = useState<'multi-only' | 'all-vias' | 'monochrome'>('multi-only');
+
+  // Sắp xếp khoa học: 'multi-first' (Nhóm các Via cầm chung 2+ page lên đầu mỗi nhân viên)
+  // 'natural' (Giữ nguyên thứ tự danh sách)
+  const [sortMode, setSortMode] = useState<'multi-first' | 'natural'>('multi-first');
+
+  // Lọc nhanh theo loại Via: 'all' | 'multi' (chỉ via cầm chung) | 'single' (via 1 page) | 'unassigned' (chưa gán via)
+  const [filterViaType, setFilterViaType] = useState<'all' | 'multi' | 'single' | 'unassigned'>('all');
+
   // Group records so all rows of the same Staff stay contiguous,
   // and within each Staff, all rows of the same Via stay contiguous
   const displayRecords = useMemo(() => {
@@ -202,17 +306,65 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     const grouped: PageRecord[] = [];
     staffMap.forEach((staffRecs) => {
       const viaMap = new Map<string, PageRecord[]>();
+      const noViaRecs: PageRecord[] = [];
+
       staffRecs.forEach((r) => {
         const v = r.viaUid.trim();
-        if (!viaMap.has(v)) viaMap.set(v, []);
-        viaMap.get(v)!.push(r);
+        if (!v) {
+          noViaRecs.push(r);
+        } else {
+          if (!viaMap.has(v)) viaMap.set(v, []);
+          viaMap.get(v)!.push(r);
+        }
       });
-      viaMap.forEach((vRecs) => {
-        grouped.push(...vRecs);
-      });
+
+      if (sortMode === 'multi-first') {
+        // Multi-page vias first (count > 1)
+        const multiVias: PageRecord[][] = [];
+        const singleVias: PageRecord[][] = [];
+
+        viaMap.forEach((vRecs) => {
+          if (vRecs.length > 1) {
+            multiVias.push(vRecs);
+          } else {
+            singleVias.push(vRecs);
+          }
+        });
+
+        // Sắp xếp các Via cầm nhiều page nhất lên trước
+        multiVias.sort((a, b) => b.length - a.length);
+
+        multiVias.forEach((vRecs) => grouped.push(...vRecs));
+        singleVias.forEach((vRecs) => grouped.push(...vRecs));
+        grouped.push(...noViaRecs);
+      } else {
+        // Thứ tự gốc nhưng vẫn gom các page cùng via liền kề
+        viaMap.forEach((vRecs) => {
+          grouped.push(...vRecs);
+        });
+        grouped.push(...noViaRecs);
+      }
     });
-    return grouped;
-  }, [records]);
+
+    // Lọc theo loại Via nếu người dùng chọn bộ lọc nhanh
+    if (filterViaType === 'all') return grouped;
+
+    const viaCountMap = new Map<string, number>();
+    records.forEach((r) => {
+      const v = r.viaUid.trim();
+      if (v) viaCountMap.set(v, (viaCountMap.get(v) || 0) + 1);
+    });
+
+    return grouped.filter((r) => {
+      const v = r.viaUid.trim();
+      if (filterViaType === 'unassigned') return !v;
+      if (!v) return false;
+      const count = viaCountMap.get(v) || 0;
+      if (filterViaType === 'multi') return count > 1;
+      if (filterViaType === 'single') return count === 1;
+      return true;
+    });
+  }, [records, sortMode, filterViaType]);
 
   // Map to synchronize shared note for all pages under the same Via
   const viaSharedNotesMap = useMemo(() => {
@@ -253,12 +405,17 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     const spans: {
       rowSpan: number;
       isFirst: boolean;
+      isLast: boolean;
       totalInGroup: number;
+      indexInGroup: number;
       groupIndex: number;
+      isMultiPage: boolean;
+      hasVia: boolean;
     }[] = [];
     const themeIndices: number[] = [];
     let i = 0;
-    let groupCounter = 0;
+    let multiGroupCounter = 0;
+    let allGroupCounter = 0;
 
     while (i < displayRecords.length) {
       const currentVia = displayRecords[i].viaUid.trim();
@@ -275,50 +432,81 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
         }
       }
 
-      const currentThemeIndex = groupCounter % VIA_THEMES.length;
-      groupCounter++;
+      const isMultiPage = count > 1 && Boolean(currentVia);
+      const hasVia = Boolean(currentVia);
 
-      spans.push({
-        rowSpan: count,
-        isFirst: true,
-        totalInGroup: count,
-        groupIndex: currentThemeIndex,
-      });
-      themeIndices.push(currentThemeIndex);
+      let themeIdx = -1;
+      if (colorMode === 'multi-only') {
+        if (isMultiPage) {
+          themeIdx = multiGroupCounter % VIA_THEMES.length;
+          multiGroupCounter++;
+        } else {
+          themeIdx = -1; // Màu trắng sạch sẽ cho via 1 page
+        }
+      } else if (colorMode === 'all-vias') {
+        if (hasVia) {
+          themeIdx = allGroupCounter % VIA_THEMES.length;
+          allGroupCounter++;
+        } else {
+          themeIdx = -1;
+        }
+      } else {
+        themeIdx = -1; // Đơn sắc
+      }
 
-      for (let j = 1; j < count; j++) {
+      for (let j = 0; j < count; j++) {
         spans.push({
-          rowSpan: 0,
-          isFirst: false,
+          rowSpan: j === 0 ? count : 0,
+          isFirst: j === 0,
+          isLast: j === count - 1,
           totalInGroup: count,
-          groupIndex: currentThemeIndex,
+          indexInGroup: j,
+          groupIndex: themeIdx,
+          isMultiPage,
+          hasVia,
         });
-        themeIndices.push(currentThemeIndex);
+        themeIndices.push(themeIdx);
       }
 
       i += count;
     }
     return { viaSpans: spans, rowViaThemeIndices: themeIndices };
-  }, [displayRecords]);
+  }, [displayRecords, colorMode]);
 
   // Statistics about Vias
   const viaStats = useMemo(() => {
     const viaMap = new Map<string, number>();
-    displayRecords.forEach((r) => {
+    let unassignedCount = 0;
+    records.forEach((r) => {
       const uid = r.viaUid.trim();
       if (uid) {
         viaMap.set(uid, (viaMap.get(uid) || 0) + 1);
+      } else {
+        unassignedCount++;
       }
     });
+
     let multiPageCount = 0;
+    let multiPagePages = 0;
+    let singlePageCount = 0;
+
     viaMap.forEach((count) => {
-      if (count > 1) multiPageCount++;
+      if (count > 1) {
+        multiPageCount++;
+        multiPagePages += count;
+      } else {
+        singlePageCount++;
+      }
     });
+
     return {
       totalVias: viaMap.size,
       multiPageVias: multiPageCount,
+      multiPagePages,
+      singlePageVias: singlePageCount,
+      unassignedPages: unassignedCount,
     };
-  }, [displayRecords]);
+  }, [records]);
 
   const handleCopyVia = async (uid: string, rowId: string) => {
     if (!uid) return;
@@ -384,101 +572,222 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
   return (
     <div className="max-w-[1700px] mx-auto px-4 sm:px-6 py-3">
-      {/* Top Spreadsheet Bar with View Options and Via Color Legend */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2 px-1">
-        <div className="flex items-center flex-wrap gap-2 text-xs text-slate-600">
-          <div className="flex items-center space-x-1.5 font-medium">
-            <Layers className="w-4 h-4 text-emerald-700" />
-            <span>
-              <strong>{displayRecords.length}</strong> Fanpage •{' '}
-              <strong className="text-indigo-700">{viaStats.totalVias}</strong> Nick Via
+      {/* Top Spreadsheet Bar with View Options, Filters, and Via Statistics */}
+      <div className="flex flex-col gap-2 mb-2 px-1">
+        {/* Row 1: Quick stats and filtering by Via type */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center flex-wrap gap-1.5">
+            <span className="font-bold text-slate-800 inline-flex items-center space-x-1.5 mr-1">
+              <Layers className="w-4 h-4 text-emerald-700" />
+              <span>{displayRecords.length} Fanpage</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-indigo-700 font-extrabold">{viaStats.totalVias} Nick Via</span>
             </span>
-          </div>
 
-          {viaStats.multiPageVias > 0 && (
-            <span className="bg-indigo-50 text-indigo-800 border border-indigo-200 px-2 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center space-x-1">
-              <Sparkles className="w-3 h-3 text-indigo-600" />
-              <span>{viaStats.multiPageVias} Via cầm từ 2 page trở lên</span>
-            </span>
-          )}
-
-          {/* Color theme indicator */}
-          <span className="inline-flex items-center space-x-1.5 bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full text-[11px] font-medium border border-slate-200">
-            <Palette className="w-3 h-3 text-slate-500" />
-            <span>Mỗi Via được bôi màu nền riêng biệt</span>
-          </span>
-        </div>
-
-        {/* View Mode Toggle: Gộp ô chuẩn Google Sheet vs Từng ô riêng lẻ */}
-        <div className="flex items-center space-x-2 text-xs">
-          {onFetchPagesForVia && (
+            {/* Filter Pills */}
             <button
               type="button"
-              id="btn-fetch-pages-table-top"
-              onClick={() => onFetchPagesForVia('', '')}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-800 border-blue-300"
-              title="Lấy Tên & Link Page từ Nick Via tự động điền lên bảng"
+              onClick={() => setFilterViaType('all')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+                filterViaType === 'all'
+                  ? 'bg-slate-800 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+              }`}
             >
-              <Zap className="w-3.5 h-3.5 text-blue-600 fill-blue-600" />
-              <span>⚡ Lấy Page từ Via</span>
+              Tất cả ({records.length})
             </button>
-          )}
 
-          {/* Nút Sao Chép Tất Cả UID Nick trong bảng Fanpage */}
-          <button
-            type="button"
-            id="btn-copy-all-fanpage-vias"
-            onClick={handleCopyAllViaUids}
-            className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer ${
-              copiedViaId === 'all-vias'
-                ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-600/30'
-                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
-            }`}
-            title="Sao chép toàn bộ UID tài khoản nick Via trên bảng (danh sách không trùng lặp, 1 UID/dòng)"
-          >
-            {copiedViaId === 'all-vias' ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-100 stroke-[3]" />
-                <span>Đã Copy UID!</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5 text-indigo-600" />
-                <span>📋 Copy Tất Cả UID Nick ({viaStats.totalVias})</span>
-              </>
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={() => setFilterViaType(filterViaType === 'multi' ? 'all' : 'multi')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all inline-flex items-center space-x-1 cursor-pointer ${
+                filterViaType === 'multi'
+                  ? 'bg-indigo-700 text-white border-indigo-800 ring-2 ring-indigo-400 shadow-2xs'
+                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
+              }`}
+              title="Bấm để lọc: Chỉ hiển thị các Nick Via đang cầm từ 2 Fanpage trở lên"
+            >
+              <Sparkles className="w-3 h-3 text-indigo-400" />
+              <span>🔗 Via Cầm Chung ({viaStats.multiPageVias} via • {viaStats.multiPagePages} page)</span>
+            </button>
 
-          <span className="text-slate-600 font-bold text-xs">Chế độ hiển thị:</span>
-          <button
-            type="button"
-            id="btn-toggle-merge-via"
-            onClick={() => setMergeViaCells(!mergeViaCells)}
-            className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer ${
-              mergeViaCells
-                ? 'bg-emerald-700 hover:bg-emerald-800 text-white border-emerald-800 ring-2 ring-emerald-600/30'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-            }`}
-            title="Bấm để bật/tắt gộp ô theo Via: 1 Via cầm nhiều Page cùng 1 màu hoặc tách riêng lẻ từng dòng"
-          >
-            {mergeViaCells ? (
-              <>
-                <ToggleRight className="w-4 h-4 text-emerald-200" />
-                <span>Gộp ô theo Via (Chuẩn Sheet)</span>
-                <span className="text-[10px] bg-emerald-900/60 text-emerald-100 px-1.5 py-0.2 rounded-full font-extrabold">
-                  Đang Bật
-                </span>
-              </>
-            ) : (
-              <>
-                <ToggleLeft className="w-4 h-4 text-slate-400" />
-                <span>Tách từng ô riêng lẻ</span>
-                <span className="text-[10px] bg-slate-200 text-slate-700 px-1.5 py-0.2 rounded-full font-extrabold">
-                  Tắt Gộp
-                </span>
-              </>
+            <button
+              type="button"
+              onClick={() => setFilterViaType(filterViaType === 'single' ? 'all' : 'single')}
+              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all inline-flex items-center space-x-1 cursor-pointer ${
+                filterViaType === 'single'
+                  ? 'bg-slate-700 text-white border-slate-800 shadow-2xs'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+              }`}
+              title="Bấm để lọc: Chỉ hiển thị các Nick Via cầm 1 page riêng lẻ"
+            >
+              <User className="w-3 h-3 text-slate-400" />
+              <span>Via 1 Page ({viaStats.singlePageVias})</span>
+            </button>
+
+            {viaStats.unassignedPages > 0 && (
+              <button
+                type="button"
+                onClick={() => setFilterViaType(filterViaType === 'unassigned' ? 'all' : 'unassigned')}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium border border-dashed transition-all cursor-pointer ${
+                  filterViaType === 'unassigned'
+                    ? 'bg-amber-700 text-white border-amber-800 shadow-2xs'
+                    : 'bg-amber-50/70 hover:bg-amber-100 text-amber-800 border-amber-300'
+                }`}
+                title="Bấm để lọc: Các fanpage chưa được gán Nick Via"
+              >
+                Chưa có Via ({viaStats.unassignedPages})
+              </button>
             )}
-          </button>
+          </div>
+
+          {/* Quick info indicator */}
+          <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+            <span className="hidden md:inline-flex items-center space-x-1 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+              <Palette className="w-3 h-3 text-slate-500" />
+              <span>
+                {colorMode === 'multi-only'
+                  ? 'Khối màu phân biệt Via cầm chung page (Khoa học)'
+                  : colorMode === 'all-vias'
+                  ? 'Tô màu tất cả các Via'
+                  : 'Chế độ đơn sắc'}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        {/* Row 2: Sort Controls, Color Mode & Action Buttons */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1 border-t border-slate-200/80">
+          <div className="flex items-center flex-wrap gap-1.5">
+            {/* Sắp xếp khoa học */}
+            <span className="text-slate-500 font-bold text-[11px]">Sắp xếp:</span>
+            <button
+              type="button"
+              onClick={() => setSortMode(sortMode === 'multi-first' ? 'natural' : 'multi-first')}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                sortMode === 'multi-first'
+                  ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-400'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+              }`}
+              title="Sắp xếp khoa học: Đưa tất cả các Via cầm từ 2 page trở lên lên trên đầu của mỗi nhân viên"
+            >
+              <ArrowUpDown className="w-3 h-3 text-emerald-600" />
+              <span>
+                {sortMode === 'multi-first' ? '🔗 Via chung lên đầu (Đang bật)' : 'Thứ tự gốc'}
+              </span>
+            </button>
+
+            {/* Chế độ màu nền */}
+            <span className="text-slate-500 font-bold text-[11px] ml-1">Màu nền:</span>
+            <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs">
+              <button
+                type="button"
+                onClick={() => setColorMode('multi-only')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  colorMode === 'multi-only'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Khối màu khoa học: Chỉ tô màu pastel cho Via cầm chung 2+ page để nhận diện ngay, Via 1 page giữ màu trắng sạch sẽ"
+              >
+                ✨ Via Chung Page
+              </button>
+              <button
+                type="button"
+                onClick={() => setColorMode('all-vias')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  colorMode === 'all-vias'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Tô màu tất cả các Via riêng biệt"
+              >
+                🎨 Tất Cả Via
+              </button>
+              <button
+                type="button"
+                onClick={() => setColorMode('monochrome')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  colorMode === 'monochrome'
+                    ? 'bg-slate-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Đơn sắc trắng đen tối giản"
+              >
+                📋 Đơn Sắc
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-1.5">
+            {onFetchPagesForVia && (
+              <button
+                type="button"
+                id="btn-fetch-pages-table-top"
+                onClick={() => onFetchPagesForVia('', '')}
+                className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-800 border-blue-300"
+                title="Lấy Tên & Link Page từ Nick Via tự động điền lên bảng"
+              >
+                <Zap className="w-3.5 h-3.5 text-blue-600 fill-blue-600" />
+                <span>⚡ Lấy Page từ Via</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              id="btn-copy-all-fanpage-vias"
+              onClick={handleCopyAllViaUids}
+              className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                copiedViaId === 'all-vias'
+                  ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-600/30'
+                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
+              }`}
+              title="Sao chép toàn bộ UID tài khoản nick Via trên bảng (danh sách không trùng lặp, 1 UID/dòng)"
+            >
+              {copiedViaId === 'all-vias' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-100 stroke-[3]" />
+                  <span>Đã Copy UID!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>📋 Copy Tất Cả UID ({viaStats.totalVias})</span>
+                </>
+              )}
+            </button>
+
+            {/* View Mode Toggle: Gộp ô chuẩn Google Sheet vs Từng ô riêng lẻ */}
+            <button
+              type="button"
+              id="btn-toggle-merge-via"
+              onClick={() => setMergeViaCells(!mergeViaCells)}
+              className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer ${
+                mergeViaCells
+                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white border-emerald-800 ring-2 ring-emerald-600/30'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+              }`}
+              title="Bật/tắt gộp ô theo Via: 1 Via cầm nhiều Page cùng 1 màu hoặc tách riêng lẻ từng dòng"
+            >
+              {mergeViaCells ? (
+                <>
+                  <ToggleRight className="w-4 h-4 text-emerald-200" />
+                  <span>Gộp ô theo Via</span>
+                  <span className="text-[10px] bg-emerald-900/60 text-emerald-100 px-1 py-0.2 rounded-full font-extrabold">
+                    Bật
+                  </span>
+                </>
+              ) : (
+                <>
+                  <ToggleLeft className="w-4 h-4 text-slate-400" />
+                  <span>Tách ô riêng lẻ</span>
+                  <span className="text-[10px] bg-slate-200 text-slate-700 px-1 py-0.2 rounded-full font-extrabold">
+                    Tắt
+                  </span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -602,29 +911,46 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   const viaSpan = viaSpans[index] || {
                     rowSpan: 1,
                     isFirst: true,
+                    isLast: true,
                     totalInGroup: 1,
-                    groupIndex: 0,
+                    indexInGroup: 0,
+                    groupIndex: -1,
+                    isMultiPage: false,
+                    hasVia: false,
                   };
 
-                  const themeIndex = rowViaThemeIndices[index] ?? 0;
-                  const theme = VIA_THEMES[themeIndex] || VIA_THEMES[0];
+                  const themeIndex = rowViaThemeIndices[index] ?? -1;
+                  const theme = (() => {
+                    if (themeIndex >= 0) {
+                      return VIA_THEMES[themeIndex] || VIA_THEMES[0];
+                    }
+                    if (!viaSpan.hasVia) {
+                      return UNASSIGNED_THEME;
+                    }
+                    return NEUTRAL_THEME;
+                  })();
 
                   const shouldRenderStaffCell = !mergeViaCells || staffSpan.isFirst;
                   const staffRowSpan = mergeViaCells ? staffSpan.rowSpan : 1;
 
                   const shouldRenderViaCell = !mergeViaCells || viaSpan.isFirst;
                   const viaRowSpan = mergeViaCells ? viaSpan.rowSpan : 1;
-                  const isGroupedVia = viaSpan.totalInGroup > 1;
+                  const isGroupedVia = viaSpan.isMultiPage;
 
                   const isFirstOfStaff = staffSpan.isFirst;
                   const isFirstOfVia = viaSpan.isFirst;
+                  const isLastOfVia = viaSpan.isLast;
 
-                  // Border on top: strong green line between staff, clear theme border between vias
+                  // Border on top: strong green line between staff, clear theme border between vias, subtle dashed within same via
                   const topDividerClass = isFirstOfStaff && index > 0
-                    ? 'border-t-2 border-[#38761d]/60'
+                    ? 'border-t-2 border-[#2e7d32]'
                     : isFirstOfVia && index > 0
-                    ? theme.topBorder
-                    : 'border-t border-slate-200';
+                    ? (isGroupedVia ? theme.topBorder : 'border-t border-slate-300')
+                    : (isGroupedVia ? theme.innerBorder : 'border-t border-slate-200');
+
+                  const bottomDividerClass = isGroupedVia && isLastOfVia
+                    ? theme.bottomBorder
+                    : 'border-b border-slate-300';
 
                   const isRowViaError = Boolean(
                     record.isViaError ||
@@ -647,12 +973,12 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   return (
                     <tr
                       key={record.id}
-                      className={`transition-colors border-b border-slate-300 ${topDividerClass} ${
+                      className={`transition-colors ${topDividerClass} ${bottomDividerClass} ${
                         isRowViaError
                           ? 'bg-rose-50/75 hover:bg-rose-100/75 border-l-4 border-l-rose-600'
                           : isRowViaFixed
                           ? 'bg-emerald-50/80 hover:bg-emerald-100/80 border-l-4 border-l-emerald-600'
-                          : `${theme.rowBg} ${theme.rowHover}`
+                          : `${theme.rowBg} ${theme.rowHover} ${isGroupedVia ? theme.borderLeft : ''}`
                       }`}
                     >
                       {/* Col A: Row index */}
@@ -852,13 +1178,29 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                       <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse"></span>
                                       <span>BỊ LỖI</span>
                                     </span>
+                                  ) : isGroupedVia ? (
+                                    <span
+                                      className={`text-[9px] font-black px-1.5 py-0.5 rounded border inline-flex items-center space-x-1 shadow-2xs ${theme.badgeBg}`}
+                                      title={`Khối Via cầm chung ${viaSpan.totalInGroup} Fanpage (Màu ${theme.name})`}
+                                    >
+                                      <Layers className="w-2.5 h-2.5 stroke-[2.5]" />
+                                      <span>CẦM CHUNG {viaSpan.totalInGroup} PAGE</span>
+                                      <span className={`w-1.5 h-1.5 rounded-full ${theme.dotColor}`}></span>
+                                    </span>
+                                  ) : viaSpan.hasVia ? (
+                                    <span
+                                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 bg-slate-100 text-slate-700 inline-flex items-center space-x-1"
+                                      title="Nick Via này chỉ cầm 1 page riêng lẻ"
+                                    >
+                                      <User className="w-2.5 h-2.5 text-slate-400" />
+                                      <span>1 Page đơn</span>
+                                    </span>
                                   ) : (
                                     <span
-                                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded border inline-flex items-center space-x-1 ${theme.badgeBg}`}
-                                      title={`Via này đang cầm ${viaSpan.totalInGroup} Page`}
+                                      className="text-[9px] italic px-1.5 py-0.5 rounded border border-dashed border-slate-300 bg-slate-100 text-slate-400"
+                                      title="Chưa gán UID Nick Via"
                                     >
-                                      <span className={`w-1.5 h-1.5 rounded-full ${theme.dotColor}`}></span>
-                                      <span>{viaSpan.totalInGroup} Page</span>
+                                      Chưa có Via
                                     </span>
                                   )}
 
@@ -997,16 +1339,26 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
                       {/* Col D: TÊN PAGE */}
                       <td className="px-1.5 py-1 border-r border-slate-300 whitespace-nowrap font-semibold text-slate-900">
-                        <input
-                          type="text"
-                          value={record.pageName}
-                          onChange={(e) =>
-                            onUpdateRecord(record.id, { pageName: e.target.value })
-                          }
-                          className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-emerald-600 rounded px-1 py-0.5 font-semibold focus:outline-hidden text-xs max-w-[140px] truncate"
-                          placeholder="Tên Fanpage"
-                          title={record.pageName}
-                        />
+                        <div className="flex items-center space-x-1">
+                          {isGroupedVia && (
+                            <span
+                              className={`px-1.5 py-0.5 text-[9px] font-black rounded-md ${theme.chipBg} ${theme.chipText} border border-current/25 select-none shrink-0 shadow-2xs`}
+                              title={`Fanpage thứ ${viaSpan.indexInGroup + 1} trong số ${viaSpan.totalInGroup} page của nick Via này`}
+                            >
+                              #{viaSpan.indexInGroup + 1}
+                            </span>
+                          )}
+                          <input
+                            type="text"
+                            value={record.pageName}
+                            onChange={(e) =>
+                              onUpdateRecord(record.id, { pageName: e.target.value })
+                            }
+                            className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-emerald-600 rounded px-1 py-0.5 font-semibold focus:outline-hidden text-xs max-w-[140px] truncate"
+                            placeholder="Tên Fanpage"
+                            title={record.pageName}
+                          />
+                        </div>
                       </td>
 
                       {/* Col E: LINK PAGE - Compact and truncated */}
@@ -1440,17 +1792,27 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center space-x-1.5 text-[11px]">
-            <span className="text-slate-500 font-medium">Bảng màu phân biệt Via:</span>
+          <div className="flex items-center space-x-2 text-[11px] flex-wrap">
+            <span className="text-slate-600 font-semibold">🎨 Khối màu Via chung:</span>
             <div className="flex items-center space-x-1">
               {VIA_THEMES.map((t) => (
                 <span
                   key={t.name}
                   className={`w-3.5 h-3.5 rounded-full ${t.dotColor} border border-white shadow-2xs`}
-                  title={`Màu ${t.name}`}
+                  title={`Khối màu ${t.name}`}
                 />
               ))}
             </div>
+            <span className="text-slate-300">|</span>
+            <span className="inline-flex items-center space-x-1 text-slate-600 font-medium">
+              <span className="w-2.5 h-2.5 rounded-full bg-white border border-slate-300 shadow-2xs" />
+              <span>Nền trắng: Via 1 Page</span>
+            </span>
+            <span className="text-slate-300">|</span>
+            <span className="inline-flex items-center space-x-1 text-slate-500">
+              <span className="w-2.5 h-2.5 rounded-full bg-slate-200 border border-dashed border-slate-400" />
+              <span>Nền xám: Chưa có Via</span>
+            </span>
           </div>
         </div>
       </div>
