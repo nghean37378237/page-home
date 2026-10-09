@@ -111,8 +111,8 @@ service cloud.firestore {
              (!('viaName' in data) || (data.viaName is string && data.viaName.size() <= 100)) &&
              (!('staffName' in data) || (data.staffName is string && data.staffName.size() <= 100)) &&
              (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
-             (!('joinStatus' in data) || (data.joinStatus in ['Đã Jon', 'Jon chờ duyệt', 'Chưa'])) &&
-             (!('interactionStatus' in data) || (data.interactionStatus in ['Tương tác ổn', 'Tương tác vừa', 'Không có tương tác', 'Chưa', ''])) &&
+             (!('joinStatus' in data) || (data.joinStatus is string && data.joinStatus.size() <= 50)) &&
+             (!('interactionStatus' in data) || (data.interactionStatus is string && data.interactionStatus.size() <= 50)) &&
              (!('isHighlighted' in data) || data.isHighlighted is bool) &&
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
@@ -124,10 +124,21 @@ service cloud.firestore {
              data.port is string && data.port.size() <= 20 &&
              (!('username' in data) || (data.username is string && data.username.size() <= 100)) &&
              (!('password' in data) || (data.password is string && data.password.size() <= 100)) &&
-             (!('type' in data) || (data.type in ['http', 'socks5', 'https'])) &&
-             (!('status' in data) || (data.status in ['live', 'die', 'slow', 'unknown'])) &&
-             (!('assignedStaff' in data) || (data.assignedStaff is string && data.assignedStaff.size() <= 100)) &&
+             (!('protocol' in data) || (data.protocol is string && data.protocol.size() <= 20)) &&
+             (!('type' in data) || (data.type is string && data.type.size() <= 20)) &&
+             (!('fullProxy' in data) || (data.fullProxy is string && data.fullProxy.size() <= 300)) &&
+             (!('location' in data) || (data.location is string && data.location.size() <= 100)) &&
+             (!('provider' in data) || (data.provider is string && data.provider.size() <= 200)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+             (!('assignedStaff' in data) || (data.assignedStaff is list && data.assignedStaff.size() <= 100) || (data.assignedStaff is string && data.assignedStaff.size() <= 100)) &&
+             (!('assignedViaUids' in data) || (data.assignedViaUids is list && data.assignedViaUids.size() <= 200)) &&
+             (!('expireDate' in data) || (data.expireDate is string && data.expireDate.size() <= 50)) &&
              (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
+             (!('isRotating' in data) || data.isRotating is bool) &&
+             (!('rotateUrl' in data) || (data.rotateUrl is string && data.rotateUrl.size() <= 500)) &&
+             (!('resetUrl' in data) || (data.resetUrl is string && data.resetUrl.size() <= 500)) &&
+             (!('lastResetTime' in data) || data.lastResetTime is number) &&
+             (!('lastChecked' in data) || (data.lastChecked is string && data.lastChecked.size() <= 50)) &&
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
     }

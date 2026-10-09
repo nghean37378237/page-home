@@ -30,7 +30,7 @@ import {
   Clock,
   XCircle,
 } from 'lucide-react';
-import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, FullViaItem } from '../types';
+import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, GroupInteractionStatus, GROUP_INTERACTION_STATUS_OPTIONS, FullViaItem } from '../types';
 import { exportGroupToXLSX } from '../utils/excelTemplates';
 
 interface GroupManagementTableProps {
@@ -88,6 +88,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   const [selectedStaffFilter, setSelectedStaffFilter] = useState('ALL');
   const [selectedNoteFilter, setSelectedNoteFilter] = useState<'ALL' | 'VHH' | '282' | '956' | 'Hạn Chế' | 'NONE'>('ALL');
   const [selectedJoinStatusFilter, setSelectedJoinStatusFilter] = useState<'ALL' | 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa'>('ALL');
+  const [selectedInteractionFilter, setSelectedInteractionFilter] = useState<'ALL' | 'Tương tác ổn' | 'Tương tác vừa' | 'Không có tương tác' | 'NONE'>('ALL');
   const [highlightedOnly, setHighlightedOnly] = useState(false);
   const [hasNoteOnly, setHasNoteOnly] = useState(false);
   const [viewMode, setViewMode] = useState<'grouped' | 'flat'>('grouped');
@@ -192,6 +193,24 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     return { daJon, choDuyet, chua };
   }, [scopedRecords]);
 
+  // Interaction status counts
+  const interactionCounts = useMemo(() => {
+    let on = 0;
+    let vua = 0;
+    let khong = 0;
+    let none = 0;
+
+    scopedRecords.forEach((r) => {
+      const s = r.interactionStatus;
+      if (s === 'Tương tác ổn') on++;
+      else if (s === 'Tương tác vừa') vua++;
+      else if (s === 'Không có tương tác') khong++;
+      else none++;
+    });
+
+    return { on, vua, khong, none };
+  }, [scopedRecords]);
+
   // Filtered list
   const filteredRecords = useMemo(() => {
     return scopedRecords.filter((r) => {
@@ -205,7 +224,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
         const matchNote = (r.note || '').toLowerCase().includes(q);
         const matchStaff = (r.staffName || '').toLowerCase().includes(q);
         const matchJoinStatus = (r.joinStatus || 'Chưa').toLowerCase().includes(q);
-        if (!matchGroup && !matchLink && !matchUid && !matchVia && !matchNote && !matchStaff && !matchJoinStatus) {
+        const matchInteraction = (r.interactionStatus || '').toLowerCase().includes(q);
+        if (!matchGroup && !matchLink && !matchUid && !matchVia && !matchNote && !matchStaff && !matchJoinStatus && !matchInteraction) {
           return false;
         }
       }
@@ -214,6 +234,15 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
       if (selectedJoinStatusFilter !== 'ALL') {
         const st = r.joinStatus || 'Chưa';
         if (st !== selectedJoinStatusFilter) {
+          return false;
+        }
+      }
+
+      // Interaction status filter: 'ALL' | 'Tương tác ổn' | 'Tương tác vừa' | 'Không có tương tác' | 'NONE'
+      if (selectedInteractionFilter !== 'ALL') {
+        if (selectedInteractionFilter === 'NONE') {
+          if (r.interactionStatus) return false;
+        } else if (r.interactionStatus !== selectedInteractionFilter) {
           return false;
         }
       }
@@ -253,7 +282,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
       return true;
     });
-  }, [scopedRecords, searchQuery, selectedStaffFilter, selectedNoteFilter, selectedJoinStatusFilter, highlightedOnly, hasNoteOnly, isAdmin]);
+  }, [scopedRecords, searchQuery, selectedStaffFilter, selectedNoteFilter, selectedJoinStatusFilter, selectedInteractionFilter, highlightedOnly, hasNoteOnly, isAdmin]);
 
   // Grouped structure by groupId or groupName
   const groupedData = useMemo(() => {
@@ -449,6 +478,60 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
       triggerCopyFeedback('batch-status', `Đã gán trạng thái "${newStatus}" cho ${selectedIds.size} UID!`);
     } catch (err) {
       console.error('Lỗi cập nhật trạng thái hàng loạt:', err);
+    }
+  };
+
+  // Update interaction status for single row
+  const handleUpdateInteractionStatus = async (id: string, newStatus: GroupInteractionStatus | '') => {
+    try {
+      await onUpdateRecord(id, { interactionStatus: (newStatus || undefined) as any });
+      triggerCopyFeedback(`interaction-${id}`, `Đã chuyển tương tác: ${newStatus || 'Trống'}`);
+    } catch (err) {
+      console.error('Lỗi cập nhật tương tác:', err);
+    }
+  };
+
+  // Update interaction status for whole group
+  const handleUpdateGroupInteractionStatus = async (
+    groupId: string,
+    rows: GroupRecord[],
+    newStatus: GroupInteractionStatus | ''
+  ) => {
+    try {
+      const updatedList = rows.map((r) => ({
+        ...r,
+        interactionStatus: (newStatus || undefined) as any,
+      }));
+      if (onAddBatchRecords) {
+        await onAddBatchRecords(updatedList);
+      } else {
+        for (const r of rows) {
+          await onUpdateRecord(r.id, { interactionStatus: (newStatus || undefined) as any });
+        }
+      }
+      triggerCopyFeedback(`grp-interaction-${groupId}`, `Đã cập nhật mức tương tác cho cả nhóm!`);
+    } catch (err) {
+      console.error('Lỗi cập nhật tương tác nhóm:', err);
+    }
+  };
+
+  // Batch update interaction status for selected rows
+  const handleBatchUpdateInteractionStatus = async (newStatus: GroupInteractionStatus | '') => {
+    if (selectedIds.size === 0) return;
+    try {
+      const updatedList = scopedRecords
+        .filter((r) => selectedIds.has(r.id))
+        .map((r) => ({ ...r, interactionStatus: (newStatus || undefined) as any }));
+      if (onAddBatchRecords) {
+        await onAddBatchRecords(updatedList);
+      } else {
+        for (const item of updatedList) {
+          await onUpdateRecord(item.id, { interactionStatus: (newStatus || undefined) as any });
+        }
+      }
+      triggerCopyFeedback('batch-interaction', `Đã gán tương tác "${newStatus || 'Trống'}" cho ${selectedIds.size} dòng!`);
+    } catch (err) {
+      console.error('Lỗi gán tương tác hàng loạt:', err);
     }
   };
 
@@ -906,6 +989,22 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               </select>
             </div>
 
+            {/* Interaction status filter: Tương tác ổn, Tương tác vừa, Không có tương tác */}
+            <div className="flex items-center space-x-1.5 text-xs">
+              <span className="text-slate-500 font-semibold text-[11px]">Tương tác:</span>
+              <select
+                value={selectedInteractionFilter}
+                onChange={(e) => setSelectedInteractionFilter(e.target.value as any)}
+                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-red-500 cursor-pointer"
+              >
+                <option value="ALL">Tất Cả ({scopedRecords.length})</option>
+                <option value="Tương tác ổn">🟢 Tương tác ổn ({interactionCounts.on})</option>
+                <option value="Tương tác vừa">🟡 Tương tác vừa ({interactionCounts.vua})</option>
+                <option value="Không có tương tác">🔴 Không có tương tác ({interactionCounts.khong})</option>
+                <option value="NONE">Chưa chọn ({interactionCounts.none})</option>
+              </select>
+            </div>
+
             {/* Toggle Highlighted Only */}
             <button
               type="button"
@@ -991,6 +1090,26 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <span>🔄 Update Via ({selectedIds.size} dòng)</span>
             </button>
 
+            {/* Batch assign interaction status */}
+            <div className="relative inline-flex items-center">
+              <select
+                onChange={(e) => {
+                  if (e.target.value) {
+                    handleBatchUpdateInteractionStatus(e.target.value as any);
+                    e.target.value = '';
+                  }
+                }}
+                defaultValue=""
+                className="px-2.5 py-1.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-500/50 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                title="Gán mức tương tác cho các dòng đã chọn"
+              >
+                <option value="" disabled>⚡ Gán Tương Tác ({selectedIds.size})</option>
+                <option value="Tương tác ổn">🟢 Tương tác ổn</option>
+                <option value="Tương tác vừa">🟡 Tương tác vừa</option>
+                <option value="Không có tương tác">🔴 Không có tương tác</option>
+              </select>
+            </div>
+
             {/* Copy selected UIDs */}
             <button
               type="button"
@@ -1075,11 +1194,22 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               const allRowsInGroupSelected = group.rows.every((r) => selectedIds.has(r.id));
               const someRowsInGroupSelected =
                 group.rows.some((r) => selectedIds.has(r.id)) && !allRowsInGroupSelected;
+              const groupInteraction = group.rows.find((r) => r.interactionStatus)?.interactionStatus || '';
 
               return (
                 <div key={group.groupId || groupIdx} className="overflow-hidden">
-                  {/* Group Header Banner */}
-                  <div className="bg-gradient-to-r from-red-50 via-rose-50/60 to-slate-50 px-4 py-3 border-b border-red-100/70 flex flex-wrap items-center justify-between gap-3">
+                  {/* Group Header Banner with dynamic interaction tint */}
+                  <div
+                    className={`px-4 py-3 border-b flex flex-wrap items-center justify-between gap-3 transition-colors ${
+                      groupInteraction === 'Tương tác ổn'
+                        ? 'bg-gradient-to-r from-emerald-50 via-teal-50/70 to-slate-50 border-emerald-200'
+                        : groupInteraction === 'Tương tác vừa'
+                        ? 'bg-gradient-to-r from-amber-50 via-yellow-50/70 to-slate-50 border-amber-200'
+                        : groupInteraction === 'Không có tương tác'
+                        ? 'bg-gradient-to-r from-rose-50 via-red-50/70 to-slate-50 border-rose-200'
+                        : 'bg-gradient-to-r from-red-50 via-rose-50/60 to-slate-50 border-red-100/70'
+                    }`}
+                  >
                     <div className="flex items-center space-x-3">
                       {/* Checkbox select all in group */}
                       <input
@@ -1098,6 +1228,35 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         <span className="text-sm font-black text-red-600 uppercase tracking-tight flex items-center space-x-1.5">
                           <span>{group.groupName}</span>
                         </span>
+
+                        {/* Ô chọn màu mức độ tương tác cho cả nhóm */}
+                        <div className="relative inline-flex items-center">
+                          <select
+                            value={groupInteraction}
+                            onChange={(e) =>
+                              handleUpdateGroupInteractionStatus(
+                                group.groupId,
+                                group.rows,
+                                e.target.value as any
+                              )
+                            }
+                            className={`text-[11px] font-black rounded-lg px-2.5 py-1 border transition-all cursor-pointer shadow-2xs ${
+                              groupInteraction === 'Tương tác ổn'
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-400 hover:bg-emerald-200 ring-2 ring-emerald-500/20'
+                                : groupInteraction === 'Tương tác vừa'
+                                ? 'bg-amber-100 text-amber-900 border-amber-400 hover:bg-amber-200 ring-2 ring-amber-500/20'
+                                : groupInteraction === 'Không có tương tác'
+                                ? 'bg-rose-100 text-rose-900 border-rose-400 hover:bg-rose-200 ring-2 ring-rose-500/20'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                            }`}
+                            title="Chọn màu & mức độ tương tác cho nhóm này (áp dụng cho toàn bộ nick trong nhóm)"
+                          >
+                            <option value="">⚪ Chọn Màu Tương Tác</option>
+                            <option value="Tương tác ổn">🟢 Tương tác ổn (Xanh)</option>
+                            <option value="Tương tác vừa">🟡 Tương tác vừa (Vàng)</option>
+                            <option value="Không có tương tác">🔴 Không có tương tác (Đỏ)</option>
+                          </select>
+                        </div>
 
                         {group.groupLink && (
                           <a
@@ -1251,7 +1410,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                           <th className="py-2 px-3 w-12 text-center">STT</th>
                           <th className="py-2 px-3 font-mono">UID FACEBOOK (Cột B)</th>
                           <th className="py-2 px-3">TÊN VIA (Cột C)</th>
-                          <th className="py-2 px-3 w-36">TRẠNG THÁI</th>
+                          <th className="py-2 px-3 w-32">TRẠNG THÁI</th>
+                          <th className="py-2 px-3 w-36">TƯƠNG TÁC</th>
                           <th className="py-2 px-3">GHI CHÚ (Cột F)</th>
                           <th className="py-2 px-3 w-28 text-center">VIA CHÍNH</th>
                           <th className="py-2 px-3">NHÂN VIÊN</th>
@@ -1381,6 +1541,33 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                     <option value="Đã Jon">✅ Đã Jon</option>
                                     <option value="Jon chờ duyệt">⏳ Jon chờ duyệt</option>
                                     <option value="Chưa">✕ Chưa</option>
+                                  </select>
+                                </div>
+                              </td>
+
+                              {/* Cột Tương Tác: Tương tác ổn, Tương tác vừa, Không có tương tác */}
+                              <td className="py-2.5 px-3">
+                                <div className="relative inline-flex items-center">
+                                  <select
+                                    value={row.interactionStatus || ''}
+                                    onChange={(e) =>
+                                      handleUpdateInteractionStatus(row.id, e.target.value as any)
+                                    }
+                                    className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
+                                      row.interactionStatus === 'Tương tác ổn'
+                                        ? 'bg-emerald-100 text-emerald-900 border-emerald-400 hover:bg-emerald-200'
+                                        : row.interactionStatus === 'Tương tác vừa'
+                                        ? 'bg-amber-100 text-amber-900 border-amber-400 hover:bg-amber-200'
+                                        : row.interactionStatus === 'Không có tương tác'
+                                        ? 'bg-rose-100 text-rose-900 border-rose-400 hover:bg-rose-200'
+                                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                    }`}
+                                    title="Chọn màu tương tác: Tương tác ổn (Xanh), Tương tác vừa (Vàng), Không có tương tác (Đỏ)"
+                                  >
+                                    <option value="">- Chọn TT -</option>
+                                    <option value="Tương tác ổn">🟢 Tương tác ổn</option>
+                                    <option value="Tương tác vừa">🟡 Tương tác vừa</option>
+                                    <option value="Không có tương tác">🔴 Không có tương tác</option>
                                   </select>
                                 </div>
                               </td>
@@ -1561,7 +1748,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                   <th className="py-3 px-3 w-12 text-center">STT</th>
                   <th className="py-3 px-3 font-mono">UID FACEBOOK (Cột B)</th>
                   <th className="py-3 px-3">TÊN VIA (Cột C)</th>
-                  <th className="py-3 px-3 w-36">TRẠNG THÁI</th>
+                  <th className="py-3 px-3 w-32">TRẠNG THÁI</th>
+                  <th className="py-3 px-3 w-36">TƯƠNG TÁC</th>
                   <th className="py-3 px-3">GROUP LINK (Cột D)</th>
                   <th className="py-3 px-3">NHÓM (Cột E)</th>
                   <th className="py-3 px-3">GHI CHÚ (Cột F)</th>
@@ -1691,6 +1879,33 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         </div>
                       </td>
 
+                      {/* Cột Tương Tác trong Flat View */}
+                      <td className="py-2.5 px-3">
+                        <div className="relative inline-flex items-center">
+                          <select
+                            value={r.interactionStatus || ''}
+                            onChange={(e) =>
+                              handleUpdateInteractionStatus(r.id, e.target.value as any)
+                            }
+                            className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
+                              r.interactionStatus === 'Tương tác ổn'
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-400 hover:bg-emerald-200'
+                                : r.interactionStatus === 'Tương tác vừa'
+                                ? 'bg-amber-100 text-amber-900 border-amber-400 hover:bg-amber-200'
+                                : r.interactionStatus === 'Không có tương tác'
+                                ? 'bg-rose-100 text-rose-900 border-rose-400 hover:bg-rose-200'
+                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                            }`}
+                            title="Chọn màu tương tác: Tương tác ổn (Xanh), Tương tác vừa (Vàng), Không có tương tác (Đỏ)"
+                          >
+                            <option value="">- Chọn TT -</option>
+                            <option value="Tương tác ổn">🟢 Tương tác ổn</option>
+                            <option value="Tương tác vừa">🟡 Tương tác vừa</option>
+                            <option value="Không có tương tác">🔴 Không có tương tác</option>
+                          </select>
+                        </div>
+                      </td>
+
                       <td className="py-2.5 px-3">
                         {r.groupLink ? (
                           <a
@@ -1708,8 +1923,19 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         )}
                       </td>
 
-                      <td className="py-2.5 px-3 font-bold text-red-600">
-                        {r.groupName}
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-bold text-red-600">{r.groupName}</span>
+                          {r.interactionStatus === 'Tương tác ổn' && (
+                            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 shrink-0" title="Tương tác ổn (Xanh)" />
+                          )}
+                          {r.interactionStatus === 'Tương tác vừa' && (
+                            <span className="inline-block w-2 h-2 rounded-full bg-amber-500 shrink-0" title="Tương tác vừa (Vàng)" />
+                          )}
+                          {r.interactionStatus === 'Không có tương tác' && (
+                            <span className="inline-block w-2 h-2 rounded-full bg-rose-500 shrink-0" title="Không có tương tác (Đỏ)" />
+                          )}
+                        </div>
                       </td>
 
                       {/* Ghi chú trong chế độ Flat View */}
