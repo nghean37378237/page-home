@@ -324,11 +324,11 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   // Danh sách nhân viên bị thu gọn (Collapsible Staff)
   const [collapsedStaffSet, setCollapsedStaffSet] = useState<Set<string>>(new Set());
 
-  // Phân trang khoa học (Smart Pagination): Mặc định 15 dòng ngắn gọn, không chiếm quá nhiều màn hình
-  const [pageSize, setPageSize] = useState<number | 'all'>(15);
+  // Phân trang khoa học (Smart Pagination): Mặc định 10 dòng ngắn gọn, không chiếm quá nhiều màn hình
+  const [pageSize, setPageSize] = useState<number | 'all'>(10);
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Chiều cao khung nhìn: 'compact' (max-h-[440px]) | 'medium' (max-h-[620px]) | 'full' (max-h-none)
+  // Chiều cao khung nhìn: 'compact' (max-h-[380px]) | 'medium' (max-h-[580px]) | 'full' (max-h-none)
   const [viewportHeight, setViewportHeight] = useState<'compact' | 'medium' | 'full'>('compact');
 
   // Mật độ dòng: 'compact' (siêu gọn, py-0.5, font 11px) | 'normal' (chuẩn)
@@ -756,156 +756,183 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
   return (
     <div className="max-w-[1700px] mx-auto px-4 sm:px-6 py-3">
-      {/* Top Spreadsheet Bar with View Options, Filters, Pagination and Via Statistics */}
-      <div className="flex flex-col gap-2 mb-2 px-1">
-        {/* Row 1: Quick stats, Via type filters, and Staff Scope pills */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center flex-wrap gap-1.5">
-            <span className="font-bold text-slate-800 inline-flex items-center space-x-1.5 mr-1 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
-              <Layers className="w-4 h-4 text-emerald-700" />
-              <span>{totalRecordCount} Fanpage</span>
+      {/* Top Spreadsheet Bar: Exactly 2 Compact & Scientific Rows */}
+      <div className="flex flex-col gap-1.5 mb-2 px-1 text-xs">
+        {/* DÒNG 1: Thống kê, Lọc loại Via & Thao tác chính */}
+        <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar py-0.5">
+          {/* Trái: Thống kê + Lọc loại Via + Nút thu gọn NV */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Badge Thống kê */}
+            <span className="font-bold text-slate-800 inline-flex items-center space-x-1.5 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 text-[11px] shrink-0 select-none">
+              <Layers className="w-3.5 h-3.5 text-emerald-700" />
+              <span>{totalRecordCount} Page</span>
               <span className="text-slate-300">•</span>
-              <span className="text-indigo-700 font-extrabold">{viaStats.totalVias} Nick Via</span>
+              <span className="text-indigo-700 font-extrabold">{viaStats.totalVias} Via</span>
             </span>
 
-            {/* Filter Pills by Via Type */}
-            <button
-              type="button"
-              onClick={() => setFilterViaType('all')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-                filterViaType === 'all'
-                  ? 'bg-slate-800 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-              }`}
-            >
-              Tất cả ({records.length})
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterViaType(filterViaType === 'multi' ? 'all' : 'multi')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all inline-flex items-center space-x-1 cursor-pointer ${
-                filterViaType === 'multi'
-                  ? 'bg-indigo-700 text-white border-indigo-800 ring-2 ring-indigo-400 shadow-2xs'
-                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
-              }`}
-              title="Bấm để lọc: Chỉ hiển thị các Nick Via đang cầm từ 2 Fanpage trở lên"
-            >
-              <Sparkles className="w-3 h-3 text-indigo-400" />
-              <span>🔗 Via Cầm Chung ({viaStats.multiPageVias})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setFilterViaType(filterViaType === 'single' ? 'all' : 'single')}
-              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all inline-flex items-center space-x-1 cursor-pointer ${
-                filterViaType === 'single'
-                  ? 'bg-slate-700 text-white border-slate-800 shadow-2xs'
-                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-              }`}
-              title="Bấm để lọc: Chỉ hiển thị các Nick Via cầm 1 page riêng lẻ"
-            >
-              <User className="w-3 h-3 text-slate-400" />
-              <span>Via 1 Page ({viaStats.singlePageVias})</span>
-            </button>
-
-            {viaStats.unassignedPages > 0 && (
+            {/* Filter Pills: Lọc loại Via */}
+            <div className="inline-flex items-center space-x-0.5 bg-white p-0.5 rounded-lg border border-slate-300 shadow-2xs">
               <button
                 type="button"
-                onClick={() => setFilterViaType(filterViaType === 'unassigned' ? 'all' : 'unassigned')}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border border-dashed transition-all cursor-pointer ${
-                  filterViaType === 'unassigned'
-                    ? 'bg-amber-700 text-white border-amber-800 shadow-2xs'
-                    : 'bg-amber-50/70 hover:bg-amber-100 text-amber-800 border-amber-300'
+                onClick={() => setFilterViaType('all')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  filterViaType === 'all'
+                    ? 'bg-slate-800 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
                 }`}
-                title="Bấm để lọc: Các fanpage chưa được gán Nick Via"
               >
-                Chưa có Via ({viaStats.unassignedPages})
+                Tất cả ({records.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFilterViaType(filterViaType === 'multi' ? 'all' : 'multi')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all inline-flex items-center space-x-1 cursor-pointer ${
+                  filterViaType === 'multi'
+                    ? 'bg-indigo-700 text-white shadow-2xs'
+                    : 'text-indigo-800 hover:bg-indigo-50'
+                }`}
+                title="Lọc các Nick Via đang cầm từ 2 Fanpage trở lên"
+              >
+                <Sparkles className="w-3 h-3 text-indigo-400" />
+                <span>Via Chung ({viaStats.multiPageVias})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFilterViaType(filterViaType === 'single' ? 'all' : 'single')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all inline-flex items-center space-x-1 cursor-pointer ${
+                  filterViaType === 'single'
+                    ? 'bg-slate-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                title="Lọc các Nick Via cầm 1 page riêng lẻ"
+              >
+                <User className="w-3 h-3 text-slate-400" />
+                <span>1 Page ({viaStats.singlePageVias})</span>
+              </button>
+
+              {viaStats.unassignedPages > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setFilterViaType(filterViaType === 'unassigned' ? 'all' : 'unassigned')}
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold border border-dashed transition-all cursor-pointer ${
+                    filterViaType === 'unassigned'
+                      ? 'bg-amber-700 text-white border-amber-800 shadow-2xs'
+                      : 'text-amber-800 hover:bg-amber-50 border-amber-300'
+                  }`}
+                  title="Các fanpage chưa được gán Nick Via"
+                >
+                  Chưa Via ({viaStats.unassignedPages})
+                </button>
+              )}
+            </div>
+
+            {/* Thu gọn / Mở rộng tất cả nhân viên */}
+            {distinctStaff.length > 1 && (
+              <button
+                type="button"
+                onClick={collapsedStaffSet.size > 0 ? expandAllStaff : collapseAllStaff}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 cursor-pointer shadow-2xs transition-colors shrink-0"
+                title="Thu gọn hoặc mở rộng toàn bộ danh sách nhân viên để bảng cực ngắn gọn"
+              >
+                {collapsedStaffSet.size > 0 ? (
+                  <>
+                    <FolderPlus className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Mở NV</span>
+                  </>
+                ) : (
+                  <>
+                    <FolderMinus className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Thu gọn NV</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+
+          {/* Phải: Các thao tác chính (Lấy Page, Copy UID, Gộp ô) */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onFetchPagesForVia && (
+              <button
+                type="button"
+                id="btn-fetch-pages-table-top"
+                onClick={() => onFetchPagesForVia('', '')}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs cursor-pointer bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-800 border-blue-300 shrink-0"
+                title="Lấy Tên & Link Page từ Nick Via tự động điền lên bảng"
+              >
+                <Zap className="w-3 h-3 text-blue-600 fill-blue-600" />
+                <span>⚡ Lấy Page</span>
               </button>
             )}
 
-            {/* Quick Staff Scope Pills */}
-            {distinctStaff.length > 1 && (
-              <div className="flex items-center flex-wrap gap-1 pl-1.5 border-l border-slate-300">
-                <span className="text-[11px] text-slate-500 font-bold">NV:</span>
-                <button
-                  type="button"
-                  onClick={() => setSelectedStaff('all')}
-                  className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all cursor-pointer ${
-                    selectedStaff === 'all'
-                      ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
-                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                  }`}
-                  title="Hiển thị Fanpage của tất cả nhân viên"
-                >
-                  Tất cả NV
-                </button>
-                {distinctStaff.map((st) => (
-                  <button
-                    key={st.name}
-                    type="button"
-                    onClick={() => setSelectedStaff(selectedStaff === st.name ? 'all' : st.name)}
-                    className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all cursor-pointer ${
-                      selectedStaff === st.name
-                        ? 'bg-emerald-800 text-white border-emerald-900 ring-1 ring-emerald-500 shadow-2xs'
-                        : 'bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 border-emerald-200'
-                    }`}
-                    title={`Chỉ hiển thị Fanpage của nhân viên ${st.name} (${st.count} page)`}
-                  >
-                    👤 {st.name} ({st.count})
-                  </button>
-                ))}
+            <button
+              type="button"
+              id="btn-copy-all-fanpage-vias"
+              onClick={handleCopyAllViaUids}
+              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs cursor-pointer shrink-0 ${
+                copiedViaId === 'all-vias'
+                  ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-600/30'
+                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
+              }`}
+              title="Sao chép toàn bộ UID tài khoản nick Via trên bảng (danh sách không trùng lặp, 1 UID/dòng)"
+            >
+              {copiedViaId === 'all-vias' ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-100 stroke-[3]" />
+                  <span>Đã Copy!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3 text-indigo-600" />
+                  <span>📋 Copy UID ({viaStats.totalVias})</span>
+                </>
+              )}
+            </button>
 
-                {/* Collapse / Expand all staff buttons */}
-                <button
-                  type="button"
-                  onClick={collapsedStaffSet.size > 0 ? expandAllStaff : collapseAllStaff}
-                  className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 cursor-pointer shadow-2xs"
-                  title="Thu gọn hoặc mở rộng toàn bộ danh sách nhân viên để bảng cực ngắn gọn"
-                >
-                  {collapsedStaffSet.size > 0 ? (
-                    <>
-                      <FolderPlus className="w-3 h-3 text-emerald-600" />
-                      <span>Mở tất cả NV</span>
-                    </>
-                  ) : (
-                    <>
-                      <FolderMinus className="w-3 h-3 text-slate-500" />
-                      <span>Thu gọn tất cả NV</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Quick info indicator */}
-          <div className="flex items-center space-x-2 text-[11px] text-slate-500">
-            <span className="hidden xl:inline-flex items-center space-x-1 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200">
-              <Palette className="w-3 h-3 text-slate-500" />
-              <span>
-                {colorMode === 'multi-only'
-                  ? 'Khối màu Via cầm chung (Khoa học)'
-                  : colorMode === 'all-vias'
-                  ? 'Tô màu tất cả Via'
-                  : 'Đơn sắc'}
-              </span>
-            </span>
+            {/* View Mode Toggle: Gộp ô vs Tách ô */}
+            <button
+              type="button"
+              id="btn-toggle-merge-via"
+              onClick={() => setMergeViaCells(!mergeViaCells)}
+              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs cursor-pointer shrink-0 ${
+                mergeViaCells
+                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white border-emerald-800 ring-2 ring-emerald-600/30'
+                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+              }`}
+              title="Bật/tắt gộp ô theo Via: 1 Via cầm nhiều Page cùng 1 màu hoặc tách riêng lẻ từng dòng"
+            >
+              {mergeViaCells ? (
+                <>
+                  <ToggleRight className="w-3.5 h-3.5 text-emerald-200" />
+                  <span>Gộp ô</span>
+                </>
+              ) : (
+                <>
+                  <ToggleLeft className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Tách ô</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 
-        {/* Row 2: Smart Pagination, Viewport Height, Density, Sort, and Tools */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1.5 border-t border-slate-200">
-          <div className="flex items-center flex-wrap gap-2">
-            {/* Phân trang thông minh */}
-            <div className="inline-flex items-center space-x-1 bg-white px-2 py-1 rounded-lg border border-slate-300 shadow-2xs">
-              <span className="text-[11px] text-slate-600 font-bold">Số hàng:</span>
+        {/* DÒNG 2: Phân trang khoa học, Khung nhìn, Mật độ dòng & Sắp xếp / Chế độ màu */}
+        <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar pt-1 border-t border-slate-200">
+          {/* Trái: Phân trang + Khung nhìn màn hình */}
+          <div className="flex items-center gap-2 shrink-0">
+            {/* Phân trang ngắn gọn */}
+            <div className="inline-flex items-center space-x-1 bg-white px-1.5 py-0.5 rounded-lg border border-slate-300 shadow-2xs">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Hàng:</span>
               {([10, 15, 25, 50, 'all'] as const).map((sz) => (
                 <button
                   key={sz}
                   type="button"
-                  onClick={() => setPageSize(sz)}
-                  className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  onClick={() => {
+                    setPageSize(sz);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                     pageSize === sz
                       ? 'bg-[#2e7d32] text-white shadow-2xs'
                       : 'text-slate-600 hover:bg-slate-100'
@@ -917,109 +944,91 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               ))}
 
               {pageSize !== 'all' && totalPages > 1 && (
-                <div className="flex items-center space-x-1 pl-1.5 border-l border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(1)}
-                    disabled={currentPage === 1}
-                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Trang đầu"
-                  >
-                    <ChevronsLeft className="w-3.5 h-3.5" />
-                  </button>
+                <div className="flex items-center space-x-1 pl-1 border-l border-slate-200">
                   <button
                     type="button"
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                     disabled={currentPage === 1}
-                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                     title="Trang trước"
                   >
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
-                  <span className="text-[11px] font-extrabold text-slate-800 px-1.5 py-0.2 bg-slate-100 rounded border border-slate-300 select-none">
-                    {currentPage} / {totalPages}
+                  <span className="text-[10px] font-extrabold text-slate-800 px-1 py-0.1 bg-slate-100 rounded border border-slate-300 select-none">
+                    {currentPage}/{totalPages}
                   </span>
                   <button
                     type="button"
                     onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
-                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                     title="Trang sau"
                   >
                     <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setCurrentPage(totalPages)}
-                    disabled={currentPage === totalPages}
-                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="Trang cuối"
-                  >
-                    <ChevronsRight className="w-3.5 h-3.5" />
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Khung nhìn màn hình (Viewport Height) */}
+            {/* Khung nhìn màn hình */}
             <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs items-center">
-              <span className="text-[10px] text-slate-400 font-bold px-1.5">↕ Khung:</span>
+              <span className="text-[10px] text-slate-400 font-bold px-1 select-none">↕ Khung:</span>
               <button
                 type="button"
                 onClick={() => setViewportHeight('compact')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   viewportHeight === 'compact'
                     ? 'bg-emerald-700 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="Khung nhìn gọn gàng 440px - Vừa vặn màn hình laptop, không bị kéo dài"
+                title="Khung nhìn gọn 380px - Vừa vặn màn hình laptop"
               >
-                Gọn (440px)
+                Gọn
               </button>
               <button
                 type="button"
                 onClick={() => setViewportHeight('medium')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   viewportHeight === 'medium'
                     ? 'bg-emerald-700 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="Khung nhìn vừa 620px"
+                title="Khung nhìn vừa 580px"
               >
-                Vừa (620px)
+                Vừa
               </button>
               <button
                 type="button"
                 onClick={() => setViewportHeight('full')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   viewportHeight === 'full'
                     ? 'bg-emerald-700 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="Khung nhìn tự do (toàn màn hình)"
+                title="Khung nhìn tự do (toàn bộ dòng)"
               >
-                Tự do
+                Hết
               </button>
             </div>
 
-            {/* Mật độ dòng (Density Mode) */}
+            {/* Mật độ dòng */}
             <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs items-center">
               <button
                 type="button"
                 onClick={() => setDensityMode('compact')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   densityMode === 'compact'
                     ? 'bg-slate-800 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="Mật độ siêu gọn: giảm khoảng trống, chiều cao dòng nhỏ tối đa"
+                title="Mật độ siêu gọn: giảm khoảng cách dòng tối đa"
               >
                 ⚡ Siêu gọn
               </button>
               <button
                 type="button"
                 onClick={() => setDensityMode('normal')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   densityMode === 'normal'
                     ? 'bg-slate-800 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -1029,12 +1038,15 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 Chuẩn
               </button>
             </div>
+          </div>
 
+          {/* Phải: Sắp xếp khoa học & Chế độ màu */}
+          <div className="flex items-center gap-1.5 shrink-0">
             {/* Sắp xếp khoa học */}
             <button
               type="button"
               onClick={() => setSortMode(sortMode === 'multi-first' ? 'natural' : 'multi-first')}
-              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer ${
+              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg border text-[11px] font-bold transition-all shadow-2xs cursor-pointer shrink-0 ${
                 sortMode === 'multi-first'
                   ? 'bg-emerald-50 text-emerald-900 border-emerald-300 ring-1 ring-emerald-400'
                   : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
@@ -1042,29 +1054,28 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               title="Sắp xếp khoa học: Đưa tất cả các Via cầm từ 2 page trở lên lên trên đầu của mỗi nhân viên"
             >
               <ArrowUpDown className="w-3 h-3 text-emerald-600" />
-              <span>
-                {sortMode === 'multi-first' ? '🔗 Via chung lên đầu' : 'Thứ tự gốc'}
-              </span>
+              <span>{sortMode === 'multi-first' ? '🔗 Via chung trước' : 'Thứ tự gốc'}</span>
             </button>
 
             {/* Chế độ màu nền */}
-            <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs">
+            <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs items-center">
+              <span className="text-[10px] text-slate-400 font-bold px-1 select-none">Màu:</span>
               <button
                 type="button"
                 onClick={() => setColorMode('multi-only')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   colorMode === 'multi-only'
                     ? 'bg-indigo-600 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
-                title="Khối màu khoa học: Chỉ tô màu pastel cho Via cầm chung 2+ page để nhận diện ngay, Via 1 page giữ màu trắng sạch sẽ"
+                title="Chỉ tô màu pastel cho Via cầm chung 2+ page"
               >
-                ✨ Via Chung
+                ✨ Chung
               </button>
               <button
                 type="button"
                 onClick={() => setColorMode('all-vias')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   colorMode === 'all-vias'
                     ? 'bg-indigo-600 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -1076,7 +1087,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               <button
                 type="button"
                 onClick={() => setColorMode('monochrome')}
-                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[11px] font-bold transition-all cursor-pointer ${
                   colorMode === 'monochrome'
                     ? 'bg-slate-700 text-white shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -1087,76 +1098,6 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               </button>
             </div>
           </div>
-
-          <div className="flex items-center flex-wrap gap-1.5">
-            {onFetchPagesForVia && (
-              <button
-                type="button"
-                id="btn-fetch-pages-table-top"
-                onClick={() => onFetchPagesForVia('', '')}
-                className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer bg-blue-50 hover:bg-blue-100 active:bg-blue-200 text-blue-800 border-blue-300"
-                title="Lấy Tên & Link Page từ Nick Via tự động điền lên bảng"
-              >
-                <Zap className="w-3.5 h-3.5 text-blue-600 fill-blue-600" />
-                <span>⚡ Lấy Page từ Via</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              id="btn-copy-all-fanpage-vias"
-              onClick={handleCopyAllViaUids}
-              className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer ${
-                copiedViaId === 'all-vias'
-                  ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-600/30'
-                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
-              }`}
-              title="Sao chép toàn bộ UID tài khoản nick Via trên bảng (danh sách không trùng lặp, 1 UID/dòng)"
-            >
-              {copiedViaId === 'all-vias' ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-100 stroke-[3]" />
-                  <span>Đã Copy UID!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>📋 Copy UID ({viaStats.totalVias})</span>
-                </>
-              )}
-            </button>
-
-            {/* View Mode Toggle: Gộp ô chuẩn Google Sheet vs Từng ô riêng lẻ */}
-            <button
-              type="button"
-              id="btn-toggle-merge-via"
-              onClick={() => setMergeViaCells(!mergeViaCells)}
-              className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold transition-all shadow-xs cursor-pointer ${
-                mergeViaCells
-                  ? 'bg-emerald-700 hover:bg-emerald-800 text-white border-emerald-800 ring-2 ring-emerald-600/30'
-                  : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-              }`}
-              title="Bật/tắt gộp ô theo Via: 1 Via cầm nhiều Page cùng 1 màu hoặc tách riêng lẻ từng dòng"
-            >
-              {mergeViaCells ? (
-                <>
-                  <ToggleRight className="w-4 h-4 text-emerald-200" />
-                  <span>Gộp ô</span>
-                  <span className="text-[10px] bg-emerald-900/60 text-emerald-100 px-1 py-0.2 rounded-full font-extrabold">
-                    Bật
-                  </span>
-                </>
-              ) : (
-                <>
-                  <ToggleLeft className="w-4 h-4 text-slate-400" />
-                  <span>Tách ô</span>
-                  <span className="text-[10px] bg-slate-200 text-slate-700 px-1 py-0.2 rounded-full font-extrabold">
-                    Tắt
-                  </span>
-                </>
-              )}
-            </button>
-          </div>
         </div>
       </div>
 
@@ -1165,9 +1106,9 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
         <div
           className={`overflow-x-auto overflow-y-auto ${
             viewportHeight === 'compact'
-              ? 'max-h-[440px]'
+              ? 'max-h-[380px]'
               : viewportHeight === 'medium'
-              ? 'max-h-[620px]'
+              ? 'max-h-[580px]'
               : 'max-h-none'
           }`}
         >
