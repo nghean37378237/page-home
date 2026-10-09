@@ -1012,7 +1012,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         key={via.id}
         className={`transition-colors group border-b ${
           isSelected
-            ? 'bg-indigo-100/70 hover:bg-indigo-100/90 border-l-4 border-l-indigo-600 border-indigo-300 ring-1 ring-inset ring-indigo-200'
+            ? 'bg-indigo-100/70 hover:bg-indigo-100/90 border-l-4 border-l-indigo-600 border-indigo-300'
             : isRowError
             ? 'bg-red-50/95 hover:bg-red-100/90 border-l-4 border-l-red-600 border-red-200'
             : isRowFixed
@@ -1028,7 +1028,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       >
         {/* 1. CHỌN & STT */}
         <td
-          className={`py-1.5 px-2 text-center font-mono font-semibold border-r text-[11px] ${
+          className={`py-2 px-2 text-center font-mono font-semibold border-r text-[11px] ${
             isSelected
               ? 'bg-indigo-200/60 text-indigo-950 border-indigo-300 font-bold'
               : isRowError
@@ -1056,15 +1056,15 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
         {/* 2. CỘT UID */}
         <td
-          className={`py-1.5 px-2.5 border-r transition-colors ${
+          className={`py-2 px-2.5 border-r transition-colors ${
             isSelected
               ? 'border-indigo-300 bg-indigo-100/40'
               : isRowError
-              ? 'border-red-200 bg-red-100/60 ring-1 ring-inset ring-red-300'
+              ? 'border-red-200 bg-red-100/60'
               : isRowFixed
-              ? 'border-emerald-300 bg-emerald-100/80 ring-1 ring-inset ring-emerald-400'
+              ? 'border-emerald-300 bg-emerald-100/80'
               : isPendingPage
-              ? 'border-rose-300 bg-rose-100/60 ring-1 ring-inset ring-rose-300'
+              ? 'border-rose-300 bg-rose-100/60'
               : isUpdatedPage
               ? 'border-slate-200 bg-emerald-50/20'
               : 'border-slate-200'
@@ -1103,20 +1103,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               )}
               {isPendingPage && !isRowError && !isRowFixed && (
                 <span
-                  className="bg-rose-600 text-white font-black text-[9px] px-1.5 py-0.5 rounded shadow-2xs shrink-0 flex items-center space-x-0.5 animate-pulse"
-                  title="Admin đã chuyển sang trạng thái: Đã Có Page! Cần nhân viên cập nhật Page lên"
+                  className="bg-rose-600 text-white font-black text-[9px] px-1 py-0.2 rounded shadow-2xs shrink-0 flex items-center space-x-0.5 animate-pulse"
+                  title="Admin đã báo Đã Có Page! Cần nhân viên cập nhật Page"
                 >
-                  <AlertCircle className="w-2.5 h-2.5 text-white" />
-                  <span>ĐÃ CÓ PAGE</span>
-                </span>
-              )}
-              {isUpdatedPage && !isRowError && !isRowFixed && (
-                <span
-                  className="bg-emerald-600 text-white font-extrabold text-[9px] px-1 py-0.2 rounded shadow-2xs shrink-0 flex items-center space-x-0.5"
-                  title={`Nick này đã được cập nhật ${assignedPages.length || 1} Page`}
-                >
-                  <Check className="w-2.5 h-2.5 text-white stroke-[2.5]" />
-                  <span>CÓ PAGE</span>
+                  <span>CẦN PAGE</span>
                 </span>
               )}
               <a
@@ -1154,36 +1144,12 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   </>
                 )}
               </button>
-              {(via.pass || via.twoFa) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const fullStr = via.rawFullVia || `${via.uid}|${via.pass}|${via.twoFa}`;
-                    handleCopyText(fullStr, `full-${via.id}`, 'Full Via (UID|PASS|2FA)');
-                  }}
-                  className={`inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-bold rounded border transition-all cursor-pointer ${
-                    isFullCopied
-                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                      : 'bg-slate-50 text-slate-700 border-slate-300 hover:bg-slate-100'
-                  }`}
-                  title="Sao chép toàn bộ chuỗi Full Via (UID|PASS|2FA)"
-                >
-                  {isFullCopied ? (
-                    <>
-                      <Check className="w-2.5 h-2.5 text-white" />
-                      <span>Full ✓</span>
-                    </>
-                  ) : (
-                    <span>Full</span>
-                  )}
-                </button>
-              )}
             </div>
           </div>
         </td>
 
         {/* 3. CỘT MẬT KHẨU PASS */}
-        <td className={`py-1.5 px-2.5 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
+        <td className={`py-2 px-2.5 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
           <div className="flex items-center justify-between gap-1">
             <div className="flex items-center space-x-1 min-w-0 flex-1">
               <span
@@ -1200,14 +1166,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               <button
                 type="button"
                 onClick={() => toggleRowPassword(via.id)}
-                className="text-slate-400 hover:text-slate-700 p-0.5 shrink-0"
+                className="text-slate-400 hover:text-slate-700 p-0.5 shrink-0 cursor-pointer"
                 title={isPasswordVisible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
               >
-                {isPasswordVisible ? (
-                  <EyeOff className="w-3 h-3 text-amber-600" />
-                ) : (
-                  <Eye className="w-3 h-3" />
-                )}
+                {isPasswordVisible ? <EyeOff className="w-3 h-3 text-amber-600" /> : <Eye className="w-3 h-3" />}
               </button>
             </div>
             <button
@@ -1238,7 +1200,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         </td>
 
         {/* 4. CỘT MÃ 2FA */}
-        <td className={`py-1.5 px-2.5 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
+        <td className={`py-2 px-2.5 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
           <div className="flex flex-col space-y-1">
             <div className="flex items-center justify-between gap-1">
               <div className="flex items-center space-x-1 min-w-0 flex-1 font-mono text-xs">
@@ -1261,11 +1223,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     className="text-slate-400 hover:text-slate-700 p-0.5 cursor-pointer shrink-0"
                     title={is2FaVisible ? 'Ẩn mã 2FA' : 'Hiện mã 2FA'}
                   >
-                    {is2FaVisible ? (
-                      <EyeOff className="w-3 h-3 text-emerald-600" />
-                    ) : (
-                      <Eye className="w-3 h-3" />
-                    )}
+                    {is2FaVisible ? <EyeOff className="w-3 h-3 text-emerald-600" /> : <Eye className="w-3 h-3" />}
                   </button>
                 )}
               </div>
@@ -1334,7 +1292,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         </td>
 
         {/* 5. CỘT NHÂN VIÊN */}
-        <td className={`py-1.5 px-2.5 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
+        <td className={`py-2 px-2 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
           {currentUser.role === 'admin' ? (
             <select
               value={via.staffName}
@@ -1362,9 +1320,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           )}
         </td>
 
-        {/* 6. PAGE ĐANG CẦM (BÔI MÀU & GHI CHÚ NHÂN VIÊN CẬP NHẬT) */}
+        {/* 6. PAGE ĐANG CẦM (GỌN GÀNG, SẠCH SẼ) */}
         <td
-          className={`py-1.5 px-2.5 border-r transition-all text-center ${
+          className={`py-2 px-2 border-r transition-all text-center ${
             isRowError
               ? 'border-red-200'
               : isRowFixed
@@ -1372,345 +1330,210 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               : isPendingPage
               ? 'border-rose-300 bg-rose-50/95 ring-1 ring-inset ring-rose-300'
               : isUpdatedPage
-              ? 'border-emerald-300 bg-emerald-50/90 ring-1 ring-inset ring-emerald-200/80'
+              ? 'border-emerald-300 bg-emerald-50/90'
               : 'border-slate-200'
           }`}
         >
-          <div className="flex flex-col items-center space-y-1 w-full min-w-[170px] max-w-[240px] mx-auto">
+          <div className="flex flex-col items-center space-y-1 w-full min-w-[155px] max-w-[210px] mx-auto">
             {isPendingPage ? (
               <>
-                {/* 🔴 TRẠNG THÁI MÀU ĐỎ: ĐÃ CÓ PAGE (Admin đã ấn vào) */}
-                <div className="flex items-center justify-center space-x-1 w-full">
+                {/* 🔴 Cần Gán Page */}
+                <div className="flex items-center justify-between gap-1 w-full">
                   {currentUser.role === 'admin' ? (
                     <button
                       type="button"
                       onClick={() => handleSetViaPageStatus(via, 'none')}
-                      className="w-full inline-flex items-center justify-center space-x-1.5 px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-md font-black text-[11px] shadow-xs tracking-tight cursor-pointer transition-all animate-pulse"
-                      title="🔴 Đã Có Page! (Admin bấm vào đây nếu muốn chuyển lại về Chưa có page)"
+                      className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold shadow-2xs cursor-pointer flex items-center space-x-1"
+                      title="Admin bấm để chuyển lại về Chưa có page"
                     >
-                      <AlertCircle className="w-3.5 h-3.5 text-white shrink-0" />
-                      <span>🔴 Đã Có Page</span>
+                      <AlertCircle className="w-3 h-3" />
+                      <span>🔴 Cần gán Page</span>
                     </button>
                   ) : (
-                    <div
-                      className="w-full inline-flex items-center justify-center space-x-1.5 px-2.5 py-1 bg-rose-600 text-white rounded-md font-black text-[11px] shadow-xs tracking-tight animate-pulse"
-                      title="Admin đã báo nick này: Đã Có Page! Cần nhân viên cập nhật Page lên"
-                    >
-                      <AlertCircle className="w-3.5 h-3.5 text-white shrink-0" />
-                      <span>🔴 Đã Có Page</span>
-                    </div>
+                    <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[11px] font-bold shadow-2xs flex items-center space-x-1 animate-pulse">
+                      <AlertCircle className="w-3 h-3" />
+                      <span>🔴 Cần gán Page</span>
+                    </span>
                   )}
-                </div>
 
-                {/* Hộp thông báo nhắc nhở nhân viên */}
-                <div
-                  onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
-                  className="w-full text-center px-1.5 py-0.5 rounded text-[10px] font-bold border border-rose-200 bg-rose-100/90 text-rose-950 shadow-2xs cursor-pointer hover:bg-rose-200 transition-colors flex items-center justify-center space-x-1"
-                  title="Nhấn để chuyển sang Bảng Fanpage cập nhật ngay"
-                >
-                  <Bell className="w-2.5 h-2.5 text-rose-700 shrink-0 animate-bounce" />
-                  <span className="truncate">👉 NV cập nhật Page lên</span>
-                </div>
-
-                {/* Nút hành động nhanh: Xác nhận đã update page (Chuyển sang màu xanh lá) */}
-                <div className="flex items-center justify-center flex-wrap gap-1 pt-0.5 w-full">
                   <button
                     type="button"
                     onClick={() => handleSetViaPageStatus(via, 'updated')}
-                    className="inline-flex items-center space-x-1 px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-black shadow-2xs transition-all cursor-pointer"
-                    title="Bấm để xác nhận đã update Page -> Chuyển thành Màu Xanh Lá!"
+                    className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold shadow-2xs cursor-pointer"
+                    title="Xác nhận đã cập nhật Page"
                   >
-                    <CheckCircle2 className="w-2.5 h-2.5 text-white stroke-[2.5]" />
-                    <span>✓ Đã Update Page</span>
+                    ✓ Đã gán
                   </button>
+                </div>
 
+                <div className="flex items-center justify-center space-x-1 w-full text-[10px]">
                   {onFilterPageByVia && (
                     <button
                       type="button"
                       onClick={() => onFilterPageByVia(via.uid)}
-                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded text-[10px] font-bold transition-colors cursor-pointer"
-                      title="Mở Bảng Fanpage lọc nick này để tạo hoặc sửa Page"
+                      className="px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded font-semibold cursor-pointer"
+                      title="Mở Bảng Fanpage lọc nick này"
                     >
-                      <Layers className="w-2.5 h-2.5 text-indigo-600" />
-                      <span>Vào Page</span>
+                      Vào Page
                     </button>
                   )}
-
                   {onAddPageForVia && (
                     <button
                       type="button"
                       onClick={() => onAddPageForVia(via.uid, via.staffName)}
-                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-bold text-rose-800 bg-rose-100 hover:bg-rose-200 border border-rose-300 rounded transition-colors cursor-pointer"
-                      title="Thêm Page mới cho nick này"
+                      className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 rounded font-semibold cursor-pointer"
+                      title="Thêm Page mới"
                     >
-                      <Plus className="w-2.5 h-2.5 text-rose-700" />
-                      <span>+Page</span>
+                      + Page
                     </button>
                   )}
                 </div>
               </>
             ) : isUpdatedPage ? (
               <>
-                {/* 🟢 BÔI MÀU XANH LÁ: ĐÃ CÓ PAGE VÀ ĐÃ ĐƯỢC CẬP NHẬT */}
-                <div className="flex items-center justify-center space-x-1.5 w-full">
+                {/* 🟢 Đã Có Page */}
+                <div className="flex items-center justify-between gap-1 w-full">
                   <button
                     type="button"
                     onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
-                    className="inline-flex items-center space-x-1 px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-black text-[11px] shadow-2xs cursor-pointer transition-all tracking-tight"
-                    title="Bấm để lọc xem danh sách các Fanpage này ở Bảng Fanpage để cập nhật bài"
+                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-2xs cursor-pointer flex items-center space-x-1"
+                    title="Bấm để lọc xem danh sách các Fanpage của nick này"
                   >
-                    <CheckCircle2 className="w-3 h-3 text-white" />
-                    <span>ĐÃ CÓ {assignedPages.length || 1} PAGE</span>
+                    <CheckCircle2 className="w-3 h-3" />
+                    <span>📗 {assignedPages.length || 1} Page</span>
                   </button>
-                </div>
 
-                {/* Ghi chú nhắc nhở nhân viên cập nhật */}
-                <div
-                  onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
-                  className={`w-full text-center px-1.5 py-0.5 rounded text-[10px] font-bold border shadow-2xs cursor-pointer transition-colors flex items-center justify-center space-x-1 ${
-                    allPagesDone
-                      ? 'bg-blue-50 border-blue-200 text-blue-800 hover:bg-blue-100'
-                      : pendingPagesCount > 0
-                      ? 'bg-amber-50 border-amber-300 text-amber-900 hover:bg-amber-100'
-                      : 'bg-white/95 border-emerald-300 text-emerald-900 hover:bg-emerald-50'
-                  }`}
-                  title="Nhấn để chuyển sang Bảng Fanpage cập nhật ngay"
-                >
-                  <Bell className={`w-2.5 h-2.5 shrink-0 ${allPagesDone ? 'text-blue-600' : 'text-amber-600'}`} />
-                  <span className="truncate">
-                    {allPagesDone
-                      ? '✓ Đã xong bài hôm nay'
-                      : pendingPagesCount > 0
-                      ? `👉 Cần cập nhật (${pendingPagesCount} page)`
-                      : '✓ Đã cập nhật Page'}
-                  </span>
-                </div>
-
-                {/* Danh sách tên các Page ngắn gọn (chip nhỏ) */}
-                {assignedPages.length > 0 && (
-                  <div className="w-full flex flex-col space-y-0.5 text-left pt-0.5">
-                    {assignedPages.slice(0, 2).map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
-                        className="flex items-center justify-between space-x-1 px-1.5 py-0.5 bg-white/90 hover:bg-white border border-emerald-200/90 rounded text-[10px] text-slate-800 cursor-pointer shadow-2xs transition-colors"
-                        title={`Page: ${p.pageName} (Tiến độ: ${p.actualPosts || 0}/${p.targetPosts || 0} bài. Nhấn để cập nhật)`}
-                      >
-                        <span className="truncate font-semibold text-emerald-950 flex items-center space-x-0.5">
-                          <FileText className="w-2.5 h-2.5 text-emerald-600 shrink-0 inline mr-0.5" />
-                          <span className="truncate">{p.pageName || 'Chưa đặt tên'}</span>
-                        </span>
-                        <span className={`text-[9px] font-mono font-bold px-1 rounded shrink-0 ${
-                          p.isCompleted || (p.actualPosts || 0) >= (p.targetPosts || 0)
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {p.actualPosts || 0}/{p.targetPosts || 0}
-                        </span>
-                      </div>
-                    ))}
-                    {assignedPages.length > 2 && (
+                  <div className="flex items-center space-x-0.5">
+                    {onAddPageForVia && (
                       <button
                         type="button"
-                        onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
-                        className="text-[9px] font-bold text-emerald-800 hover:text-emerald-950 hover:underline text-center cursor-pointer"
+                        onClick={() => onAddPageForVia(via.uid, via.staffName)}
+                        className="px-1 py-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded cursor-pointer"
+                        title="Thêm Fanpage mới"
                       >
-                        + {assignedPages.length - 2} page nữa (xem tất cả)
+                        +Page
+                      </button>
+                    )}
+                    {onFetchPagesForVia && (
+                      <button
+                        type="button"
+                        onClick={() => onFetchPagesForVia(via.uid, via.staffName)}
+                        className="p-1 text-[10px] text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded cursor-pointer"
+                        title="Quét Page từ Via"
+                      >
+                        <Zap className="w-3 h-3 text-blue-600 fill-blue-600" />
                       </button>
                     )}
                   </div>
-                )}
-
-                {/* Hàng nút hành động nhanh (xếp ngang gọn gàng) */}
-                <div className="flex items-center justify-center flex-wrap gap-1 pt-0.5 w-full">
-                  {onFilterPageByVia && (
-                    <button
-                      type="button"
-                      onClick={() => onFilterPageByVia(via.uid)}
-                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded text-[10px] font-bold transition-colors cursor-pointer"
-                      title="Chuyển sang Bảng Fanpage lọc đúng nick này để cập nhật tiến độ bài đăng"
-                    >
-                      <Layers className="w-2.5 h-2.5 text-indigo-600" />
-                      <span>Cập nhật</span>
-                    </button>
-                  )}
-                  {onAddPageForVia && (
-                    <button
-                      type="button"
-                      onClick={() => onAddPageForVia(via.uid, via.staffName)}
-                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded transition-colors cursor-pointer"
-                      title="Thêm 1 Fanpage mới cho Nick Via này"
-                    >
-                      <Plus className="w-2.5 h-2.5 text-emerald-600" />
-                      <span>+Page</span>
-                    </button>
-                  )}
-                  {onFetchPagesForVia && (
-                    <button
-                      type="button"
-                      onClick={() => onFetchPagesForVia(via.uid, via.staffName)}
-                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-bold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded transition-colors cursor-pointer"
-                      title="Lấy Tên & Link Page từ Via và điền tự động"
-                    >
-                      <Zap className="w-2.5 h-2.5 text-blue-600 fill-blue-600" />
-                      <span>Quét</span>
-                    </button>
-                  )}
-                  {onTransferViaPages && (
-                    <button
-                      type="button"
-                      onClick={() => onTransferViaPages(via.uid)}
-                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded transition-colors cursor-pointer"
-                      title="Chuyển toàn bộ Page của nick này sang nick khác"
-                    >
-                      <ArrowRightLeft className="w-2.5 h-2.5 text-slate-600" />
-                      <span>Chuyển</span>
-                    </button>
-                  )}
-                  {currentUser.role === 'admin' && (
-                    <button
-                      type="button"
-                      onClick={() => handleSetViaPageStatus(via, 'pending')}
-                      className="text-[9px] text-rose-600 hover:text-rose-800 hover:underline px-1 py-0.5 cursor-pointer font-bold"
-                      title="Admin đổi lại sang màu đỏ để báo nhân viên cập nhật lại"
-                    >
-                      🔴 Báo Đỏ
-                    </button>
-                  )}
                 </div>
+
+                {assignedPages.length > 0 && (
+                  <div className="w-full flex items-center space-x-1 overflow-hidden text-[10px]">
+                    <span className="truncate text-slate-700 font-medium" title={assignedPages.map(p => p.pageName).join(', ')}>
+                      {assignedPages[0].pageName || 'Page 1'}
+                    </span>
+                    {assignedPages.length > 1 && (
+                      <span className="text-[9px] bg-slate-100 text-slate-600 px-1 rounded shrink-0">
+                        +{assignedPages.length - 1}
+                      </span>
+                    )}
+                  </div>
+                )}
               </>
             ) : (
               <>
-                {/* ⚪ TRẠNG THÁI MẶC ĐỊNH MÀU TRẮNG: "Chưa có page" (Khi admin ấn vào sẽ chuyển sang: Màu đỏ Đã Có Page) */}
-                <div className="w-full">
+                {/* ⚪ Chưa có page */}
+                <div className="flex items-center justify-between gap-1 w-full">
                   {currentUser.role === 'admin' ? (
                     <button
                       type="button"
                       onClick={() => handleSetViaPageStatus(via, 'pending')}
-                      className="w-full py-1.5 px-2 bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-700 border border-slate-300 hover:border-rose-400 rounded-md shadow-2xs text-[11px] font-bold transition-all cursor-pointer flex items-center justify-center space-x-1.5 group"
-                      title="Nhấn vào để chuyển sang: Màu đỏ Đã Có Page"
+                      className="px-2 py-0.5 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-300 rounded text-[11px] font-semibold cursor-pointer flex items-center space-x-1"
+                      title="Nhấn để chuyển sang trạng thái: Cần gán Page"
                     >
-                      <span className="w-2 h-2 rounded-full border border-slate-400 bg-slate-100 group-hover:border-rose-500 group-hover:bg-rose-500 transition-colors shrink-0" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
                       <span>Chưa có page</span>
                     </button>
                   ) : (
-                    <div className="w-full py-1.5 px-2 bg-white text-slate-600 border border-slate-200 rounded-md shadow-2xs text-[11px] font-semibold flex items-center justify-center space-x-1.5">
-                      <span className="w-2 h-2 rounded-full border border-slate-300 bg-slate-200 shrink-0" />
+                    <span className="px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 rounded text-[11px] font-medium flex items-center space-x-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
                       <span>Chưa có page</span>
-                    </div>
+                    </span>
                   )}
-                </div>
 
-                {/* Các nút thao tác nhỏ gọn bên dưới */}
-                <div className="flex items-center justify-center space-x-1 pt-0.5 w-full">
-                  {onAddPageForVia && (
-                    <button
-                      type="button"
-                      onClick={() => onAddPageForVia(via.uid, via.staffName)}
-                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded transition-colors cursor-pointer"
-                      title="Tạo Page mới cho Nick Via này"
-                    >
-                      <Plus className="w-2.5 h-2.5 text-slate-500" />
-                      <span>+ Thêm</span>
-                    </button>
-                  )}
-                  {onFetchPagesForVia && (
-                    <button
-                      type="button"
-                      onClick={() => onFetchPagesForVia(via.uid, via.staffName)}
-                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-medium text-blue-700 bg-blue-50/70 hover:bg-blue-100 border border-blue-200 rounded transition-colors cursor-pointer"
-                      title="Lấy Tên & Link Page từ Via và điền tự động"
-                    >
-                      <Zap className="w-2.5 h-2.5 text-blue-600" />
-                      <span>Quét</span>
-                    </button>
-                  )}
+                  <div className="flex items-center space-x-0.5">
+                    {onAddPageForVia && (
+                      <button
+                        type="button"
+                        onClick={() => onAddPageForVia(via.uid, via.staffName)}
+                        className="px-1.5 py-0.5 text-[10px] text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded cursor-pointer"
+                        title="Tạo Page mới"
+                      >
+                        +Page
+                      </button>
+                    )}
+                    {onFetchPagesForVia && (
+                      <button
+                        type="button"
+                        onClick={() => onFetchPagesForVia(via.uid, via.staffName)}
+                        className="p-1 text-[10px] text-blue-700 bg-blue-50/70 hover:bg-blue-100 border border-blue-200 rounded cursor-pointer"
+                        title="Quét Page"
+                      >
+                        <Zap className="w-3 h-3 text-blue-600" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </>
             )}
           </div>
         </td>
 
-        {/* 7. TRẠNG THÁI & Ô CHỌN BÔI XANH KHI ADMIN ĐÃ SỬA LỖI & THAY VIA MỚI */}
-        <td className={`py-1.5 px-2.5 border-r ${isRowError ? 'border-red-200' : isRowFixed ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}`}>
-          <div className="flex flex-col space-y-1 min-w-[130px] max-w-[150px]">
-            <select
-              value={isRowError ? (via.status === 'dead' ? 'dead' : 'error') : isRowFixed ? 'fixed' : via.status || 'active'}
-              onChange={(e) => {
-                const val = e.target.value as 'active' | 'checkpoint' | 'dead' | 'error' | 'fixed';
-                const isErr = val === 'error' || val === 'dead';
-                const isFix = val === 'fixed';
-                onUpdateVia({
-                  ...via,
-                  status: val,
-                  isError: isErr,
-                  isFixed: isFix,
-                });
-                setCopyToastMessage(
-                  isFix
-                    ? `❇️ Đã bôi màu xanh nick ${via.uid} (Admin đã sửa lỗi & thay via mới)`
-                    : isErr
-                    ? `🔴 Đã bôi màu đỏ nick ${via.uid} (Đánh dấu Via Bị Lỗi)`
-                    : `🟢 Đã chuyển trạng thái nick ${via.uid} thành: ${val === 'active' ? 'Hoạt Động' : 'Checkpoint'}`
-                );
-                setTimeout(() => setCopyToastMessage(null), 2500);
-              }}
-              className={`text-[11px] font-bold rounded px-1.5 py-0.5 border shadow-2xs cursor-pointer focus:outline-hidden transition-colors ${
-                isRowError
-                  ? 'bg-red-600 text-white border-red-700 font-extrabold ring-1 ring-red-300'
-                  : isRowFixed
-                  ? 'bg-emerald-600 text-white border-emerald-700 font-extrabold ring-1 ring-emerald-300'
-                  : via.status === 'checkpoint'
-                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                  : 'bg-emerald-50 text-emerald-900 border-emerald-300'
-              }`}
-              title="Bấm để đổi trạng thái hoặc bôi màu đỏ/xanh"
-            >
-              <option value="active">🟢 Hoạt Động (Live)</option>
-              <option value="fixed">❇️ Đã Sửa (Bôi Xanh)</option>
-              <option value="error">🔴 Nick Lỗi (Bôi đỏ)</option>
-              <option value="checkpoint">🟠 Checkpoint</option>
-              <option value="dead">🪦 Bị Die</option>
-            </select>
-
-            <label
-              className={`flex items-center space-x-1 px-1.5 py-0.5 rounded border text-[10px] font-bold cursor-pointer select-none transition-all shadow-2xs ${
-                isRowFixed
-                  ? 'bg-emerald-600 text-white border-emerald-700 ring-1 ring-emerald-300'
-                  : 'bg-white hover:bg-emerald-50 text-slate-700 hover:text-emerald-800 border-slate-300'
-              }`}
-              title="Ô chọn trong Via: Click vào bôi ô via này lại màu xanh lá để dễ phân biệt khi Admin đã sửa lỗi và thay via mới"
-            >
-              <input
-                type="checkbox"
-                checked={isRowFixed}
-                onChange={() => {
-                  const nextFixed = !isRowFixed;
-                  onUpdateVia({
-                    ...via,
-                    isFixed: nextFixed,
-                    isError: nextFixed ? false : via.isError,
-                    status: nextFixed ? 'fixed' : 'active',
-                  });
-                  setCopyToastMessage(
-                    nextFixed
-                      ? `❇️ Đã bôi xanh nick ${via.uid} (Admin đã sửa lỗi & thay via mới)`
-                      : `Đã bỏ bôi xanh nick ${via.uid}`
-                  );
-                  setTimeout(() => setCopyToastMessage(null), 2500);
-                }}
-                className="w-3 h-3 rounded text-emerald-600 border-slate-300 focus:ring-emerald-500 cursor-pointer shrink-0"
-              />
-              <span className="truncate">
-                {isRowFixed ? '✓ Đã sửa (Xanh)' : 'Bôi xanh đã sửa'}
-              </span>
-            </label>
-          </div>
+        {/* 7. TRẠNG THÁI (GỌN GÀNG) */}
+        <td className={`py-2 px-2 border-r ${isRowError ? 'border-red-200' : isRowFixed ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}`}>
+          <select
+            value={isRowError ? (via.status === 'dead' ? 'dead' : 'error') : isRowFixed ? 'fixed' : via.status || 'active'}
+            onChange={(e) => {
+              const val = e.target.value as 'active' | 'checkpoint' | 'dead' | 'error' | 'fixed';
+              const isErr = val === 'error' || val === 'dead';
+              const isFix = val === 'fixed';
+              onUpdateVia({
+                ...via,
+                status: val,
+                isError: isErr,
+                isFixed: isFix,
+              });
+              setCopyToastMessage(
+                isFix
+                  ? `❇️ Đã bôi màu xanh nick ${via.uid} (Admin đã sửa lỗi & thay via mới)`
+                  : isErr
+                  ? `🔴 Đã bôi màu đỏ nick ${via.uid} (Đánh dấu Via Bị Lỗi)`
+                  : `🟢 Đã chuyển trạng thái nick ${via.uid} thành: ${val === 'active' ? 'Hoạt Động' : 'Checkpoint'}`
+              );
+              setTimeout(() => setCopyToastMessage(null), 2500);
+            }}
+            className={`w-full text-[11px] font-bold rounded px-2 py-1 border shadow-2xs cursor-pointer focus:outline-hidden transition-colors ${
+              isRowError
+                ? 'bg-red-600 text-white border-red-700 ring-1 ring-red-300'
+                : isRowFixed
+                ? 'bg-emerald-600 text-white border-emerald-700 ring-1 ring-emerald-300'
+                : via.status === 'checkpoint'
+                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+            }`}
+            title="Đổi trạng thái nick"
+          >
+            <option value="active">🟢 Live</option>
+            <option value="fixed">❇️ Đã Sửa (Xanh)</option>
+            <option value="error">🔴 Lỗi (Đỏ)</option>
+            <option value="checkpoint">🟠 Checkpoint</option>
+            <option value="dead">🪦 Bị Die</option>
+          </select>
         </td>
 
-        {/* 8. BÁO ADMIN: Live, VHH, SDT, Selfie, Email code */}
+        {/* 8. BÁO ADMIN (GỌN GÀNG) */}
         <td
-          className={`py-1.5 px-2.5 border-r text-center transition-all ${
+          className={`py-2 px-2 border-r text-center transition-all ${
             via.adminReportStatus === 'VHH'
               ? 'bg-rose-50/90 border-rose-200'
               : via.adminReportStatus === 'SDT'
@@ -1726,94 +1549,48 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               : 'border-slate-200'
           }`}
         >
-          <div className="flex flex-col items-center space-y-1 min-w-[155px] max-w-[205px] mx-auto">
-            <select
-              value={via.adminReportStatus || 'None'}
-              onChange={(e) => {
-                const val = e.target.value as ViaAdminReportStatus;
-                onUpdateVia({
-                  ...via,
-                  adminReportStatus: val,
-                });
-                setCopyToastMessage(
-                  val === 'None'
-                    ? `Đã xóa Báo Admin cho nick ${via.uid}`
-                    : `📢 Đã báo Admin: [${val}] cho nick ${via.uid}!`
-                );
-                setTimeout(() => setCopyToastMessage(null), 2500);
-              }}
-              className={`text-[11px] font-black rounded-lg px-2 py-1 border shadow-2xs cursor-pointer focus:outline-hidden transition-all w-full text-center ${
-                via.adminReportStatus === 'Live'
-                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                  : via.adminReportStatus === 'VHH'
-                  ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-300 animate-pulse'
-                  : via.adminReportStatus === 'SDT'
-                  ? 'bg-blue-600 text-white border-blue-700 shadow-xs ring-1 ring-blue-300'
-                  : via.adminReportStatus === 'Selfie'
-                  ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-1 ring-purple-300'
-                  : via.adminReportStatus === 'Email code' || (via.adminReportStatus as any) === 'Code mail'
-                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-1 ring-amber-300'
-                  : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400'
-              }`}
-              title="Báo tình trạng nick lên Admin: Live, VHH, SDT, Selfie, Email code"
-            >
-              <option value="None">⚪ -- Chưa báo Admin --</option>
-              <option value="Live">🟢 Live (Hoạt động tốt)</option>
-              <option value="VHH">🔴 VHH (Vô hiệu hóa)</option>
-              <option value="SDT">📱 SDT (Checkpoint SĐT)</option>
-              <option value="Selfie">🤳 Selfie (Checkpoint khuôn mặt)</option>
-              <option value="Email code">✉️ Email code (Code mail)</option>
-            </select>
-
-            {/* Quick 1-click badge pills */}
-            <div className="flex items-center justify-center flex-wrap gap-1 pt-0.5 w-full">
-              {(['Live', 'VHH', 'SDT', 'Selfie', 'Email code'] as const).map((st) => {
-                const isActive =
-                  via.adminReportStatus === st ||
-                  (st === 'Email code' && (via.adminReportStatus as any) === 'Code mail');
-                return (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => {
-                      const nextVal = isActive ? 'None' : st;
-                      onUpdateVia({
-                        ...via,
-                        adminReportStatus: nextVal,
-                      });
-                      setCopyToastMessage(
-                        nextVal === 'None'
-                          ? `Đã bỏ Báo Admin cho nick ${via.uid}`
-                          : `📢 Đã báo Admin: [${st}] cho nick ${via.uid}!`
-                      );
-                      setTimeout(() => setCopyToastMessage(null), 2500);
-                    }}
-                    className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold border transition-all cursor-pointer shadow-2xs ${
-                      isActive
-                        ? st === 'Live'
-                          ? 'bg-emerald-600 text-white border-emerald-700 font-black ring-1 ring-emerald-300'
-                          : st === 'VHH'
-                          ? 'bg-rose-600 text-white border-rose-700 font-black ring-1 ring-rose-300'
-                          : st === 'SDT'
-                          ? 'bg-blue-600 text-white border-blue-700 font-black ring-1 ring-blue-300'
-                          : st === 'Selfie'
-                          ? 'bg-purple-600 text-white border-purple-700 font-black ring-1 ring-purple-300'
-                          : 'bg-amber-500 text-white border-amber-600 font-black ring-1 ring-amber-300'
-                        : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-                    }`}
-                    title={`Bấm để ${isActive ? 'hủy báo' : 'báo Admin: ' + st}`}
-                  >
-                    {st === 'Email code' ? 'Mail' : st}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          <select
+            value={via.adminReportStatus || 'None'}
+            onChange={(e) => {
+              const val = e.target.value as ViaAdminReportStatus;
+              onUpdateVia({
+                ...via,
+                adminReportStatus: val,
+              });
+              setCopyToastMessage(
+                val === 'None'
+                  ? `Đã xóa Báo Admin cho nick ${via.uid}`
+                  : `📢 Đã báo Admin: [${val}] cho nick ${via.uid}!`
+              );
+              setTimeout(() => setCopyToastMessage(null), 2500);
+            }}
+            className={`w-full text-[11px] font-bold rounded-lg px-2 py-1 border shadow-2xs cursor-pointer focus:outline-hidden transition-all text-center ${
+              via.adminReportStatus === 'Live'
+                ? 'bg-emerald-600 text-white border-emerald-700'
+                : via.adminReportStatus === 'VHH'
+                ? 'bg-rose-600 text-white border-rose-700 ring-1 ring-rose-300'
+                : via.adminReportStatus === 'SDT'
+                ? 'bg-blue-600 text-white border-blue-700'
+                : via.adminReportStatus === 'Selfie'
+                ? 'bg-purple-600 text-white border-purple-700'
+                : via.adminReportStatus === 'Email code' || (via.adminReportStatus as any) === 'Code mail'
+                ? 'bg-amber-500 text-white border-amber-600'
+                : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400'
+            }`}
+            title="Báo tình trạng nick lên Admin: Live, VHH, SDT, Selfie, Email code"
+          >
+            <option value="None">⚪ Chưa báo</option>
+            <option value="Live">🟢 Live</option>
+            <option value="VHH">🔴 VHH</option>
+            <option value="SDT">📱 SDT</option>
+            <option value="Selfie">🤳 Selfie</option>
+            <option value="Email code">✉️ Email code</option>
+          </select>
         </td>
 
-        {/* 9. GHI CHÚ CHUNG CHO TẤT CẢ CÁC PAGE CÙNG VIA */}
+        {/* 9. GHI CHÚ CHUNG CẢ VIA */}
         <td
-          className={`py-1.5 px-2.5 border-r text-xs min-w-[170px] max-w-[220px] ${
+          className={`py-2 px-2.5 border-r text-xs min-w-[150px] max-w-[200px] ${
             isRowError
               ? 'border-red-200 bg-red-50/30'
               : isRowFixed
@@ -1821,56 +1598,39 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               : 'border-slate-200'
           }`}
         >
-          <div className="flex flex-col space-y-0.5">
-            <div className="flex items-center justify-between text-[10px]">
-              <span className="font-bold text-slate-700 flex items-center space-x-1">
-                <span>📝 Ghi chú cả via:</span>
-              </span>
-              {assignedPages.length > 0 && (
-                <span className="text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1 py-0.2 rounded border border-emerald-300">
-                  {assignedPages.length} page
-                </span>
-              )}
-            </div>
-            <textarea
-              rows={1}
-              value={via.sharedNote ?? via.note ?? ''}
-              onChange={(e) => {
-                const val = e.target.value;
-                onUpdateVia({
-                  ...via,
-                  note: val,
-                  sharedNote: val,
-                });
-              }}
-              onFocus={(e) => (e.target.rows = 2)}
-              onBlur={(e) => {
-                if (!e.target.value.trim()) e.target.rows = 1;
-              }}
-              placeholder="Ghi chú chung cho các page..."
-              className="w-full text-xs font-medium bg-white hover:bg-white focus:bg-white border border-slate-300 focus:border-emerald-600 rounded px-1.5 py-0.5 text-slate-800 focus:outline-hidden shadow-2xs resize-none"
-              title="Ghi chú chung này được đồng bộ và áp dụng cho tất cả các Fanpage dùng chung nick Via này"
-            />
-          </div>
+          <textarea
+            rows={1}
+            value={via.sharedNote ?? via.note ?? ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              onUpdateVia({
+                ...via,
+                note: val,
+                sharedNote: val,
+              });
+            }}
+            onFocus={(e) => (e.target.rows = 2)}
+            onBlur={(e) => {
+              if (!e.target.value.trim()) e.target.rows = 1;
+            }}
+            placeholder="Ghi chú chung..."
+            className="w-full text-xs font-medium bg-white hover:bg-white focus:bg-white border border-slate-300 focus:border-indigo-500 rounded px-1.5 py-1 text-slate-800 focus:outline-hidden shadow-2xs resize-none"
+            title="Ghi chú chung cho các page cùng Via"
+          />
         </td>
 
-        {/* 9. THAO TÁC */}
-        <td className="py-1.5 px-2 text-center">
+        {/* 10. THAO TÁC */}
+        <td className="py-2 px-2 text-center">
           <div className="flex items-center justify-center space-x-1">
-            {/* Quick 1-click Báo Lỗi / Bôi Đỏ button */}
             <button
               type="button"
               onClick={() => handleToggleErrorVia(via)}
               className={`p-1 rounded border transition-all cursor-pointer ${
                 isRowError
-                  ? 'bg-red-600 text-white border-red-700 hover:bg-red-700 shadow-2xs ring-1 ring-red-300'
+                  ? 'bg-red-600 text-white border-red-700 hover:bg-red-700 shadow-2xs'
                   : 'bg-slate-50 text-slate-400 hover:text-red-700 hover:bg-red-50 border-slate-200'
               }`}
-              title={
-                isRowError
-                  ? 'Nick đang bị bôi đỏ (Lỗi). Bấm để gỡ bôi đỏ và khôi phục hoạt động'
-                  : 'Bấm để bôi màu đỏ cảnh báo (Via bị lỗi / die)'
-              }
+              title={isRowError ? 'Gỡ bôi đỏ / khôi phục' : 'Bôi đỏ cảnh báo lỗi'}
             >
               <AlertTriangle className={`w-3.5 h-3.5 ${isRowError ? 'text-white' : 'text-slate-500'}`} />
             </button>
@@ -1886,7 +1646,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
                   : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
               }`}
-              title="Sao chép toàn bộ chuỗi UID|PASS|2FA"
+              title="Sao chép UID|PASS|2FA"
             >
               {isFullCopied ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5 text-slate-600" />}
             </button>
@@ -2056,7 +1816,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       </div>
 
       {/* Table Header Section */}
-      <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white">
+      <div className="p-4 sm:p-5 border-b border-slate-200 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           {/* Left info */}
           <div className="flex items-start space-x-3">
@@ -2082,57 +1842,26 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-                Bảng danh sách nick Facebook gồm <strong>STT</strong>, <strong>UID</strong>, <strong>PASS</strong>, <strong>2FA</strong> mỗi thông tin 1 cột riêng biệt. Bấm 1-click để copy ngay vào clipboard hoặc tạo mã 2FA 6 số live.
+                Quản lý tập trung UID, Mật khẩu, 2FA/OTP live, phân quyền nhân viên và tình trạng Fanpage.
               </p>
             </div>
           </div>
 
           {/* Right Action buttons */}
           <div className="flex items-center flex-wrap gap-2 shrink-0">
-            {/* Copy All UIDs button */}
+            {/* Primary Action 1: Add single */}
             <button
               type="button"
-              id="btn-copy-all-uids"
-              onClick={handleCopyAllUids}
-              className={`inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer shadow-md ${
-                copiedKey === 'copy-all-uids'
-                  ? 'bg-emerald-600 text-white shadow-emerald-900/30 ring-2 ring-emerald-400'
-                  : 'bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white'
-              }`}
-              title="Sao chép toàn bộ UID của các tài khoản nick đang lọc (mỗi UID trên 1 dòng)"
+              id="btn-add-single-via"
+              onClick={handleOpenAddModal}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-xl shadow-md transition-all cursor-pointer"
+              title="Thêm 1 nick Full Via mới"
             >
-              {copiedKey === 'copy-all-uids' ? (
-                <>
-                  <Check className="w-4 h-4 text-white stroke-[3]" />
-                  <span>Đã Copy {scopedVias.length} UID!</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4 text-white" />
-                  <span>📋 Copy Tất Cả UID ({scopedVias.length})</span>
-                </>
-              )}
+              <Plus className="w-4 h-4 text-white" />
+              <span>+ Thêm 1 Nick</span>
             </button>
 
-            {/* Select All / Deselect All Toggle button */}
-            <button
-              type="button"
-              id="btn-toggle-select-all"
-              onClick={handleSelectAll}
-              className={`inline-flex items-center space-x-1.5 px-3 py-2 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
-                isAllSelected
-                  ? 'bg-indigo-200 text-indigo-950 border-indigo-400 shadow-2xs font-extrabold'
-                  : selectedCount > 0
-                  ? 'bg-indigo-500/30 text-indigo-200 border-indigo-400/50'
-                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
-              }`}
-              title={isAllSelected ? 'Bỏ chọn tất cả nick' : 'Lựa chọn tất cả tài khoản nick đang hiển thị'}
-            >
-              <CheckSquare className="w-3.5 h-3.5" />
-              <span>{isAllSelected ? 'Bỏ Chọn Hết' : selectedCount > 0 ? `Chọn Hết (${scopedVias.length})` : 'Lựa Chọn Tất Cả'}</span>
-            </button>
-
-            {/* Bulk Import button for both Admin and Staff */}
+            {/* Primary Action 2: Bulk import */}
             <button
               type="button"
               id="btn-bulk-import-via"
@@ -2146,31 +1875,83 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 )
               }
               className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-xl shadow-md transition-all cursor-pointer"
-              title="Dán 1 lúc nhiều nick UID|PASS|2FA từ Excel hoặc danh sách có tính năng check trùng UID"
+              title="Nhập hàng loạt nick UID|PASS|2FA từ Excel hoặc dán danh sách"
             >
               <FileSpreadsheet className="w-4 h-4" />
-              <span>
-                {currentUser.role === 'staff'
-                  ? '+ Thêm Nhiều Nick (Dán Excel)'
-                  : selectedStaffFilter !== 'all'
-                  ? `+ Thêm Nhiều Nick Cho ${selectedStaffFilter}`
-                  : '+ Thêm Nhiều Nick (Check Trùng)'}
-              </span>
+              <span>+ Nhập Hàng Loạt (Excel)</span>
             </button>
 
-            {/* Add single via button */}
+            {/* Secondary Action: Copy all UIDs */}
             <button
               type="button"
-              id="btn-add-single-via"
-              onClick={handleOpenAddModal}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-bold text-indigo-900 bg-indigo-100 hover:bg-indigo-200 rounded-xl transition-all cursor-pointer"
-              title="Thêm 1 nick Full Via mới"
+              id="btn-copy-all-uids"
+              onClick={handleCopyAllUids}
+              className={`inline-flex items-center space-x-1 px-3 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer border ${
+                copiedKey === 'copy-all-uids'
+                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+              }`}
+              title="Sao chép toàn bộ UID đang hiển thị (1 UID / dòng)"
             >
-              <Plus className="w-4 h-4 text-indigo-700" />
-              <span>+ Thêm 1 Nick</span>
+              {copiedKey === 'copy-all-uids' ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-white" />
+                  <span>Đã Copy!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-slate-300" />
+                  <span>Copy UID ({scopedVias.length})</span>
+                </>
+              )}
             </button>
 
-            {/* Fetch pages from via button */}
+            {/* Toggle Passwords */}
+            <button
+              type="button"
+              onClick={() => setShowAllPasswords(!showAllPasswords)}
+              className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
+              title={showAllPasswords ? 'Ẩn tất cả mật khẩu' : 'Hiện tất cả mật khẩu (tự tắt sau 30s)'}
+            >
+              {showAllPasswords ? <EyeOff className="w-3.5 h-3.5 text-amber-300" /> : <Eye className="w-3.5 h-3.5 text-slate-300" />}
+              <span className="hidden sm:inline">{showAllPasswords ? 'Ẩn Pass' : 'Hiện Pass'}</span>
+            </button>
+
+            {/* Toggle 2FA */}
+            <button
+              type="button"
+              onClick={() => setShowAll2Fa(!showAll2Fa)}
+              className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
+              title={showAll2Fa ? 'Ẩn tất cả mã 2FA' : 'Hiện tất cả mã 2FA (tự tắt sau 30s)'}
+            >
+              {showAll2Fa ? <EyeOff className="w-3.5 h-3.5 text-emerald-300" /> : <Eye className="w-3.5 h-3.5 text-slate-300" />}
+              <span className="hidden sm:inline">{showAll2Fa ? 'Ẩn 2FA' : 'Hiện 2FA'}</span>
+            </button>
+
+            {/* Tải Mẫu Excel */}
+            <button
+              type="button"
+              id="btn-download-via-excel-template"
+              onClick={() => downloadViaExcelTemplate('xlsx')}
+              className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-emerald-300 rounded-xl border border-white/20 transition-colors cursor-pointer"
+              title="Tải file Excel mẫu (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Mẫu Excel</span>
+            </button>
+
+            {/* Export CSV */}
+            <button
+              type="button"
+              onClick={handleRequestExportCSV}
+              className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
+              title="Xuất bảng Full Via ra CSV (Yêu cầu mã PIN)"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Xuất CSV</span>
+            </button>
+
+            {/* Quét Page từ Via nếu có callback */}
             {onFetchPagesForVia && (
               <button
                 type="button"
@@ -2185,446 +1966,44 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       : ''
                   )
                 }
-                className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-bold text-blue-900 bg-blue-100 hover:bg-blue-200 active:bg-blue-300 rounded-xl transition-all cursor-pointer shadow-2xs"
+                className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-bold text-blue-200 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/30 rounded-xl transition-all cursor-pointer"
                 title="Lấy Tên & Link Page từ Via và điền tự động vào Bảng Fanpage"
               >
-                <Zap className="w-4 h-4 text-blue-700 fill-blue-700" />
-                <span>⚡ Lấy Page Từ Via</span>
+                <Zap className="w-3.5 h-3.5 text-blue-400" />
+                <span className="hidden sm:inline">Quét Page</span>
               </button>
             )}
-
-            {/* Toggle all passwords */}
-            <button
-              type="button"
-              onClick={() => setShowAllPasswords(!showAllPasswords)}
-              className="inline-flex items-center space-x-1 px-3 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
-              title={showAllPasswords ? 'Ẩn tất cả mật khẩu (tự tắt sau 30s)' : 'Hiện tất cả mật khẩu (tự tắt sau 30s)'}
-            >
-              {showAllPasswords ? <EyeOff className="w-3.5 h-3.5 text-amber-300" /> : <Eye className="w-3.5 h-3.5 text-slate-300" />}
-              <span className="hidden sm:inline">{showAllPasswords ? 'Ẩn Pass' : 'Hiện Pass'}</span>
-            </button>
-
-            {/* Toggle all 2FA */}
-            <button
-              type="button"
-              onClick={() => setShowAll2Fa(!showAll2Fa)}
-              className="inline-flex items-center space-x-1 px-3 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
-              title={showAll2Fa ? 'Ẩn tất cả mã 2FA' : 'Hiện tất cả mã 2FA'}
-            >
-              {showAll2Fa ? <EyeOff className="w-3.5 h-3.5 text-emerald-300" /> : <Eye className="w-3.5 h-3.5 text-slate-300" />}
-              <span className="hidden sm:inline">{showAll2Fa ? 'Ẩn 2FA' : 'Hiện 2FA'}</span>
-            </button>
-
-            {/* Tải Mẫu Excel Nick Via */}
-            <button
-              type="button"
-              id="btn-download-via-excel-template"
-              onClick={() => downloadViaExcelTemplate('xlsx')}
-              className="inline-flex items-center space-x-1 px-3 py-2 text-xs font-bold bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 rounded-xl border border-emerald-400/30 transition-colors cursor-pointer"
-              title="Tải file Excel mẫu chuẩn (.xlsx) có sẵn UID, PASS, 2FA để import nhanh"
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-300" />
-              <span>Tải Mẫu Excel</span>
-            </button>
-
-            {/* Export CSV with PIN Verification */}
-            <button
-              type="button"
-              onClick={handleRequestExportCSV}
-              className="inline-flex items-center space-x-1 px-3 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
-              title="Xuất bảng Full Via ra file CSV (Yêu cầu xác nhận mã PIN)"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Xuất CSV</span>
-            </button>
-
-            {/* Lock Button */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsVaultUnlocked(false);
-                setCopyToastMessage('🔒 Đã chủ động khóa Bảng Full Via!');
-                setTimeout(() => setCopyToastMessage(null), 2500);
-              }}
-              className="inline-flex items-center space-x-1 px-3 py-2 text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 rounded-xl border border-rose-400/30 transition-colors cursor-pointer"
-              title="Khóa ngay bảng Full Via để bảo vệ dữ liệu"
-            >
-              <Lock className="w-3.5 h-3.5 text-rose-300" />
-              <span>Khóa</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Filter and Search Bar inside Header */}
-        <div className="mt-4 pt-3 border-t border-slate-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center flex-wrap gap-2 flex-1 min-w-[280px]">
-            {/* Search Input */}
-            <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                placeholder="Tìm UID, Mật khẩu, 2FA, Nhân viên hoặc Ghi chú..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 bg-slate-800/90 border border-slate-600 rounded-lg text-xs text-white placeholder-slate-400 focus:outline-hidden focus:border-indigo-400 focus:ring-1 focus:ring-indigo-400"
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-
-            {/* Admin: Staff Filter Dropdown */}
-            {currentUser.role === 'admin' && (
-              <div className="flex items-center space-x-1.5">
-                <span className="text-slate-300 text-[11px] font-medium hidden sm:inline">Lọc nhanh:</span>
-                <select
-                  value={selectedStaffFilter}
-                  onChange={(e) => {
-                    setSelectedStaffFilter(e.target.value);
-                    onSyncStaffFilter?.(e.target.value);
-                  }}
-                  className="px-2.5 py-1.5 bg-slate-800 border border-slate-600 text-white text-xs font-semibold rounded-lg focus:outline-hidden focus:border-indigo-400 cursor-pointer"
-                >
-                  <option value="all">🌟 Tất cả nhân viên ({viaList.length} nick)</option>
-                  {distinctStaffNames.map((name) => {
-                    const count = viaList.filter(
-                      (v) => v.staffName.trim().toLowerCase() === name.trim().toLowerCase()
-                    ).length;
-                    return (
-                      <option key={name} value={name}>
-                        👤 {name} ({count} nick)
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            )}
-            {/* Quick Status Filter Tabs */}
-            <div className="flex items-center space-x-1 bg-slate-800/90 p-1 rounded-lg border border-slate-700">
-              <button
-                type="button"
-                onClick={() => setStatusFilter('all')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                  statusFilter === 'all'
-                    ? 'bg-indigo-600 text-white shadow-2xs'
-                    : 'text-slate-300 hover:text-white hover:bg-slate-700/50'
-                }`}
-                title="Xem tất cả nick"
-              >
-                Tất cả ({currentBaseVias.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('active')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                  statusFilter === 'active'
-                    ? 'bg-emerald-600 text-white shadow-2xs'
-                    : 'text-emerald-300 hover:text-white hover:bg-slate-700/50'
-                }`}
-                title="Lọc các nick đang hoạt động bình thường"
-              >
-                🟢 Live ({activeCountInScope})
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('error')}
-                className={`px-2 py-1 rounded text-[11px] font-black transition-all cursor-pointer flex items-center space-x-1 ${
-                  statusFilter === 'error'
-                    ? 'bg-red-600 text-white shadow-2xs ring-1 ring-red-300'
-                    : errorCountInScope > 0
-                    ? 'bg-red-950/70 text-red-300 border border-red-800/90 hover:bg-red-900/60'
-                    : 'text-slate-400 hover:text-red-300 hover:bg-slate-700/50'
-                }`}
-                title="Lọc các Nick Via đang bị bôi đỏ (Via lỗi / Die)"
-              >
-                <span>🔴 Bôi Đỏ / Lỗi</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[9px] font-extrabold ${
-                    statusFilter === 'error' ? 'bg-white text-red-700' : 'bg-red-600 text-white'
-                  }`}
-                >
-                  {errorCountInScope}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('fixed')}
-                className={`px-2 py-1 rounded text-[11px] font-black transition-all cursor-pointer flex items-center space-x-1 ${
-                  statusFilter === 'fixed'
-                    ? 'bg-emerald-600 text-white shadow-2xs ring-1 ring-emerald-300'
-                    : fixedCountInScope > 0
-                    ? 'bg-emerald-950/70 text-emerald-300 border border-emerald-800/90 hover:bg-emerald-900/60'
-                    : 'text-slate-400 hover:text-emerald-300 hover:bg-slate-700/50'
-                }`}
-                title="Lọc các Nick Via đã được Admin sửa lỗi & thay mới (Được bôi xanh)"
-              >
-                <span>❇️ Bôi Xanh (Đã sửa)</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[9px] font-extrabold ${
-                    statusFilter === 'fixed' ? 'bg-white text-emerald-800' : 'bg-emerald-600 text-white'
-                  }`}
-                >
-                  {fixedCountInScope}
-                </span>
-              </button>
-              {checkpointCountInScope > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setStatusFilter('checkpoint')}
-                  className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                    statusFilter === 'checkpoint'
-                      ? 'bg-amber-600 text-white shadow-2xs'
-                      : 'text-amber-300 hover:text-white hover:bg-slate-700/50'
-                  }`}
-                  title="Lọc các nick đang bị checkpoint"
-                >
-                  🟠 CP ({checkpointCountInScope})
-                </button>
-              )}
-              {/* Filter 🔴 Đã Có Page */}
-              <button
-                type="button"
-                onClick={() => setStatusFilter('pending_page')}
-                className={`px-2 py-1 rounded text-[11px] font-black transition-all cursor-pointer flex items-center space-x-1 ${
-                  statusFilter === 'pending_page'
-                    ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-300'
-                    : pendingPageCountInScope > 0
-                    ? 'bg-rose-950/70 text-rose-300 border border-rose-800/90 hover:bg-rose-900/60 animate-pulse'
-                    : 'text-slate-400 hover:text-rose-300 hover:bg-slate-700/50'
-                }`}
-                title="Lọc các Nick đang ở trạng thái: Màu đỏ Đã Có Page"
-              >
-                <span>🔴 Đã Có Page</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[9px] font-extrabold ${
-                    statusFilter === 'pending_page' ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'
-                  }`}
-                >
-                  {pendingPageCountInScope}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('has_page')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer flex items-center space-x-1 ${
-                  statusFilter === 'has_page'
-                    ? 'bg-emerald-600 text-white shadow-2xs ring-1 ring-emerald-300'
-                    : 'text-emerald-300 hover:text-white hover:bg-slate-700/50'
-                }`}
-                title="Lọc các nick Via ĐÃ ĐƯỢC GÁN PAGE (Được bôi xanh lá để nhân viên cập nhật)"
-              >
-                <span>📗 Đã có Page</span>
-                <span
-                  className={`px-1.5 py-0.2 rounded-full text-[9px] font-extrabold ${
-                    statusFilter === 'has_page' ? 'bg-white text-emerald-800' : 'bg-emerald-600 text-white'
-                  }`}
-                >
-                  {hasPageCountInScope}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setStatusFilter('no_page')}
-                className={`px-2 py-1 rounded text-[11px] font-medium transition-all cursor-pointer ${
-                  statusFilter === 'no_page'
-                    ? 'bg-slate-600 text-white shadow-2xs'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
-                }`}
-                title="Lọc các nick Via chưa có page (Màu trắng)"
-              >
-                <span>⚪ Chưa có page ({noPageCountInScope})</span>
-              </button>
-            </div>
-
-            {/* Quick Filter Tabs: BÁO ADMIN (Live, VHH, SDT, Selfie, Email code) */}
-            <div className="flex items-center space-x-1 bg-amber-950/70 p-1 rounded-lg border border-amber-700/80 overflow-x-auto scrollbar-none">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-300 px-1.5 flex items-center gap-1 shrink-0">
-                <AlertTriangle className="w-3 h-3 text-amber-400" />
-                <span>Báo Admin:</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setAdminReportFilter('all')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
-                  adminReportFilter === 'all'
-                    ? 'bg-amber-500 text-white shadow-2xs font-black'
-                    : 'text-amber-200 hover:text-white hover:bg-amber-900/60'
-                }`}
-                title="Xem tất cả nick"
-              >
-                Tất cả ({adminReportCounts.all})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminReportFilter('Live')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
-                  adminReportFilter === 'Live'
-                    ? 'bg-emerald-600 text-white shadow-2xs font-black'
-                    : 'text-emerald-300 hover:text-white hover:bg-emerald-950/60'
-                }`}
-                title="Lọc các nick Báo Admin: Live"
-              >
-                🟢 Live ({adminReportCounts.Live})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminReportFilter('VHH')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
-                  adminReportFilter === 'VHH'
-                    ? 'bg-red-600 text-white shadow-2xs font-black ring-1 ring-red-400 animate-pulse'
-                    : 'text-red-300 hover:text-white hover:bg-red-950/60'
-                }`}
-                title="Lọc các nick Báo Admin: VHH (Vô hiệu hóa)"
-              >
-                🔴 VHH ({adminReportCounts.VHH})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminReportFilter('SDT')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
-                  adminReportFilter === 'SDT'
-                    ? 'bg-blue-600 text-white shadow-2xs font-black'
-                    : 'text-blue-300 hover:text-white hover:bg-blue-950/60'
-                }`}
-                title="Lọc các nick Báo Admin: SDT"
-              >
-                📱 SDT ({adminReportCounts.SDT})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminReportFilter('Selfie')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
-                  adminReportFilter === 'Selfie'
-                    ? 'bg-purple-600 text-white shadow-2xs font-black'
-                    : 'text-purple-300 hover:text-white hover:bg-purple-950/60'
-                }`}
-                title="Lọc các nick Báo Admin: Selfie"
-              >
-                🤳 Selfie ({adminReportCounts.Selfie})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminReportFilter('Email code')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer shrink-0 ${
-                  adminReportFilter === 'Email code'
-                    ? 'bg-amber-500 text-white shadow-2xs font-black'
-                    : 'text-amber-300 hover:text-white hover:bg-amber-900/60'
-                }`}
-                title="Lọc các nick Báo Admin: Email code (Code mail)"
-              >
-                ✉️ Email code ({adminReportCounts['Email code']})
-              </button>
-              <button
-                type="button"
-                onClick={() => setAdminReportFilter('None')}
-                className={`px-2 py-1 rounded text-[11px] font-medium transition-all cursor-pointer shrink-0 ${
-                  adminReportFilter === 'None'
-                    ? 'bg-slate-600 text-white shadow-2xs font-black'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800'
-                }`}
-                title="Lọc các nick chưa báo Admin"
-              >
-                ⚪ Chưa báo ({adminReportCounts.None})
-              </button>
-            </div>
-          </div>
-
-          <div className="text-[11px] text-slate-300 flex items-center flex-wrap gap-2">
-            <span>Hiển thị: <strong>{scopedVias.length}</strong> / {viaList.length} nick</span>
-            <span>•</span>
-            <span className="text-slate-300 font-medium bg-slate-800 px-2 py-0.5 rounded border border-slate-700">
-              ⚪ Trắng: Chưa có page
-            </span>
-            <span>•</span>
-            <span className="text-rose-300 font-bold bg-rose-950/60 px-2 py-0.5 rounded border border-rose-700/50">
-              🔴 Đỏ: Đã Có Page (Admin ấn vào)
-            </span>
-            <span>•</span>
-            <span className="text-emerald-300 font-semibold bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-700/50">
-              🟢 Xanh lá: Đã có Page
-            </span>
           </div>
         </div>
       </div>
 
-      {/* 🌟 THANH TAB HIỂN THỊ THEO TỪNG NHÂN VIÊN DO ADMIN NHẬP VÀO */}
+      {/* 🌟 THANH TAB LỌC THEO TỪNG NHÂN VIÊN (DÀNH CHO ADMIN) */}
       {currentUser.role === 'admin' ? (
-        <div className="bg-slate-100/95 border-b border-slate-300 px-4 pt-3 pb-2.5">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
-            <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-indigo-600" />
-                <span>Bảng Hiện Theo Từng Nhân Viên:</span>
-              </span>
-              <span className="text-[11px] text-slate-500 hidden md:inline">
-                (Bấm vào tên nhân viên để lọc và quản lý nick do Admin nhập cho người đó)
-              </span>
-            </div>
+        <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center space-x-1.5 overflow-x-auto py-1 scrollbar-thin">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Nhân viên:</span>
+            </span>
 
-            {/* View options: Group by staff toggle */}
-            <div className="flex items-center space-x-2">
-              {selectedStaffFilter === 'all' && (
-                <button
-                  type="button"
-                  onClick={() => setIsGroupedByStaff(!isGroupedByStaff)}
-                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
-                    isGroupedByStaff
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                  title="Nhóm các dòng theo từng nhân viên có tiêu đề phân đoạn"
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{isGroupedByStaff ? 'Đang phân nhóm theo NV' : 'Phân nhóm theo từng NV'}</span>
-                </button>
-              )}
-
-              {activeStaffFilter && activeStaffFilter !== 'all' && activeStaffFilter !== selectedStaffFilter && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedStaffFilter(activeStaffFilter);
-                    onSyncStaffFilter?.(activeStaffFilter);
-                  }}
-                  className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-semibold cursor-pointer"
-                  title="Đồng bộ với nhân viên đang được lọc ở bảng Fanpage phía trên"
-                >
-                  <span>Đồng bộ: <strong>{activeStaffFilter}</strong></span>
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Scrollable Tabs Bar */}
-          <div className="flex items-center space-x-2 overflow-x-auto pb-1 scrollbar-thin">
-            {/* Tab: All Staff */}
+            {/* Tab Tất Cả */}
             <button
               type="button"
               onClick={() => {
                 setSelectedStaffFilter('all');
                 onSyncStaffFilter?.('all');
               }}
-              className={`inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+              className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
                 selectedStaffFilter === 'all'
                   ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                   : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
               }`}
             >
-              <span>🌟 Tất Cả Nhân Viên</span>
-              <span
-                className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                  selectedStaffFilter === 'all'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-slate-200 text-slate-800'
-                }`}
-              >
-                {viaList.length} nick
+              <span>Tất Cả</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                selectedStaffFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+              }`}>
+                {viaList.length}
               </span>
             </button>
 
@@ -2642,207 +2021,223 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     setSelectedStaffFilter(name);
                     onSyncStaffFilter?.(name);
                   }}
-                  className={`inline-flex items-center space-x-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
                     isSelected ? theme.activeTab : theme.inactiveTab
                   }`}
                 >
                   <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : theme.dot}`} />
-                  <span>👤 {name}</span>
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                      isSelected
-                        ? 'bg-black/25 text-white'
-                        : 'bg-white text-slate-800 border border-slate-200'
-                    }`}
-                  >
-                    {stats.total} nick
+                  <span>{name}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    isSelected ? 'bg-black/25 text-white' : 'bg-white text-slate-800'
+                  }`}>
+                    {stats.total}
                   </span>
                 </button>
               );
             })}
           </div>
+
+          <div className="flex items-center space-x-2 shrink-0">
+            {selectedStaffFilter === 'all' && (
+              <button
+                type="button"
+                onClick={() => setIsGroupedByStaff(!isGroupedByStaff)}
+                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                  isGroupedByStaff
+                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs font-bold'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                }`}
+                title="Nhóm các dòng theo từng nhân viên có tiêu đề phân đoạn"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>{isGroupedByStaff ? 'Đang phân nhóm NV' : 'Phân nhóm theo NV'}</span>
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         /* Staff Banner: Dedicated to current logged-in staff */
-        <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-3">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shadow-2xs">
-                {currentUser.name.charAt(0).toUpperCase()}
-              </div>
-              <div>
-                <h3 className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                  <span>🛡️ BẢNG FULL VIA ĐƯỢC ADMIN CẤP CHO BẠN:</span>
-                  <span className="uppercase text-emerald-800 underline font-black">{currentUser.name}</span>
-                </h3>
-                <p className="text-[11px] text-emerald-700">
-                  Bạn đang có <strong>{scopedVias.length}</strong> nick Via do Admin nhập và bàn giao. Toàn bộ mã 2FA và mật khẩu được bảo mật riêng biệt.
-                </p>
-              </div>
-            </div>
-            <span className="px-3 py-1 bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold text-xs rounded-full self-start sm:self-auto">
-              {scopedVias.length} Nick Hoạt Động
-            </span>
+        <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex items-center justify-between text-xs text-emerald-900">
+          <div className="flex items-center space-x-2">
+            <UserCheck className="w-4 h-4 text-emerald-700" />
+            <span>Tài khoản Full Via bàn giao cho: <strong className="uppercase">{currentUser.name}</strong></span>
           </div>
+          <span className="font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[11px]">
+            {scopedVias.length} Nick
+          </span>
         </div>
       )}
 
-      {/* Sub Banner when Admin selects a specific staff member */}
-      {currentUser.role === 'admin' && selectedStaffFilter !== 'all' && (
-        <div className="bg-indigo-50/80 border-b border-indigo-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center flex-wrap gap-2">
-            <span className="text-slate-600">Đang xem bảng nick của Nhân Viên:</span>
-            <span className="font-extrabold text-indigo-950 bg-indigo-100 border border-indigo-300 px-2.5 py-0.5 rounded-lg text-xs flex items-center gap-1">
-              <UserCheck className="w-3.5 h-3.5 text-indigo-700" />
-              <span>{selectedStaffFilter}</span>
-            </span>
-            <span className="text-slate-400">•</span>
-            <span className="text-slate-600">
-              Tổng: <strong className="text-indigo-900">{scopedVias.length}</strong> nick do Admin nhập
-            </span>
-            <span className="text-slate-400">•</span>
-            <span className="text-emerald-700 font-semibold">
-              {scopedVias.filter((v) => v.status !== 'checkpoint' && v.status !== 'dead').length} Hoạt động
-            </span>
-            {scopedVias.filter((v) => v.status === 'checkpoint').length > 0 && (
-              <>
-                <span className="text-slate-400">•</span>
-                <span className="text-amber-700 font-semibold">
-                  {scopedVias.filter((v) => v.status === 'checkpoint').length} Checkpoint
-                </span>
-              </>
+      {/* Unified Filter Toolbar */}
+      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs">
+        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
+          {/* Search Input */}
+          <div className="relative min-w-[200px] max-w-xs">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Tìm UID, Mật khẩu, 2FA, NV, Ghi chú..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
             )}
           </div>
 
-          <div className="flex items-center space-x-2">
+          {/* Quick Status Filter Tabs (Sleek Pills) */}
+          <div className="flex items-center space-x-1 bg-white p-0.5 rounded-lg border border-slate-200 shadow-2xs overflow-x-auto scrollbar-none">
             <button
               type="button"
-              onClick={() => handleOpenAddModalForStaff(selectedStaffFilter)}
-              className="inline-flex items-center space-x-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs shadow-2xs cursor-pointer"
+              onClick={() => setStatusFilter('all')}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'all'
+                  ? 'bg-slate-800 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+              }`}
             >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Thêm nick cho {selectedStaffFilter}</span>
+              Tất cả ({currentBaseVias.length})
             </button>
             <button
               type="button"
-              onClick={() => onOpenBulkImport(selectedStaffFilter)}
-              className="inline-flex items-center space-x-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-2xs cursor-pointer"
+              onClick={() => setStatusFilter('active')}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'active'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'text-emerald-700 hover:bg-emerald-50'
+              }`}
             >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span>Nhập hàng loạt cho {selectedStaffFilter}</span>
+              🟢 Live ({activeCountInScope})
             </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('error')}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'error'
+                  ? 'bg-red-600 text-white shadow-2xs'
+                  : errorCountInScope > 0
+                  ? 'text-red-700 font-black hover:bg-red-50'
+                  : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              🔴 Lỗi ({errorCountInScope})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('fixed')}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'fixed'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : fixedCountInScope > 0
+                  ? 'text-emerald-800 font-black hover:bg-emerald-50'
+                  : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              ❇️ Đã sửa ({fixedCountInScope})
+            </button>
+            {checkpointCountInScope > 0 && (
+              <button
+                type="button"
+                onClick={() => setStatusFilter('checkpoint')}
+                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  statusFilter === 'checkpoint'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'text-amber-700 hover:bg-amber-50'
+                }`}
+              >
+                🟠 CP ({checkpointCountInScope})
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setStatusFilter('pending_page')}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'pending_page'
+                  ? 'bg-rose-600 text-white shadow-2xs'
+                  : pendingPageCountInScope > 0
+                  ? 'text-rose-700 font-black hover:bg-rose-50'
+                  : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              🔴 Cần Page ({pendingPageCountInScope})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('has_page')}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'has_page'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'text-emerald-700 hover:bg-emerald-50'
+              }`}
+            >
+              📗 Có Page ({hasPageCountInScope})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('no_page')}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'no_page'
+                  ? 'bg-slate-600 text-white shadow-2xs'
+                  : 'text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              ⚪ Chưa page ({noPageCountInScope})
+            </button>
+          </div>
+
+          {/* Báo Admin Filter Dropdown (Gọn gàng thay vì cả một thanh dài) */}
+          <div className="flex items-center space-x-1">
+            <select
+              value={adminReportFilter}
+              onChange={(e) => setAdminReportFilter(e.target.value as any)}
+              className={`px-2.5 py-1.5 border rounded-lg text-xs font-bold cursor-pointer focus:outline-hidden transition-colors ${
+                adminReportFilter !== 'all'
+                  ? 'bg-amber-100 text-amber-900 border-amber-400 ring-1 ring-amber-300'
+                  : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'
+              }`}
+              title="Lọc theo trạng thái Báo Admin"
+            >
+              <option value="all">📢 Báo Admin: Tất cả ({adminReportCounts.all})</option>
+              <option value="Live">🟢 Báo: Live ({adminReportCounts.Live})</option>
+              <option value="VHH">🔴 Báo: VHH ({adminReportCounts.VHH})</option>
+              <option value="SDT">📱 Báo: SDT ({adminReportCounts.SDT})</option>
+              <option value="Selfie">🤳 Báo: Selfie ({adminReportCounts.Selfie})</option>
+              <option value="Email code">✉️ Báo: Email code ({adminReportCounts['Email code']})</option>
+              <option value="None">⚪ Chưa báo Admin ({adminReportCounts.None})</option>
+            </select>
           </div>
         </div>
-      )}
 
-      {/* 🌟 THANH THAO TÁC KHI ĐÃ LỰA CHỌN TÀI KHOẢN NICK */}
-      {selectedCount > 0 && (
-        <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white px-4 py-2.5 border-y border-indigo-700 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center space-x-2">
-            <div className="w-6 h-6 rounded-lg bg-indigo-500/30 flex items-center justify-center border border-indigo-400/40 shrink-0">
-              <CheckSquare className="w-3.5 h-3.5 text-indigo-300" />
-            </div>
-            <span className="font-bold text-white">
-              Đã lựa chọn <span className="text-emerald-300 font-extrabold text-sm">{selectedCount}</span> / {scopedVias.length} tài khoản nick
-            </span>
-          </div>
+        <div className="flex items-center space-x-3 text-slate-500 text-[11px] shrink-0">
+          {/* Select all toggle button */}
+          <button
+            type="button"
+            id="btn-toggle-select-all"
+            onClick={handleSelectAll}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border font-semibold transition-colors cursor-pointer ${
+              isAllSelected
+                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-bold'
+                : selectedCount > 0
+                ? 'bg-slate-100 text-slate-700 border-slate-300'
+                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+            }`}
+          >
+            <CheckSquare className="w-3.5 h-3.5" />
+            <span>{isAllSelected ? 'Bỏ chọn' : selectedCount > 0 ? `Chọn hết (${scopedVias.length})` : 'Chọn tất cả'}</span>
+          </button>
 
-          <div className="flex items-center flex-wrap gap-2">
-            <button
-              type="button"
-              id="btn-copy-selected-uids-banner"
-              onClick={handleCopySelectedUids}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold shadow-md cursor-pointer transition-all active:scale-95"
-              title="Sao chép toàn bộ UID của các tài khoản nick đã chọn (1 UID trên 1 dòng)"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              <span>📋 Copy {selectedCount} UID Đã Chọn</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCopySelectedFullVia}
-              className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-semibold shadow-xs cursor-pointer transition-all"
-              title="Sao chép chuỗi UID|PASS|2FA của các nick đã chọn"
-            >
-              <Copy className="w-3.5 h-3.5" />
-              <span>Copy Full Via</span>
-            </button>
-
-            {/* Batch Báo Admin Quick Buttons */}
-            <div className="flex items-center space-x-1 pl-2 border-l border-indigo-600/70">
-              <span className="text-[10px] text-amber-300 font-bold uppercase tracking-wider hidden md:inline">
-                📢 Báo Admin:
-              </span>
-              <button
-                type="button"
-                onClick={() => handleBatchUpdateAdminReport('Live')}
-                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
-                title="Báo Admin: Live cho tất cả nick đã chọn"
-              >
-                🟢 Live
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBatchUpdateAdminReport('VHH')}
-                className="px-2 py-1 bg-rose-600 hover:bg-rose-500 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
-                title="Báo Admin: VHH cho tất cả nick đã chọn"
-              >
-                🔴 VHH
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBatchUpdateAdminReport('SDT')}
-                className="px-2 py-1 bg-blue-600 hover:bg-blue-500 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
-                title="Báo Admin: SDT cho tất cả nick đã chọn"
-              >
-                📱 SDT
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBatchUpdateAdminReport('Selfie')}
-                className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
-                title="Báo Admin: Selfie cho tất cả nick đã chọn"
-              >
-                🤳 Selfie
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBatchUpdateAdminReport('Email code')}
-                className="px-2 py-1 bg-amber-500 hover:bg-amber-400 text-white rounded-md text-[10px] font-bold shadow-2xs transition-all cursor-pointer"
-                title="Báo Admin: Email code cho tất cả nick đã chọn"
-              >
-                ✉️ Email code
-              </button>
-              <button
-                type="button"
-                onClick={() => handleBatchUpdateAdminReport('None')}
-                className="px-1.5 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 rounded-md text-[10px] font-medium transition-all cursor-pointer"
-                title="Xóa Báo Admin cho các nick đã chọn"
-              >
-                Xóa báo
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSelectAll}
-              className="text-xs text-indigo-200 hover:text-white underline underline-offset-2 px-2 py-1 cursor-pointer font-medium"
-            >
-              {isAllSelected ? 'Bỏ chọn tất cả' : `Lựa chọn tất cả (${scopedVias.length} nick)`}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleDeselectAll}
-              className="inline-flex items-center space-x-1 text-xs text-slate-300 hover:text-white px-2 py-1 rounded hover:bg-slate-800 transition-colors cursor-pointer"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Hủy chọn</span>
-            </button>
-          </div>
+          <span>
+            Hiển thị: <strong className="text-slate-800">{scopedVias.length}</strong> / {viaList.length} nick
+          </span>
         </div>
-      )}
+      </div>
 
       {/* Table Content */}
       <div className="overflow-x-auto">
