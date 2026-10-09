@@ -442,51 +442,77 @@ export default function App() {
     return set;
   }, [viaList, userScopedRecords]);
 
-  // Count of error vias in current user's scope
+  // Count of error vias in current user's scope (taking active staff filter into account)
   const errorViaCountInScope = useMemo(() => {
-    if (currentUser.role === 'admin') {
-      return errorViaUids.size;
-    }
-    const currentStaffLower = currentUser.name.trim().toLowerCase();
-    const staffVias = viaList.filter(
-      (v) => v.staffName.trim().toLowerCase() === currentStaffLower
-    );
-    const staffErrorViaUids = new Set<string>();
-    staffVias.forEach((v) => {
-      if (v.isError || v.status === 'checkpoint' || v.status === 'dead' || v.status === 'error') {
-        staffErrorViaUids.add(v.uid.trim());
-      }
-    });
-    userScopedRecords.forEach((r) => {
-      if (r.isViaError || r.viaStatus === 'checkpoint' || r.viaStatus === 'dead' || r.viaStatus === 'error') {
-        staffErrorViaUids.add(r.viaUid.trim());
-      }
-    });
-    return staffErrorViaUids.size;
-  }, [currentUser, viaList, userScopedRecords, errorViaUids]);
+    const targetStaff =
+      currentUser.role === 'staff'
+        ? currentUser.name
+        : filter.staffName && filter.staffName !== 'all'
+        ? filter.staffName
+        : null;
 
-  // Count of fixed vias in current user's scope
-  const fixedViaCountInScope = useMemo(() => {
-    if (currentUser.role === 'admin') {
-      return fixedViaUids.size;
+    if (targetStaff) {
+      const currentStaffLower = targetStaff.trim().toLowerCase();
+      const staffVias = viaList.filter(
+        (v) => v.staffName.trim().toLowerCase() === currentStaffLower
+      );
+      const staffErrorViaUids = new Set<string>();
+      staffVias.forEach((v) => {
+        if (v.isError || v.status === 'checkpoint' || v.status === 'dead' || v.status === 'error') {
+          staffErrorViaUids.add(v.uid.trim().toLowerCase());
+        }
+      });
+      userScopedRecords.forEach((r) => {
+        if (r.staffName.trim().toLowerCase() === currentStaffLower) {
+          if (
+            r.isViaError ||
+            r.viaStatus === 'checkpoint' ||
+            r.viaStatus === 'dead' ||
+            r.viaStatus === 'error' ||
+            (errorViaUids && r.viaUid && errorViaUids.has(r.viaUid.trim().toLowerCase()))
+          ) {
+            staffErrorViaUids.add(r.viaUid.trim().toLowerCase());
+          }
+        }
+      });
+      return staffErrorViaUids.size;
     }
-    const currentStaffLower = currentUser.name.trim().toLowerCase();
-    const staffVias = viaList.filter(
-      (v) => v.staffName.trim().toLowerCase() === currentStaffLower
-    );
-    const staffFixedViaUids = new Set<string>();
-    staffVias.forEach((v) => {
-      if (v.isFixed || v.status === 'fixed') {
-        staffFixedViaUids.add(v.uid.trim());
-      }
-    });
-    userScopedRecords.forEach((r) => {
-      if (r.isViaFixed || r.viaStatus === 'fixed') {
-        staffFixedViaUids.add(r.viaUid.trim());
-      }
-    });
-    return staffFixedViaUids.size;
-  }, [currentUser, viaList, userScopedRecords, fixedViaUids]);
+
+    return errorViaUids.size;
+  }, [currentUser, filter.staffName, viaList, userScopedRecords, errorViaUids]);
+
+  // Count of fixed vias in current user's scope (taking active staff filter into account)
+  const fixedViaCountInScope = useMemo(() => {
+    const targetStaff =
+      currentUser.role === 'staff'
+        ? currentUser.name
+        : filter.staffName && filter.staffName !== 'all'
+        ? filter.staffName
+        : null;
+
+    if (targetStaff) {
+      const currentStaffLower = targetStaff.trim().toLowerCase();
+      const staffVias = viaList.filter(
+        (v) => v.staffName.trim().toLowerCase() === currentStaffLower
+      );
+      const staffFixedViaUids = new Set<string>();
+      staffVias.forEach((v) => {
+        if (v.isFixed || v.status === 'fixed') {
+          staffFixedViaUids.add(v.uid.trim().toLowerCase());
+        }
+      });
+      userScopedRecords.forEach((r) => {
+        if (r.staffName.trim().toLowerCase() === currentStaffLower) {
+          if (r.isViaFixed || r.viaStatus === 'fixed') {
+            staffFixedViaUids.add(r.viaUid.trim().toLowerCase());
+          }
+        }
+      });
+      return staffFixedViaUids.size;
+    }
+
+    return fixedViaUids.size;
+  }, [currentUser, filter.staffName, viaList, userScopedRecords, fixedViaUids]);
 
   // Filtered records based on active filters
   const filteredRecords = useMemo(() => {
@@ -1914,6 +1940,7 @@ export default function App() {
         availableUsers={availableUsers}
         pendingRequestsCount={pendingRequestsCount}
         activeTab={activeTab}
+        activeStaffFilter={filter.staffName}
         viaList={viaList}
         errorViaUids={errorViaUids}
         errorViaCount={errorViaCountInScope}
@@ -2351,7 +2378,7 @@ export default function App() {
               }}
               onFetchPagesForVia={handleOpenFetchPagesModal}
               onSyncStaffFilter={(staffName) => {
-                setFilter((prev) => ({ ...prev, staffName }));
+                setFilter((prev) => ({ ...prev, staffName: staffName === 'all' ? '' : staffName }));
               }}
               onTransferViaPages={(viaUid) => handleOpenTransferModal(undefined, viaUid)}
             />

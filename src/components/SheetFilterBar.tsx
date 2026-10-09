@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Search, Filter, X, Lock, Layers, Plus, AlertTriangle, Trash2, ArrowRightLeft, CheckCircle2, Zap } from 'lucide-react';
+import { Search, Filter, X, Lock, Layers, Plus, AlertTriangle, Trash2, ArrowRightLeft, CheckCircle2, Zap, Users } from 'lucide-react';
 import { SheetFilter, PageRecord, AppUser } from '../types';
 
 interface SheetFilterBarProps {
@@ -44,10 +44,23 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     return list.sort((a, b) => a.localeCompare(b, 'vi'));
   }, [records, availableStaffNames]);
 
-  // Compute distinct Vias with count of pages for the dropdown
+  // Phân phạm vi dữ liệu: Khi chọn 1 nhân viên bất kỳ (hoặc nhân viên đang đăng nhập),
+  // toàn bộ thống kê trạng thái (Đề Xuất, Mất Đề Xuất, Đình Chỉ, Bị Back, Via Lỗi...)
+  // sẽ CHỈ tính trên các Fanpage của nhân viên đó!
+  const staffScopedRecords = useMemo(() => {
+    if (filter.staffName && filter.staffName.trim() && filter.staffName !== 'all') {
+      const selectedStaffLower = filter.staffName.trim().toLowerCase();
+      return records.filter(
+        (r) => r.staffName && r.staffName.trim().toLowerCase() === selectedStaffLower
+      );
+    }
+    return records;
+  }, [records, filter.staffName]);
+
+  // Compute distinct Vias with count of pages for the dropdown (chỉ trong phạm vi nhân viên đang chọn)
   const viaOptions = useMemo(() => {
     const map = new Map<string, number>();
-    records.forEach((r) => {
+    staffScopedRecords.forEach((r) => {
       const uid = r.viaUid.trim();
       if (uid) {
         map.set(uid, (map.get(uid) || 0) + 1);
@@ -56,44 +69,76 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     return Array.from(map.entries())
       .map(([viaUid, count]) => ({ viaUid, count }))
       .sort((a, b) => b.count - a.count);
-  }, [records]);
+  }, [staffScopedRecords]);
 
-  // Thống kê báo cáo 4 trạng thái của các Fanpage
+  // Thống kê báo cáo 4 trạng thái của các Fanpage (CHỈ THEO NHÂN VIÊN ĐANG CHỌN)
   const deXuatCount = useMemo(
-    () => records.filter((r) => r.status === 'Đề Xuất').length,
-    [records]
+    () => staffScopedRecords.filter((r) => r.status === 'Đề Xuất').length,
+    [staffScopedRecords]
   );
   const matDeXuatCount = useMemo(
-    () => records.filter((r) => r.status === 'Mất Đề Xuất').length,
-    [records]
+    () => staffScopedRecords.filter((r) => r.status === 'Mất Đề Xuất').length,
+    [staffScopedRecords]
   );
   const dinhChiCount = useMemo(
-    () => records.filter((r) => r.status === 'Đình Chỉ').length,
-    [records]
+    () => staffScopedRecords.filter((r) => r.status === 'Đình Chỉ').length,
+    [staffScopedRecords]
   );
   const biBackCount = useMemo(
-    () => records.filter((r) => r.status === 'Bị Back').length,
-    [records]
+    () => staffScopedRecords.filter((r) => r.status === 'Bị Back').length,
+    [staffScopedRecords]
   );
 
-  // Thống kê Via Lỗi trong records đang xét
+  // Thống kê Via Lỗi trong records đang xét (CHỈ THEO NHÂN VIÊN ĐANG CHỌN)
   const computedErrorViaCount = useMemo(() => {
+    if (filter.staffName && filter.staffName.trim() && filter.staffName !== 'all') {
+      const errorUidsForStaff = new Set<string>();
+      staffScopedRecords.forEach((r) => {
+        const uid = r.viaUid.trim().toLowerCase();
+        if (
+          r.isViaError ||
+          r.viaStatus === 'checkpoint' ||
+          r.viaStatus === 'dead' ||
+          r.viaStatus === 'error' ||
+          (errorViaUids && uid && errorViaUids.has(uid))
+        ) {
+          if (uid) errorUidsForStaff.add(uid);
+        }
+      });
+      return errorUidsForStaff.size;
+    }
+
     if (typeof propErrorViaCount === 'number') return propErrorViaCount;
     if (errorViaUids && errorViaUids.size > 0) {
-      const uidsInScope = new Set(records.map((r) => r.viaUid.trim()).filter(Boolean));
+      const uidsInScope = new Set(records.map((r) => r.viaUid.trim().toLowerCase()).filter(Boolean));
       let count = 0;
       errorViaUids.forEach((uid) => {
-        if (currentUser.role === 'admin' || uidsInScope.has(uid)) {
+        if (currentUser.role === 'admin' || uidsInScope.has(uid.toLowerCase())) {
           count++;
         }
       });
       return count;
     }
     return records.filter((r) => r.isViaError).length;
-  }, [propErrorViaCount, errorViaUids, records, currentUser.role]);
+  }, [filter.staffName, staffScopedRecords, propErrorViaCount, errorViaUids, records, currentUser.role]);
 
-  // Thống kê Via Đã Sửa / Thay Mới (Bôi xanh) trong records đang xét
+  // Thống kê Via Đã Sửa / Thay Mới (Bôi xanh) trong records đang xét (CHỈ THEO NHÂN VIÊN ĐANG CHỌN)
   const computedFixedViaCount = useMemo(() => {
+    if (filter.staffName && filter.staffName.trim() && filter.staffName !== 'all') {
+      const fixedUidsForStaff = new Set<string>();
+      staffScopedRecords.forEach((r) => {
+        const uid = r.viaUid.trim().toLowerCase();
+        if (
+          r.isViaFixed ||
+          r.viaStatus === 'fixed' ||
+          (fixedViaUids && uid && fixedViaUids.has(uid))
+        ) {
+          if (uid) fixedUidsForStaff.add(uid);
+        }
+      });
+      return fixedUidsForStaff.size;
+    }
+
     if (typeof propFixedViaCount === 'number') return propFixedViaCount;
     if (fixedViaUids && fixedViaUids.size > 0) {
       const uidsInScope = new Set(records.map((r) => r.viaUid.trim().toLowerCase()).filter(Boolean));
@@ -106,7 +151,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
       return count;
     }
     return records.filter((r) => r.isViaFixed || r.viaStatus === 'fixed').length;
-  }, [propFixedViaCount, fixedViaUids, records, currentUser.role]);
+  }, [filter.staffName, staffScopedRecords, propFixedViaCount, fixedViaUids, records, currentUser.role]);
 
   const handleClear = () => {
     onChangeFilter({
@@ -139,23 +184,87 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
 
   return (
     <div className="bg-slate-50 border-b border-slate-200 py-2.5 px-4 sm:px-6">
-      <div className="max-w-[1700px] mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
-        {/* Search input */}
-        <div className="flex items-center flex-1 min-w-[240px] max-w-md relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            id="input-sheet-search"
-            placeholder={
-              currentUser.role === 'staff'
-                ? `Tìm trong Page của ${currentUser.name}: Tên Page, Link, UID Via...`
-                : 'Tìm theo Tên Page, Link, UID Via, Ghi chú BM...'
-            }
-            value={filter.search}
-            onChange={(e) => onChangeFilter({ ...filter, search: e.target.value })}
-            className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600"
-          />
-        </div>
+      <div className="max-w-[1700px] mx-auto flex flex-col gap-2.5 text-xs">
+        {/* Thanh Tab chọn nhanh theo từng Nhân Viên (Dành cho Admin) */}
+        {currentUser.role === 'admin' && staffList.length > 0 && (
+          <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 pt-0.5 border-b border-slate-200/70 scrollbar-thin">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Nhân viên:</span>
+            </span>
+
+            {/* Tab Tất Cả */}
+            <button
+              type="button"
+              onClick={() => onChangeFilter({ ...filter, staffName: '' })}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                !filter.staffName || filter.staffName === 'all'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <span>Tất Cả</span>
+              <span
+                className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  !filter.staffName || filter.staffName === 'all'
+                    ? 'bg-white/20 text-white'
+                    : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {records.length}
+              </span>
+            </button>
+
+            {/* Từng nhân viên */}
+            {staffList.map((name) => {
+              const isSelected = filter.staffName?.trim().toLowerCase() === name.trim().toLowerCase();
+              const staffPagesCount = records.filter(
+                (r) => r.staffName?.trim().toLowerCase() === name.trim().toLowerCase()
+              ).length;
+
+              return (
+                <button
+                  key={name}
+                  type="button"
+                  onClick={() => onChangeFilter({ ...filter, staffName: isSelected ? '' : name })}
+                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                    isSelected
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-500'}`} />
+                  <span>{name}</span>
+                  <span
+                    className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                      isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                    }`}
+                  >
+                    {staffPagesCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          {/* Search input */}
+          <div className="flex items-center flex-1 min-w-[240px] max-w-md relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              id="input-sheet-search"
+              placeholder={
+                currentUser.role === 'staff'
+                  ? `Tìm trong Page của ${currentUser.name}: Tên Page, Link, UID Via...`
+                  : 'Tìm theo Tên Page, Link, UID Via, Ghi chú BM...'
+              }
+              value={filter.search}
+              onChange={(e) => onChangeFilter({ ...filter, search: e.target.value })}
+              className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600"
+            />
+          </div>
 
         {/* Filter dropdowns */}
         <div className="flex flex-wrap items-center gap-2">
@@ -410,12 +519,19 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             </button>
           )}
         </div>
+      </div>
 
         {/* Báo cáo thống kê 4 Trạng thái Fanpage + Thống kê Via Lỗi */}
         <div className="w-full pt-2 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center flex-wrap gap-2">
-            <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center space-x-1 mr-1">
+            <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center space-x-1.5 mr-1">
               <span>Báo Cáo Trạng Thái:</span>
+              {filter.staffName && filter.staffName !== 'all' && (
+                <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-200 text-[10px] font-black lowercase tracking-normal">
+                  <Users className="w-2.5 h-2.5 text-indigo-600" />
+                  <span>NV: {filter.staffName}</span>
+                </span>
+              )}
             </span>
 
             {/* 1. Đề Xuất */}
@@ -580,7 +696,15 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
           </div>
 
           <div className="text-[11px] text-slate-500 font-medium">
-            Tổng cộng: <strong className="text-slate-800">{records.length}</strong> Fanpage
+            {filter.staffName && filter.staffName !== 'all' ? (
+              <span>
+                Tổng cộng của <strong>{filter.staffName}</strong>: <strong className="text-slate-800">{staffScopedRecords.length}</strong> Fanpage <span className="text-slate-400">/ tổng {records.length} toàn bộ</span>
+              </span>
+            ) : (
+              <span>
+                Tổng cộng: <strong className="text-slate-800">{records.length}</strong> Fanpage
+              </span>
+            )}
           </div>
         </div>
       </div>

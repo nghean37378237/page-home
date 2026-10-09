@@ -39,6 +39,7 @@ interface SheetHeaderProps {
   availableUsers: AppUser[];
   pendingRequestsCount: number;
   activeTab?: 'fanpage' | 'group' | 'proxy' | 'fullvia' | 'shared_accounts' | 'staff_management';
+  activeStaffFilter?: string;
   viaList?: FullViaItem[];
   errorViaUids?: Set<string>;
   errorViaCount?: number;
@@ -67,6 +68,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
   availableUsers,
   pendingRequestsCount,
   activeTab = 'fanpage',
+  activeStaffFilter,
   viaList = [],
   errorViaUids,
   errorViaCount: propErrorViaCount,
@@ -94,35 +96,44 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
   const [isFullViaAlertDismissed, setIsFullViaAlertDismissed] = useState(false);
 
   // === THỐNG KÊ CHO TAB 1: BẢNG FANPAGE ===
-  const totalPages = records.length;
-  const uniqueVias = new Set(records.map((r) => r.viaUid.trim().toLowerCase()).filter(Boolean)).size;
+  // Nếu có bộ lọc theo 1 nhân viên cụ thể thì chỉ thống kê các Fanpage của nhân viên đó
+  const effectiveRecordsForStats = React.useMemo(() => {
+    if (activeStaffFilter && activeStaffFilter.trim() && activeStaffFilter !== 'all') {
+      const target = activeStaffFilter.trim().toLowerCase();
+      return records.filter((r) => r.staffName && r.staffName.trim().toLowerCase() === target);
+    }
+    return records;
+  }, [records, activeStaffFilter]);
 
-  const deXuatCount = records.filter((r) => r.status === 'Đề Xuất').length;
-  const matDeXuatCount = records.filter((r) => r.status === 'Mất Đề Xuất').length;
-  const dinhChiCount = records.filter((r) => r.status === 'Đình Chỉ').length;
-  const biBackCount = records.filter((r) => r.status === 'Bị Back').length;
+  const totalPages = effectiveRecordsForStats.length;
+  const uniqueVias = new Set(effectiveRecordsForStats.map((r) => r.viaUid.trim().toLowerCase()).filter(Boolean)).size;
 
-  const totalTargetPosts = records.reduce((acc, r) => acc + (r.targetPosts || 0), 0);
-  const totalActualPosts = records.reduce((acc, r) => acc + (r.actualPosts || 0), 0);
+  const deXuatCount = effectiveRecordsForStats.filter((r) => r.status === 'Đề Xuất').length;
+  const matDeXuatCount = effectiveRecordsForStats.filter((r) => r.status === 'Mất Đề Xuất').length;
+  const dinhChiCount = effectiveRecordsForStats.filter((r) => r.status === 'Đình Chỉ').length;
+  const biBackCount = effectiveRecordsForStats.filter((r) => r.status === 'Bị Back').length;
+
+  const totalTargetPosts = effectiveRecordsForStats.reduce((acc, r) => acc + (r.targetPosts || 0), 0);
+  const totalActualPosts = effectiveRecordsForStats.reduce((acc, r) => acc + (r.actualPosts || 0), 0);
 
   // Thống kê Nick Via Lỗi đang cầm Fanpage trong Tab 1
   const computedErrorViaCount = React.useMemo(() => {
     if (typeof propErrorViaCount === 'number') return propErrorViaCount;
     if (errorViaUids && errorViaUids.size > 0) {
-      const uidsInScope = new Set(records.map((r) => r.viaUid.trim().toLowerCase()).filter(Boolean));
+      const uidsInScope = new Set(effectiveRecordsForStats.map((r) => r.viaUid.trim().toLowerCase()).filter(Boolean));
       let count = 0;
       errorViaUids.forEach((uid) => {
-        if (currentUser.role === 'admin' || uidsInScope.has(uid)) {
+        if ((currentUser.role === 'admin' && (!activeStaffFilter || activeStaffFilter === 'all')) || uidsInScope.has(uid)) {
           count++;
         }
       });
       return count;
     }
-    return records.filter((r) => r.isViaError).length;
-  }, [propErrorViaCount, errorViaUids, records, currentUser.role]);
+    return effectiveRecordsForStats.filter((r) => r.isViaError).length;
+  }, [propErrorViaCount, errorViaUids, effectiveRecordsForStats, currentUser.role, activeStaffFilter]);
 
   const pagesImpactedByErrorVia = React.useMemo(() => {
-    return records.filter(
+    return effectiveRecordsForStats.filter(
       (r) =>
         r.isViaError ||
         r.viaStatus === 'checkpoint' ||
@@ -130,7 +141,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
         r.viaStatus === 'error' ||
         (errorViaUids && r.viaUid && errorViaUids.has(r.viaUid.trim().toLowerCase()))
     ).length;
-  }, [records, errorViaUids]);
+  }, [effectiveRecordsForStats, errorViaUids]);
 
   // === THỐNG KÊ CHO TAB 2: BẢNG FULL VIA ===
   const scopedViaList = React.useMemo(() => {
