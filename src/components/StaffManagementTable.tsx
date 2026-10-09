@@ -1,5 +1,14 @@
 import React, { useState, useMemo } from 'react';
-import { UserAccount, PageRecord, FullViaItem, GroupRecord, AppUser } from '../types';
+import {
+  UserAccount,
+  PageRecord,
+  FullViaItem,
+  GroupRecord,
+  AppUser,
+  TabKey,
+  ALL_TAB_KEYS,
+  TAB_DEFINITIONS,
+} from '../types';
 import {
   Users,
   UserPlus,
@@ -27,6 +36,11 @@ import {
   UserCheck,
   ShieldAlert,
   FolderOpen,
+  SlidersHorizontal,
+  Settings,
+  Layers,
+  Network,
+  Globe,
 } from 'lucide-react';
 
 interface StaffManagementTableProps {
@@ -41,13 +55,14 @@ interface StaffManagementTableProps {
   requireGoogleOnly?: boolean;
   onChangeAdminProfile?: (newPin: string, newName?: string, newEmail?: string) => Promise<void> | void;
   onToggleRequireGoogleOnly?: (enabled: boolean) => Promise<void> | void;
-  onAddStaff: (username: string, pin: string, adminNote?: string, email?: string) => Promise<void> | void;
+  onAddStaff: (username: string, pin: string, adminNote?: string, email?: string, allowedTabs?: TabKey[]) => Promise<void> | void;
   onUpdatePin: (accountId: string, newPin: string) => Promise<void> | void;
   onBlockAccount: (accountId: string) => Promise<void> | void;
   onUnblockAccount: (accountId: string) => Promise<void> | void;
   onDeleteAccount: (accountId: string, options?: { deletePosts?: boolean; deleteVias?: boolean }) => Promise<void> | void;
   onApproveAccount: (accountId: string) => Promise<void> | void;
   onRejectAccount: (accountId: string) => Promise<void> | void;
+  onUpdateAccountPermissions?: (accountId: string, allowedTabs: TabKey[]) => Promise<void> | void;
   onSwitchToStaffView?: (staffName: string) => void;
   onOpenAdminModal?: (tab?: 'staff' | 'pending' | 'blocked' | 'admin_pin' | 'security_db') => void;
   onOpenDeleteStaffModal?: (staffName?: string) => void;
@@ -72,6 +87,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   onDeleteAccount,
   onApproveAccount,
   onRejectAccount,
+  onUpdateAccountPermissions,
   onSwitchToStaffView,
   onOpenAdminModal,
   onOpenDeleteStaffModal,
@@ -84,12 +100,19 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const [visiblePins, setVisiblePins] = useState<Record<string, boolean>>({});
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
+  // Table Permissions Modal State (Admin only)
+  const [permissionModalAccount, setPermissionModalAccount] = useState<UserAccount | null>(null);
+  const [selectedAllowedTabs, setSelectedAllowedTabs] = useState<TabKey[]>(ALL_TAB_KEYS);
+  const [isSavingPermissions, setIsSavingPermissions] = useState(false);
+  const [permissionNotice, setPermissionNotice] = useState<{ success: boolean; message: string } | null>(null);
+
   // Add staff modal state (Admin only)
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addName, setAddName] = useState('');
   const [addPin, setAddPin] = useState('123456');
   const [addEmail, setAddEmail] = useState('');
   const [addNote, setAddNote] = useState('');
+  const [addAllowedTabs, setAddAllowedTabs] = useState<TabKey[]>(['fanpage', 'fullvia', 'staff_management']);
   const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
@@ -217,16 +240,84 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     setIsSubmittingAdd(true);
     setAddError(null);
     try {
-      await onAddStaff(cleanName, cleanPin, cleanNote, cleanEmail);
+      await onAddStaff(cleanName, cleanPin, cleanNote, cleanEmail, addAllowedTabs);
       setAddName('');
       setAddPin('123456');
       setAddEmail('');
       setAddNote('');
+      setAddAllowedTabs(['fanpage', 'fullvia', 'staff_management']);
       setIsAddModalOpen(false);
     } catch (err: any) {
       setAddError(err.message || 'Lỗi khi thêm nhân viên');
     } finally {
       setIsSubmittingAdd(false);
+    }
+  };
+
+  // Handlers for Table Permissions Modal
+  const handleOpenPermissionModal = (account: UserAccount) => {
+    setPermissionModalAccount(account);
+    const existing =
+      account.allowedTabs && account.allowedTabs.length > 0
+        ? account.allowedTabs
+        : ALL_TAB_KEYS;
+    setSelectedAllowedTabs(existing);
+    setPermissionNotice(null);
+  };
+
+  const handleToggleTabPermission = (tabKey: TabKey) => {
+    setSelectedAllowedTabs((prev) => {
+      if (prev.includes(tabKey)) {
+        if (prev.length <= 1) return prev;
+        return prev.filter((t) => t !== tabKey);
+      } else {
+        return [...prev, tabKey];
+      }
+    });
+  };
+
+  const handleQuickPresetTabs = (preset: 'all' | 'fanpage_only' | 'fanpage_via' | 'fanpage_group' | 'minimal') => {
+    switch (preset) {
+      case 'all':
+        setSelectedAllowedTabs(ALL_TAB_KEYS);
+        break;
+      case 'fanpage_only':
+        setSelectedAllowedTabs(['fanpage']);
+        break;
+      case 'fanpage_via':
+        setSelectedAllowedTabs(['fanpage', 'fullvia', 'staff_management']);
+        break;
+      case 'fanpage_group':
+        setSelectedAllowedTabs(['fanpage', 'group', 'staff_management']);
+        break;
+      case 'minimal':
+        setSelectedAllowedTabs(['fanpage', 'staff_management']);
+        break;
+    }
+  };
+
+  const handleSavePermissions = async () => {
+    if (!permissionModalAccount) return;
+    setIsSavingPermissions(true);
+    setPermissionNotice(null);
+    try {
+      if (onUpdateAccountPermissions) {
+        await onUpdateAccountPermissions(permissionModalAccount.id, selectedAllowedTabs);
+      }
+      setPermissionNotice({
+        success: true,
+        message: `Đã cập nhật phân quyền (${selectedAllowedTabs.length}/6 bảng) cho "${permissionModalAccount.username}" thành công!`,
+      });
+      setTimeout(() => {
+        setPermissionModalAccount(null);
+      }, 900);
+    } catch (err: any) {
+      setPermissionNotice({
+        success: false,
+        message: err.message || 'Lỗi khi lưu phân quyền',
+      });
+    } finally {
+      setIsSavingPermissions(false);
     }
   };
 
@@ -778,16 +869,17 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 <th className="py-3 px-4 min-w-[200px]">Tên Nhân Viên</th>
                 <th className="py-3 px-3.5 min-w-[120px]">Trạng Thái</th>
                 <th className="py-3 px-3.5 min-w-[170px]">Mật Khẩu / Mã PIN</th>
+                <th className="py-3 px-3.5 min-w-[260px]">Phân Quyền Bảng (1..6)</th>
                 <th className="py-3 px-3.5 min-w-[100px] text-center">Phụ Trách</th>
                 <th className="py-3 px-3.5 min-w-[140px]">Ngày Tham Gia</th>
                 <th className="py-3 px-4 min-w-[180px]">Ghi Chú</th>
-                <th className="py-3 px-4 min-w-[220px] text-right">Thao Tác Quản Lý</th>
+                <th className="py-3 px-4 min-w-[240px] text-right">Thao Tác Quản Lý</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredStaff.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                     <p className="font-semibold text-sm text-slate-600">Không tìm thấy nhân viên nào</p>
                     <p className="text-xs text-slate-400 mt-1">
@@ -884,6 +976,63 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                               <Copy className="w-3.5 h-3.5" />
                             )}
                           </button>
+                        </div>
+                      </td>
+
+                      {/* Phân Quyền Bảng (1..6) */}
+                      <td className="py-3 px-3.5">
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1">
+                            {ALL_TAB_KEYS.map((tabKey) => {
+                              const tabDef = TAB_DEFINITIONS[tabKey];
+                              const isAllowed =
+                                acc.role === 'admin' ||
+                                (acc.allowedTabs && acc.allowedTabs.length > 0
+                                  ? acc.allowedTabs.includes(tabKey)
+                                  : ALL_TAB_KEYS.includes(tabKey));
+
+                              let activeColorClass = 'bg-emerald-50 text-emerald-800 border-emerald-300';
+                              if (tabDef.color === 'red') activeColorClass = 'bg-red-50 text-red-800 border-red-300';
+                              else if (tabDef.color === 'teal') activeColorClass = 'bg-teal-50 text-teal-800 border-teal-300';
+                              else if (tabDef.color === 'indigo') activeColorClass = 'bg-indigo-50 text-indigo-800 border-indigo-300';
+                              else if (tabDef.color === 'blue') activeColorClass = 'bg-blue-50 text-blue-800 border-blue-300';
+                              else if (tabDef.color === 'purple') activeColorClass = 'bg-purple-50 text-purple-800 border-purple-300';
+
+                              return (
+                                <span
+                                  key={tabKey}
+                                  className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-all ${
+                                    isAllowed
+                                      ? activeColorClass
+                                      : 'bg-slate-100 text-slate-400 border-slate-200 line-through opacity-40'
+                                  }`}
+                                  title={isAllowed ? `${tabDef.label}: Được phép xem` : `${tabDef.label}: Đang bị ẩn`}
+                                >
+                                  <span>{tabDef.shortLabel}</span>
+                                </span>
+                              );
+                            })}
+                          </div>
+                          {isAdmin && (
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {acc.role === 'admin'
+                                  ? 'Toàn quyền (6/6)'
+                                  : `${(acc.allowedTabs || ALL_TAB_KEYS).length}/6 Bảng`}
+                              </span>
+                              {acc.role !== 'admin' && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPermissionModal(acc)}
+                                  className="inline-flex items-center space-x-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold rounded border border-blue-200 transition-colors cursor-pointer"
+                                  title={`Cài đặt phân quyền các bảng cho ${acc.username}`}
+                                >
+                                  <SlidersHorizontal className="w-2.5 h-2.5" />
+                                  <span>Sửa Quyền</span>
+                                </button>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </td>
 
@@ -1109,6 +1258,84 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   onChange={(e) => setAddNote(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
                 />
+              </div>
+
+              {/* Phân quyền bảng cho nhân viên mới */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Phân Quyền Bảng Hiển Thị (1..6)
+                  </label>
+                  <span className="text-[11px] text-blue-600 font-semibold">
+                    Đã chọn {addAllowedTabs.length}/6 bảng
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1 mb-2">
+                  <button
+                    type="button"
+                    onClick={() => setAddAllowedTabs(ALL_TAB_KEYS)}
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                  >
+                    Tất cả (1-6)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddAllowedTabs(['fanpage'])}
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer"
+                  >
+                    Chỉ Fanpage
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddAllowedTabs(['fanpage', 'fullvia', 'staff_management'])}
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer"
+                  >
+                    Fanpage + Via
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddAllowedTabs(['fanpage', 'group', 'staff_management'])}
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-700 cursor-pointer"
+                  >
+                    Fanpage + Group
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {ALL_TAB_KEYS.map((tabKey) => {
+                    const tabDef = TAB_DEFINITIONS[tabKey];
+                    const isChecked = addAllowedTabs.includes(tabKey);
+                    return (
+                      <label
+                        key={tabKey}
+                        className={`flex items-center space-x-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                          isChecked
+                            ? 'bg-blue-50/70 border-blue-300 font-bold text-blue-900'
+                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            setAddAllowedTabs((prev) => {
+                              if (prev.includes(tabKey)) {
+                                if (prev.length <= 1) return prev;
+                                return prev.filter((t) => t !== tabKey);
+                              } else {
+                                return [...prev, tabKey];
+                              }
+                            });
+                          }}
+                          className="w-3.5 h-3.5 text-blue-600 rounded cursor-pointer"
+                        />
+                        <span className="truncate">{tabDef.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Nhân viên chỉ thấy các bảng được chọn, giúp giao diện gọn gàng.
+                </p>
               </div>
 
               <div className="flex items-center justify-end space-x-2 pt-2">
@@ -1365,6 +1592,201 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Phân Quyền Bảng Hiển Thị (Smart Table Permissions) */}
+      {permissionModalAccount && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-fadeIn">
+            {/* Header */}
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-slate-100">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                  <SlidersHorizontal className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Phân Quyền Bảng Hiển Thị
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Nhân viên: <strong className="text-slate-800">{permissionModalAccount.username}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPermissionModalAccount(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Notice */}
+            {permissionNotice && (
+              <div
+                className={`mb-4 p-3 rounded-xl text-xs flex items-center space-x-2 ${
+                  permissionNotice.success
+                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                    : 'bg-rose-50 text-rose-800 border border-rose-200'
+                }`}
+              >
+                {permissionNotice.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                )}
+                <span>{permissionNotice.message}</span>
+              </div>
+            )}
+
+            <div className="space-y-4">
+              {/* Description */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200/80 rounded-xl text-xs text-blue-900">
+                <p className="font-semibold mb-1">💡 Cơ chế phân quyền hiển thị thông minh:</p>
+                <p className="text-blue-800 text-[11px] leading-relaxed">
+                  Nhân viên chỉ thấy các bảng được tích chọn bên dưới. Các bảng không được cấp quyền sẽ tự động ẩn đi hoàn toàn khỏi menu, giúp nhân viên có màn hình làm việc gọn gàng, không bị rối mắt bởi các bảng không cần thiết.
+                </p>
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div>
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
+                  <span>Chọn Nhanh Mẫu Phân Quyền:</span>
+                  <span className="text-blue-600 font-extrabold normal-case">
+                    Đã chọn {selectedAllowedTabs.length}/6 bảng
+                  </span>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickPresetTabs('all')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                      selectedAllowedTabs.length === ALL_TAB_KEYS.length
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                    }`}
+                  >
+                    ⚡ Tất Cả Bảng (1..6)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickPresetTabs('fanpage_only')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer"
+                  >
+                    📄 Chỉ Fanpage (B1)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickPresetTabs('fanpage_via')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100 transition-all cursor-pointer"
+                  >
+                    🔗 Fanpage + Via (B1 & B4)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickPresetTabs('fanpage_group')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-50 text-red-700 border border-red-200 hover:bg-red-100 transition-all cursor-pointer"
+                  >
+                    👥 Fanpage + Group (B1 & B2)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickPresetTabs('minimal')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200 transition-all cursor-pointer"
+                  >
+                    🛡️ Tối Giản (B1 & B5)
+                  </button>
+                </div>
+              </div>
+
+              {/* 6 Tab Checkbox Cards */}
+              <div className="space-y-2">
+                <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  Danh Sách 6 Bảng Quản Lý:
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
+                  {ALL_TAB_KEYS.map((tabKey) => {
+                    const tabDef = TAB_DEFINITIONS[tabKey];
+                    const isChecked = selectedAllowedTabs.includes(tabKey);
+
+                    return (
+                      <div
+                        key={tabKey}
+                        onClick={() => handleToggleTabPermission(tabKey)}
+                        className={`p-3 rounded-xl border transition-all cursor-pointer select-none flex items-start space-x-2.5 ${
+                          isChecked
+                            ? 'bg-blue-50/60 border-blue-300 ring-1 ring-blue-400/40 shadow-xs'
+                            : 'bg-white border-slate-200 hover:border-slate-300 opacity-60'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => handleToggleTabPermission(tabKey)}
+                          className="mt-0.5 w-4 h-4 text-blue-600 rounded cursor-pointer shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-bold text-xs text-slate-900 truncate">
+                              {tabDef.label}
+                            </span>
+                            <span
+                              className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded ${
+                                isChecked
+                                  ? 'bg-blue-600 text-white'
+                                  : 'bg-slate-200 text-slate-600'
+                              }`}
+                            >
+                              Bảng {tabDef.tabNumber}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-2">
+                            {tabDef.description}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <span className="text-xs text-slate-400">
+                  {selectedAllowedTabs.length === 0 ? (
+                    <span className="text-rose-500 font-bold">Cần chọn ít nhất 1 bảng!</span>
+                  ) : (
+                    <span>Lưu vào Cloud Firestore</span>
+                  )}
+                </span>
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => setPermissionModalAccount(null)}
+                    className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSavingPermissions || selectedAllowedTabs.length === 0}
+                    onClick={handleSavePermissions}
+                    className="px-5 py-2 text-xs font-black text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    {isSavingPermissions ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5" />
+                    )}
+                    <span>Lưu Phân Quyền</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

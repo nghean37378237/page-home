@@ -1,4 +1,4 @@
-import { PageRecord, AppUser, UserAccount, FullViaItem, GroupRecord } from '../types';
+import { PageRecord, AppUser, UserAccount, FullViaItem, GroupRecord, ALL_TAB_KEYS } from '../types';
 import { INITIAL_PAGE_RECORDS } from '../data/initialData';
 
 // Storage keys previously used for local storage - retained to purge legacy cache
@@ -19,6 +19,7 @@ export const DEFAULT_ADMIN_USER: AppUser = {
   role: 'admin',
   status: 'approved',
   isAuthenticated: true,
+  allowedTabs: ALL_TAB_KEYS,
 };
 
 export const GUEST_USER: AppUser = {
@@ -39,6 +40,7 @@ export const DEFAULT_ADMIN_ACCOUNT: UserAccount = {
   createdAt: '15/09/2026',
   approvedAt: '15/09/2026',
   adminNote: 'Tài khoản Quản Trị Viên tối cao',
+  allowedTabs: ALL_TAB_KEYS,
 };
 
 export const INITIAL_ACCOUNTS: UserAccount[] = [
@@ -53,6 +55,7 @@ export const INITIAL_ACCOUNTS: UserAccount[] = [
     createdAt: '15/09/2026',
     approvedAt: '15/09/2026',
     adminNote: 'Nhân viên trực page chính',
+    allowedTabs: ['fanpage', 'fullvia', 'staff_management'],
   },
   {
     id: 'account-bao',
@@ -64,6 +67,7 @@ export const INITIAL_ACCOUNTS: UserAccount[] = [
     createdAt: '15/09/2026',
     approvedAt: '15/09/2026',
     adminNote: 'Nhân viên quản lý via & page',
+    allowedTabs: ['fanpage', 'group', 'fullvia', 'staff_management'],
   },
   {
     id: 'account-phuong-my',
@@ -75,6 +79,7 @@ export const INITIAL_ACCOUNTS: UserAccount[] = [
     createdAt: '15/09/2026',
     approvedAt: '15/09/2026',
     adminNote: 'Nhân viên trực ca ngày',
+    allowedTabs: ['fanpage', 'staff_management'],
   },
 ];
 

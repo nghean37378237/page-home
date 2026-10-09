@@ -145,6 +145,7 @@ export function AuthModal({
       role: 'staff',
       status: 'approved',
       isAuthenticated: true,
+      allowedTabs: existingAccount.allowedTabs,
     };
     onLoginSuccess(staffUser);
     if (onClose) onClose();

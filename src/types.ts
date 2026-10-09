@@ -73,6 +73,90 @@ export type UserRole = 'admin' | 'staff';
 
 export type StaffAccountStatus = 'approved' | 'pending' | 'blocked';
 
+export type TabKey =
+  | 'fanpage'
+  | 'group'
+  | 'proxy'
+  | 'fullvia'
+  | 'staff_management'
+  | 'shared_accounts';
+
+export interface TabPermissionConfig {
+  id: TabKey;
+  tabNumber: number;
+  label: string;
+  shortLabel: string;
+  badgeName: string;
+  color: string;
+  description: string;
+}
+
+export const ALL_TAB_KEYS: TabKey[] = [
+  'fanpage',
+  'group',
+  'proxy',
+  'fullvia',
+  'staff_management',
+  'shared_accounts',
+];
+
+export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
+  fanpage: {
+    id: 'fanpage',
+    tabNumber: 1,
+    label: 'Bảng 1: Fanpage',
+    shortLabel: 'B1 Fanpage',
+    badgeName: 'Page',
+    color: 'emerald',
+    description: 'Quản lý Fanpage và tiến độ đăng bài hàng ngày',
+  },
+  group: {
+    id: 'group',
+    tabNumber: 2,
+    label: 'Bảng 2: Group',
+    shortLabel: 'B2 Group',
+    badgeName: 'Group',
+    color: 'red',
+    description: 'Quản lý hội nhóm Facebook và trạng thái tham gia',
+  },
+  proxy: {
+    id: 'proxy',
+    tabNumber: 3,
+    label: 'Bảng 3: Proxy',
+    shortLabel: 'B3 Proxy',
+    badgeName: 'Proxy',
+    color: 'teal',
+    description: 'Quản lý danh sách Proxy và IP nuôi Via',
+  },
+  fullvia: {
+    id: 'fullvia',
+    tabNumber: 4,
+    label: 'Bảng 4: Full Via',
+    shortLabel: 'B4 Full Via',
+    badgeName: 'Via',
+    color: 'indigo',
+    description: 'Quản lý nick Full Via (UID|PASS|2FA)',
+  },
+  staff_management: {
+    id: 'staff_management',
+    tabNumber: 5,
+    label: 'Bảng 5: Tên, MK Tài Khoản',
+    shortLabel: 'B5 Tên & MK',
+    badgeName: 'Tài Khoản',
+    color: 'blue',
+    description: 'Tên nhân sự, mã PIN mật khẩu và bảo mật cá nhân',
+  },
+  shared_accounts: {
+    id: 'shared_accounts',
+    tabNumber: 6,
+    label: 'Bảng 6: Web Dùng Chung',
+    shortLabel: 'B6 Web Chung',
+    badgeName: 'TK Web',
+    color: 'purple',
+    description: 'Tài khoản web công cụ dùng chung (Canva, ChatGPT, CapCut...)',
+  },
+};
+
 export interface UserAccount {
   id: string;
   username: string; // Tên hiển thị / nhân viên
@@ -84,6 +168,7 @@ export interface UserAccount {
   approvedAt?: string; // Ngày duyệt
   requestNote?: string; // Lời nhắn xin cấp quyền
   adminNote?: string; // Ghi chú của Admin
+  allowedTabs?: TabKey[]; // Danh sách Bảng/Tab được phân quyền thấy: ['fanpage', 'fullvia', ...]
 }
 
 export interface AppUser {
@@ -93,6 +178,7 @@ export interface AppUser {
   role: UserRole;
   status?: StaffAccountStatus;
   isAuthenticated: boolean;
+  allowedTabs?: TabKey[]; // Danh sách Bảng/Tab được cấp quyền
 }
 
 export type ViaPageUpdateStatus = 'none' | 'pending' | 'updated';

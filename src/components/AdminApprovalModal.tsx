@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserAccount, PageRecord, FullViaItem, GroupRecord, ProxyItem, SharedAccount } from '../types';
+import {
+  UserAccount,
+  PageRecord,
+  FullViaItem,
+  GroupRecord,
+  ProxyItem,
+  SharedAccount,
+  TabKey,
+  ALL_TAB_KEYS,
+  TAB_DEFINITIONS,
+} from '../types';
 import {
   Shield,
   UserCheck,
@@ -143,6 +153,7 @@ export function AdminApprovalModal({
     email: string;
     pin: string;
     adminNote: string;
+    allowedTabs?: TabKey[];
   } | null>(null);
 
   // Staff Details Popover (Viewing Pages & Vias)
@@ -508,6 +519,7 @@ export function AdminApprovalModal({
         email: editStaffModalData.email.trim() || undefined,
         pin: cleanPin,
         adminNote: editStaffModalData.adminNote.trim() || undefined,
+        allowedTabs: editStaffModalData.allowedTabs,
       });
     } else {
       onUpdateAccountPin(editStaffModalData.id, cleanPin);
@@ -1526,6 +1538,10 @@ export function AdminApprovalModal({
                                       email: acc.email || '',
                                       pin: acc.pin,
                                       adminNote: acc.adminNote || '',
+                                      allowedTabs:
+                                        acc.allowedTabs && acc.allowedTabs.length > 0
+                                          ? acc.allowedTabs
+                                          : ALL_TAB_KEYS,
                                     })
                                   }
                                   className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
@@ -2937,6 +2953,108 @@ export function AdminApprovalModal({
                   placeholder="Ghi chú công việc..."
                   className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg"
                 />
+              </div>
+
+              {/* Phân quyền bảng hiển thị */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Phân Quyền Bảng Hiển Thị (1..6)
+                  </label>
+                  <span className="text-[11px] text-indigo-600 font-semibold">
+                    Đã chọn {(editStaffModalData.allowedTabs || ALL_TAB_KEYS).length}/6 bảng
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap gap-1 mb-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStaffModalData({
+                        ...editStaffModalData,
+                        allowedTabs: ALL_TAB_KEYS,
+                      })
+                    }
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                  >
+                    Tất cả (1-6)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStaffModalData({
+                        ...editStaffModalData,
+                        allowedTabs: ['fanpage'],
+                      })
+                    }
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer"
+                  >
+                    Chỉ Fanpage
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStaffModalData({
+                        ...editStaffModalData,
+                        allowedTabs: ['fanpage', 'fullvia', 'staff_management'],
+                      })
+                    }
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer"
+                  >
+                    Fanpage + Via
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStaffModalData({
+                        ...editStaffModalData,
+                        allowedTabs: ['fanpage', 'group', 'staff_management'],
+                      })
+                    }
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-700 cursor-pointer"
+                  >
+                    Fanpage + Group
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-1.5">
+                  {ALL_TAB_KEYS.map((tabKey) => {
+                    const tabDef = TAB_DEFINITIONS[tabKey];
+                    const currentTabs = editStaffModalData.allowedTabs || ALL_TAB_KEYS;
+                    const isChecked = currentTabs.includes(tabKey);
+
+                    return (
+                      <label
+                        key={tabKey}
+                        className={`flex items-center space-x-2 p-1.5 rounded-lg border text-xs cursor-pointer transition-colors ${
+                          isChecked
+                            ? 'bg-indigo-50/70 border-indigo-300 font-bold text-indigo-950'
+                            : 'bg-slate-50 border-slate-200 text-slate-400 hover:bg-slate-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            let nextTabs: TabKey[];
+                            if (isChecked) {
+                              if (currentTabs.length <= 1) return;
+                              nextTabs = currentTabs.filter((t) => t !== tabKey);
+                            } else {
+                              nextTabs = [...currentTabs, tabKey];
+                            }
+                            setEditStaffModalData({
+                              ...editStaffModalData,
+                              allowedTabs: nextTabs,
+                            });
+                          }}
+                          className="w-3.5 h-3.5 text-indigo-600 rounded cursor-pointer"
+                        />
+                        <span className="truncate">{tabDef.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </div>
 

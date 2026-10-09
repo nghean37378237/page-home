@@ -76,7 +76,8 @@ service cloud.firestore {
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
              (!('approvedAt' in data) || (data.approvedAt is string && data.approvedAt.size() <= 50)) &&
              (!('requestNote' in data) || (data.requestNote is string && data.requestNote.size() <= 500)) &&
-             (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 500));
+             (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 500)) &&
+             (!('allowedTabs' in data) || (data.allowedTabs is list && data.allowedTabs.size() <= 20));
     }
 
     function isValidSetting(data) {

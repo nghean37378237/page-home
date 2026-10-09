@@ -1,5 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { PageRecord, SheetFilter, AppUser, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem } from './types';
+import {
+  PageRecord,
+  SheetFilter,
+  AppUser,
+  UserAccount,
+  FullViaItem,
+  SharedAccount,
+  GroupRecord,
+  ProxyItem,
+  TabKey,
+  ALL_TAB_KEYS,
+  TAB_DEFINITIONS,
+} from './types';
 import {
   testFirestoreConnection,
   seedCloudFirestoreIfEmpty,
@@ -144,7 +156,34 @@ export default function App() {
   const [isBulkImportProxyModalOpen, setIsBulkImportProxyModalOpen] = useState(false);
 
   // Tab State: Tab 1 = Quản lý Fanpage, Tab 2 = Quản lý Group, Tab 3 = Quản lý Proxy, Tab 4 = Quản lý Full Via, Tab 5 = Quản lý Tài Khoản Dùng Chung, Tab 6 = Quản lý Nhân Viên
-  const [activeTab, setActiveTab] = useState<'fanpage' | 'group' | 'proxy' | 'fullvia' | 'shared_accounts' | 'staff_management'>('fanpage');
+  const [activeTab, setActiveTab] = useState<TabKey>('fanpage');
+
+  // Phân quyền Bảng hiển thị (Smart Tab Access Control):
+  // Admin: luôn xem toàn bộ 6 bảng.
+  // Nhân viên: CHỈ xem các bảng được Admin phân quyền, tự động ẩn toàn bộ bảng không cần thiết để giao diện gọn gàng.
+  const userAllowedTabs = useMemo<TabKey[]>(() => {
+    if (currentUser.role === 'admin') {
+      return ALL_TAB_KEYS;
+    }
+    const currentAcc = accounts.find(
+      (a) =>
+        a.id === currentUser.id ||
+        a.username.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+    );
+    const assigned = currentAcc?.allowedTabs || currentUser.allowedTabs;
+    if (Array.isArray(assigned) && assigned.length > 0) {
+      const valid = assigned.filter((t) => ALL_TAB_KEYS.includes(t as TabKey)) as TabKey[];
+      if (valid.length > 0) return valid;
+    }
+    return ['fanpage', 'fullvia', 'staff_management'] as TabKey[];
+  }, [currentUser, accounts]);
+
+  // Tự động chuyển activeTab về bảng hợp lệ đầu tiên nếu bảng hiện tại không được phép
+  useEffect(() => {
+    if (userAllowedTabs.length > 0 && !userAllowedTabs.includes(activeTab)) {
+      setActiveTab(userAllowedTabs[0]);
+    }
+  }, [userAllowedTabs, activeTab]);
 
   const [filter, setFilter] = useState<SheetFilter>({
     search: '',
@@ -1013,7 +1052,13 @@ export default function App() {
     }
   };
 
-  const handleAddPreApprovedStaff = async (username: string, pin: string, adminNote?: string, email?: string) => {
+  const handleAddPreApprovedStaff = async (
+    username: string,
+    pin: string,
+    adminNote?: string,
+    email?: string,
+    allowedTabs?: TabKey[]
+  ) => {
     const trimmed = username.trim();
     if (!trimmed) return;
 
@@ -1036,6 +1081,10 @@ export default function App() {
       pin: trimmedPin,
       createdAt: existing?.createdAt || new Date().toLocaleDateString('vi-VN'),
       approvedAt: new Date().toLocaleDateString('vi-VN'),
+      allowedTabs:
+        allowedTabs && allowedTabs.length > 0
+          ? allowedTabs
+          : existing?.allowedTabs || ['fanpage', 'fullvia', 'staff_management'],
       ...(cleanEmail ? { email: cleanEmail } : (existing?.email ? { email: existing.email } : {})),
       ...(cleanNote ? { adminNote: cleanNote } : {}),
     };
@@ -1981,184 +2030,204 @@ export default function App() {
           <div className="flex items-center justify-between overflow-x-auto scrollbar-thin py-2 gap-3">
             <div className="flex items-center space-x-1.5 sm:space-x-2 shrink-0">
               {/* TAB 1: Bảng 1 Fanpage */}
-              <button
-                type="button"
-                id="tab-btn-fanpage-table"
-                onClick={() => setActiveTab('fanpage')}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  activeTab === 'fanpage'
-                    ? 'bg-[#2e7d32] text-white shadow-xs ring-2 ring-[#2e7d32]/25'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                }`}
-                title="Bảng 1: Quản lý Fanpage & Tiến độ đăng bài"
-              >
-                <FileSpreadsheet className="w-4 h-4 shrink-0" />
-                <span>Bảng 1: Fanpage</span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+              {userAllowedTabs.includes('fanpage') && (
+                <button
+                  type="button"
+                  id="tab-btn-fanpage-table"
+                  onClick={() => setActiveTab('fanpage')}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                     activeTab === 'fanpage'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-white text-slate-800 border border-slate-200'
+                      ? 'bg-[#2e7d32] text-white shadow-xs ring-2 ring-[#2e7d32]/25'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                   }`}
+                  title="Bảng 1: Quản lý Fanpage & Tiến độ đăng bài"
                 >
-                  {userScopedRecords.length} Page
-                </span>
-              </button>
+                  <FileSpreadsheet className="w-4 h-4 shrink-0" />
+                  <span>Bảng 1: Fanpage</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      activeTab === 'fanpage'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-white text-slate-800 border border-slate-200'
+                    }`}
+                  >
+                    {userScopedRecords.length} Page
+                  </span>
+                </button>
+              )}
 
               {/* TAB 2: Bảng 2 Group */}
-              <button
-                type="button"
-                id="tab-btn-group-table"
-                onClick={() => setActiveTab('group')}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  activeTab === 'group'
-                    ? 'bg-red-700 text-white shadow-xs ring-2 ring-red-500/25'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                }`}
-                title="Bảng 2: Quản lý Group Facebook & Trạng thái tham gia"
-              >
-                <Users className="w-4 h-4 shrink-0" />
-                <span>Bảng 2: Group</span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+              {userAllowedTabs.includes('group') && (
+                <button
+                  type="button"
+                  id="tab-btn-group-table"
+                  onClick={() => setActiveTab('group')}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                     activeTab === 'group'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-white text-slate-800 border border-slate-200'
+                      ? 'bg-red-700 text-white shadow-xs ring-2 ring-red-500/25'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                   }`}
+                  title="Bảng 2: Quản lý Group Facebook & Trạng thái tham gia"
                 >
-                  {currentUser.role === 'admin'
-                    ? groupRecords.length
-                    : groupRecords.filter((g) => g.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()).length}{' '}
-                  Dòng
-                </span>
-              </button>
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span>Bảng 2: Group</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      activeTab === 'group'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-white text-slate-800 border border-slate-200'
+                    }`}
+                  >
+                    {currentUser.role === 'admin'
+                      ? groupRecords.length
+                      : groupRecords.filter((g) => g.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()).length}{' '}
+                    Dòng
+                  </span>
+                </button>
+              )}
 
               {/* TAB 3: Bảng 3 Proxy */}
-              <button
-                type="button"
-                id="tab-btn-proxy-table"
-                onClick={() => setActiveTab('proxy')}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  activeTab === 'proxy'
-                    ? 'bg-teal-700 text-white shadow-xs ring-2 ring-teal-500/25'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                }`}
-                title="Bảng 3: Quản lý Proxy mạng & IP nuôi Via"
-              >
-                <Network className="w-4 h-4 shrink-0" />
-                <span>Bảng 3: Proxy</span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+              {userAllowedTabs.includes('proxy') && (
+                <button
+                  type="button"
+                  id="tab-btn-proxy-table"
+                  onClick={() => setActiveTab('proxy')}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                     activeTab === 'proxy'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-white text-slate-800 border border-slate-200'
+                      ? 'bg-teal-700 text-white shadow-xs ring-2 ring-teal-500/25'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                   }`}
+                  title="Bảng 3: Quản lý Proxy mạng & IP nuôi Via"
                 >
-                  {currentUser.role === 'admin'
-                    ? proxies.length
-                    : proxies.filter(
-                        (p) =>
-                          (p.assignedStaff || []).includes('ALL') ||
-                          (p.assignedStaff || []).some(
-                            (s) => s.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
-                          )
-                      ).length}{' '}
-                  Proxy
-                </span>
-              </button>
+                  <Network className="w-4 h-4 shrink-0" />
+                  <span>Bảng 3: Proxy</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      activeTab === 'proxy'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-white text-slate-800 border border-slate-200'
+                    }`}
+                  >
+                    {currentUser.role === 'admin'
+                      ? proxies.length
+                      : proxies.filter(
+                          (p) =>
+                            (p.assignedStaff || []).includes('ALL') ||
+                            (p.assignedStaff || []).some(
+                              (s) => s.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+                            )
+                        ).length}{' '}
+                    Proxy
+                  </span>
+                </button>
+              )}
 
               {/* TAB 4: Bảng 4 Full Via */}
-              <button
-                type="button"
-                id="tab-btn-fullvia-table"
-                onClick={() => setActiveTab('fullvia')}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  activeTab === 'fullvia'
-                    ? 'bg-indigo-700 text-white shadow-xs ring-2 ring-indigo-500/25'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                }`}
-                title="Bảng 4: Quản lý Full Via (UID|PASS|2FA)"
-              >
-                <KeyRound className="w-4 h-4 shrink-0" />
-                <span>Bảng 4: Full Via</span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+              {userAllowedTabs.includes('fullvia') && (
+                <button
+                  type="button"
+                  id="tab-btn-fullvia-table"
+                  onClick={() => setActiveTab('fullvia')}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                     activeTab === 'fullvia'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-white text-slate-800 border border-slate-200'
+                      ? 'bg-indigo-700 text-white shadow-xs ring-2 ring-indigo-500/25'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                   }`}
+                  title="Bảng 4: Quản lý Full Via (UID|PASS|2FA)"
                 >
-                  {currentUser.role === 'admin'
-                    ? viaList.length
-                    : viaList.filter((v) => v.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()).length}{' '}
-                  Via
-                </span>
-              </button>
+                  <KeyRound className="w-4 h-4 shrink-0" />
+                  <span>Bảng 4: Full Via</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      activeTab === 'fullvia'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-white text-slate-800 border border-slate-200'
+                    }`}
+                  >
+                    {currentUser.role === 'admin'
+                      ? viaList.length
+                      : viaList.filter((v) => v.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()).length}{' '}
+                    Via
+                  </span>
+                </button>
+              )}
 
               {/* TAB 5: Bảng 5 Tên, MK Tài Khoản (Staff Management: Admin toàn bộ | Staff của riêng mình) */}
-              <button
-                type="button"
-                id="tab-btn-staff-management"
-                onClick={() => setActiveTab('staff_management')}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  activeTab === 'staff_management'
-                    ? 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                }`}
-                title="Bảng 5: Tên & Mật khẩu tài khoản nhân sự"
-              >
-                <Users className="w-4 h-4 shrink-0" />
-                <span>
-                  {currentUser.role === 'admin'
-                    ? 'Bảng 5: Tên, MK Tài Khoản'
-                    : 'Bảng 5: Tên & MK Của Tôi'}
-                </span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+              {userAllowedTabs.includes('staff_management') && (
+                <button
+                  type="button"
+                  id="tab-btn-staff-management"
+                  onClick={() => setActiveTab('staff_management')}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                     activeTab === 'staff_management'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-white text-slate-800 border border-slate-200'
+                      ? 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                   }`}
+                  title="Bảng 5: Tên & Mật khẩu tài khoản nhân sự"
                 >
-                  {currentUser.role === 'admin'
-                    ? `${accounts.filter((a) => a.role === 'staff').length} NV`
-                    : currentUser.name}
-                </span>
-              </button>
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span>
+                    {currentUser.role === 'admin'
+                      ? 'Bảng 5: Tên, MK Tài Khoản'
+                      : 'Bảng 5: Tên & MK Của Tôi'}
+                  </span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      activeTab === 'staff_management'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-white text-slate-800 border border-slate-200'
+                    }`}
+                  >
+                    {currentUser.role === 'admin'
+                      ? `${accounts.filter((a) => a.role === 'staff').length} NV`
+                      : currentUser.name}
+                  </span>
+                </button>
+              )}
 
               {/* TAB 6: Bảng 6 Web Dùng Chung */}
-              <button
-                type="button"
-                id="tab-btn-shared-accounts"
-                onClick={() => setActiveTab('shared_accounts')}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  activeTab === 'shared_accounts'
-                    ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-500/25'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
-                }`}
-                title="Bảng 6: Tài khoản Web dùng chung (Canva, GPT, Capcut...)"
-              >
-                <Globe className="w-4 h-4 shrink-0" />
-                <span>Bảng 6: Web Dùng Chung</span>
-                <span
-                  className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+              {userAllowedTabs.includes('shared_accounts') && (
+                <button
+                  type="button"
+                  id="tab-btn-shared-accounts"
+                  onClick={() => setActiveTab('shared_accounts')}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
                     activeTab === 'shared_accounts'
-                      ? 'bg-white/25 text-white'
-                      : 'bg-white text-slate-800 border border-slate-200'
+                      ? 'bg-indigo-600 text-white shadow-xs ring-2 ring-indigo-500/25'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
                   }`}
+                  title="Bảng 6: Tài khoản Web dùng chung (Canva, GPT, Capcut...)"
                 >
-                  {currentUser.role === 'admin'
-                    ? sharedAccounts.length
-                    : sharedAccounts.filter(
-                        (a) =>
-                          (a.assignedStaff || []).includes('ALL') ||
-                          (a.assignedStaff || []).some(
-                            (s) => s.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
-                          )
-                      ).length}{' '}
-                  TK
-                </span>
-              </button>
+                  <Globe className="w-4 h-4 shrink-0" />
+                  <span>Bảng 6: Web Dùng Chung</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      activeTab === 'shared_accounts'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-white text-slate-800 border border-slate-200'
+                    }`}
+                  >
+                    {currentUser.role === 'admin'
+                      ? sharedAccounts.length
+                      : sharedAccounts.filter(
+                          (a) =>
+                            (a.assignedStaff || []).includes('ALL') ||
+                            (a.assignedStaff || []).some(
+                              (s) => s.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+                            )
+                        ).length}{' '}
+                    TK
+                  </span>
+                </button>
+              )}
+
+              {/* Huy hiệu phân quyền cho nhân viên */}
+              {currentUser.role === 'staff' && (
+                <div className="hidden lg:flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200/80 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  <span>Đã phân quyền {userAllowedTabs.length}/6 bảng</span>
+                </div>
+              )}
             </div>
 
             {/* Quick Bulk Import Trigger */}
@@ -2398,6 +2467,9 @@ export default function App() {
             onDeleteAccount={handleDeleteAccount}
             onApproveAccount={handleApproveAccount}
             onRejectAccount={handleRejectAccount}
+            onUpdateAccountPermissions={async (accountId, allowedTabs) => {
+              await handleUpdateAccountInfo(accountId, { allowedTabs });
+            }}
             onOpenDeleteStaffModal={handleOpenDeleteStaffModal}
             onSwitchToStaffView={(staffName) => {
               const staffUser = availableUsers.find((u) => u.name.trim().toLowerCase() === staffName.trim().toLowerCase());

@@ -284,6 +284,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       role: 'staff',
       status: 'approved',
       isAuthenticated: true,
+      allowedTabs: account.allowedTabs,
     });
   };
 
@@ -364,6 +365,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           role: 'admin',
           status: 'approved',
           isAuthenticated: true,
+          allowedTabs: ['fanpage', 'group', 'proxy', 'fullvia', 'staff_management', 'shared_accounts'],
         });
         return;
       }
@@ -396,6 +398,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           role: 'staff',
           status: 'approved',
           isAuthenticated: true,
+          allowedTabs: matched.allowedTabs,
         });
         return;
       }
@@ -555,6 +558,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           role: 'staff',
           status: 'approved',
           isAuthenticated: true,
+          allowedTabs: pendingGoogleAuth.account.allowedTabs,
         });
       } else {
         setGoogleError(
@@ -600,6 +604,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       role: 'staff',
       status: 'approved',
       isAuthenticated: true,
+      allowedTabs: acc.allowedTabs,
     });
   };
 
