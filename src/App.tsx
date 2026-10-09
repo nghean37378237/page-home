@@ -2220,15 +2220,10 @@ export default function App() {
                   <span>Import Excel / Hàng Loạt Nick Via</span>
                 </button>
               ) : activeTab === 'fanpage' ? (
-                <button
-                  type="button"
-                  id="btn-trigger-bulk-fanpage"
-                  onClick={() => setIsBulkImportFanpageOpen(true)}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Import Excel Fanpage</span>
-                </button>
+                <div className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 hidden sm:flex items-center space-x-1.5 shadow-2xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Đồng bộ Realtime Firestore</span>
+                </div>
               ) : activeTab === 'staff_management' ? (
                 currentUser.role === 'admin' ? (
                   <button

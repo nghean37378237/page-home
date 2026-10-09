@@ -629,89 +629,52 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
             {activeTab === 'fanpage' ? (
               <>
                 {/* TAB 1 STATS: Tổng số Page */}
-                <span className="inline-flex items-center px-2 py-1 bg-white rounded-lg border border-slate-200 text-slate-700 font-semibold shadow-2xs">
-                  <strong>{totalPages}</strong>&nbsp;Page
+                <span className="inline-flex items-center px-2.5 py-1 bg-white rounded-lg border border-slate-200 text-slate-700 font-bold shadow-2xs">
+                  <span>📄</span>
+                  <span className="ml-1"><strong>{totalPages}</strong> Page</span>
                 </span>
 
-                {/* TAB 1 STATS: Đề Xuất */}
-                <span
-                  className="inline-flex items-center space-x-1 px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg font-bold shadow-2xs"
-                  title="Số Fanpage đang Đề Xuất"
-                >
-                  <span>🚀</span>
-                  <span><strong>{deXuatCount}</strong> ĐX</span>
+                {/* TAB 1 STATS: Tổng Nick Via */}
+                <span className="inline-flex items-center px-2.5 py-1 bg-white rounded-lg border border-slate-200 text-indigo-700 font-bold shadow-2xs">
+                  <span>🔑</span>
+                  <span className="ml-1"><strong>{uniqueVias}</strong> Nick Via</span>
                 </span>
 
-                {/* TAB 1 STATS: Mất Đề Xuất */}
+                {/* TAB 1 STATS: Tiến độ bài đăng hôm nay */}
                 <span
-                  className="inline-flex items-center space-x-1 px-2 py-1 bg-rose-50 text-rose-800 border border-rose-200 rounded-lg font-bold shadow-2xs"
-                  title="Số Fanpage Mất Đề Xuất"
-                >
-                  <span>🔴</span>
-                  <span><strong>{matDeXuatCount}</strong> Mất ĐX</span>
-                </span>
-
-                {/* TAB 1 STATS: Đình Chỉ */}
-                <span
-                  className="inline-flex items-center space-x-1 px-2 py-1 bg-amber-50 text-amber-900 border border-amber-300 rounded-lg font-bold shadow-2xs"
-                  title="Số Fanpage Bị Đình Chỉ"
-                >
-                  <span>⚠️</span>
-                  <span><strong>{dinhChiCount}</strong> Đình Chỉ</span>
-                </span>
-
-                {/* TAB 1 STATS: Bị Back */}
-                <span
-                  className="inline-flex items-center space-x-1 px-2 py-1 bg-purple-50 text-purple-800 border border-purple-200 rounded-lg font-bold shadow-2xs"
-                  title="Số Fanpage Bị Back"
-                >
-                  <span>🟣</span>
-                  <span><strong>{biBackCount}</strong> Back</span>
-                </span>
-
-                {/* TAB 1 STATS: THỐNG KÊ VIA LỖI CỦA FANPAGE (BẤM VÀO ĐỂ LỌC NHANH) */}
-                <button
-                  type="button"
-                  onClick={onFilterErrorVia}
-                  className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border shadow-2xs ${
-                    isFilteringErrorVia
-                      ? 'bg-rose-600 text-white border-rose-700 ring-2 ring-rose-500/30 shadow-xs'
-                      : computedErrorViaCount > 0
-                      ? 'bg-rose-100/90 text-rose-900 border-rose-300 hover:bg-rose-200/90'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                  title={
-                    computedErrorViaCount > 0
-                      ? `Có ${computedErrorViaCount} Nick Via bị lỗi (ảnh hưởng ${pagesImpactedByErrorVia} Page). Bấm để ${
-                          isFilteringErrorVia ? 'xem tất cả' : 'lọc nhanh'
-                        }`
-                      : 'Hiện không có Nick Via nào bị báo lỗi'
-                  }
-                >
-                  <AlertTriangle
-                    className={`w-3.5 h-3.5 ${isFilteringErrorVia ? 'text-white' : 'text-rose-600'}`}
-                  />
-                  <span>VIA LỖI:</span>
-                  <span
-                    className={`px-1.5 py-0.2 rounded-full text-[11px] font-black ${
-                      isFilteringErrorVia
-                        ? 'bg-white text-rose-700'
-                        : computedErrorViaCount > 0
-                        ? 'bg-rose-600 text-white'
-                        : 'bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {computedErrorViaCount}
-                  </span>
-                </button>
-
-                {/* TAB 1 STATS: Bài đăng hôm nay */}
-                <span
-                  className="hidden xl:inline-flex items-center space-x-1 px-2 py-1 bg-blue-50 text-blue-900 border border-blue-200 rounded-lg font-semibold shadow-2xs"
+                  className="hidden sm:inline-flex items-center space-x-1 px-2.5 py-1 bg-blue-50 text-blue-900 border border-blue-200 rounded-lg font-semibold shadow-2xs"
                   title="Tiến độ bài đăng hôm nay"
                 >
-                  <span>📝 <strong>{totalActualPosts}/{totalTargetPosts}</strong></span>
+                  <span>📝 <strong>{totalActualPosts}/{totalTargetPosts}</strong> bài</span>
                 </span>
+
+                {/* TAB 1 STATS: THỐNG KÊ VIA LỖI NẾU CÓ (BẤM VÀO ĐỂ LỌC NHANH) */}
+                {computedErrorViaCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={onFilterErrorVia}
+                    className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border shadow-2xs ${
+                      isFilteringErrorVia
+                        ? 'bg-rose-600 text-white border-rose-700 ring-2 ring-rose-500/30 shadow-xs'
+                        : 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200'
+                    }`}
+                    title={`Có ${computedErrorViaCount} Nick Via bị lỗi (ảnh hưởng ${pagesImpactedByErrorVia} Page). Bấm để ${
+                      isFilteringErrorVia ? 'bỏ lọc' : 'lọc nhanh'
+                    }`}
+                  >
+                    <AlertTriangle
+                      className={`w-3.5 h-3.5 ${isFilteringErrorVia ? 'text-white' : 'text-rose-600'}`}
+                    />
+                    <span>VIA LỖI:</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded-full text-[11px] font-black ${
+                        isFilteringErrorVia ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'
+                      }`}
+                    >
+                      {computedErrorViaCount}
+                    </span>
+                  </button>
+                )}
               </>
             ) : (
               <>
@@ -795,10 +758,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
       {/* ============================================================ */}
       {activeTab === 'fanpage' &&
         !isFanpageAlertDismissed &&
-        (computedErrorViaCount > 0 ||
-          matDeXuatCount > 0 ||
-          dinhChiCount > 0 ||
-          biBackCount > 0) && (
+        computedErrorViaCount > 0 && (
           <div className="bg-rose-50/90 border-t border-b border-rose-200 px-4 py-2 text-xs text-rose-900">
             <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-3">
               <div className="flex items-center space-x-2 flex-wrap">
@@ -806,30 +766,14 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                   <AlertTriangle className="w-3.5 h-3.5" />
                 </span>
                 <span className="font-extrabold uppercase tracking-wide text-rose-800">
-                  Thông báo Bảng Fanpage:
+                  Cảnh báo Nick Via Lỗi:
                 </span>
                 <span>
                   Đang có{' '}
-                  {computedErrorViaCount > 0 && (
-                    <strong className="text-rose-700 font-black">
-                      {computedErrorViaCount} Nick Via bị lỗi (ảnh hưởng {pagesImpactedByErrorVia} Page)&nbsp;•&nbsp;
-                    </strong>
-                  )}
-                  {matDeXuatCount > 0 && (
-                    <strong className="text-rose-700">
-                      {matDeXuatCount} Page Mất Đề Xuất&nbsp;•&nbsp;
-                    </strong>
-                  )}
-                  {dinhChiCount > 0 && (
-                    <strong className="text-amber-800">
-                      {dinhChiCount} Page Đình Chỉ&nbsp;•&nbsp;
-                    </strong>
-                  )}
-                  {biBackCount > 0 && (
-                    <strong className="text-purple-800">
-                      {biBackCount} Page Bị Back
-                    </strong>
-                  )}
+                  <strong className="text-rose-700 font-black">
+                    {computedErrorViaCount} Nick Via bị lỗi (ảnh hưởng {pagesImpactedByErrorVia} Page).
+                  </strong>{' '}
+                  Cần kiểm tra mở lại hoặc thay Via mới để tránh gián đoạn đăng bài!
                 </span>
               </div>
               <div className="flex items-center space-x-2 shrink-0">
@@ -837,7 +781,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                   <button
                     type="button"
                     onClick={onFilterErrorVia}
-                    className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-[11px] transition-colors cursor-pointer"
+                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-[11px] transition-colors cursor-pointer"
                   >
                     {isFilteringErrorVia ? 'Bỏ lọc lỗi' : 'Lọc Nick Via lỗi'}
                   </button>
