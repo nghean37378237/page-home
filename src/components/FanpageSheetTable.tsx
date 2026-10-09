@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   ExternalLink,
   Trash2,
@@ -24,6 +24,16 @@ import {
   Filter,
   ArrowUpDown,
   CheckCheck,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  ChevronDown,
+  ChevronUp,
+  FolderMinus,
+  FolderPlus,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import {
   PageRecord,
@@ -254,6 +264,21 @@ interface FanpageSheetTableProps {
   onFetchPagesForVia?: (viaUid: string, staffName: string) => void;
 }
 
+export type SheetRowItem =
+  | {
+      isCollapsedStaff: false;
+      record: PageRecord;
+    }
+  | {
+      isCollapsedStaff: true;
+      staffName: string;
+      totalRecords: number;
+      totalVias: number;
+      deXuatCount: number;
+      matDeXuatCount: number;
+      errorViaCount: number;
+    };
+
 export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   records,
   currentUser,
@@ -293,78 +318,188 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   // Lọc nhanh theo loại Via: 'all' | 'multi' (chỉ via cầm chung) | 'single' (via 1 page) | 'unassigned' (chưa gán via)
   const [filterViaType, setFilterViaType] = useState<'all' | 'multi' | 'single' | 'unassigned'>('all');
 
-  // Group records so all rows of the same Staff stay contiguous,
-  // and within each Staff, all rows of the same Via stay contiguous
-  const displayRecords = useMemo(() => {
-    const staffMap = new Map<string, PageRecord[]>();
+  // Lọc nhanh theo nhân viên (Staff Scope Pill)
+  const [selectedStaff, setSelectedStaff] = useState<string>('all');
+
+  // Danh sách nhân viên bị thu gọn (Collapsible Staff)
+  const [collapsedStaffSet, setCollapsedStaffSet] = useState<Set<string>>(new Set());
+
+  // Phân trang khoa học (Smart Pagination): Mặc định 15 dòng ngắn gọn, không chiếm quá nhiều màn hình
+  const [pageSize, setPageSize] = useState<number | 'all'>(15);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+
+  // Chiều cao khung nhìn: 'compact' (max-h-[440px]) | 'medium' (max-h-[620px]) | 'full' (max-h-none)
+  const [viewportHeight, setViewportHeight] = useState<'compact' | 'medium' | 'full'>('compact');
+
+  // Mật độ dòng: 'compact' (siêu gọn, py-0.5, font 11px) | 'normal' (chuẩn)
+  const [densityMode, setDensityMode] = useState<'compact' | 'normal'>('compact');
+
+  // Danh sách nhân viên riêng biệt và số lượng page của họ
+  const distinctStaff = useMemo(() => {
+    const map = new Map<string, number>();
     records.forEach((r) => {
+      const s = r.staffName?.trim();
+      if (s) map.set(s, (map.get(s) || 0) + 1);
+    });
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  }, [records]);
+
+  const toggleStaffCollapse = (staffName: string) => {
+    setCollapsedStaffSet((prev) => {
+      const next = new Set(prev);
+      const key = staffName.trim().toLowerCase();
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const collapseAllStaff = () => {
+    const all = new Set<string>();
+    distinctStaff.forEach((st) => all.add(st.name.trim().toLowerCase()));
+    setCollapsedStaffSet(all);
+  };
+
+  const expandAllStaff = () => {
+    setCollapsedStaffSet(new Set());
+  };
+
+  // Group records so all rows of the same Staff stay contiguous,
+  // and within each Staff, all rows of the same Via stay contiguous.
+  // Supports collapsible staff accordion.
+  const { displayItems, totalRecordCount } = useMemo(() => {
+    const baseRecs = selectedStaff === 'all'
+      ? records
+      : records.filter((r) => r.staffName.trim().toLowerCase() === selectedStaff.trim().toLowerCase());
+
+    const staffMap = new Map<string, PageRecord[]>();
+    baseRecs.forEach((r) => {
       const s = r.staffName.trim();
       if (!staffMap.has(s)) staffMap.set(s, []);
       staffMap.get(s)!.push(r);
     });
 
-    const grouped: PageRecord[] = [];
-    staffMap.forEach((staffRecs) => {
-      const viaMap = new Map<string, PageRecord[]>();
-      const noViaRecs: PageRecord[] = [];
+    const items: SheetRowItem[] = [];
+    let countTotal = 0;
 
-      staffRecs.forEach((r) => {
-        const v = r.viaUid.trim();
-        if (!v) {
-          noViaRecs.push(r);
-        } else {
-          if (!viaMap.has(v)) viaMap.set(v, []);
-          viaMap.get(v)!.push(r);
-        }
-      });
+    staffMap.forEach((staffRecs, staffName) => {
+      const isStaffCollapsed = collapsedStaffSet.has(staffName.toLowerCase());
 
-      if (sortMode === 'multi-first') {
-        // Multi-page vias first (count > 1)
-        const multiVias: PageRecord[][] = [];
-        const singleVias: PageRecord[][] = [];
+      if (isStaffCollapsed) {
+        const vias = new Set(staffRecs.map((r) => r.viaUid.trim()).filter(Boolean));
+        const deXuat = staffRecs.filter((r) => r.status === 'Đề Xuất').length;
+        const matDeXuat = staffRecs.filter((r) => r.status === 'Mất Đề Xuất').length;
+        const errVias = new Set(
+          staffRecs
+            .filter(
+              (r) =>
+                r.isViaError ||
+                r.viaStatus === 'checkpoint' ||
+                r.viaStatus === 'dead' ||
+                r.viaStatus === 'error' ||
+                (errorViaUids && r.viaUid && errorViaUids.has(r.viaUid.trim().toLowerCase()))
+            )
+            .map((r) => r.viaUid.trim().toLowerCase())
+            .filter(Boolean)
+        );
 
-        viaMap.forEach((vRecs) => {
-          if (vRecs.length > 1) {
-            multiVias.push(vRecs);
+        items.push({
+          isCollapsedStaff: true,
+          staffName,
+          totalRecords: staffRecs.length,
+          totalVias: vias.size,
+          deXuatCount: deXuat,
+          matDeXuatCount: matDeXuat,
+          errorViaCount: errVias.size,
+        });
+      } else {
+        const viaMap = new Map<string, PageRecord[]>();
+        const noViaRecs: PageRecord[] = [];
+
+        staffRecs.forEach((r) => {
+          const v = r.viaUid.trim();
+          if (!v) {
+            noViaRecs.push(r);
           } else {
-            singleVias.push(vRecs);
+            if (!viaMap.has(v)) viaMap.set(v, []);
+            viaMap.get(v)!.push(r);
           }
         });
 
-        // Sắp xếp các Via cầm nhiều page nhất lên trước
-        multiVias.sort((a, b) => b.length - a.length);
+        const staffOrderedRecs: PageRecord[] = [];
+        if (sortMode === 'multi-first') {
+          const multiVias: PageRecord[][] = [];
+          const singleVias: PageRecord[][] = [];
 
-        multiVias.forEach((vRecs) => grouped.push(...vRecs));
-        singleVias.forEach((vRecs) => grouped.push(...vRecs));
-        grouped.push(...noViaRecs);
-      } else {
-        // Thứ tự gốc nhưng vẫn gom các page cùng via liền kề
-        viaMap.forEach((vRecs) => {
-          grouped.push(...vRecs);
+          viaMap.forEach((vRecs) => {
+            if (vRecs.length > 1) {
+              multiVias.push(vRecs);
+            } else {
+              singleVias.push(vRecs);
+            }
+          });
+
+          multiVias.sort((a, b) => b.length - a.length);
+          multiVias.forEach((vRecs) => staffOrderedRecs.push(...vRecs));
+          singleVias.forEach((vRecs) => staffOrderedRecs.push(...vRecs));
+          staffOrderedRecs.push(...noViaRecs);
+        } else {
+          viaMap.forEach((vRecs) => staffOrderedRecs.push(...vRecs));
+          staffOrderedRecs.push(...noViaRecs);
+        }
+
+        const viaCountMap = new Map<string, number>();
+        records.forEach((r) => {
+          const v = r.viaUid.trim();
+          if (v) viaCountMap.set(v, (viaCountMap.get(v) || 0) + 1);
         });
-        grouped.push(...noViaRecs);
+
+        const filteredStaffRecs = staffOrderedRecs.filter((r) => {
+          if (filterViaType === 'all') return true;
+          const v = r.viaUid.trim();
+          if (filterViaType === 'unassigned') return !v;
+          if (!v) return false;
+          const cnt = viaCountMap.get(v) || 0;
+          if (filterViaType === 'multi') return cnt > 1;
+          if (filterViaType === 'single') return cnt === 1;
+          return true;
+        });
+
+        filteredStaffRecs.forEach((r) => {
+          items.push({ isCollapsedStaff: false, record: r });
+          countTotal++;
+        });
       }
     });
 
-    // Lọc theo loại Via nếu người dùng chọn bộ lọc nhanh
-    if (filterViaType === 'all') return grouped;
+    return { displayItems: items, totalRecordCount: countTotal };
+  }, [records, selectedStaff, collapsedStaffSet, sortMode, filterViaType, errorViaUids]);
 
-    const viaCountMap = new Map<string, number>();
-    records.forEach((r) => {
-      const v = r.viaUid.trim();
-      if (v) viaCountMap.set(v, (viaCountMap.get(v) || 0) + 1);
-    });
+  // Phân trang
+  const totalItems = displayItems.length;
+  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalItems / (pageSize as number)));
 
-    return grouped.filter((r) => {
-      const v = r.viaUid.trim();
-      if (filterViaType === 'unassigned') return !v;
-      if (!v) return false;
-      const count = viaCountMap.get(v) || 0;
-      if (filterViaType === 'multi') return count > 1;
-      if (filterViaType === 'single') return count === 1;
-      return true;
-    });
-  }, [records, sortMode, filterViaType]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterViaType, sortMode, selectedStaff, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) {
+      setCurrentPage(totalPages);
+    }
+  }, [totalPages, currentPage]);
+
+  const startIndex = pageSize === 'all' ? 0 : (currentPage - 1) * (pageSize as number);
+  const endIndex = pageSize === 'all' ? totalItems : Math.min(startIndex + (pageSize as number), totalItems);
+
+  const paginatedItems = useMemo(() => {
+    return displayItems.slice(startIndex, endIndex);
+  }, [displayItems, startIndex, endIndex]);
 
   // Map to synchronize shared note for all pages under the same Via
   const viaSharedNotesMap = useMemo(() => {
@@ -378,16 +513,59 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     return map;
   }, [records]);
 
-  // Compute rowSpan for Staff name (written ONCE per employee)
+  // Global theme map for Via to ensure consistent colors across pages and filters
+  const globalViaThemeMap = useMemo(() => {
+    const map = new Map<string, number>();
+    let multiCounter = 0;
+    let allCounter = 0;
+
+    const viaCountMap = new Map<string, number>();
+    records.forEach((r) => {
+      const v = r.viaUid.trim();
+      if (v) viaCountMap.set(v, (viaCountMap.get(v) || 0) + 1);
+    });
+
+    records.forEach((r) => {
+      const v = r.viaUid.trim();
+      if (!v) return;
+      if (!map.has(v)) {
+        const count = viaCountMap.get(v) || 0;
+        if (colorMode === 'multi-only') {
+          if (count > 1) {
+            map.set(v, multiCounter % VIA_THEMES.length);
+            multiCounter++;
+          } else {
+            map.set(v, -1);
+          }
+        } else if (colorMode === 'all-vias') {
+          map.set(v, allCounter % VIA_THEMES.length);
+          allCounter++;
+        } else {
+          map.set(v, -1);
+        }
+      }
+    });
+    return map;
+  }, [records, colorMode]);
+
+  // Compute rowSpan for Staff name on the current visible page
   const staffSpans = useMemo(() => {
     const spans: { rowSpan: number; isFirst: boolean; totalInGroup: number }[] = [];
     let i = 0;
-    while (i < displayRecords.length) {
-      const currentStaff = displayRecords[i].staffName.trim().toLowerCase();
+    while (i < paginatedItems.length) {
+      const item = paginatedItems[i];
+      if (item.isCollapsedStaff) {
+        spans.push({ rowSpan: 1, isFirst: true, totalInGroup: 1 });
+        i++;
+        continue;
+      }
+      const recordItem = item as { isCollapsedStaff: false; record: PageRecord };
+      const currentStaff = recordItem.record.staffName.trim().toLowerCase();
       let count = 1;
       while (
-        i + count < displayRecords.length &&
-        displayRecords[i + count].staffName.trim().toLowerCase() === currentStaff
+        i + count < paginatedItems.length &&
+        !paginatedItems[i + count].isCollapsedStaff &&
+        (paginatedItems[i + count] as { isCollapsedStaff: false; record: PageRecord }).record.staffName.trim().toLowerCase() === currentStaff
       ) {
         count++;
       }
@@ -398,9 +576,9 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
       i += count;
     }
     return spans;
-  }, [displayRecords]);
+  }, [paginatedItems]);
 
-  // Compute rowSpan and theme index for each distinct Via
+  // Compute rowSpan and theme index for each distinct Via on current visible page
   const { viaSpans, rowViaThemeIndices } = useMemo(() => {
     const spans: {
       rowSpan: number;
@@ -414,52 +592,58 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     }[] = [];
     const themeIndices: number[] = [];
     let i = 0;
-    let multiGroupCounter = 0;
-    let allGroupCounter = 0;
 
-    while (i < displayRecords.length) {
-      const currentVia = displayRecords[i].viaUid.trim();
-      const currentStaff = displayRecords[i].staffName.trim().toLowerCase();
+    const viaCountMap = new Map<string, number>();
+    records.forEach((r) => {
+      const v = r.viaUid.trim();
+      if (v) viaCountMap.set(v, (viaCountMap.get(v) || 0) + 1);
+    });
+
+    while (i < paginatedItems.length) {
+      const item = paginatedItems[i];
+      if (item.isCollapsedStaff) {
+        spans.push({
+          rowSpan: 1,
+          isFirst: true,
+          isLast: true,
+          totalInGroup: 1,
+          indexInGroup: 0,
+          groupIndex: -1,
+          isMultiPage: false,
+          hasVia: false,
+        });
+        themeIndices.push(-1);
+        i++;
+        continue;
+      }
+
+      const recordItem = item as { isCollapsedStaff: false; record: PageRecord };
+      const currentVia = recordItem.record.viaUid.trim();
+      const currentStaff = recordItem.record.staffName.trim().toLowerCase();
 
       let count = 1;
       if (currentVia) {
         while (
-          i + count < displayRecords.length &&
-          displayRecords[i + count].viaUid.trim() === currentVia &&
-          displayRecords[i + count].staffName.trim().toLowerCase() === currentStaff
+          i + count < paginatedItems.length &&
+          !paginatedItems[i + count].isCollapsedStaff &&
+          (paginatedItems[i + count] as { isCollapsedStaff: false; record: PageRecord }).record.viaUid.trim() === currentVia &&
+          (paginatedItems[i + count] as { isCollapsedStaff: false; record: PageRecord }).record.staffName.trim().toLowerCase() === currentStaff
         ) {
           count++;
         }
       }
 
-      const isMultiPage = count > 1 && Boolean(currentVia);
+      const totalInAll = currentVia ? (viaCountMap.get(currentVia) || 1) : 1;
+      const isMultiPage = totalInAll > 1 && Boolean(currentVia);
       const hasVia = Boolean(currentVia);
-
-      let themeIdx = -1;
-      if (colorMode === 'multi-only') {
-        if (isMultiPage) {
-          themeIdx = multiGroupCounter % VIA_THEMES.length;
-          multiGroupCounter++;
-        } else {
-          themeIdx = -1; // Màu trắng sạch sẽ cho via 1 page
-        }
-      } else if (colorMode === 'all-vias') {
-        if (hasVia) {
-          themeIdx = allGroupCounter % VIA_THEMES.length;
-          allGroupCounter++;
-        } else {
-          themeIdx = -1;
-        }
-      } else {
-        themeIdx = -1; // Đơn sắc
-      }
+      const themeIdx = currentVia ? (globalViaThemeMap.get(currentVia) ?? -1) : -1;
 
       for (let j = 0; j < count; j++) {
         spans.push({
           rowSpan: j === 0 ? count : 0,
           isFirst: j === 0,
           isLast: j === count - 1,
-          totalInGroup: count,
+          totalInGroup: totalInAll,
           indexInGroup: j,
           groupIndex: themeIdx,
           isMultiPage,
@@ -471,7 +655,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
       i += count;
     }
     return { viaSpans: spans, rowViaThemeIndices: themeIndices };
-  }, [displayRecords, colorMode]);
+  }, [paginatedItems, records, globalViaThemeMap]);
 
   // Statistics about Vias
   const viaStats = useMemo(() => {
@@ -572,23 +756,23 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
   return (
     <div className="max-w-[1700px] mx-auto px-4 sm:px-6 py-3">
-      {/* Top Spreadsheet Bar with View Options, Filters, and Via Statistics */}
+      {/* Top Spreadsheet Bar with View Options, Filters, Pagination and Via Statistics */}
       <div className="flex flex-col gap-2 mb-2 px-1">
-        {/* Row 1: Quick stats and filtering by Via type */}
+        {/* Row 1: Quick stats, Via type filters, and Staff Scope pills */}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center flex-wrap gap-1.5">
-            <span className="font-bold text-slate-800 inline-flex items-center space-x-1.5 mr-1">
+            <span className="font-bold text-slate-800 inline-flex items-center space-x-1.5 mr-1 bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200">
               <Layers className="w-4 h-4 text-emerald-700" />
-              <span>{displayRecords.length} Fanpage</span>
+              <span>{totalRecordCount} Fanpage</span>
               <span className="text-slate-300">•</span>
               <span className="text-indigo-700 font-extrabold">{viaStats.totalVias} Nick Via</span>
             </span>
 
-            {/* Filter Pills */}
+            {/* Filter Pills by Via Type */}
             <button
               type="button"
               onClick={() => setFilterViaType('all')}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
                 filterViaType === 'all'
                   ? 'bg-slate-800 text-white border-slate-900 shadow-2xs'
                   : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
@@ -600,7 +784,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             <button
               type="button"
               onClick={() => setFilterViaType(filterViaType === 'multi' ? 'all' : 'multi')}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all inline-flex items-center space-x-1 cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all inline-flex items-center space-x-1 cursor-pointer ${
                 filterViaType === 'multi'
                   ? 'bg-indigo-700 text-white border-indigo-800 ring-2 ring-indigo-400 shadow-2xs'
                   : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
@@ -608,13 +792,13 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               title="Bấm để lọc: Chỉ hiển thị các Nick Via đang cầm từ 2 Fanpage trở lên"
             >
               <Sparkles className="w-3 h-3 text-indigo-400" />
-              <span>🔗 Via Cầm Chung ({viaStats.multiPageVias} via • {viaStats.multiPagePages} page)</span>
+              <span>🔗 Via Cầm Chung ({viaStats.multiPageVias})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setFilterViaType(filterViaType === 'single' ? 'all' : 'single')}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-bold border transition-all inline-flex items-center space-x-1 cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all inline-flex items-center space-x-1 cursor-pointer ${
                 filterViaType === 'single'
                   ? 'bg-slate-700 text-white border-slate-800 shadow-2xs'
                   : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
@@ -629,7 +813,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               <button
                 type="button"
                 onClick={() => setFilterViaType(filterViaType === 'unassigned' ? 'all' : 'unassigned')}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium border border-dashed transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border border-dashed transition-all cursor-pointer ${
                   filterViaType === 'unassigned'
                     ? 'bg-amber-700 text-white border-amber-800 shadow-2xs'
                     : 'bg-amber-50/70 hover:bg-amber-100 text-amber-800 border-amber-300'
@@ -639,28 +823,214 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 Chưa có Via ({viaStats.unassignedPages})
               </button>
             )}
+
+            {/* Quick Staff Scope Pills */}
+            {distinctStaff.length > 1 && (
+              <div className="flex items-center flex-wrap gap-1 pl-1.5 border-l border-slate-300">
+                <span className="text-[11px] text-slate-500 font-bold">NV:</span>
+                <button
+                  type="button"
+                  onClick={() => setSelectedStaff('all')}
+                  className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                    selectedStaff === 'all'
+                      ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                      : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                  }`}
+                  title="Hiển thị Fanpage của tất cả nhân viên"
+                >
+                  Tất cả NV
+                </button>
+                {distinctStaff.map((st) => (
+                  <button
+                    key={st.name}
+                    type="button"
+                    onClick={() => setSelectedStaff(selectedStaff === st.name ? 'all' : st.name)}
+                    className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                      selectedStaff === st.name
+                        ? 'bg-emerald-800 text-white border-emerald-900 ring-1 ring-emerald-500 shadow-2xs'
+                        : 'bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 border-emerald-200'
+                    }`}
+                    title={`Chỉ hiển thị Fanpage của nhân viên ${st.name} (${st.count} page)`}
+                  >
+                    👤 {st.name} ({st.count})
+                  </button>
+                ))}
+
+                {/* Collapse / Expand all staff buttons */}
+                <button
+                  type="button"
+                  onClick={collapsedStaffSet.size > 0 ? expandAllStaff : collapseAllStaff}
+                  className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 cursor-pointer shadow-2xs"
+                  title="Thu gọn hoặc mở rộng toàn bộ danh sách nhân viên để bảng cực ngắn gọn"
+                >
+                  {collapsedStaffSet.size > 0 ? (
+                    <>
+                      <FolderPlus className="w-3 h-3 text-emerald-600" />
+                      <span>Mở tất cả NV</span>
+                    </>
+                  ) : (
+                    <>
+                      <FolderMinus className="w-3 h-3 text-slate-500" />
+                      <span>Thu gọn tất cả NV</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* Quick info indicator */}
           <div className="flex items-center space-x-2 text-[11px] text-slate-500">
-            <span className="hidden md:inline-flex items-center space-x-1 bg-slate-100 px-2.5 py-0.5 rounded-full border border-slate-200">
+            <span className="hidden xl:inline-flex items-center space-x-1 bg-slate-100 px-2.5 py-0.5 rounded-lg border border-slate-200">
               <Palette className="w-3 h-3 text-slate-500" />
               <span>
                 {colorMode === 'multi-only'
-                  ? 'Khối màu phân biệt Via cầm chung page (Khoa học)'
+                  ? 'Khối màu Via cầm chung (Khoa học)'
                   : colorMode === 'all-vias'
-                  ? 'Tô màu tất cả các Via'
-                  : 'Chế độ đơn sắc'}
+                  ? 'Tô màu tất cả Via'
+                  : 'Đơn sắc'}
               </span>
             </span>
           </div>
         </div>
 
-        {/* Row 2: Sort Controls, Color Mode & Action Buttons */}
-        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1 border-t border-slate-200/80">
-          <div className="flex items-center flex-wrap gap-1.5">
+        {/* Row 2: Smart Pagination, Viewport Height, Density, Sort, and Tools */}
+        <div className="flex flex-wrap items-center justify-between gap-2 text-xs pt-1.5 border-t border-slate-200">
+          <div className="flex items-center flex-wrap gap-2">
+            {/* Phân trang thông minh */}
+            <div className="inline-flex items-center space-x-1 bg-white px-2 py-1 rounded-lg border border-slate-300 shadow-2xs">
+              <span className="text-[11px] text-slate-600 font-bold">Số hàng:</span>
+              {([10, 15, 25, 50, 'all'] as const).map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => setPageSize(sz)}
+                  className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                    pageSize === sz
+                      ? 'bg-[#2e7d32] text-white shadow-2xs'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                  title={sz === 'all' ? 'Hiển thị tất cả dòng' : `Hiển thị ${sz} dòng mỗi trang`}
+                >
+                  {sz === 'all' ? 'Tất cả' : sz}
+                </button>
+              ))}
+
+              {pageSize !== 'all' && totalPages > 1 && (
+                <div className="flex items-center space-x-1 pl-1.5 border-l border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(1)}
+                    disabled={currentPage === 1}
+                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Trang đầu"
+                  >
+                    <ChevronsLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={currentPage === 1}
+                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Trang trước"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="text-[11px] font-extrabold text-slate-800 px-1.5 py-0.2 bg-slate-100 rounded border border-slate-300 select-none">
+                    {currentPage} / {totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={currentPage === totalPages}
+                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Trang sau"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCurrentPage(totalPages)}
+                    disabled={currentPage === totalPages}
+                    className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                    title="Trang cuối"
+                  >
+                    <ChevronsRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Khung nhìn màn hình (Viewport Height) */}
+            <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs items-center">
+              <span className="text-[10px] text-slate-400 font-bold px-1.5">↕ Khung:</span>
+              <button
+                type="button"
+                onClick={() => setViewportHeight('compact')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  viewportHeight === 'compact'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Khung nhìn gọn gàng 440px - Vừa vặn màn hình laptop, không bị kéo dài"
+              >
+                Gọn (440px)
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewportHeight('medium')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  viewportHeight === 'medium'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Khung nhìn vừa 620px"
+              >
+                Vừa (620px)
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewportHeight('full')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  viewportHeight === 'full'
+                    ? 'bg-emerald-700 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Khung nhìn tự do (toàn màn hình)"
+              >
+                Tự do
+              </button>
+            </div>
+
+            {/* Mật độ dòng (Density Mode) */}
+            <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs items-center">
+              <button
+                type="button"
+                onClick={() => setDensityMode('compact')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  densityMode === 'compact'
+                    ? 'bg-slate-800 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Mật độ siêu gọn: giảm khoảng trống, chiều cao dòng nhỏ tối đa"
+              >
+                ⚡ Siêu gọn
+              </button>
+              <button
+                type="button"
+                onClick={() => setDensityMode('normal')}
+                className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                  densityMode === 'normal'
+                    ? 'bg-slate-800 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title="Mật độ chuẩn Google Sheet"
+              >
+                Chuẩn
+              </button>
+            </div>
+
             {/* Sắp xếp khoa học */}
-            <span className="text-slate-500 font-bold text-[11px]">Sắp xếp:</span>
             <button
               type="button"
               onClick={() => setSortMode(sortMode === 'multi-first' ? 'natural' : 'multi-first')}
@@ -673,12 +1043,11 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             >
               <ArrowUpDown className="w-3 h-3 text-emerald-600" />
               <span>
-                {sortMode === 'multi-first' ? '🔗 Via chung lên đầu (Đang bật)' : 'Thứ tự gốc'}
+                {sortMode === 'multi-first' ? '🔗 Via chung lên đầu' : 'Thứ tự gốc'}
               </span>
             </button>
 
             {/* Chế độ màu nền */}
-            <span className="text-slate-500 font-bold text-[11px] ml-1">Màu nền:</span>
             <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs">
               <button
                 type="button"
@@ -690,7 +1059,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 }`}
                 title="Khối màu khoa học: Chỉ tô màu pastel cho Via cầm chung 2+ page để nhận diện ngay, Via 1 page giữ màu trắng sạch sẽ"
               >
-                ✨ Via Chung Page
+                ✨ Via Chung
               </button>
               <button
                 type="button"
@@ -702,7 +1071,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 }`}
                 title="Tô màu tất cả các Via riêng biệt"
               >
-                🎨 Tất Cả Via
+                🎨 Tất Cả
               </button>
               <button
                 type="button"
@@ -752,7 +1121,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               ) : (
                 <>
                   <Copy className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>📋 Copy Tất Cả UID ({viaStats.totalVias})</span>
+                  <span>📋 Copy UID ({viaStats.totalVias})</span>
                 </>
               )}
             </button>
@@ -772,7 +1141,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               {mergeViaCells ? (
                 <>
                   <ToggleRight className="w-4 h-4 text-emerald-200" />
-                  <span>Gộp ô theo Via</span>
+                  <span>Gộp ô</span>
                   <span className="text-[10px] bg-emerald-900/60 text-emerald-100 px-1 py-0.2 rounded-full font-extrabold">
                     Bật
                   </span>
@@ -780,7 +1149,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               ) : (
                 <>
                   <ToggleLeft className="w-4 h-4 text-slate-400" />
-                  <span>Tách ô riêng lẻ</span>
+                  <span>Tách ô</span>
                   <span className="text-[10px] bg-slate-200 text-slate-700 px-1 py-0.2 rounded-full font-extrabold">
                     Tắt
                   </span>
@@ -793,11 +1162,19 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
       {/* Spreadsheet Container */}
       <div className="bg-white border-2 border-[#2e7d32] rounded-lg shadow-sm overflow-hidden">
-        <div className="overflow-x-auto max-h-[750px] overflow-y-auto">
+        <div
+          className={`overflow-x-auto overflow-y-auto ${
+            viewportHeight === 'compact'
+              ? 'max-h-[440px]'
+              : viewportHeight === 'medium'
+              ? 'max-h-[620px]'
+              : 'max-h-none'
+          }`}
+        >
           <table className="w-full border-collapse text-left text-xs font-sans">
             {/* Sheet row labels (A, B, C, D, E, F, G, H, I, J, K) */}
             <thead className="sticky top-0 z-20 shadow-xs">
-              <tr className="bg-[#f3f4f6] text-slate-500 text-[10px] font-mono border-b border-slate-300 h-6">
+              <tr className="bg-[#f3f4f6] text-slate-500 text-[10px] font-mono border-b border-slate-300 h-5">
                 <th className="w-8 min-w-[34px] max-w-[36px] px-1 py-0.5 text-center border-r border-slate-300 font-normal">#</th>
                 <th className="w-20 min-w-[80px] max-w-[90px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">B</th>
                 <th className="w-56 min-w-[210px] max-w-[240px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">C</th>
@@ -815,18 +1192,18 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-16 min-w-[65px] max-w-[75px] px-0.5 py-0.5 text-center font-normal">Thao Tác</th>
               </tr>
 
-              {/* Exact Green Headers from Google Sheet - Compact Excel style */}
-              <tr className="bg-[#38761d] text-white text-[11px] uppercase tracking-wider font-bold select-none border-b-2 border-slate-400 h-8">
-                <th className="w-8 min-w-[34px] max-w-[36px] px-1 py-1 text-center border-r border-emerald-800/80">STT</th>
-                <th className="w-20 min-w-[80px] max-w-[90px] px-1 py-1 border-r border-emerald-800/80 text-center">
-                  <div className="flex flex-col items-center">
+              {/* Green Headers from Google Sheet */}
+              <tr className="bg-[#38761d] text-white text-[11px] uppercase tracking-wider font-bold select-none border-b-2 border-slate-400 h-7">
+                <th className="w-8 min-w-[34px] max-w-[36px] px-1 py-0.5 text-center border-r border-emerald-800/80">STT</th>
+                <th className="w-20 min-w-[80px] max-w-[90px] px-1 py-0.5 border-r border-emerald-800/80 text-center">
+                  <div className="flex flex-col items-center leading-tight">
                     <span>TÊN NV</span>
-                    <span className="text-[9px] font-normal opacity-85 lowercase">
+                    <span className="text-[8px] font-normal opacity-85 lowercase">
                       {mergeViaCells ? '(gộp ô)' : '(tách ô)'}
                     </span>
                   </div>
                 </th>
-                <th className="w-56 min-w-[210px] max-w-[240px] px-1.5 py-1 border-r border-emerald-800/80 text-left">
+                <th className="w-56 min-w-[210px] max-w-[240px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold tracking-tight">VIA (UID) & GHI CHÚ CHUNG</span>
                     <button
@@ -845,59 +1222,115 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   </div>
                 </th>
 
-                <th className="w-36 min-w-[125px] max-w-[145px] px-1.5 py-1 border-r border-emerald-800/80 text-left">
+                <th className="w-36 min-w-[125px] max-w-[145px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left">
                   TÊN PAGE
                 </th>
-                <th className="w-24 min-w-[95px] max-w-[110px] px-1.5 py-1 border-r border-emerald-800/80 text-left">
+                <th className="w-24 min-w-[95px] max-w-[110px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left">
                   LINK PAGE
                 </th>
-                <th className="w-22 min-w-[85px] max-w-[95px] px-1 py-1 border-r border-emerald-800/80 text-center">
+                <th className="w-22 min-w-[85px] max-w-[95px] px-1 py-0.5 border-r border-emerald-800/80 text-center">
                   <span>Trạng Thái</span>
                 </th>
-                <th className="w-12 min-w-[50px] max-w-[55px] px-0.5 py-1 border-r border-emerald-800/80 text-center">
+                <th className="w-12 min-w-[50px] max-w-[55px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center">
                   Ngày
                 </th>
-                <th className="w-22 min-w-[82px] max-w-[92px] px-1 py-1 border-r border-emerald-800/80 text-center">
+                <th className="w-22 min-w-[82px] max-w-[92px] px-1 py-0.5 border-r border-emerald-800/80 text-center">
                   CHẶN
                 </th>
-                <th className="w-24 min-w-[88px] max-w-[98px] px-1 py-1 border-r border-emerald-800/80 text-center" title="Đếm Like: Có 2 trạng thái 'Đếm Like' (mặc định) và 'Bỏ Đếm Like'">
+                <th className="w-24 min-w-[88px] max-w-[98px] px-1 py-0.5 border-r border-emerald-800/80 text-center" title="Đếm Like: Có 2 trạng thái 'Đếm Like' (mặc định) và 'Bỏ Đếm Like'">
                   ĐẾM LIKE
                 </th>
-                <th className="w-26 min-w-[96px] max-w-[110px] px-1 py-1 border-r border-emerald-800/80 text-center" title="Phương thức đăng: Đăng Tay / Tool / Hẹn Giờ. Khi chọn Đăng Tay sẽ tự động ghi nhận và hiển thị ngày chọn">
-                  <div className="flex flex-col items-center">
+                <th className="w-26 min-w-[96px] max-w-[110px] px-1 py-0.5 border-r border-emerald-800/80 text-center" title="Phương thức đăng: Đăng Tay / Tool / Hẹn Giờ. Khi chọn Đăng Tay sẽ tự động ghi nhận và hiển thị ngày chọn">
+                  <div className="flex flex-col items-center leading-tight">
                     <span>ĐĂNG BÀI</span>
                     <span className="text-[8px] font-normal opacity-85 lowercase">(tay / tool)</span>
                   </div>
                 </th>
-                <th className="w-18 min-w-[70px] max-w-[80px] px-1 py-1 border-r border-emerald-800/80 text-center">
+                <th className="w-18 min-w-[70px] max-w-[80px] px-1 py-0.5 border-r border-emerald-800/80 text-center">
                   TƯƠNG TÁC
                 </th>
-                <th className="w-12 min-w-[52px] max-w-[58px] px-0.5 py-1 border-r border-emerald-800/80 text-center" title="Ngày nhảy tự động theo ngày hiện tại khi chọn trạng thái cột tương tác">
-                  <div className="flex flex-col items-center">
+                <th className="w-12 min-w-[52px] max-w-[58px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center" title="Ngày nhảy tự động theo ngày hiện tại khi chọn trạng thái cột tương tác">
+                  <div className="flex flex-col items-center leading-tight">
                     <span>NGÀY TT</span>
                     <span className="text-[8px] font-normal opacity-85 lowercase">(tự nhảy)</span>
                   </div>
                 </th>
-                <th className="w-24 min-w-[90px] max-w-[105px] px-1.5 py-1 border-r border-emerald-800/80 text-left">
+                <th className="w-24 min-w-[90px] max-w-[105px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left">
                   GHI CHÚ BM
                 </th>
-                <th className="w-28 min-w-[105px] max-w-[115px] px-1 py-1 border-r border-emerald-800/80 text-center bg-[#255e11]">
+                <th className="w-28 min-w-[105px] max-w-[115px] px-1 py-0.5 border-r border-emerald-800/80 text-center bg-[#255e11]">
                   TIẾN ĐỘ
                 </th>
-                <th className="w-16 min-w-[65px] max-w-[75px] px-0.5 py-1 text-center">Thao Tác</th>
+                <th className="w-16 min-w-[65px] max-w-[75px] px-0.5 py-0.5 text-center">Thao Tác</th>
               </tr>
             </thead>
 
             {/* Table Body */}
             <tbody className="divide-y divide-slate-300 text-slate-800">
-              {displayRecords.length === 0 ? (
+              {paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="py-12 text-center text-slate-400 bg-white">
-                    Không tìm thấy dòng nào phù hợp. Hãy tạo thêm Page mới hoặc đặt lại bộ lọc.
+                  <td colSpan={16} className="py-8 text-center text-slate-400 bg-white">
+                    Không tìm thấy dòng nào phù hợp. Hãy đặt lại bộ lọc hoặc tạo thêm Page mới.
                   </td>
                 </tr>
               ) : (
-                displayRecords.map((record, index) => {
+                paginatedItems.map((item, index) => {
+                  if (item.isCollapsedStaff) {
+                    return (
+                      <tr
+                        key={`collapsed-staff-${item.staffName}`}
+                        className="bg-emerald-50/90 hover:bg-emerald-100 border-y-2 border-emerald-400 font-sans transition-colors"
+                      >
+                        <td className="px-1 py-1 text-center border-r border-emerald-300 font-mono text-emerald-800 text-[10px] bg-emerald-100/50 select-none">
+                          {startIndex + index + 1}
+                        </td>
+                        <td colSpan={15} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleStaffCollapse(item.staffName)}
+                                className="px-2 py-0.5 rounded-md bg-white hover:bg-emerald-200 border border-emerald-300 text-emerald-900 font-bold inline-flex items-center space-x-1 text-[11px] cursor-pointer shadow-2xs"
+                                title={`Bấm để mở rộng toàn bộ ${item.totalRecords} Fanpage của nhân viên ${item.staffName}`}
+                              >
+                                <ChevronRight className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>Mở rộng</span>
+                              </button>
+                              <span className="text-xs font-black text-emerald-900 flex items-center space-x-1">
+                                <User className="w-3.5 h-3.5 text-emerald-700" />
+                                <span>NV: {item.staffName}</span>
+                              </span>
+                              <span className="text-[10px] bg-white text-emerald-800 font-bold px-2 py-0.5 rounded-full border border-emerald-300 shadow-2xs">
+                                📄 {item.totalRecords} Fanpage
+                              </span>
+                              <span className="text-[10px] bg-white text-indigo-800 font-bold px-2 py-0.5 rounded-full border border-indigo-300 shadow-2xs">
+                                🔗 {item.totalVias} Nick Via
+                              </span>
+                              {item.deXuatCount > 0 && (
+                                <span className="text-[10px] bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded-full border border-emerald-300">
+                                  🚀 {item.deXuatCount} Đề Xuất
+                                </span>
+                              )}
+                              {item.errorViaCount > 0 && (
+                                <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full border border-rose-300">
+                                  ⚠️ {item.errorViaCount} Via lỗi
+                                </span>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => toggleStaffCollapse(item.staffName)}
+                              className="text-[11px] text-emerald-700 hover:text-emerald-900 font-bold underline cursor-pointer"
+                            >
+                              Mở rộng hàng ({item.totalRecords} Fanpage) ▾
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  }
+
+                  const record = (item as { isCollapsedStaff: false; record: PageRecord }).record;
                   const isDone =
                     record.isCompleted ||
                     (record.targetPosts > 0 && record.actualPosts >= record.targetPosts);
@@ -970,6 +1403,9 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         fixedViaUids.has(record.viaUid.trim().toLowerCase()))
                   );
 
+                  const isCompact = densityMode === 'compact';
+                  const cellPyClass = isCompact ? 'py-0.5' : 'py-1';
+
                   return (
                     <tr
                       key={record.id}
@@ -982,15 +1418,15 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                       }`}
                     >
                       {/* Col A: Row index */}
-                      <td className="px-1 py-1 text-center border-r border-slate-300 font-mono text-slate-500 text-[10px] bg-slate-50/70 select-none">
-                        {index + 1}
+                      <td className={`px-1 ${cellPyClass} text-center border-r border-slate-300 font-mono text-slate-500 text-[10px] bg-slate-50/70 select-none`}>
+                        {startIndex + index + 1}
                       </td>
 
                       {/* Col B: TÊN NV - VIẾT 1 LẦN DUY NHẤT KHI BẬT GỘP Ô HOẶC TỪNG DÒNG KHI TÁCH */}
                       {shouldRenderStaffCell && (
                         <td
                           rowSpan={staffRowSpan}
-                          className="px-1 py-1 border-r border-slate-300 font-bold text-slate-900 align-middle bg-slate-50/95 text-center select-none shadow-2xs"
+                          className={`px-1 ${cellPyClass} border-r border-slate-300 font-bold text-slate-900 align-middle bg-slate-50/95 text-center select-none shadow-2xs`}
                         >
                           <div className="flex flex-col items-center justify-center p-0.5 max-w-[88px] mx-auto">
                             {/* Staff Avatar with Initials */}
@@ -1041,9 +1477,18 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                             ) : (
                               <div className="group flex flex-col items-center">
                                 <div className="flex items-center justify-center space-x-0.5">
-                                  <span className="font-bold text-slate-900 text-xs tracking-tight leading-tight truncate max-w-[75px]" title={record.staffName}>
+                                  <span className="font-bold text-slate-900 text-xs tracking-tight leading-tight truncate max-w-[70px]" title={record.staffName}>
                                     {record.staffName}
                                   </span>
+                                  {/* Button to collapse this staff */}
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleStaffCollapse(record.staffName)}
+                                    className="p-0.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors"
+                                    title={`Thu gọn toàn bộ hàng của nhân viên ${record.staffName}`}
+                                  >
+                                    <ChevronDown className="w-2.5 h-2.5 text-slate-500" />
+                                  </button>
                                   {currentUser.role === 'admin' && onUpdateStaffNameForAll && (
                                     <button
                                       type="button"
@@ -1767,30 +2212,94 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
           </table>
         </div>
 
-        {/* Footer info with Color Palette Guide & 4 Status Breakdown */}
-        <div className="bg-slate-50 border-t border-slate-300 px-4 py-2.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-600 font-sans">
+        {/* Footer info with Pagination Navigation, Color Palette Guide & 4 Status Breakdown */}
+        <div className="bg-slate-50 border-t border-slate-300 px-4 py-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-xs text-slate-600 font-sans">
           <div className="flex items-center flex-wrap gap-2">
-            <span className="font-bold text-slate-700">
-              Đang hiển thị <strong>{displayRecords.length}</strong> Fanpage •{' '}
-              <strong>{viaStats.totalVias}</strong> Nick Via
+            <span className="font-bold text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">
+              Hiển thị: <strong>{paginatedItems.length > 0 ? `${startIndex + 1} - ${endIndex}` : 0}</strong> / <strong>{totalItems}</strong> hàng
+              <span className="text-slate-400 font-normal"> (Tổng {records.length} Fanpage • {viaStats.totalVias} Via)</span>
             </span>
             <span className="text-slate-300">|</span>
             <span className="text-emerald-700 font-semibold" title="Đề Xuất">
-              🚀 <strong>{displayRecords.filter((r) => r.status === 'Đề Xuất').length}</strong> Đề Xuất
+              🚀 <strong>{records.filter((r) => r.status === 'Đề Xuất').length}</strong> Đề Xuất
             </span>
             <span className="text-slate-300">•</span>
             <span className="text-rose-700 font-semibold" title="Mất Đề Xuất">
-              🔴 <strong>{displayRecords.filter((r) => r.status === 'Mất Đề Xuất').length}</strong> Mất ĐX
+              🔴 <strong>{records.filter((r) => r.status === 'Mất Đề Xuất').length}</strong> Mất ĐX
             </span>
             <span className="text-slate-300">•</span>
             <span className="text-amber-800 font-semibold" title="Đình Chỉ">
-              ⚠️ <strong>{displayRecords.filter((r) => r.status === 'Đình Chỉ').length}</strong> Đình Chỉ
+              ⚠️ <strong>{records.filter((r) => r.status === 'Đình Chỉ').length}</strong> Đình Chỉ
             </span>
             <span className="text-slate-300">•</span>
             <span className="text-purple-700 font-semibold" title="Bị Back">
-              🟣 <strong>{displayRecords.filter((r) => r.status === 'Bị Back').length}</strong> Bị Back
+              🟣 <strong>{records.filter((r) => r.status === 'Bị Back').length}</strong> Bị Back
             </span>
           </div>
+
+          {/* Bottom Pagination Controls */}
+          {pageSize !== 'all' && totalPages > 1 && (
+            <div className="flex items-center space-x-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                className="px-2 py-1 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Về trang đầu"
+              >
+                « Đầu
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                className="px-2 py-1 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Trang trước"
+              >
+                ‹ Trước
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                .map((p, idx, arr) => {
+                  const prev = arr[idx - 1];
+                  const hasGap = prev && p - prev > 1;
+                  return (
+                    <React.Fragment key={p}>
+                      {hasGap && <span className="px-1 text-slate-400">...</span>}
+                      <button
+                        type="button"
+                        onClick={() => setCurrentPage(p)}
+                        className={`w-7 h-7 text-[11px] font-bold rounded border transition-colors cursor-pointer ${
+                          currentPage === p
+                            ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+              <button
+                type="button"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Trang sau"
+              >
+                Sau ›
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage === totalPages}
+                className="px-2 py-1 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                title="Trang cuối"
+              >
+                Cuối »
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center space-x-2 text-[11px] flex-wrap">
             <span className="text-slate-600 font-semibold">🎨 Khối màu Via chung:</span>
