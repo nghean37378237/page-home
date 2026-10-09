@@ -151,7 +151,18 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     return Array.from(set).filter(Boolean);
   }, [availableStaffNames, records, currentUser.name]);
 
-  // Note counts
+  // Scoped to staff when selectedStaffFilter is active for accurate counts
+  const staffScopedRecords = useMemo(() => {
+    if (isAdmin && selectedStaffFilter && selectedStaffFilter !== 'ALL') {
+      const target = selectedStaffFilter.trim().toLowerCase();
+      return scopedRecords.filter(
+        (r) => (r.staffName || '').trim().toLowerCase() === target
+      );
+    }
+    return scopedRecords;
+  }, [scopedRecords, isAdmin, selectedStaffFilter]);
+
+  // Note counts (phân phạm vi theo nhân viên đang chọn)
   const noteCounts = useMemo(() => {
     let vhh = 0;
     let c282 = 0;
@@ -159,7 +170,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     let hanChe = 0;
     let none = 0;
 
-    scopedRecords.forEach((r) => {
+    staffScopedRecords.forEach((r) => {
       const n = (r.note || '').trim().toLowerCase();
       if (!n) {
         none++;
@@ -175,15 +186,15 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     });
 
     return { vhh, c282, c956, hanChe, none };
-  }, [scopedRecords]);
+  }, [staffScopedRecords]);
 
-  // Join status counts
+  // Join status counts (phân phạm vi theo nhân viên đang chọn)
   const joinStatusCounts = useMemo(() => {
     let daJon = 0;
     let choDuyet = 0;
     let chua = 0;
 
-    scopedRecords.forEach((r) => {
+    staffScopedRecords.forEach((r) => {
       const s = r.joinStatus || 'Chưa';
       if (s === 'Đã Jon') daJon++;
       else if (s === 'Jon chờ duyệt') choDuyet++;
@@ -191,16 +202,16 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     });
 
     return { daJon, choDuyet, chua };
-  }, [scopedRecords]);
+  }, [staffScopedRecords]);
 
-  // Interaction status counts
+  // Interaction status counts (phân phạm vi theo nhân viên đang chọn)
   const interactionCounts = useMemo(() => {
     let on = 0;
     let vua = 0;
     let khong = 0;
     let none = 0;
 
-    scopedRecords.forEach((r) => {
+    staffScopedRecords.forEach((r) => {
       const s = r.interactionStatus;
       if (s === 'Tương tác ổn') on++;
       else if (s === 'Tương tác vừa') vua++;
@@ -209,7 +220,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     });
 
     return { on, vua, khong, none };
-  }, [scopedRecords]);
+  }, [staffScopedRecords]);
 
   // Filtered list
   const filteredRecords = useMemo(() => {
@@ -721,19 +732,19 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     setApplyToWholeGroupInViaModal(false);
   };
 
-  // Quick stats
+  // Quick stats (phân phạm vi theo nhân viên đang chọn)
   const totalGroupsCount = useMemo(() => {
-    const set = new Set(scopedRecords.map((r) => r.groupName?.trim().toLowerCase()).filter(Boolean));
+    const set = new Set(staffScopedRecords.map((r) => r.groupName?.trim().toLowerCase()).filter(Boolean));
     return set.size;
-  }, [scopedRecords]);
+  }, [staffScopedRecords]);
 
   const totalHighlightedCount = useMemo(() => {
-    return scopedRecords.filter((r) => r.isHighlighted).length;
-  }, [scopedRecords]);
+    return staffScopedRecords.filter((r) => r.isHighlighted).length;
+  }, [staffScopedRecords]);
 
   const totalWithNotesCount = useMemo(() => {
-    return scopedRecords.filter((r) => r.note?.trim()).length;
-  }, [scopedRecords]);
+    return staffScopedRecords.filter((r) => r.note?.trim()).length;
+  }, [staffScopedRecords]);
 
   return (
     <div className="space-y-4">
@@ -746,117 +757,115 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
       )}
 
       {/* Top Header Card */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-2xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Title & Stats */}
-          <div className="space-y-1.5">
-            <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-red-100 text-red-600 flex items-center justify-center font-bold shadow-2xs">
-                <Users className="w-5 h-5" />
-              </div>
-              <div>
-                <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight flex items-center space-x-2">
-                  <span>BẢNG QUẢN LÝ GROUP FACEBOOK</span>
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
-                    {scopedRecords.length} Dòng Group
-                  </span>
-                </h1>
-                <div className="flex flex-wrap items-center gap-2 pt-0.5">
-                  <p className="text-xs text-slate-500">
-                    {isAdmin
-                      ? 'Chế độ Quản Trị Viên: Quản lý toàn bộ Group và phân quyền nhân viên phụ trách'
-                      : `Chế độ Nhân Viên: Chỉ hiển thị các Group Facebook do ${currentUser.name} phụ trách chăm sóc`}
-                  </p>
-                </div>
-              </div>
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-2xs space-y-3">
+        {/* ROW 1: Title (Left) + Action Buttons (Right) */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* Left Title */}
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-red-100 text-red-600 flex items-center justify-center font-bold shadow-2xs shrink-0">
+              <Users className="w-5 h-5" />
             </div>
-
-            {/* Stats chips */}
-            <div className="flex flex-wrap items-center gap-2 pt-1">
-              <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
-                <Users className="w-3.5 h-3.5 text-slate-500" />
-                <span>Tổng: <b>{totalGroupsCount}</b> Nhóm</span>
-              </span>
-              <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Đã Jon: <b>{joinStatusCounts.daJon}</b></span>
-              </span>
-              <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-amber-50 text-amber-800 border border-amber-200">
-                <Clock className="w-3.5 h-3.5 text-amber-600" />
-                <span>Jon chờ duyệt: <b>{joinStatusCounts.choDuyet}</b></span>
-              </span>
-              <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200">
-                <XCircle className="w-3.5 h-3.5 text-slate-500" />
-                <span>Chưa: <b>{joinStatusCounts.chua}</b></span>
-              </span>
-              <span className="inline-flex items-center space-x-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
-                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                <span>Via Chính: <b>{totalHighlightedCount}</b></span>
-              </span>
+            <div>
+              <div className="flex items-center flex-wrap gap-2">
+                <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                  BẢNG QUẢN LÝ GROUP FACEBOOK
+                </h1>
+                <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200">
+                  {staffScopedRecords.length} Dòng Group
+                </span>
+                {selectedStaffFilter !== 'ALL' && (
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                    NV: {selectedStaffFilter}
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isAdmin
+                  ? 'Quản lý tập trung các Group Facebook, phân quyền nhân viên và theo dõi tương tác nick via.'
+                  : `Chế độ Nhân Viên: Chỉ hiển thị các Group Facebook do ${currentUser.name} phụ trách chăm sóc`}
+              </p>
             </div>
           </div>
 
-          {/* Quick Toolbar Buttons */}
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {/* Copy All UIDs Button */}
+          {/* Right Action Buttons */}
+          <div className="flex items-center flex-wrap gap-2 shrink-0">
+            {/* Primary Action 1: Add row */}
             <button
               type="button"
-              onClick={handleCopyAllUids}
-              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-200 transition-colors shadow-2xs cursor-pointer"
+              id="btn-add-group-row"
+              onClick={() => onOpenAddModal({ initialMode: 'single' })}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-red-600 hover:bg-red-700 active:bg-red-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Thêm 1 dòng nick via vào nhóm Facebook"
             >
-              {copiedKey === 'btn-copy-all' ? (
-                <Check className="w-4 h-4 text-indigo-700" />
-              ) : (
-                <Copy className="w-4 h-4" />
-              )}
-              <span>Copy Tất Cả UID ({filteredRecords.length})</span>
+              <Plus className="w-4 h-4" />
+              <span>+ Thêm Dòng Group</span>
             </button>
 
-            {/* Select All / Soát Tất Cả Toggle */}
+            {/* Primary Action 2: Batch UIDs to group */}
             <button
               type="button"
-              onClick={handleToggleSelectAll}
-              className={`inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold border transition-colors shadow-2xs cursor-pointer ${
-                isAllSelected
-                  ? 'bg-slate-800 text-white border-slate-900 ring-2 ring-slate-400'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-              }`}
-              title="Soát / Chọn toàn bộ các dòng Nick Via trong danh sách hiện tại"
+              id="btn-batch-uids-group"
+              onClick={() => onOpenAddModal({ initialMode: 'batch' })}
+              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Nhập hàng loạt danh sách UID vào 1 group bất kỳ"
             >
-              {isAllSelected ? (
-                <>
-                  <CheckSquare className="w-4 h-4 text-emerald-400" />
-                  <span>Bỏ Soát / Bỏ Chọn Tất Cả</span>
-                </>
-              ) : (
-                <>
-                  <Square className="w-4 h-4" />
-                  <span>Soát Tất Cả ({filteredRecords.length})</span>
-                </>
-              )}
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>+ Nhập Hàng Loạt UID</span>
+            </button>
+
+            {/* Import Excel */}
+            <button
+              type="button"
+              onClick={onOpenBulkImportModal}
+              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-semibold border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+              title="Nhập dữ liệu Group từ file Excel"
+            >
+              <Upload className="w-3.5 h-3.5 text-slate-600" />
+              <span>Import Excel</span>
             </button>
 
             {/* Export Excel */}
             <button
               type="button"
               onClick={() => exportGroupToXLSX(filteredRecords)}
-              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-white hover:bg-slate-100 text-emerald-700 rounded-xl text-xs font-bold border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+              className="inline-flex items-center space-x-1 px-3 py-2 bg-white hover:bg-slate-50 text-emerald-700 rounded-xl text-xs font-semibold border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+              title="Xuất bảng Group hiện tại ra Excel (.xlsx)"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-3.5 h-3.5" />
               <span>Xuất Excel</span>
             </button>
 
-            {/* Import Bulk */}
+            {/* Copy All UIDs */}
             <button
               type="button"
-              onClick={onOpenBulkImportModal}
-              className="inline-flex items-center space-x-1.5 px-3 py-2 bg-white hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold border border-slate-300 transition-colors shadow-2xs cursor-pointer"
+              onClick={handleCopyAllUids}
+              className={`inline-flex items-center space-x-1 px-3 py-2 text-xs font-semibold rounded-xl border transition-colors shadow-2xs cursor-pointer ${
+                copiedKey === 'btn-copy-all'
+                  ? 'bg-emerald-600 text-white border-emerald-500'
+                  : 'bg-white hover:bg-slate-50 text-indigo-700 border-slate-300'
+              }`}
+              title="Sao chép toàn bộ UID đang hiển thị"
             >
-              <Upload className="w-4 h-4" />
-              <span>Import Hàng Loạt</span>
+              {copiedKey === 'btn-copy-all' ? <Check className="w-3.5 h-3.5 text-white" /> : <Copy className="w-3.5 h-3.5 text-indigo-600" />}
+              <span>Copy UID ({filteredRecords.length})</span>
             </button>
 
-            {/* Refresh / Sync Live Database */}
+            {/* Select All */}
+            <button
+              type="button"
+              onClick={handleToggleSelectAll}
+              className={`inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold rounded-xl border transition-colors shadow-2xs cursor-pointer ${
+                isAllSelected
+                  ? 'bg-slate-800 text-white border-slate-900'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+              }`}
+              title={isAllSelected ? 'Bỏ chọn tất cả' : 'Chọn tất cả dòng'}
+            >
+              {isAllSelected ? <CheckSquare className="w-3.5 h-3.5 text-emerald-400" /> : <Square className="w-3.5 h-3.5 text-slate-400" />}
+              <span>{isAllSelected ? 'Bỏ chọn' : 'Soát tất cả'}</span>
+            </button>
+
+            {/* Sync DB */}
             {onRefreshRecords && (
               <button
                 type="button"
@@ -869,163 +878,252 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                     console.error(e);
                   }
                 }}
-                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-white hover:bg-slate-100 text-sky-700 rounded-xl text-xs font-bold border border-slate-300 transition-colors shadow-2xs cursor-pointer"
-                title="Làm mới và đồng bộ dữ liệu nhóm tức thì từ Cloud Firestore"
+                className="p-2 bg-white hover:bg-slate-50 text-sky-700 rounded-xl text-xs font-semibold border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                title="Làm mới CSDL từ Cloud Firestore"
               >
-                <RefreshCw className="w-4 h-4 text-sky-600" />
-                <span>Làm Mới CSDL</span>
+                <RefreshCw className="w-3.5 h-3.5 text-sky-600" />
               </button>
             )}
 
-            {/* Clear All Group Records - Admin Only */}
+            {/* Clear All - Admin */}
             {records.length > 0 && isAdmin && (
               <button
                 type="button"
                 onClick={handleRequestClearAll}
-                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-300 transition-colors shadow-2xs cursor-pointer"
-                title="Quyền Admin: Xóa trắng toàn bộ dữ liệu group để bạn tự nhập mới từ đầu"
+                className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold border border-rose-300 shadow-2xs transition-colors cursor-pointer"
+                title="Xóa trắng bảng Group (Quyền Admin)"
               >
-                <Trash2 className="w-4 h-4 text-rose-600" />
-                <span>Admin: Xóa Trắng Bảng Group</span>
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
               </button>
             )}
-
-            {/* Add Batch UIDs to Group Button */}
-            <button
-              type="button"
-              onClick={() => onOpenAddModal({ initialMode: 'batch' })}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-              title="Nhập hàng loạt danh sách UID vào 1 group bất kỳ"
-            >
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>+ Nhập Hàng Loạt UID Vào Group</span>
-            </button>
-
-            {/* Add Group / Row Button */}
-            <button
-              type="button"
-              onClick={() => onOpenAddModal({ initialMode: 'single' })}
-              className="inline-flex items-center space-x-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>+ Thêm Dòng Group Mới</span>
-            </button>
           </div>
         </div>
 
-        {/* Filters and View toggles */}
-        <div className="mt-4 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
-          {/* Left filters */}
-          <div className="flex flex-wrap items-center gap-2.5 flex-1 min-w-[280px]">
+        {/* ROW 2: Horizontal Stats Ribbon */}
+        <div className="bg-slate-50/90 rounded-xl p-2 border border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">
+              Thống kê:
+            </span>
+
+            {/* Total groups */}
+            <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-white text-slate-700 border border-slate-200 font-semibold shadow-2xs">
+              <Users className="w-3.5 h-3.5 text-slate-500" />
+              <span>Tổng: <b className="text-slate-900">{totalGroupsCount}</b> Nhóm</span>
+            </span>
+
+            {/* Đã Jon */}
+            <button
+              type="button"
+              onClick={() => setSelectedJoinStatusFilter(selectedJoinStatusFilter === 'Đã Jon' ? 'ALL' : 'Đã Jon')}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                selectedJoinStatusFilter === 'Đã Jon'
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                  : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+              }`}
+              title="Nhấn để lọc các nick Đã Jon"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Đã Jon: <b>{joinStatusCounts.daJon}</b></span>
+            </button>
+
+            {/* Jon chờ duyệt */}
+            <button
+              type="button"
+              onClick={() => setSelectedJoinStatusFilter(selectedJoinStatusFilter === 'Jon chờ duyệt' ? 'ALL' : 'Jon chờ duyệt')}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                selectedJoinStatusFilter === 'Jon chờ duyệt'
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                  : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+              }`}
+              title="Nhấn để lọc các nick Jon chờ duyệt"
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-600" />
+              <span>Chờ duyệt: <b>{joinStatusCounts.choDuyet}</b></span>
+            </button>
+
+            {/* Chưa */}
+            <button
+              type="button"
+              onClick={() => setSelectedJoinStatusFilter(selectedJoinStatusFilter === 'Chưa' ? 'ALL' : 'Chưa')}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                selectedJoinStatusFilter === 'Chưa'
+                  ? 'bg-slate-700 text-white border-slate-700 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+              }`}
+              title="Nhấn để lọc các nick Chưa Jon"
+            >
+              <XCircle className="w-3.5 h-3.5 text-slate-400" />
+              <span>Chưa: <b>{joinStatusCounts.chua}</b></span>
+            </button>
+
+            {/* Via Chính */}
+            <button
+              type="button"
+              onClick={() => setHighlightedOnly(!highlightedOnly)}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                highlightedOnly
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                  : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+              }`}
+              title="Nhấn để bật/tắt chỉ lọc Via Chính"
+            >
+              <Check className="w-3.5 h-3.5 text-emerald-600" />
+              <span>Via Chính: <b>{totalHighlightedCount}</b></span>
+            </button>
+          </div>
+
+          <div className="text-[11px] text-slate-500 font-medium shrink-0">
+            Hiển thị: <strong className="text-slate-800">{filteredRecords.length}</strong> / {scopedRecords.length} dòng
+          </div>
+        </div>
+
+        {/* ROW 3: Staff Tabs for Admin */}
+        {isAdmin && allKnownStaff.length > 0 && (
+          <div className="flex items-center space-x-1.5 overflow-x-auto py-1 scrollbar-thin border-b border-slate-100 text-xs">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+              <Users className="w-3.5 h-3.5 text-red-600" />
+              <span>Nhân viên:</span>
+            </span>
+
+            <button
+              type="button"
+              onClick={() => setSelectedStaffFilter('ALL')}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                selectedStaffFilter === 'ALL'
+                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <span>Tất Cả</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                selectedStaffFilter === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+              }`}>
+                {records.length}
+              </span>
+            </button>
+
+            {allKnownStaff.map((staffName) => {
+              const isSelected = selectedStaffFilter.trim().toLowerCase() === staffName.trim().toLowerCase();
+              const staffCount = records.filter(
+                (r) => (r.staffName || '').trim().toLowerCase() === staffName.trim().toLowerCase()
+              ).length;
+
+              return (
+                <button
+                  key={staffName}
+                  type="button"
+                  onClick={() => setSelectedStaffFilter(isSelected ? 'ALL' : staffName)}
+                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                    isSelected
+                      ? 'bg-red-600 text-white border-red-600 shadow-2xs'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : 'bg-red-500'}`} />
+                  <span>{staffName}</span>
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                  }`}>
+                    {staffCount}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ROW 4: Filter Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
+          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
             {/* Search */}
-            <div className="relative flex-1 min-w-[200px] max-w-md">
+            <div className="relative min-w-[190px] max-w-xs flex-1">
               <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Tìm tên nhóm, UID, tên via, link nhóm, ghi chú..."
+                placeholder="Tìm nhóm, UID, tên via, link..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-red-500 focus:border-red-500 transition-all placeholder:text-slate-400"
+                className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-1 focus:ring-red-500 focus:border-red-500 transition-all placeholder:text-slate-400"
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   ✕
                 </button>
               )}
             </div>
 
-            {/* Staff filter */}
-            {isAdmin && (
-              <div className="flex items-center space-x-1.5 text-xs">
-                <span className="text-slate-500 font-semibold text-[11px]">Nhân viên:</span>
-                <select
-                  value={selectedStaffFilter}
-                  onChange={(e) => setSelectedStaffFilter(e.target.value)}
-                  className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-red-500 cursor-pointer"
-                >
-                  <option value="ALL">Tất Cả Nhân Viên ({allKnownStaff.length})</option>
-                  {allKnownStaff.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            {/* Join status filter: Đã Jon, Jon chờ duyệt, Chưa */}
-            <div className="flex items-center space-x-1.5 text-xs">
-              <span className="text-slate-500 font-semibold text-[11px]">Trạng thái:</span>
-              <select
-                value={selectedJoinStatusFilter}
-                onChange={(e) => setSelectedJoinStatusFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-red-500"
-              >
-                <option value="ALL">Tất Cả ({scopedRecords.length})</option>
-                <option value="Đã Jon">✅ Đã Jon ({joinStatusCounts.daJon})</option>
-                <option value="Jon chờ duyệt">⏳ Jon chờ duyệt ({joinStatusCounts.choDuyet})</option>
-                <option value="Chưa">✕ Chưa ({joinStatusCounts.chua})</option>
-              </select>
-            </div>
-
-            {/* Note filter: VHH, 282, 956, Hạn Chế */}
-            <div className="flex items-center space-x-1.5 text-xs">
-              <span className="text-slate-500 font-semibold text-[11px]">Tình trạng:</span>
-              <select
-                value={selectedNoteFilter}
-                onChange={(e) => setSelectedNoteFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-red-500"
-              >
-                <option value="ALL">Tất Cả ({scopedRecords.length})</option>
-                <option value="VHH">🔴 VHH ({noteCounts.vhh})</option>
-                <option value="282">🟠 282 ({noteCounts.c282})</option>
-                <option value="956">🟣 956 ({noteCounts.c956})</option>
-                <option value="Hạn Chế">🟡 Hạn Chế ({noteCounts.hanChe})</option>
-                <option value="NONE">Trống ({noteCounts.none})</option>
-              </select>
-            </div>
-
-            {/* Interaction status filter: Tương tác ổn, Tương tác vừa, Không có tương tác */}
-            <div className="flex items-center space-x-1.5 text-xs">
-              <span className="text-slate-500 font-semibold text-[11px]">Tương tác:</span>
-              <select
-                value={selectedInteractionFilter}
-                onChange={(e) => setSelectedInteractionFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-700 focus:ring-2 focus:ring-red-500 cursor-pointer"
-              >
-                <option value="ALL">Tất Cả ({scopedRecords.length})</option>
-                <option value="Tương tác ổn">🟢 Tương tác ổn ({interactionCounts.on})</option>
-                <option value="Tương tác vừa">🟡 Tương tác vừa ({interactionCounts.vua})</option>
-                <option value="Không có tương tác">🔴 Không có tương tác ({interactionCounts.khong})</option>
-                <option value="NONE">Chưa chọn ({interactionCounts.none})</option>
-              </select>
-            </div>
-
-            {/* Toggle Highlighted Only */}
-            <button
-              type="button"
-              onClick={() => setHighlightedOnly(!highlightedOnly)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer flex items-center space-x-1.5 ${
-                highlightedOnly
-                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300 ring-2 ring-emerald-400/20'
-                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
-              }`}
+            {/* Trạng thái Jon Dropdown */}
+            <select
+              value={selectedJoinStatusFilter}
+              onChange={(e) => setSelectedJoinStatusFilter(e.target.value as any)}
+              className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-semibold text-slate-700 cursor-pointer focus:ring-1 focus:ring-red-500"
+              title="Lọc trạng thái Jon nhóm"
             >
-              <Check className="w-3.5 h-3.5" />
-              <span>Chỉ Via Chính</span>
-            </button>
+              <option value="ALL">Trạng thái: Tất Cả ({staffScopedRecords.length})</option>
+              <option value="Đã Jon">✅ Đã Jon ({joinStatusCounts.daJon})</option>
+              <option value="Jon chờ duyệt">⏳ Jon chờ duyệt ({joinStatusCounts.choDuyet})</option>
+              <option value="Chưa">✕ Chưa ({joinStatusCounts.chua})</option>
+            </select>
+
+            {/* Tình trạng / Note Dropdown */}
+            <select
+              value={selectedNoteFilter}
+              onChange={(e) => setSelectedNoteFilter(e.target.value as any)}
+              className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-semibold text-slate-700 cursor-pointer focus:ring-1 focus:ring-red-500"
+              title="Lọc tình trạng via / ghi chú"
+            >
+              <option value="ALL">Tình trạng: Tất Cả ({staffScopedRecords.length})</option>
+              <option value="VHH">🔴 VHH ({noteCounts.vhh})</option>
+              <option value="282">🟠 282 ({noteCounts.c282})</option>
+              <option value="956">🟣 956 ({noteCounts.c956})</option>
+              <option value="Hạn Chế">🟡 Hạn Chế ({noteCounts.hanChe})</option>
+              <option value="NONE">Trống ({noteCounts.none})</option>
+            </select>
+
+            {/* Tương tác Dropdown */}
+            <select
+              value={selectedInteractionFilter}
+              onChange={(e) => setSelectedInteractionFilter(e.target.value as any)}
+              className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-semibold text-slate-700 cursor-pointer focus:ring-1 focus:ring-red-500"
+              title="Lọc mức độ tương tác"
+            >
+              <option value="ALL">Tương tác: Tất Cả ({staffScopedRecords.length})</option>
+              <option value="Tương tác ổn">🟢 Tương tác ổn ({interactionCounts.on})</option>
+              <option value="Tương tác vừa">🟡 Tương tác vừa ({interactionCounts.vua})</option>
+              <option value="Không có tương tác">🔴 Không tương tác ({interactionCounts.khong})</option>
+              <option value="NONE">Chưa chọn ({interactionCounts.none})</option>
+            </select>
+
+            {/* Clear filter button if active */}
+            {(searchQuery || selectedJoinStatusFilter !== 'ALL' || selectedNoteFilter !== 'ALL' || selectedInteractionFilter !== 'ALL' || highlightedOnly || selectedStaffFilter !== 'ALL') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setSelectedJoinStatusFilter('ALL');
+                  setSelectedNoteFilter('ALL');
+                  setSelectedInteractionFilter('ALL');
+                  setHighlightedOnly(false);
+                  setSelectedStaffFilter('ALL');
+                }}
+                className="text-[11px] font-semibold text-slate-500 hover:text-red-700 underline cursor-pointer"
+              >
+                Đặt lại lọc
+              </button>
+            )}
           </div>
 
-          {/* Right view switcher */}
-          <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
+          {/* View switcher */}
+          <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200 shrink-0">
             <button
               type="button"
               onClick={() => setViewMode('grouped')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
+              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center space-x-1 ${
                 viewMode === 'grouped'
                   ? 'bg-white text-red-700 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -1038,7 +1136,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
             <button
               type="button"
               onClick={() => setViewMode('flat')}
-              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all cursor-pointer flex items-center space-x-1 ${
+              className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all cursor-pointer flex items-center space-x-1 ${
                 viewMode === 'flat'
                   ? 'bg-white text-red-700 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
