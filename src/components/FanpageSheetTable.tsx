@@ -324,15 +324,15 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   // Danh sách nhân viên bị thu gọn (Collapsible Staff)
   const [collapsedStaffSet, setCollapsedStaffSet] = useState<Set<string>>(new Set());
 
-  // Phân trang khoa học (Smart Pagination): Mặc định 10 dòng ngắn gọn, không chiếm quá nhiều màn hình
-  const [pageSize, setPageSize] = useState<number | 'all'>(10);
+  // Phân trang: Mặc định 'all' để bảng hiển thị dài đầy đủ như cũ
+  const [pageSize, setPageSize] = useState<number | 'all'>('all');
   const [currentPage, setCurrentPage] = useState<number>(1);
 
-  // Chiều cao khung nhìn: 'compact' (max-h-[380px]) | 'medium' (max-h-[580px]) | 'full' (max-h-none)
-  const [viewportHeight, setViewportHeight] = useState<'compact' | 'medium' | 'full'>('compact');
+  // Chiều cao khung nhìn: Mặc định 'full' (không giới hạn, bảng dài như cũ)
+  const [viewportHeight, setViewportHeight] = useState<'compact' | 'medium' | 'full'>('full');
 
-  // Mật độ dòng: 'compact' (siêu gọn, py-0.5, font 11px) | 'normal' (chuẩn)
-  const [densityMode, setDensityMode] = useState<'compact' | 'normal'>('compact');
+  // Mật độ dòng: 'normal' (chuẩn như cũ) | 'compact' (siêu gọn)
+  const [densityMode, setDensityMode] = useState<'compact' | 'normal'>('normal');
 
   // Danh sách nhân viên riêng biệt và số lượng page của họ
   const distinctStaff = useMemo(() => {
