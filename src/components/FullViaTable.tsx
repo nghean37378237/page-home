@@ -312,9 +312,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     };
     onUpdateVia(updated);
     if (isPending) {
-      setCopyToastMessage(`🔴 Đã chuyển nick ${via.uid} sang: Đã Có Page (Màu đỏ)!`);
+      setCopyToastMessage(`🔴 Đã chuyển nick ${via.uid} sang: Admin đã thêm Page (Màu đỏ để NV biết)!`);
     } else if (isUpdated) {
-      setCopyToastMessage(`🟢 Đã chuyển nick ${via.uid} sang: Đã có Page (Màu xanh lá)!`);
+      setCopyToastMessage(`🟢 Đã chuyển nick ${via.uid} sang: Có page từ đầu (Màu xanh)!`);
     } else {
       setCopyToastMessage(`⚪ Đã chuyển nick ${via.uid} về: Chưa có page (Màu trắng).`);
     }
@@ -1104,9 +1104,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               {isPendingPage && !isRowError && !isRowFixed && (
                 <span
                   className="bg-rose-600 text-white font-black text-[9px] px-1 py-0.2 rounded shadow-2xs shrink-0 flex items-center space-x-0.5 animate-pulse"
-                  title="Admin đã báo Đã Có Page! Cần nhân viên cập nhật Page"
+                  title="Admin đã thêm page cho nick này để nhân viên biết!"
                 >
-                  <span>CẦN PAGE</span>
+                  <span>ADMIN THÊM PAGE</span>
                 </span>
               )}
               <a
@@ -1337,22 +1337,25 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           <div className="flex flex-col items-center space-y-1 w-full min-w-[155px] max-w-[210px] mx-auto">
             {isPendingPage ? (
               <>
-                {/* 🔴 Cần Gán Page */}
+                {/* 🔴 Admin đã thêm Page (Màu đỏ để nhân viên biết) */}
                 <div className="flex items-center justify-between gap-1 w-full">
                   {currentUser.role === 'admin' ? (
                     <button
                       type="button"
                       onClick={() => handleSetViaPageStatus(via, 'none')}
                       className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold shadow-2xs cursor-pointer flex items-center space-x-1"
-                      title="Admin bấm để chuyển lại về Chưa có page"
+                      title="Admin đã thêm page để nhân viên biết. Bấm để chuyển lại về Chưa có page."
                     >
                       <AlertCircle className="w-3 h-3" />
-                      <span>🔴 Cần gán Page</span>
+                      <span>🔴 Admin đã thêm Page</span>
                     </button>
                   ) : (
-                    <span className="px-2 py-0.5 bg-rose-600 text-white rounded text-[11px] font-bold shadow-2xs flex items-center space-x-1 animate-pulse">
+                    <span
+                      className="px-2 py-0.5 bg-rose-600 text-white rounded text-[11px] font-bold shadow-2xs flex items-center space-x-1 animate-pulse"
+                      title="Admin đã thêm page cho nick này để bạn biết và làm việc!"
+                    >
                       <AlertCircle className="w-3 h-3" />
-                      <span>🔴 Cần gán Page</span>
+                      <span>🔴 Admin đã thêm Page</span>
                     </span>
                   )}
 
@@ -1360,9 +1363,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     type="button"
                     onClick={() => handleSetViaPageStatus(via, 'updated')}
                     className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold shadow-2xs cursor-pointer"
-                    title="Xác nhận đã cập nhật Page"
+                    title="Xác nhận đã có page / hoàn tất (chuyển sang màu xanh)"
                   >
-                    ✓ Đã gán
+                    ✓ Đã có
                   </button>
                 </div>
 
@@ -2165,8 +2168,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   ? 'text-rose-700 font-black hover:bg-rose-50'
                   : 'text-slate-500 hover:bg-slate-100'
               }`}
+              title="Lọc các nick Admin đã thêm page (Màu đỏ để NV biết)"
             >
-              🔴 Cần Page ({pendingPageCountInScope})
+              🔴 Admin thêm Page ({pendingPageCountInScope})
             </button>
             <button
               type="button"
@@ -2176,8 +2180,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'text-emerald-700 hover:bg-emerald-50'
               }`}
+              title="Lọc các nick có page từ đầu (Màu xanh)"
             >
-              📗 Có Page ({hasPageCountInScope})
+              🟢 Có Page từ đầu ({hasPageCountInScope})
             </button>
             <button
               type="button"
@@ -2632,7 +2637,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 </span>
               </label>
 
-              {/* Cập nhật trạng thái Page của Via (🔴 Đỏ: Admin báo có Page -> 🟢 Xanh: Đã update page) */}
+              {/* Cập nhật trạng thái Page của Via (🔴 Đỏ: Admin đã thêm Page để NV biết -> 🟢 Xanh: Có page từ đầu) */}
               <div className="p-3 rounded-xl border border-slate-300 bg-slate-50 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-slate-800 text-xs flex items-center space-x-1.5">
@@ -2641,9 +2646,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   </label>
                   <span className="text-[11px] font-semibold text-slate-500">
                     {modalForm.pageUpdateStatus === 'pending'
-                      ? '🔴 Đã Có Page (Màu đỏ)'
+                      ? '🔴 Admin đã thêm Page (Màu đỏ)'
                       : modalForm.pageUpdateStatus === 'updated'
-                      ? '🟢 Đã có Page (Màu xanh lá)'
+                      ? '🟢 Có page từ đầu (Màu xanh)'
                       : '⚪ Chưa có page (Màu trắng)'}
                   </span>
                 </div>
@@ -2668,9 +2673,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                         ? 'bg-rose-600 text-white border-rose-700 shadow-2xs ring-2 ring-rose-300'
                         : 'bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100'
                     }`}
-                    title="Chuyển sang trạng thái: Màu đỏ Đã Có Page để nhân viên biết vào update page lên"
+                    title="Chuyển sang trạng thái: Admin đã thêm Page (Màu đỏ để nhân viên biết)"
                   >
-                    🔴 Đã Có Page (Đỏ)
+                    🔴 Admin thêm Page (Đỏ)
                   </button>
                   <button
                     type="button"
@@ -2680,14 +2685,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs ring-2 ring-emerald-300'
                         : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
                     }`}
-                    title="Đánh dấu đã cập nhật Page (Màu xanh lá)"
+                    title="Đánh dấu nick có page từ đầu (Màu xanh)"
                   >
-                    🟢 Đã có Page (Xanh)
+                    🟢 Có page từ đầu (Xanh)
                   </button>
                 </div>
 
                 <p className="text-[10px] text-slate-500 italic">
-                  💡 <strong>Quy trình:</strong> Mặc định là <strong>⚪ Chưa có page (Màu trắng)</strong>. Khi Admin ấn vào sẽ chuyển sang <strong>🔴 Màu đỏ Đã Có Page</strong> để nhân viên biết cần update. Khi nhân viên lưu Fanpage hoặc bấm <em>✓ Đã Update Page</em>, hệ thống sẽ tự động chuyển sang <strong>🟢 Màu Xanh Lá</strong>.
+                  💡 <strong>Quy trình:</strong> <strong>🔴 Admin đã thêm Page (Màu đỏ)</strong> để nhân viên biết vào nhận việc/cập nhật. <strong>🟢 Có page từ đầu (Màu xanh)</strong> cho nick đã có sẵn page. <strong>⚪ Chưa có page</strong> cho nick trống.
                 </p>
               </div>
 

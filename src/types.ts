@@ -217,11 +217,11 @@ export interface FullViaItem {
   createdAt?: string;
   rawFullVia?: string; // UID|PASS|2FA gốc
 
-  // Admin tự cập nhật "Đã có Page" (Màu đỏ) -> Nhân viên update page lên sẽ chuyển sang Màu xanh
-  pageUpdateStatus?: ViaPageUpdateStatus; // 'pending' (Đỏ - Admin báo có page), 'updated' (Xanh - Đã update page), 'none' (Trắng - Chưa có page)
-  hasAdminAssignedPage?: boolean; // Cờ đánh dấu Admin đã báo có page
-  pageAssignedAt?: string; // Thời điểm Admin báo
-  pageUpdatedAt?: string; // Thời điểm nhân viên hoàn tất update
+  // Admin cập nhật "Admin đã thêm Page" (Màu đỏ để NV biết) | "Có page từ đầu" (Màu xanh) | "Chưa có page" (Trắng)
+  pageUpdateStatus?: ViaPageUpdateStatus; // 'pending' (Đỏ - Admin đã thêm page để NV biết), 'updated' (Xanh - Có page từ đầu / Đã update page), 'none' (Trắng - Chưa có page)
+  hasAdminAssignedPage?: boolean; // Cờ đánh dấu Admin đã thêm page
+  pageAssignedAt?: string; // Thời điểm Admin thêm page
+  pageUpdatedAt?: string; // Thời điểm hoàn tất update page
 }
 
 export interface SharedAccount {

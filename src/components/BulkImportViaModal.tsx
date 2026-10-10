@@ -63,7 +63,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
       (currentUser?.role === 'staff' ? currentUser.name : availableStaffNames[0] || 'Anh Quỳnh')
   );
   const [batchNote, setBatchNote] = useState('');
-  const [pageStatusOption, setPageStatusOption] = useState<'none' | 'has_page' | 'pending_page'>('none');
+  const [pageStatusOption, setPageStatusOption] = useState<'none' | 'has_page' | 'admin_added_page' | 'pending_page'>('none');
   const [overwriteDuplicates, setOverwriteDuplicates] = useState(false); // Default to skip duplicates safely
   const [assignmentMode, setAssignmentMode] = useState<'single' | 'round_robin' | 'auto_detect'>('auto_detect');
   const [previewFilter, setPreviewFilter] = useState<'all' | 'new' | 'duplicate' | 'invalid'>('all');
@@ -312,14 +312,22 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
         assignedStaff = staffPool[index % staffPool.length];
       }
 
+      const isAdminAddedPage =
+        pageStatusOption === 'admin_added_page' ||
+        pageStatusOption === 'pending_page' ||
+        batchNote.toLowerCase().includes('admin đã thêm page') ||
+        batchNote.toLowerCase().includes('admin thêm page') ||
+        batchNote.toLowerCase().includes('cần gán page');
+
       const isMarkedHasPage =
-        pageStatusOption === 'has_page' || batchNote.toLowerCase().includes('đã có page');
-      const isMarkedPendingPage =
-        pageStatusOption === 'pending_page' || batchNote.toLowerCase().includes('cần gán page');
+        !isAdminAddedPage &&
+        (pageStatusOption === 'has_page' ||
+          batchNote.toLowerCase().includes('có page từ đầu') ||
+          batchNote.toLowerCase().includes('đã có page'));
 
       const finalNote = batchNote
         ? `${batchNote}${row.extra ? ` - ${row.extra}` : ''}`
-        : row.extra || (isMarkedHasPage ? 'Đã có page' : 'Nhập hàng loạt');
+        : row.extra || (isAdminAddedPage ? 'Admin đã thêm page' : isMarkedHasPage ? 'Có page từ đầu' : 'Nhập hàng loạt');
 
       const item: FullViaItem = {
         id: `via-imported-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
@@ -332,12 +340,10 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
         adminReportStatus: 'None',
         createdAt: new Date().toLocaleDateString('vi-VN'),
         rawFullVia: `${row.uid}|${row.pass}|${row.twoFa}${row.extra ? `|${row.extra}` : ''}`,
-        pageUpdateStatus: isMarkedHasPage ? 'updated' : isMarkedPendingPage ? 'pending' : 'none',
-        hasAdminAssignedPage: isMarkedHasPage || isMarkedPendingPage,
-        pageAssignedAt:
-          isMarkedHasPage || isMarkedPendingPage
-            ? new Date().toLocaleDateString('vi-VN')
-            : undefined,
+        pageUpdateStatus: isAdminAddedPage ? 'pending' : isMarkedHasPage ? 'updated' : 'none',
+        hasAdminAssignedPage: isAdminAddedPage,
+        pageAssignedAt: isAdminAddedPage ? new Date().toLocaleDateString('vi-VN') : undefined,
+        pageUpdatedAt: isMarkedHasPage ? new Date().toLocaleDateString('vi-VN') : undefined,
       };
 
       newItems.push(item);
@@ -652,57 +658,102 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                 </div>
                 <input
                   type="text"
-                  placeholder="VD: Đã có page, Lô Via Ngoại 15/9, BM 2K5..."
+                  placeholder="VD: Admin đã thêm page, Có page từ đầu, Lô Via Ngoại..."
                   value={batchNote}
                   onChange={(e) => {
                     const val = e.target.value;
                     setBatchNote(val);
-                    if (val.toLowerCase().includes('đã có page')) {
+                    if (val.toLowerCase().includes('admin đã thêm page') || val.toLowerCase().includes('admin thêm page')) {
+                      setPageStatusOption('admin_added_page');
+                    } else if (val.toLowerCase().includes('có page từ đầu') || val.toLowerCase().includes('đã có page')) {
                       setPageStatusOption('has_page');
                     } else if (val.toLowerCase().includes('cần gán page')) {
-                      setPageStatusOption('pending_page');
+                      setPageStatusOption('admin_added_page');
                     }
                   }}
                   className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-emerald-500 font-medium"
                 />
               </div>
 
-              {/* CÁC NÚT CHỌN NHANH GHI CHÚ - ĐẶC BIỆT LÀ "ĐÃ CÓ PAGE" */}
+              {/* CÁC NÚT CHỌN NHANH GHI CHÚ: MÀU ĐỎ (ADMIN ĐÃ THÊM PAGE) & MÀU XANH (CÓ PAGE TỪ ĐẦU) */}
               <div>
                 <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
                   Chọn Nhanh Ghi Chú:
                 </span>
                 <div className="flex flex-wrap gap-1">
-                  {/* NÚT CHỌN "ĐÃ CÓ PAGE" - NỔI BẬT THEO YÊU CẦU CỦA USER */}
+                  {/* NÚT CHỌN "ADMIN ĐÃ THÊM PAGE" - MÀU ĐỎ ĐỂ NHÂN VIÊN BIẾT */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isSelected =
+                        pageStatusOption === 'admin_added_page' ||
+                        batchNote.toLowerCase().includes('admin đã thêm page');
+                      if (isSelected) {
+                        setPageStatusOption('none');
+                        setBatchNote((prev) =>
+                          prev.replace(/(\s*-\s*)?Admin đã thêm page/gi, '').trim()
+                        );
+                      } else {
+                        setPageStatusOption('admin_added_page');
+                        setBatchNote((prev) => {
+                          const cleaned = prev
+                            .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                            .replace(/(\s*-\s*)?Đã có page/gi, '')
+                            .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                            .trim();
+                          return cleaned ? `${cleaned} - Admin đã thêm page` : 'Admin đã thêm page';
+                        });
+                      }
+                    }}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                      pageStatusOption === 'admin_added_page' ||
+                      batchNote.toLowerCase().includes('admin đã thêm page')
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-400/30'
+                        : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                    }`}
+                    title="Admin đã thêm page để nhân viên biết (MÀU ĐỎ)"
+                  >
+                    <span>🔴 Admin đã thêm page</span>
+                  </button>
+
+                  {/* NÚT CHỌN "CÓ PAGE TỪ ĐẦU" - MÀU XANH */}
                   <button
                     type="button"
                     onClick={() => {
                       const isSelected =
                         pageStatusOption === 'has_page' ||
+                        batchNote.toLowerCase().includes('có page từ đầu') ||
                         batchNote.toLowerCase().includes('đã có page');
                       if (isSelected) {
                         setPageStatusOption('none');
                         setBatchNote((prev) =>
-                          prev.replace(/(\s*-\s*)?Đã có page/gi, '').trim()
+                          prev
+                            .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                            .replace(/(\s*-\s*)?Đã có page/gi, '')
+                            .trim()
                         );
                       } else {
                         setPageStatusOption('has_page');
                         setBatchNote((prev) => {
-                          const cleaned = prev.replace(/(\s*-\s*)?Cần gán page/gi, '').trim();
-                          return cleaned ? `${cleaned} - Đã có page` : 'Đã có page';
+                          const cleaned = prev
+                            .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                            .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                            .trim();
+                          return cleaned ? `${cleaned} - Có page từ đầu` : 'Có page từ đầu';
                         });
                       }
                     }}
                     className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
                       pageStatusOption === 'has_page' ||
+                      batchNote.toLowerCase().includes('có page từ đầu') ||
                       batchNote.toLowerCase().includes('đã có page')
                         ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/30'
                         : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
                     }`}
-                    title="Bấm để ghi chú & đánh dấu nick này ĐÃ CÓ PAGE"
+                    title="Nick có page từ đầu (MÀU XANH)"
                   >
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>📗 Đã có page</span>
+                    <span>🟢 Có page từ đầu</span>
                   </button>
 
                   {/* Nút Cần Gán Page */}
@@ -718,9 +769,13 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                           prev.replace(/(\s*-\s*)?Cần gán page/gi, '').trim()
                         );
                       } else {
-                        setPageStatusOption('pending_page');
+                        setPageStatusOption('admin_added_page');
                         setBatchNote((prev) => {
-                          const cleaned = prev.replace(/(\s*-\s*)?Đã có page/gi, '').trim();
+                          const cleaned = prev
+                            .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                            .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                            .replace(/(\s*-\s*)?Đã có page/gi, '')
+                            .trim();
                           return cleaned ? `${cleaned} - Cần gán page` : 'Cần gán page';
                         });
                       }
@@ -773,41 +828,88 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                 </div>
               </div>
 
-              {/* TÙY CHỌN TRẠNG THÁI PAGE KÈM THEO */}
+              {/* TÙY CHỌN TRẠNG THÁI PAGE KÈM THEO (BẢNG 4) */}
               <div className="pt-1.5 border-t border-slate-200/80">
                 <label className="text-[11px] font-bold text-slate-700 block mb-1">
                   Trạng Thái Cột Page (Bảng 4):
                 </label>
-                <div className="grid grid-cols-2 gap-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                  {/* LỰA CHỌN 1: ADMIN ĐÃ THÊM PAGE (MÀU ĐỎ NHÉ - ĐỂ NHÂN VIÊN BIẾT) */}
                   <label
                     className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
-                      pageStatusOption === 'has_page' ||
-                      batchNote.toLowerCase().includes('đã có page')
-                        ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950 shadow-2xs'
-                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      pageStatusOption === 'admin_added_page' ||
+                      pageStatusOption === 'pending_page' ||
+                      batchNote.toLowerCase().includes('admin đã thêm page') ||
+                      batchNote.toLowerCase().includes('cần gán page')
+                        ? 'bg-rose-50 border-rose-400 font-bold text-rose-950 shadow-2xs ring-1 ring-rose-300'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-rose-50/50'
                     }`}
                   >
                     <input
                       type="radio"
                       name="pageStatusRadio"
                       checked={
-                        pageStatusOption === 'has_page' ||
-                        batchNote.toLowerCase().includes('đã có page')
+                        pageStatusOption === 'admin_added_page' ||
+                        pageStatusOption === 'pending_page' ||
+                        batchNote.toLowerCase().includes('admin đã thêm page') ||
+                        batchNote.toLowerCase().includes('cần gán page')
+                      }
+                      onChange={() => {
+                        setPageStatusOption('admin_added_page');
+                        if (!batchNote || batchNote === 'Có page từ đầu' || batchNote === 'Đã có page') {
+                          setBatchNote('Admin đã thêm page');
+                        }
+                      }}
+                      className="w-3.5 h-3.5 text-rose-600 focus:ring-rose-500 cursor-pointer shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="truncate block font-bold text-rose-700">🔴 Admin đã thêm page</span>
+                      <span className="text-[10px] text-rose-600 font-medium block">Màu đỏ để NV biết</span>
+                    </div>
+                  </label>
+
+                  {/* LỰA CHỌN 2: CÓ PAGE TỪ ĐẦU (MÀU XANH) */}
+                  <label
+                    className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                      (pageStatusOption === 'has_page' ||
+                        batchNote.toLowerCase().includes('có page từ đầu') ||
+                        batchNote.toLowerCase().includes('đã có page')) &&
+                      !batchNote.toLowerCase().includes('admin đã thêm page') &&
+                      !batchNote.toLowerCase().includes('cần gán page')
+                        ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950 shadow-2xs ring-1 ring-emerald-300'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-emerald-50/50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pageStatusRadio"
+                      checked={
+                        (pageStatusOption === 'has_page' ||
+                          batchNote.toLowerCase().includes('có page từ đầu') ||
+                          batchNote.toLowerCase().includes('đã có page')) &&
+                        !batchNote.toLowerCase().includes('admin đã thêm page') &&
+                        !batchNote.toLowerCase().includes('cần gán page')
                       }
                       onChange={() => {
                         setPageStatusOption('has_page');
-                        if (!batchNote || batchNote === 'Cần gán page') {
-                          setBatchNote('Đã có page');
+                        if (!batchNote || batchNote === 'Admin đã thêm page' || batchNote === 'Cần gán page') {
+                          setBatchNote('Có page từ đầu');
                         }
                       }}
-                      className="w-3.5 h-3.5 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      className="w-3.5 h-3.5 text-emerald-600 focus:ring-emerald-500 cursor-pointer shrink-0"
                     />
-                    <span className="truncate">📗 Đã có page (Màu xanh)</span>
+                    <div className="min-w-0">
+                      <span className="truncate block font-bold text-emerald-700">🟢 Có page từ đầu</span>
+                      <span className="text-[10px] text-emerald-600 font-medium block">Màu xanh có từ đầu</span>
+                    </div>
                   </label>
 
+                  {/* LỰA CHỌN 3: CHƯA CÓ PAGE */}
                   <label
                     className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
                       pageStatusOption === 'none' &&
+                      !batchNote.toLowerCase().includes('admin đã thêm page') &&
+                      !batchNote.toLowerCase().includes('có page từ đầu') &&
                       !batchNote.toLowerCase().includes('đã có page') &&
                       !batchNote.toLowerCase().includes('cần gán page')
                         ? 'bg-slate-100 border-slate-400 font-bold text-slate-900 shadow-2xs'
@@ -819,18 +921,28 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       name="pageStatusRadio"
                       checked={
                         pageStatusOption === 'none' &&
+                        !batchNote.toLowerCase().includes('admin đã thêm page') &&
+                        !batchNote.toLowerCase().includes('có page từ đầu') &&
                         !batchNote.toLowerCase().includes('đã có page') &&
                         !batchNote.toLowerCase().includes('cần gán page')
                       }
                       onChange={() => {
                         setPageStatusOption('none');
-                        if (batchNote === 'Đã có page' || batchNote === 'Cần gán page') {
+                        if (
+                          batchNote === 'Admin đã thêm page' ||
+                          batchNote === 'Có page từ đầu' ||
+                          batchNote === 'Đã có page' ||
+                          batchNote === 'Cần gán page'
+                        ) {
                           setBatchNote('');
                         }
                       }}
-                      className="w-3.5 h-3.5 text-slate-600 focus:ring-slate-500 cursor-pointer"
+                      className="w-3.5 h-3.5 text-slate-600 focus:ring-slate-500 cursor-pointer shrink-0"
                     />
-                    <span className="truncate">⚪ Chưa có page</span>
+                    <div className="min-w-0">
+                      <span className="truncate block font-semibold text-slate-700">⚪ Chưa có page</span>
+                      <span className="text-[10px] text-slate-400 font-normal block">Chưa gán page</span>
+                    </div>
                   </label>
                 </div>
               </div>

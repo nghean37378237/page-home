@@ -1666,6 +1666,12 @@ export default function App() {
             staffName: currentUser.role === 'staff' ? currentUser.name : (incoming.staffName || old.staffName),
             note: incoming.note || old.note,
             rawFullVia: incoming.rawFullVia,
+            pageUpdateStatus:
+              incoming.pageUpdateStatus && incoming.pageUpdateStatus !== 'none'
+                ? incoming.pageUpdateStatus
+                : old.pageUpdateStatus,
+            hasAdminAssignedPage: incoming.hasAdminAssignedPage ?? old.hasAdminAssignedPage,
+            pageAssignedAt: incoming.pageAssignedAt || old.pageAssignedAt,
           };
           existingMap.set(uidKey, merged);
           finalViasToSave.push(merged);
