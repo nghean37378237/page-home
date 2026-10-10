@@ -1506,6 +1506,10 @@ export default function App() {
     await deleteCloudVia(viaId);
   };
 
+  const handleDeleteBatchVias = async (viaIds: string[]) => {
+    await batchDeleteCloudVias(viaIds);
+  };
+
   // Shared Accounts handlers (Add, Update, Delete)
   const handleAddSharedAccount = async (account: SharedAccount) => {
     setSharedAccounts((prev) => [...prev.filter((a) => a.id !== account.id), account]);
@@ -2470,6 +2474,7 @@ export default function App() {
               onAddVia={handleAddVia}
               onUpdateVia={handleUpdateVia}
               onDeleteVia={handleDeleteVia}
+              onDeleteBatchVias={handleDeleteBatchVias}
               onOpenBulkImport={(presetStaff) => {
                 setBulkImportPresetStaff(presetStaff || (currentUser.role === 'staff' ? currentUser.name : undefined));
                 setIsBulkImportOpen(true);

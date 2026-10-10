@@ -37,6 +37,7 @@ import {
 import { FullViaItem, AppUser, PageRecord, ViaPageUpdateStatus, ViaAdminReportStatus, VIA_ADMIN_REPORT_OPTIONS } from '../types';
 import { generateTOTPCode } from '../utils/totp';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
+import { batchDeleteCloudVias } from '../services/firebase';
 
 interface FullViaTableProps {
   viaList: FullViaItem[];
@@ -50,6 +51,7 @@ interface FullViaTableProps {
   onAddVia: (via: FullViaItem) => void;
   onUpdateVia: (via: FullViaItem) => void;
   onDeleteVia: (viaId: string) => void;
+  onDeleteBatchVias?: (viaIds: string[]) => void | Promise<void>;
   onOpenBulkImport: (presetStaff?: string) => void;
   onFilterPageByVia?: (viaUid: string) => void;
   onAddPageForVia?: (viaUid: string, staffName: string) => void;
@@ -70,6 +72,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   onAddVia,
   onUpdateVia,
   onDeleteVia,
+  onDeleteBatchVias,
   onOpenBulkImport,
   onFilterPageByVia,
   onAddPageForVia,
@@ -145,8 +148,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [copyToastMessage, setCopyToastMessage] = useState<string | null>(null);
 
-  // Multiple selection state for batch copying UID
+  // Multiple selection state for batch actions (Copy, Delete, Report)
   const [selectedViaIds, setSelectedViaIds] = useState<Set<string>>(new Set());
+  const [isConfirmDeleteModalOpen, setIsConfirmDeleteModalOpen] = useState(false);
+  const [isDeletingBatch, setIsDeletingBatch] = useState(false);
 
   // Live TOTP generator state: stores { viaId: { code: string; remainingSeconds: number } }
   const [liveOtpMap, setLiveOtpMap] = useState<Record<string, { code: string; remainingSeconds: number; loading?: boolean }>>({});
@@ -577,6 +582,58 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       setCopiedKey((prev) => (prev === 'copy-selected-full' ? null : prev));
     }, 2500);
     setTimeout(() => setCopyToastMessage(null), 3500);
+  };
+
+  const handlePromptBulkDelete = () => {
+    const selectedInScope = scopedVias.filter((v) => selectedViaIds.has(v.id));
+    if (selectedInScope.length === 0) {
+      setCopyToastMessage('⚠️ Bạn chưa chọn nick nào. Vui lòng tick chọn các ô checkbox của nick cần xóa (hoặc bấm "Chọn tất cả") rồi thử lại!');
+      setTimeout(() => setCopyToastMessage(null), 3500);
+      return;
+    }
+    setIsConfirmDeleteModalOpen(true);
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    const selectedInScope = scopedVias.filter((v) => selectedViaIds.has(v.id));
+    const idsToDelete = selectedInScope.map((v) => v.id);
+    if (idsToDelete.length === 0) {
+      setIsConfirmDeleteModalOpen(false);
+      return;
+    }
+
+    setIsDeletingBatch(true);
+    try {
+      if (onDeleteBatchVias) {
+        await onDeleteBatchVias(idsToDelete);
+      } else {
+        await batchDeleteCloudVias(idsToDelete);
+      }
+      setSelectedViaIds((prev) => {
+        const next = new Set(prev);
+        idsToDelete.forEach((id) => next.delete(id));
+        return next;
+      });
+      setIsConfirmDeleteModalOpen(false);
+      setCopyToastMessage(`🗑️ Đã xóa thành công toàn bộ ${idsToDelete.length} nick Via đã chọn khỏi hệ thống!`);
+      setTimeout(() => setCopyToastMessage(null), 3500);
+    } catch (err: any) {
+      console.error('Lỗi khi xóa hàng loạt via:', err);
+      // Fallback: xóa từng dòng qua onDeleteVia
+      for (const id of idsToDelete) {
+        try {
+          await onDeleteVia(id);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+      setSelectedViaIds(new Set());
+      setIsConfirmDeleteModalOpen(false);
+      setCopyToastMessage(`🗑️ Đã xóa ${idsToDelete.length} nick Via đã chọn!`);
+      setTimeout(() => setCopyToastMessage(null), 3500);
+    } finally {
+      setIsDeletingBatch(false);
+    }
   };
 
   // 30s auto-hide for Passwords
@@ -1909,6 +1966,26 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               )}
             </button>
 
+            {/* Nút Xóa Toàn Bộ Via Đã Chọn trên Header */}
+            <button
+              type="button"
+              id="btn-bulk-delete-header"
+              onClick={handlePromptBulkDelete}
+              className={`inline-flex items-center space-x-1.5 px-3 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer border ${
+                selectedCount > 0
+                  ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-md ring-2 ring-rose-400/50'
+                  : 'bg-white/10 hover:bg-white/20 text-rose-300 border-rose-400/30'
+              }`}
+              title={
+                selectedCount > 0
+                  ? `Xóa toàn bộ ${selectedCount} via đã chọn khỏi hệ thống`
+                  : 'Tick chọn các nick via cần xóa trong bảng rồi bấm nút này'
+              }
+            >
+              <Trash2 className="w-4 h-4 text-rose-300" />
+              <span>Xóa Via Đã Chọn {selectedCount > 0 ? `(${selectedCount})` : ''}</span>
+            </button>
+
             {/* Toggle Passwords */}
             <button
               type="button"
@@ -2220,23 +2297,67 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center space-x-3 text-slate-500 text-[11px] shrink-0">
+        <div className="flex items-center flex-wrap gap-2 text-slate-500 text-[11px] shrink-0">
           {/* Select all toggle button */}
           <button
             type="button"
             id="btn-toggle-select-all"
             onClick={handleSelectAll}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg border font-semibold transition-colors cursor-pointer ${
+            className={`inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border font-semibold transition-colors cursor-pointer ${
               isAllSelected
                 ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-bold'
                 : selectedCount > 0
-                ? 'bg-slate-100 text-slate-700 border-slate-300'
+                ? 'bg-slate-100 text-slate-700 border-slate-300 font-bold'
                 : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
             }`}
           >
             <CheckSquare className="w-3.5 h-3.5" />
             <span>{isAllSelected ? 'Bỏ chọn' : selectedCount > 0 ? `Chọn hết (${scopedVias.length})` : 'Chọn tất cả'}</span>
           </button>
+
+          {/* Nút Xóa Toàn Bộ Via Đã Chọn Trên Toolbar */}
+          <button
+            type="button"
+            id="btn-bulk-delete-toolbar"
+            onClick={handlePromptBulkDelete}
+            className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+              selectedCount > 0
+                ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-sm animate-pulse'
+                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 hover:border-rose-300'
+            }`}
+            title={
+              selectedCount > 0
+                ? `Xóa toàn bộ ${selectedCount} via đã chọn trên hệ thống`
+                : 'Tick chọn các nick via cần xóa trong bảng rồi bấm nút này'
+            }
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>{selectedCount > 0 ? `Xóa toàn bộ ${selectedCount} via đã chọn` : 'Xóa toàn bộ via đã chọn'}</span>
+          </button>
+
+          {selectedCount > 0 && (
+            <>
+              <button
+                type="button"
+                onClick={handleCopySelectedUids}
+                className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold cursor-pointer"
+                title="Sao chép UID của các nick đã chọn"
+              >
+                <Copy className="w-3 h-3 text-indigo-600" />
+                <span>Copy {selectedCount} UID</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCopySelectedFullVia}
+                className="hidden md:inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold cursor-pointer"
+                title="Sao chép Full Via (UID|PASS|2FA) của các nick đã chọn"
+              >
+                <Copy className="w-3 h-3 text-emerald-600" />
+                <span>Copy Full Via ({selectedCount})</span>
+              </button>
+            </>
+          )}
 
           <span>
             Hiển thị: <strong className="text-slate-800">{scopedVias.length}</strong> / {viaList.length} nick
@@ -2386,6 +2507,27 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                               className="text-xs font-bold text-indigo-700 hover:text-indigo-900 hover:underline cursor-pointer"
                             >
                               + Thêm nick cho {staffName}
+                            </button>
+                            <span className="text-slate-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const ids = staffVias.map((v) => v.id);
+                                const allSelected = ids.every((id) => selectedViaIds.has(id));
+                                setSelectedViaIds((prev) => {
+                                  const next = new Set(prev);
+                                  ids.forEach((id) => {
+                                    if (allSelected) next.delete(id);
+                                    else next.add(id);
+                                  });
+                                  return next;
+                                });
+                              }}
+                              className="text-xs font-bold text-slate-700 hover:text-indigo-800 hover:underline cursor-pointer flex items-center space-x-1"
+                              title={`Chọn tất cả ${staffVias.length} nick của ${staffName} để thao tác hàng loạt hoặc xóa`}
+                            >
+                              <CheckSquare className="w-3 h-3 text-slate-500" />
+                              <span>Chọn {staffVias.length} nick</span>
                             </button>
                             <span className="text-slate-300">|</span>
                             <button
@@ -2812,6 +2954,18 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             </span>
           </div>
 
+          {/* Nút XÓA TOÀN BỘ VIA ĐÃ CHỌN - Nổi bật màu đỏ */}
+          <button
+            type="button"
+            id="btn-bulk-delete-float"
+            onClick={handlePromptBulkDelete}
+            className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white rounded-xl font-black shadow-lg transition-all cursor-pointer shrink-0 border border-rose-500 ring-2 ring-rose-400/40"
+            title="Xóa toàn bộ các nick Via đã chọn khỏi hệ thống"
+          >
+            <Trash2 className="w-3.5 h-3.5 text-white" />
+            <span>Xóa Toàn Bộ {selectedCount} Via Đã Chọn</span>
+          </button>
+
           <button
             type="button"
             id="btn-copy-selected-uids-float"
@@ -2871,6 +3025,125 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           >
             <X className="w-4 h-4" />
           </button>
+        </div>
+      )}
+
+      {/* Modal Xác Nhận Xóa Toàn Bộ Via Đã Chọn */}
+      {isConfirmDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="px-5 py-4 bg-gradient-to-r from-rose-700 via-rose-600 to-red-700 text-white flex items-center justify-between shadow-xs">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-white/20 rounded-xl">
+                  <Trash2 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm tracking-tight">
+                    Xác Nhận Xóa Toàn Bộ Via Đã Chọn
+                  </h3>
+                  <p className="text-[11px] text-rose-100 font-medium">
+                    Hành động xóa vĩnh viễn trên hệ thống Cloud Firestore
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isDeletingBatch && setIsConfirmDeleteModalOpen(false)}
+                disabled={isDeletingBatch}
+                className="p-1 rounded-lg text-rose-200 hover:text-white hover:bg-white/10 transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 space-y-4 text-xs">
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-950 flex items-start space-x-3">
+                <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="font-extrabold text-sm text-rose-900">
+                    Bạn đang chuẩn bị xóa {scopedVias.filter((v) => selectedViaIds.has(v.id)).length} tài khoản nick Via!
+                  </p>
+                  <p className="text-xs text-rose-800 leading-relaxed">
+                    Toàn bộ thông tin UID, Mật khẩu (PASS), mã 2FA, và ghi chú của các nick này sẽ bị xóa vĩnh viễn khỏi hệ thống.
+                    Hành động này <strong className="underline">không thể hoàn tác</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Danh sách các UID chuẩn bị xóa */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
+                    <Key className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Danh sách Nick UID sẽ bị xóa ({scopedVias.filter((v) => selectedViaIds.has(v.id)).length}):</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500">
+                    Phạm vi: {selectedStaffFilter === 'all' ? 'Tất cả nhân viên' : selectedStaffFilter}
+                  </span>
+                </div>
+                <div className="max-h-48 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2 space-y-1 divide-y divide-slate-200/60 font-mono text-xs">
+                  {scopedVias
+                    .filter((v) => selectedViaIds.has(v.id))
+                    .map((via, idx) => (
+                      <div key={via.id} className="pt-1 first:pt-0 flex items-center justify-between text-[11px]">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-slate-400 w-6 text-right font-sans">{idx + 1}.</span>
+                          <span className="font-bold text-slate-900">{via.uid}</span>
+                          <span className="text-[10px] px-1.5 py-0.2 rounded-sm bg-indigo-100 text-indigo-800 font-sans font-semibold">
+                            {via.staffName}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-slate-500 truncate max-w-[140px] font-sans">
+                          {via.note || via.sharedNote || (via.status === 'checkpoint' ? 'Checkpoint' : 'Live')}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-[11px] flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>
+                  Lưu ý: Các Fanpage đã liên kết với UID này vẫn được lưu trên bảng Fanpage và không bị mất dữ liệu Page.
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end space-x-2.5">
+              <button
+                type="button"
+                onClick={() => setIsConfirmDeleteModalOpen(false)}
+                disabled={isDeletingBatch}
+                className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="button"
+                id="btn-confirm-execute-bulk-delete"
+                onClick={handleConfirmBulkDelete}
+                disabled={isDeletingBatch}
+                className="px-4 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-xl shadow-md transition-all cursor-pointer flex items-center space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeletingBatch ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Đang Xóa Dữ Liệu...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5 text-white" />
+                    <span>
+                      Xác Nhận Xóa Vĩnh Viễn ({scopedVias.filter((v) => selectedViaIds.has(v.id)).length}) Via
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </section>
