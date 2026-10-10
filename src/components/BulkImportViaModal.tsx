@@ -14,6 +14,8 @@ import {
   Shield,
   ArrowRight,
   Download,
+  FileText,
+  Layers,
 } from 'lucide-react';
 import { FullViaItem, AppUser } from '../types';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
@@ -61,6 +63,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
       (currentUser?.role === 'staff' ? currentUser.name : availableStaffNames[0] || 'Anh Quỳnh')
   );
   const [batchNote, setBatchNote] = useState('');
+  const [pageStatusOption, setPageStatusOption] = useState<'none' | 'has_page' | 'pending_page'>('none');
   const [overwriteDuplicates, setOverwriteDuplicates] = useState(false); // Default to skip duplicates safely
   const [assignmentMode, setAssignmentMode] = useState<'single' | 'round_robin' | 'auto_detect'>('auto_detect');
   const [previewFilter, setPreviewFilter] = useState<'all' | 'new' | 'duplicate' | 'invalid'>('all');
@@ -309,19 +312,32 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
         assignedStaff = staffPool[index % staffPool.length];
       }
 
+      const isMarkedHasPage =
+        pageStatusOption === 'has_page' || batchNote.toLowerCase().includes('đã có page');
+      const isMarkedPendingPage =
+        pageStatusOption === 'pending_page' || batchNote.toLowerCase().includes('cần gán page');
+
+      const finalNote = batchNote
+        ? `${batchNote}${row.extra ? ` - ${row.extra}` : ''}`
+        : row.extra || (isMarkedHasPage ? 'Đã có page' : 'Nhập hàng loạt');
+
       const item: FullViaItem = {
         id: `via-imported-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
         uid: row.uid,
         pass: row.pass,
         twoFa: row.twoFa,
         staffName: assignedStaff,
-        note: batchNote
-          ? `${batchNote}${row.extra ? ` - ${row.extra}` : ''}`
-          : row.extra || 'Nhập hàng loạt',
+        note: finalNote,
         status: 'active',
         adminReportStatus: 'None',
         createdAt: new Date().toLocaleDateString('vi-VN'),
         rawFullVia: `${row.uid}|${row.pass}|${row.twoFa}${row.extra ? `|${row.extra}` : ''}`,
+        pageUpdateStatus: isMarkedHasPage ? 'updated' : isMarkedPendingPage ? 'pending' : 'none',
+        hasAdminAssignedPage: isMarkedHasPage || isMarkedPendingPage,
+        pageAssignedAt:
+          isMarkedHasPage || isMarkedPendingPage
+            ? new Date().toLocaleDateString('vi-VN')
+            : undefined,
       };
 
       newItems.push(item);
@@ -612,21 +628,212 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
               )}
             </div>
 
-            {/* Batch Note */}
-            <div>
-              <label className="font-bold text-slate-800 block mb-1">
-                Ghi Chú Lô Nick (Tùy chọn):
-              </label>
-              <input
-                type="text"
-                placeholder="VD: Lô Via Ngoại 15/9, BM 2K5, Ngâm..."
-                value={batchNote}
-                onChange={(e) => setBatchNote(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-emerald-500"
-              />
-              <p className="text-[11px] text-slate-500 mt-1">
-                Ghi chú này sẽ được lưu cùng các nick trong bảng để tiện lọc và theo dõi.
-              </p>
+            {/* Batch Note & Page Status */}
+            <div className="space-y-2">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-slate-800 flex items-center gap-1.5 text-xs">
+                    <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Ghi Chú Lô Nick (Tùy chọn):</span>
+                  </label>
+                  {batchNote && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBatchNote('');
+                        setPageStatusOption('none');
+                      }}
+                      className="text-[10px] text-slate-400 hover:text-red-600 font-bold cursor-pointer"
+                      title="Xóa trắng ghi chú"
+                    >
+                      Xóa
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="text"
+                  placeholder="VD: Đã có page, Lô Via Ngoại 15/9, BM 2K5..."
+                  value={batchNote}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setBatchNote(val);
+                    if (val.toLowerCase().includes('đã có page')) {
+                      setPageStatusOption('has_page');
+                    } else if (val.toLowerCase().includes('cần gán page')) {
+                      setPageStatusOption('pending_page');
+                    }
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs focus:ring-1 focus:ring-emerald-500 font-medium"
+                />
+              </div>
+
+              {/* CÁC NÚT CHỌN NHANH GHI CHÚ - ĐẶC BIỆT LÀ "ĐÃ CÓ PAGE" */}
+              <div>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                  Chọn Nhanh Ghi Chú:
+                </span>
+                <div className="flex flex-wrap gap-1">
+                  {/* NÚT CHỌN "ĐÃ CÓ PAGE" - NỔI BẬT THEO YÊU CẦU CỦA USER */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isSelected =
+                        pageStatusOption === 'has_page' ||
+                        batchNote.toLowerCase().includes('đã có page');
+                      if (isSelected) {
+                        setPageStatusOption('none');
+                        setBatchNote((prev) =>
+                          prev.replace(/(\s*-\s*)?Đã có page/gi, '').trim()
+                        );
+                      } else {
+                        setPageStatusOption('has_page');
+                        setBatchNote((prev) => {
+                          const cleaned = prev.replace(/(\s*-\s*)?Cần gán page/gi, '').trim();
+                          return cleaned ? `${cleaned} - Đã có page` : 'Đã có page';
+                        });
+                      }
+                    }}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                      pageStatusOption === 'has_page' ||
+                      batchNote.toLowerCase().includes('đã có page')
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/30'
+                        : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                    }`}
+                    title="Bấm để ghi chú & đánh dấu nick này ĐÃ CÓ PAGE"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>📗 Đã có page</span>
+                  </button>
+
+                  {/* Nút Cần Gán Page */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const isSelected =
+                        pageStatusOption === 'pending_page' ||
+                        batchNote.toLowerCase().includes('cần gán page');
+                      if (isSelected) {
+                        setPageStatusOption('none');
+                        setBatchNote((prev) =>
+                          prev.replace(/(\s*-\s*)?Cần gán page/gi, '').trim()
+                        );
+                      } else {
+                        setPageStatusOption('pending_page');
+                        setBatchNote((prev) => {
+                          const cleaned = prev.replace(/(\s*-\s*)?Đã có page/gi, '').trim();
+                          return cleaned ? `${cleaned} - Cần gán page` : 'Cần gán page';
+                        });
+                      }
+                    }}
+                    className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                      pageStatusOption === 'pending_page' ||
+                      batchNote.toLowerCase().includes('cần gán page')
+                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                        : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                    }`}
+                    title="Báo động đỏ: Cần nhân viên gán Page"
+                  >
+                    <span>🔴 Cần gán page</span>
+                  </button>
+
+                  {/* Nút Lô Via Ngoại */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchNote((prev) =>
+                        prev ? `${prev} - Via Ngoại` : 'Lô Via Ngoại'
+                      );
+                    }}
+                    className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Via Ngoại
+                  </button>
+
+                  {/* Nút BM 2K5 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchNote((prev) => (prev ? `${prev} - BM 2K5` : 'BM 2K5'));
+                    }}
+                    className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 cursor-pointer"
+                  >
+                    BM 2K5
+                  </button>
+
+                  {/* Nút Ngâm */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBatchNote((prev) => (prev ? `${prev} - Ngâm` : 'Via Ngâm'));
+                    }}
+                    className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-white text-slate-700 border border-slate-300 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Ngâm
+                  </button>
+                </div>
+              </div>
+
+              {/* TÙY CHỌN TRẠNG THÁI PAGE KÈM THEO */}
+              <div className="pt-1.5 border-t border-slate-200/80">
+                <label className="text-[11px] font-bold text-slate-700 block mb-1">
+                  Trạng Thái Cột Page (Bảng 4):
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <label
+                    className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                      pageStatusOption === 'has_page' ||
+                      batchNote.toLowerCase().includes('đã có page')
+                        ? 'bg-emerald-50 border-emerald-400 font-bold text-emerald-950 shadow-2xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pageStatusRadio"
+                      checked={
+                        pageStatusOption === 'has_page' ||
+                        batchNote.toLowerCase().includes('đã có page')
+                      }
+                      onChange={() => {
+                        setPageStatusOption('has_page');
+                        if (!batchNote || batchNote === 'Cần gán page') {
+                          setBatchNote('Đã có page');
+                        }
+                      }}
+                      className="w-3.5 h-3.5 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                    />
+                    <span className="truncate">📗 Đã có page (Màu xanh)</span>
+                  </label>
+
+                  <label
+                    className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                      pageStatusOption === 'none' &&
+                      !batchNote.toLowerCase().includes('đã có page') &&
+                      !batchNote.toLowerCase().includes('cần gán page')
+                        ? 'bg-slate-100 border-slate-400 font-bold text-slate-900 shadow-2xs'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pageStatusRadio"
+                      checked={
+                        pageStatusOption === 'none' &&
+                        !batchNote.toLowerCase().includes('đã có page') &&
+                        !batchNote.toLowerCase().includes('cần gán page')
+                      }
+                      onChange={() => {
+                        setPageStatusOption('none');
+                        if (batchNote === 'Đã có page' || batchNote === 'Cần gán page') {
+                          setBatchNote('');
+                        }
+                      }}
+                      className="w-3.5 h-3.5 text-slate-600 focus:ring-slate-500 cursor-pointer"
+                    />
+                    <span className="truncate">⚪ Chưa có page</span>
+                  </label>
+                </div>
+              </div>
             </div>
 
             {/* DUPLICATE HANDLING POLICY */}
@@ -769,6 +976,7 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       <th className="py-2 px-3 min-w-[120px]">Mật Khẩu (PASS)</th>
                       <th className="py-2 px-3 min-w-[140px]">Mã 2FA</th>
                       <th className="py-2 px-3 min-w-[120px]">Gán Cho NV</th>
+                      <th className="py-2 px-3 min-w-[120px]">Trạng Thái Page</th>
                       <th className="py-2 px-3 min-w-[160px]">Kiểm Tra Trùng / Trạng Thái</th>
                     </tr>
                   </thead>
@@ -823,6 +1031,22 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                                 </span>
                               )}
                             </div>
+                          </td>
+                          <td className="py-2 px-3">
+                            {pageStatusOption === 'has_page' ||
+                            batchNote.toLowerCase().includes('đã có page') ? (
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-extrabold rounded-md text-[10px] inline-flex items-center gap-1 border border-emerald-300">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>📗 Đã có page</span>
+                              </span>
+                            ) : pageStatusOption === 'pending_page' ||
+                              batchNote.toLowerCase().includes('cần gán page') ? (
+                              <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-extrabold rounded-md text-[10px] inline-flex items-center gap-1 border border-rose-300 animate-pulse">
+                                <span>🔴 Cần gán page</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">⚪ Chưa có page</span>
+                            )}
                           </td>
                           <td className="py-2 px-3">
                             {!row.isValid ? (
