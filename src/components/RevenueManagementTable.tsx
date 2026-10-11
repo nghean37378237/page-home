@@ -253,6 +253,9 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     }
   };
 
+  // State cho thanh nhập nhanh nhân viên mới ở Bảng Lương (không bị che)
+  const [quickSalaryName, setQuickSalaryName] = useState('');
+
   // ==========================================
   // STATE CHO MODAL BẢNG CHI PHÍ & CHI PHÍ NGOÀI Ý MUỐN
   // ==========================================
@@ -381,33 +384,44 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     return activeMonthRecord.customExpenses.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   }, [activeMonthRecord.customExpenses]);
 
-  // 4. Chi phí cố định mặc định = Văn phòng + Điện + Nước
-  const computedFixedUtilityCost = useMemo(() => {
-    return (Number(workingOfficeCost) || 0) + (Number(workingElectricityCost) || 0) + (Number(workingWaterCost) || 0);
-  }, [workingOfficeCost, workingElectricityCost, workingWaterCost]);
-
-  // 5. Tổng chi phí phải chi trong tháng
-  const computedTotalExpenses = useMemo(() => {
+  // 4. Chi phí cố định toàn diện = Văn phòng + Điện + Nước + Mạng Internet + Các khoản cố định tự thêm
+  const computedTotalFixedCosts = useMemo(() => {
     return (
       (Number(workingOfficeCost) || 0) +
       (Number(workingElectricityCost) || 0) +
       (Number(workingWaterCost) || 0) +
       (Number(workingInternetCost) || 0) +
-      (Number(workingOtherCosts) || 0) +
+      computedFixedCustomExpenses
+    );
+  }, [workingOfficeCost, workingElectricityCost, workingWaterCost, workingInternetCost, computedFixedCustomExpenses]);
+
+  // Chi phí cố định cơ bản (VP + Điện + Nước)
+  const computedFixedUtilityCost = useMemo(() => {
+    return (Number(workingOfficeCost) || 0) + (Number(workingElectricityCost) || 0) + (Number(workingWaterCost) || 0);
+  }, [workingOfficeCost, workingElectricityCost, workingWaterCost]);
+
+  // Chi phí phát sinh & ngoài ý muốn = Chi phí ngoài ý muốn + Công cụ/Tool/Khác + Chi phí phát sinh khác
+  const computedTotalUnexpectedCosts = useMemo(() => {
+    const toolsAndOther = (activeMonthRecord.customExpenses || [])
+      .filter((e) => e.expenseType === 'tools' || e.expenseType === 'other')
+      .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    return computedUnexpectedExpenses + toolsAndOther + (Number(workingOtherCosts) || 0);
+  }, [activeMonthRecord.customExpenses, computedUnexpectedExpenses, workingOtherCosts]);
+
+  // 5. Tổng chi phí phải chi trong tháng (Yêu cầu 4: Tổng Lương & KPI + Chi Phí Cố Định + Chi Phí Phát Sinh Ngoài Ý Muốn)
+  const computedTotalExpenses = useMemo(() => {
+    return (
       computedTotalSalary +
-      computedTotalCustomExpenses
+      computedTotalFixedCosts +
+      computedTotalUnexpectedCosts
     );
   }, [
-    workingOfficeCost,
-    workingElectricityCost,
-    workingWaterCost,
-    workingInternetCost,
-    workingOtherCosts,
     computedTotalSalary,
-    computedTotalCustomExpenses,
+    computedTotalFixedCosts,
+    computedTotalUnexpectedCosts,
   ]);
 
-  // 6. Lợi nhuận ròng = Doanh thu - Tổng chi phí
+  // 6. Lợi nhuận ròng = Tổng thu tiền về (Doanh thu) - Tất cả chi phí lương, KPI và chi phí phát sinh, cố định (Yêu cầu 4)
   const computedNetProfit = useMemo(() => {
     return computedTotalRevenue - computedTotalExpenses;
   }, [computedTotalRevenue, computedTotalExpenses]);
@@ -1698,7 +1712,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
           </div>
         </div>
 
-        {/* Thẻ 2: Tổng Chi Phí Phải Chi (Bao gồm chi phí ngoài ý muốn) */}
+        {/* Thẻ 2: Tổng Chi Phí Phải Chi (Bao gồm lương, KPI, chi phí cố định và phát sinh) */}
         <div
           onClick={() => setActiveSection('expenses')}
           className="p-3.5 bg-rose-50/80 hover:bg-rose-100/70 border border-rose-200 rounded-2xl cursor-pointer transition-all shadow-2xs group"
@@ -1713,12 +1727,12 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
             {formatCurrencyVND(computedTotalExpenses)}
           </div>
           <div className="text-[11px] text-rose-600/90 mt-1 flex items-center justify-between">
-            <span>Gồm VP, Điện, Nước, Ngoài ý muốn & Lương</span>
+            <span>Lương & KPI + Cố định + Phát sinh</span>
             <span className="font-bold underline">Chi tiết →</span>
           </div>
         </div>
 
-        {/* Thẻ 3: Lợi Nhuận Ròng (Tiền Dư Còn Lại) */}
+        {/* Thẻ 3: Lợi Nhuận Ròng (Tiền Dư Còn Lại) - Yêu cầu 4 */}
         <div
           className={`p-3.5 border rounded-2xl transition-all shadow-2xs col-span-2 sm:col-span-1 ${
             computedNetProfit >= 0
@@ -1732,7 +1746,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 computedNetProfit >= 0 ? 'text-teal-900' : 'text-rose-900'
               }`}
             >
-              💎 Lợi Nhuận Ròng (Tiền Dư)
+              💎 Lợi Nhuận (Tiền Về - Chi Phí)
             </span>
             {computedNetProfit >= 0 ? (
               <TrendingUp className="w-4 h-4 text-teal-600" />
@@ -1749,8 +1763,16 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
             {formatCurrencyVND(computedNetProfit)}
           </div>
           <div
-            className={`text-[11px] mt-1 font-bold ${
-              computedNetProfit >= 0 ? 'text-teal-700' : 'text-rose-700'
+            className={`text-[10px] mt-1 font-extrabold truncate ${
+              computedNetProfit >= 0 ? 'text-teal-800' : 'text-rose-800'
+            }`}
+            title={`Thu về (${formatCurrencyVND(computedTotalRevenue)}) trừ đi Chi phí (${formatCurrencyVND(computedTotalExpenses)})`}
+          >
+            = Thu về ({formatCurrencyVND(computedTotalRevenue)}) - Chi ({formatCurrencyVND(computedTotalExpenses)})
+          </div>
+          <div
+            className={`text-[10px] mt-0.5 font-bold ${
+              computedNetProfit >= 0 ? 'text-teal-600' : 'text-rose-600'
             }`}
           >
             Tỷ suất: {computedProfitMargin}% | {computedNetProfit >= 0 ? 'Có Lãi 🎉' : 'Bị Lỗ ⚠️'}
@@ -1881,6 +1903,46 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Cột 1 & 2: Bảng Cân Đối Tài Chính Thu - Chi */}
           <div className="lg:col-span-2 space-y-4">
+            {/* HỘP CÔNG THỨC LỢI NHUẬN CHÍNH XÁC (YÊU CẦU 4) */}
+            <div className="bg-gradient-to-r from-teal-50 via-emerald-50 to-blue-50 border-2 border-emerald-300 rounded-2xl p-4 shadow-2xs space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-emerald-950 flex items-center space-x-1.5 uppercase tracking-wide">
+                  <TrendingUp className="w-4 h-4 text-emerald-600" />
+                  <span>CÔNG THỨC LỢI NHUẬN RÒNG ({activeMonthRecord.title || selectedMonthKey}):</span>
+                </span>
+                <span className={`text-[11px] font-extrabold px-2.5 py-0.5 rounded-full text-white shadow-2xs ${computedNetProfit >= 0 ? 'bg-emerald-600' : 'bg-rose-600'}`}>
+                  {computedNetProfit >= 0 ? 'CÓ LÃI RÒNG 🎉' : 'BỊ LỖ THÁNG ⚠️'}
+                </span>
+              </div>
+              <p className="text-xs text-slate-700 leading-relaxed font-medium">
+                💎 <b>Lợi nhuận</b> = <b>Tổng thu tiền về</b> trừ đi tất cả <b>chi phí lương & KPI</b>, <b>chi phí cố định</b> (văn phòng, điện, nước, internet) và <b>chi phí phát sinh ngoài ý muốn</b>.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center font-mono">
+                <div className="p-2.5 bg-white rounded-xl border border-emerald-300 shadow-2xs">
+                  <span className="text-[10px] text-emerald-800 font-extrabold block">(+) THU TIỀN VỀ</span>
+                  <span className="text-xs font-black text-emerald-700 truncate block mt-0.5">{formatCurrencyVND(computedTotalRevenue)}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-blue-300 shadow-2xs">
+                  <span className="text-[10px] text-blue-800 font-extrabold block">(-) LƯƠNG & KPI</span>
+                  <span className="text-xs font-black text-blue-700 truncate block mt-0.5">{formatCurrencyVND(computedTotalSalary)}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-amber-300 shadow-2xs">
+                  <span className="text-[10px] text-amber-800 font-extrabold block">(-) CỐ ĐỊNH (VP/ĐIỆN/NƯỚC)</span>
+                  <span className="text-xs font-black text-amber-700 truncate block mt-0.5">{formatCurrencyVND(computedTotalFixedCosts)}</span>
+                </div>
+                <div className="p-2.5 bg-white rounded-xl border border-rose-300 shadow-2xs">
+                  <span className="text-[10px] text-rose-800 font-extrabold block">(-) PHÁT SINH / KHÁC</span>
+                  <span className="text-xs font-black text-rose-700 truncate block mt-0.5">{formatCurrencyVND(computedTotalUnexpectedCosts)}</span>
+                </div>
+              </div>
+              <div className="p-3 bg-white/95 border-2 border-emerald-400 rounded-xl flex items-center justify-between text-xs font-black">
+                <span className="text-emerald-950 uppercase">(=) LỢI NHUẬN RÒNG THỰC TẾ (TIỀN DƯ):</span>
+                <span className={`text-base sm:text-lg font-black font-mono ${computedNetProfit >= 0 ? 'text-teal-700' : 'text-rose-700'}`}>
+                  {computedNetProfit >= 0 ? '+' : ''}{formatCurrencyVND(computedNetProfit)}
+                </span>
+              </div>
+            </div>
+
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
               <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
                 <h3 className="text-sm font-black text-slate-900 flex items-center space-x-2">
@@ -2691,6 +2753,56 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
             </div>
           </div>
 
+          {/* THANH NHẬP NHANH HỌ TÊN NHÂN VIÊN MỚI (TRỰC TIẾP, KHÔNG BỊ CHE - YÊU CẦU 3) */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!quickSalaryName.trim()) {
+                alert('Vui lòng nhập họ và tên nhân viên!');
+                return;
+              }
+              handleOpenAddSalary(quickSalaryName.trim());
+              setQuickSalaryName('');
+            }}
+            className="p-3.5 bg-gradient-to-r from-blue-50/95 via-indigo-50/95 to-sky-50/95 border-2 border-blue-400 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-2.5 shadow-2xs"
+          >
+            <div className="flex items-center space-x-2 shrink-0">
+              <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+                <UserCheck className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-black text-blue-950 uppercase tracking-wide block">
+                  Nhập Họ Và Tên Nhân Viên Mới:
+                </span>
+                <span className="text-[10px] text-blue-700 font-semibold">
+                  Nhập trực tiếp tại đây hoặc chọn bấm nút "+ Thêm Nhân Viên"
+                </span>
+              </div>
+            </div>
+            <div className="flex-1 min-w-[220px]">
+              <input
+                type="text"
+                list="quick-staff-salary-suggestions"
+                placeholder="👉 Nhập họ và tên nhân viên vào đây (VD: Anh Quỳnh, Thu Hà...)..."
+                value={quickSalaryName}
+                onChange={(e) => setQuickSalaryName(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-500 rounded-xl text-xs font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-hidden shadow-xs"
+              />
+              <datalist id="quick-staff-salary-suggestions">
+                {availableStaffNames.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all shadow-xs shrink-0 cursor-pointer hover:scale-[1.02] flex items-center justify-center space-x-1.5"
+            >
+              <Plus className="w-4 h-4" />
+              <span>+ Thêm Vào Bảng Lương</span>
+            </button>
+          </form>
+
           {/* Dàn tóm tắt quỹ lương */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between">
@@ -3258,8 +3370,8 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       {/* (Lương thử việc, Lương chính thức, Ngày công thực tế, STK Ngân hàng, KPI 5% / 10%) */}
       {/* ========================================== */}
       {isSalaryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-xl w-full shadow-2xl relative max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/75 backdrop-blur-xs p-2 sm:p-4 md:p-6 flex items-start justify-center min-h-screen animate-fadeIn">
+          <div className="bg-white border-2 border-blue-400 rounded-3xl max-w-xl w-full shadow-2xl relative my-auto sm:my-4 flex flex-col max-h-[92vh] overflow-hidden">
             {/* Header: Cố định trên cùng, không bao giờ bị che */}
             <div className="p-4 sm:p-5 pb-3 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
               <div className="flex items-center space-x-2.5">
@@ -3288,15 +3400,15 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
             {/* Form: Có khung cuộn bên trong, bắt đầu ngay từ ô Tên Nhân Viên */}
             <form onSubmit={handleSaveSalaryItem} className="flex-1 flex flex-col overflow-hidden">
               <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
-                {/* 1. KHỐI TÊN NHÂN VIÊN (NỔI BẬT NHẤT Ở ĐẦU FORM, KHÔNG BAO GIỜ BỊ CHE) */}
-                <div className="p-4 bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border-2 border-blue-400 rounded-2xl shadow-xs space-y-2.5">
+                {/* 1. KHỐI TÊN NHÂN VIÊN (NỔI BẬT NHẤT Ở ĐẦU FORM, KHÔNG BAO GIỜ BỊ CHE - YÊU CẦU 3) */}
+                <div className="p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 border-2 border-blue-500 rounded-2xl shadow-sm space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <label htmlFor="salary-staff-name-input" className="text-xs font-black text-blue-950 flex items-center space-x-1.5">
+                    <label htmlFor="salary-staff-name-input" className="text-xs font-black text-blue-950 flex items-center space-x-1.5 uppercase">
                       <UserCheck className="w-4 h-4 text-blue-600" />
                       <span>HỌ VÀ TÊN NHÂN VIÊN <span className="text-rose-600 font-black">*</span></span>
                     </label>
-                    <span className="text-[10px] font-extrabold text-blue-800 bg-white px-2.5 py-0.5 rounded-full border border-blue-200 shadow-2xs">
-                      Bắt buộc nhập
+                    <span className="text-[10px] font-black text-blue-900 bg-white px-2.5 py-1 rounded-full border-2 border-blue-300 shadow-2xs">
+                      BẮT BUỘC NHẬP
                     </span>
                   </div>
 
@@ -3311,7 +3423,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                       placeholder="👉 Nhập họ và tên nhân viên vào đây (VD: Anh Quỳnh, Phương My...)"
                       value={salaryStaffName}
                       onChange={(e) => handleStaffNameChange(e.target.value)}
-                      className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-500 rounded-xl text-sm font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-hidden shadow-xs"
+                      className="w-full px-4 py-3 bg-white border-2 border-blue-600 rounded-xl text-base font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-4 focus:ring-blue-200 focus:outline-hidden shadow-xs"
                     />
                     <datalist id="staff-salary-suggestions">
                       {availableStaffNames.map((name) => (

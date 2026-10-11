@@ -116,6 +116,10 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
+  // State nhập nhanh nhân viên mới trực tiếp trên giao diện (không bị che - Yêu cầu 3)
+  const [quickStaffName, setQuickStaffName] = useState('');
+  const [quickStaffPin, setQuickStaffPin] = useState('123456');
+
   // Change PIN modal state (both Admin and Staff for their own account)
   const [pinModalAccount, setPinModalAccount] = useState<UserAccount | null>(null);
   const [newPinValue, setNewPinValue] = useState('');
@@ -249,6 +253,27 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
       setIsAddModalOpen(false);
     } catch (err: any) {
       setAddError(err.message || 'Lỗi khi thêm nhân viên');
+    } finally {
+      setIsSubmittingAdd(false);
+    }
+  };
+
+  // Thêm nhanh nhân viên trực tiếp từ thanh nhập (Yêu cầu 3)
+  const handleQuickCreateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = quickStaffName.trim();
+    if (!cleanName) {
+      alert('Vui lòng nhập họ và tên nhân viên!');
+      return;
+    }
+    const cleanPin = quickStaffPin.trim() || '123456';
+    setIsSubmittingAdd(true);
+    try {
+      await onAddStaff(cleanName, cleanPin, 'Thêm nhanh từ thanh quản trị', undefined, ['fanpage', 'fullvia', 'staff_management']);
+      setQuickStaffName('');
+      setQuickStaffPin('123456');
+    } catch (err: any) {
+      alert(err.message || 'Lỗi khi thêm nhân viên');
     } finally {
       setIsSubmittingAdd(false);
     }
@@ -450,6 +475,53 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
               )}
             </div>
           </div>
+
+          {/* THANH NHẬP NHANH TÊN NHÂN VIÊN MỚI (TRỰC TIẾP, KHÔNG BỊ CHE - YÊU CẦU 3) */}
+          <form
+            onSubmit={handleQuickCreateStaff}
+            className="p-3.5 bg-gradient-to-r from-blue-50/95 via-indigo-50/95 to-sky-50/95 border-2 border-blue-400 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-2.5 shadow-2xs"
+          >
+            <div className="flex items-center space-x-2 shrink-0">
+              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+                <UserPlus className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="text-xs font-black text-blue-950 uppercase tracking-wide block">
+                  Nhập Họ Và Tên Nhân Viên Mới:
+                </span>
+                <span className="text-[10px] text-blue-700 font-semibold">
+                  Tạo tài khoản nhân viên trực tiếp lên Cloud Firestore
+                </span>
+              </div>
+            </div>
+            <div className="flex-1 min-w-[200px]">
+              <input
+                type="text"
+                placeholder="👉 Nhập họ và tên nhân viên mới vào đây (VD: Hoàng Long, Thu Hà...)"
+                value={quickStaffName}
+                onChange={(e) => setQuickStaffName(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-500 rounded-xl text-xs font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-hidden shadow-xs"
+              />
+            </div>
+            <div className="w-28 shrink-0">
+              <input
+                type="text"
+                placeholder="PIN: 123456"
+                value={quickStaffPin}
+                onChange={(e) => setQuickStaffPin(e.target.value)}
+                title="Mã PIN đăng nhập (mặc định: 123456)"
+                className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-800 text-center"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={isSubmittingAdd}
+              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all shadow-xs shrink-0 cursor-pointer hover:scale-[1.02] flex items-center justify-center space-x-1.5 disabled:opacity-60"
+            >
+              {isSubmittingAdd ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+              <span>+ Thêm Ngay</span>
+            </button>
+          </form>
 
           {/* MASTER ADMIN SECURITY & APP LOCKDOWN BANNER */}
           <div className="bg-gradient-to-r from-slate-900 via-[#0f1d3a] to-slate-900 border border-slate-700/80 rounded-2xl p-5 shadow-xl text-white">
@@ -1178,8 +1250,8 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
 
       {/* Modal Thêm Nhân Viên Mới */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/75 backdrop-blur-xs p-2 sm:p-4 md:p-6 flex items-start justify-center min-h-screen animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border-2 border-blue-400 my-auto sm:my-4 flex flex-col max-h-[92vh] overflow-hidden">
             {/* Header: Cố định trên cùng */}
             <div className="flex items-center justify-between p-5 pb-3 border-b border-slate-100 shrink-0 bg-white">
               <div className="flex items-center space-x-2.5">
@@ -1187,7 +1259,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   <UserPlus className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Thêm Nhân Viên Mới</h3>
+                  <h3 className="text-base font-black text-slate-900">Thêm Nhân Viên Mới</h3>
                   <p className="text-xs text-slate-500">Tạo tài khoản và lưu trực tiếp lên Cloud Firestore</p>
                 </div>
               </div>
@@ -1211,12 +1283,12 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   </div>
                 )}
 
-                {/* Khối Nhập Tên Nhân Viên Nổi Bật */}
-                <div className="p-3.5 bg-blue-50/80 border-2 border-blue-400 rounded-2xl space-y-1.5">
-                  <label htmlFor="add-staff-name-input" className="block text-xs font-black text-blue-950 flex items-center justify-between">
-                    <span>HỌ VÀ TÊN NHÂN VIÊN MỚI <span className="text-rose-500 font-black">*</span></span>
-                    <span className="text-[10px] font-bold text-blue-700 bg-white px-2 py-0.5 rounded-full border border-blue-200">
-                      Bắt buộc
+                {/* Khối Nhập Tên Nhân Viên Nổi Bật - Không Bị Che (Yêu cầu 3) */}
+                <div className="p-4 bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 border-2 border-blue-500 rounded-2xl space-y-2 shadow-xs">
+                  <label htmlFor="add-staff-name-input" className="block text-xs font-black text-blue-950 flex items-center justify-between uppercase">
+                    <span>HỌ VÀ TÊN NHÂN VIÊN MỚI <span className="text-rose-600 font-black">*</span></span>
+                    <span className="text-[10px] font-black text-blue-900 bg-white px-2.5 py-1 rounded-full border-2 border-blue-300 shadow-2xs">
+                      BẮT BUỘC NHẬP
                     </span>
                   </label>
                   <input
@@ -1227,7 +1299,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                     onChange={(e) => setAddName(e.target.value)}
                     required
                     autoFocus
-                    className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-500 rounded-xl text-sm font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:border-blue-600 focus:ring-2 focus:ring-blue-600 focus:outline-hidden shadow-xs"
+                    className="w-full px-4 py-3 bg-white border-2 border-blue-600 rounded-xl text-base font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-4 focus:ring-blue-200 focus:outline-hidden shadow-xs"
                   />
                 </div>
 
