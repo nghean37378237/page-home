@@ -80,7 +80,8 @@ export type TabKey =
   | 'fullvia'
   | 'staff_management'
   | 'shared_accounts'
-  | 'revenue';
+  | 'revenue'
+  | 'staff_info';
 
 export interface TabPermissionConfig {
   id: TabKey;
@@ -100,6 +101,7 @@ export const ALL_TAB_KEYS: TabKey[] = [
   'staff_management',
   'shared_accounts',
   'revenue',
+  'staff_info',
 ];
 
 // Các bảng phân quyền cho nhân viên (Bảng 5 Quản Trị NV & Bảng 7 Quản Lý Doanh Thu chỉ dành riêng cho Admin quản lý)
@@ -109,6 +111,7 @@ export const STAFF_ASSIGNABLE_TABS: TabKey[] = [
   'proxy',
   'fullvia',
   'shared_accounts',
+  'staff_info',
 ];
 
 export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
@@ -174,6 +177,15 @@ export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
     badgeName: 'Doanh Thu',
     color: 'amber',
     description: 'Bảng quản lý doanh thu, tổng tiền về, chi phí văn phòng, điện, nước và lương nhân viên từng tháng (Chỉ Admin)',
+  },
+  staff_info: {
+    id: 'staff_info',
+    tabNumber: 8,
+    label: 'Thông Tin Nhân Viên',
+    shortLabel: 'Thông Tin NV',
+    badgeName: 'Hồ Sơ & Lương',
+    color: 'blue',
+    description: 'Xem thông tin cá nhân, ngày sinh, lương theo ngày công, doanh thu và tổng thu nhập từ Bảng 7',
   },
 };
 
@@ -381,6 +393,9 @@ export interface StaffSalaryItem {
 
   // 6. Tổng thực nhận
   actualSalary: number; // Tổng thực nhận = salaryByWorkingDays + kpiBonus + (otherBonus || 0) - deduction
+
+  // 7. Quyền hiển thị cho nhân viên (Yêu cầu mới: Admin tích chọn thì mới cho hiện ở Tab Thông Tin Nhân Viên, bỏ tích thì Lương và Doanh thu bỏ trống)
+  isVisibleToStaff?: boolean; // true = Admin đã tích cho hiện | false / undefined = Bỏ tích, ẩn số tiền Lương & Doanh thu
 
   isPaid: boolean; // Đã thanh toán / Chưa thanh toán
   paidDate?: string; // Ngày chi trả

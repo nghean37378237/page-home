@@ -279,7 +279,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const handleQuickPresetTabs = (preset: 'all' | 'fanpage_only' | 'fanpage_via' | 'fanpage_group' | 'minimal') => {
     switch (preset) {
       case 'all':
-        setSelectedAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts']);
+        setSelectedAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts', 'staff_info']);
         break;
       case 'fanpage_only':
         setSelectedAllowedTabs(['fanpage']);
@@ -306,7 +306,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
       }
       setPermissionNotice({
         success: true,
-        message: `Đã cập nhật phân quyền (${selectedAllowedTabs.length}/6 bảng) cho "${permissionModalAccount.username}" thành công!`,
+        message: `Đã cập nhật phân quyền (${selectedAllowedTabs.length} bảng) cho "${permissionModalAccount.username}" thành công!`,
       });
       setTimeout(() => {
         setPermissionModalAccount(null);
@@ -1660,7 +1660,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                   <span>Chọn Nhanh Mẫu Phân Quyền:</span>
                   <span className="text-blue-600 font-extrabold normal-case">
-                    Đã chọn {selectedAllowedTabs.length}/6 bảng
+                    Đã chọn {selectedAllowedTabs.length} bảng
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-1.5">

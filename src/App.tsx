@@ -104,7 +104,8 @@ import { ProxyAppView } from './components/ProxyAppView';
 import { AddEditProxyModal } from './components/AddEditProxyModal';
 import { BulkImportProxyModal } from './components/BulkImportProxyModal';
 import { RevenueManagementTable } from './components/RevenueManagementTable';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers } from 'lucide-react';
+import { StaffInfoTable } from './components/StaffInfoTable';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact } from 'lucide-react';
 
 export default function App() {
   // Application data stored purely in Cloud Firestore
@@ -191,7 +192,12 @@ export default function App() {
       tabs = ['fanpage', 'fullvia'];
     }
     // Bảng 5 (Quản trị nhân viên) & Bảng 7 (Doanh thu) chỉ có Admin quản lý - loại trừ khỏi danh sách bảng của nhân viên
-    return tabs.filter((t) => t !== 'staff_management' && t !== 'revenue');
+    const filteredTabs = tabs.filter((t) => t !== 'staff_management' && t !== 'revenue');
+    // Tab Thông Tin Nhân Viên luôn hiện cho nhân viên để xem hồ sơ và lương cá nhân (lấy từ Bảng 7)
+    if (!filteredTabs.includes('staff_info')) {
+      filteredTabs.push('staff_info');
+    }
+    return filteredTabs;
   }, [currentUser, accounts]);
 
   // Tự động chuyển activeTab về bảng hợp lệ đầu tiên nếu bảng hiện tại không được phép
@@ -784,6 +790,21 @@ export default function App() {
       accentColor: 'text-amber-600',
       description: 'Tổng tiền về do admin nhập, trừ chi phí văn phòng, điện, nước và lương nhân viên (Chỉ Admin)',
       visible: userAllowedTabs.includes('revenue') && currentUser.role === 'admin',
+    },
+    {
+      id: 'staff_info' as TabKey,
+      num: currentUser.role === 'admin' ? 8 : (userAllowedTabs.indexOf('staff_info') !== -1 ? userAllowedTabs.indexOf('staff_info') + 1 : 5),
+      title: 'Thông Tin NV',
+      fullTitle: 'Thông Tin Nhân Viên, Ngày Sinh, Lương & Doanh Thu (Từ Bảng 7)',
+      icon: Contact,
+      count: 1,
+      unit: 'Hồ sơ',
+      activeClass: 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25',
+      activeNumClass: 'bg-white/20 text-white',
+      dotColor: 'bg-blue-500',
+      accentColor: 'text-blue-700',
+      description: 'Hiện họ và tên, ngày tháng năm sinh, lương, doanh thu và tổng lương lấy từ Bảng 7',
+      visible: userAllowedTabs.includes('staff_info') || currentUser.role === 'staff' || currentUser.role === 'admin',
     },
   ].filter((t) => t.visible), [userAllowedTabs, currentUser, userScopedRecords, groupRecords, proxies, viaList, accounts, sharedAccounts, finances]);
 
@@ -2690,6 +2711,14 @@ export default function App() {
               setFinances([]);
               clearLocalFinanceBackup();
             }}
+            onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
+          />
+        ) : activeTab === 'staff_info' ? (
+          <StaffInfoTable
+            currentUser={currentUser}
+            finances={finances}
+            accounts={accounts}
+            availableStaffNames={allStaffNames}
             onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
           />
         ) : (

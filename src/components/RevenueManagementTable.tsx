@@ -44,6 +44,8 @@ import {
   Briefcase,
   UserCheck,
   Contact,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface RevenueManagementTableProps {
@@ -182,6 +184,8 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [salaryIsPaid, setSalaryIsPaid] = useState(false);
   const [salaryPaidDate, setSalaryPaidDate] = useState('');
   const [salaryNote, setSalaryNote] = useState('');
+  // Quyền hiển thị cho nhân viên (Tích hiện / Bỏ tích ẩn số tiền)
+  const [salaryIsVisibleToStaff, setSalaryIsVisibleToStaff] = useState(false);
 
   // Hàm tự động gợi ý/điền nhanh thông tin nhân sự khi Admin chọn tên nhân viên
   const handleStaffNameChange = (name: string) => {
@@ -562,6 +566,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryIsPaid(false);
     setSalaryPaidDate('');
     setSalaryNote('');
+    setSalaryIsVisibleToStaff(false);
 
     if (initialName) {
       handleStaffNameChange(initialName);
@@ -591,6 +596,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryIsPaid(item.isPaid || false);
     setSalaryPaidDate(item.paidDate || '');
     setSalaryNote(item.note || '');
+    setSalaryIsVisibleToStaff(Boolean(item.isVisibleToStaff));
     setIsSalaryModalOpen(true);
   };
 
@@ -687,6 +693,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               otherBonus,
               deduction,
               actualSalary: totalActual,
+              isVisibleToStaff: salaryIsVisibleToStaff,
               isPaid: salaryIsPaid,
               paidDate: salaryIsPaid ? (salaryPaidDate.trim() || new Date().toLocaleDateString('vi-VN')) : '',
               note: salaryNote.trim(),
@@ -717,6 +724,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
         otherBonus,
         deduction,
         actualSalary: totalActual,
+        isVisibleToStaff: salaryIsVisibleToStaff,
         isPaid: salaryIsPaid,
         paidDate: salaryIsPaid ? (salaryPaidDate.trim() || new Date().toLocaleDateString('vi-VN')) : '',
         note: salaryNote.trim(),
@@ -762,6 +770,43 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       }
       return item;
     });
+
+    const updatedRecord: MonthlyFinanceRecord = {
+      ...activeMonthRecord,
+      salaryItems: updatedItems,
+      updatedAt: new Date().toLocaleString('vi-VN'),
+      updatedBy: currentUser.name || 'Admin',
+    };
+    await onSaveMonthlyFinance(updatedRecord);
+  };
+
+  // Bật/tắt quyền hiển thị bảng lương & doanh thu cho nhân viên (Yêu cầu mới)
+  const handleToggleSalaryVisibility = async (salaryId: string) => {
+    const updatedItems = (activeMonthRecord.salaryItems || []).map((item) => {
+      if (item.id === salaryId) {
+        return {
+          ...item,
+          isVisibleToStaff: !item.isVisibleToStaff,
+        };
+      }
+      return item;
+    });
+
+    const updatedRecord: MonthlyFinanceRecord = {
+      ...activeMonthRecord,
+      salaryItems: updatedItems,
+      updatedAt: new Date().toLocaleString('vi-VN'),
+      updatedBy: currentUser.name || 'Admin',
+    };
+    await onSaveMonthlyFinance(updatedRecord);
+  };
+
+  // Tích hiện hoặc ẩn toàn bộ bảng lương cho nhân viên tháng này
+  const handleToggleAllSalariesVisibility = async (visible: boolean) => {
+    const updatedItems = (activeMonthRecord.salaryItems || []).map((item) => ({
+      ...item,
+      isVisibleToStaff: visible,
+    }));
 
     const updatedRecord: MonthlyFinanceRecord = {
       ...activeMonthRecord,
@@ -2302,6 +2347,27 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 <span>Đã Trả Hết Lương</span>
               </button>
 
+              {/* Nút tích hiện / ẩn hàng loạt cho nhân viên */}
+              <button
+                type="button"
+                onClick={() => handleToggleAllSalariesVisibility(true)}
+                className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all cursor-pointer border border-blue-200"
+                title="Tích hiện thông tin Lương, Doanh thu và Tổng lương cho tất cả nhân viên ở Tab Thông Tin Nhân Viên"
+              >
+                <Eye className="w-3.5 h-3.5 text-blue-600" />
+                <span>Tích Hiện Tất Cả Cho NV</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleToggleAllSalariesVisibility(false)}
+                className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer border border-slate-200"
+                title="Bỏ tích: Ẩn số tiền Lương & Doanh thu với tất cả nhân viên (bỏ trống)"
+              >
+                <EyeOff className="w-3.5 h-3.5 text-slate-500" />
+                <span>Ẩn Với NV (Trống)</span>
+              </button>
+
               <button
                 type="button"
                 id="btn-add-salary-item"
@@ -2371,6 +2437,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                   <th className="py-2.5 px-3 text-right">Doanh Thu Mang Về & KPI</th>
                   <th className="py-2.5 px-3 text-right">Thưởng Khác / Trừ</th>
                   <th className="py-2.5 px-3 text-right">Tổng Thực Nhận</th>
+                  <th className="py-2.5 px-3 text-center">Hiển Thị Cho NV</th>
                   <th className="py-2.5 px-3 text-center">Trạng Thái</th>
                   <th className="py-2.5 px-3 text-center">Ngày Chi</th>
                   <th className="py-2.5 px-3">Ghi Chú</th>
@@ -2380,7 +2447,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {!activeMonthRecord.salaryItems || activeMonthRecord.salaryItems.length === 0 ? (
                   <tr>
-                    <td colSpan={13} className="py-8 text-center text-slate-400">
+                    <td colSpan={14} className="py-8 text-center text-slate-400">
                       Chưa có nhân viên nào trong bảng lương tháng này. Hãy bấm{' '}
                       <strong>"Đồng Bộ NV Hệ Thống"</strong> hoặc <strong>"+ Thêm Nhân Viên"</strong>!
                     </td>
@@ -2525,6 +2592,37 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                           {formatCurrencyVND(item.actualSalary)}
                         </td>
 
+                        {/* Quyền hiển thị cho nhân viên (Yêu cầu mới: Tích hiện mới cho hiện, bỏ tích thì Lương và Doanh thu bỏ trống) */}
+                        <td className="py-2.5 px-3 text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleToggleSalaryVisibility(item.id)}
+                            className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[10px] font-black cursor-pointer transition-all border shadow-2xs ${
+                              item.isVisibleToStaff
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                            }`}
+                            title={
+                              item.isVisibleToStaff
+                                ? 'Đang TÍCH HIỆN: Nhân viên xem được Lương & Doanh thu (Bấm để bỏ tích ẩn: số tiền sẽ bỏ trống)'
+                                : 'Đang BỎ TÍCH: Lương & Doanh thu bỏ trống ở tab cá nhân của NV (Bấm để tích hiện)'
+                            }
+                          >
+                            {item.isVisibleToStaff ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-600" />
+                                <Eye className="w-3 h-3 text-emerald-600" />
+                                <span>Tích Hiện</span>
+                              </>
+                            ) : (
+                              <>
+                                <EyeOff className="w-3 h-3 text-slate-400" />
+                                <span>Ẩn (Trống)</span>
+                              </>
+                            )}
+                          </button>
+                        </td>
+
                         {/* Trạng thái chi trả */}
                         <td className="py-2.5 px-3 text-center">
                           <button
@@ -2587,13 +2685,13 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               </tbody>
               <tfoot className="bg-blue-50/90 font-black text-xs border-t-2 border-blue-300">
                 <tr>
-                  <td colSpan={7} className="py-2.5 px-3 text-right text-blue-900 uppercase">
+                  <td colSpan={8} className="py-2.5 px-3 text-right text-blue-900 uppercase">
                     TỔNG CỘNG TIỀN LƯƠNG NHÂN VIÊN (BAO GỒM KPI):
                   </td>
                   <td className="py-2.5 px-3 text-right text-blue-800 text-sm font-mono">
                     {formatCurrencyVND(computedTotalSalary)}
                   </td>
-                  <td colSpan={4}></td>
+                  <td colSpan={5}></td>
                 </tr>
               </tfoot>
             </table>
@@ -3228,6 +3326,23 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                   />
                   <span>Đã thanh toán chuyển khoản lương cho nhân viên này</span>
                 </label>
+              </div>
+
+              {/* Quyền hiển thị cho nhân viên (Yêu cầu mới: Admin tích mới hiện, bỏ tích thì Lương và Doanh thu bỏ trống) */}
+              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl space-y-1">
+                <label className="flex items-center space-x-2.5 text-xs font-bold text-blue-900 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={salaryIsVisibleToStaff}
+                    onChange={(e) => setSalaryIsVisibleToStaff(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                  />
+                  <span>Tích chọn: Cho phép nhân viên xem Lương & Doanh thu tháng này ở Tab cá nhân</span>
+                </label>
+                <p className="text-[11px] text-blue-700 pl-6.5">
+                  • <strong>Tích chọn:</strong> Nhân viên sẽ thấy đầy đủ Lương, Doanh thu và Tổng lương.<br />
+                  • <strong>Bỏ tích:</strong> Các số Lương và Doanh thu sẽ <strong>bỏ trống</strong> khi nhân viên xem.
+                </p>
               </div>
 
               <div>
