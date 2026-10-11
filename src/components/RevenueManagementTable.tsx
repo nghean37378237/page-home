@@ -46,6 +46,8 @@ import {
   Contact,
   Eye,
   EyeOff,
+  RotateCcw,
+  CheckSquare,
 } from 'lucide-react';
 
 interface RevenueManagementTableProps {
@@ -55,6 +57,7 @@ interface RevenueManagementTableProps {
   accounts?: UserAccount[];
   onSaveMonthlyFinance: (record: MonthlyFinanceRecord) => Promise<void> | void;
   onDeleteMonthlyFinance: (monthId: string) => Promise<void> | void;
+  onDeleteBatchMonthlyFinances?: (monthIds: string[]) => Promise<void> | void;
   onClearAllFinances?: () => Promise<void> | void;
   onRefreshFinances?: () => Promise<void> | void;
   onNavigateToTab?: (tab: string) => void;
@@ -111,6 +114,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   accounts = [],
   onSaveMonthlyFinance,
   onDeleteMonthlyFinance,
+  onDeleteBatchMonthlyFinances,
   onClearAllFinances,
   onNavigateToTab,
 }) => {
@@ -157,6 +161,10 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [copyOfficeCostsOption, setCopyOfficeCostsOption] = useState<boolean>(true);
   const [copyExpensesOption, setCopyExpensesOption] = useState<boolean>(true);
   const [copyRevenueOption, setCopyRevenueOption] = useState<boolean>(true);
+
+  // Modal Quản Lý & Chọn Xóa Dữ Liệu Theo Tháng (Yêu cầu 4: có thể chọn và xóa toàn bộ dữ liệu theo tháng)
+  const [isManageMonthsModalOpen, setIsManageMonthsModalOpen] = useState(false);
+  const [selectedMonthKeysToDelete, setSelectedMonthKeysToDelete] = useState<string[]>([]);
 
   // Modal thêm / sửa nguồn thu (Revenue Item)
   const [isRevenueModalOpen, setIsRevenueModalOpen] = useState(false);
@@ -1316,7 +1324,9 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
 
   // --- XÓA THÁNG ---
   const handleDeleteMonth = async (monthId: string) => {
-    if (!confirm(`Bạn có chắc chắn muốn xóa toàn bộ dữ liệu tài chính của tháng này (${monthId})? Thao tác không thể hoàn tác!`)) {
+    const record = finances.find((f) => f.id === monthId || f.monthKey === monthId);
+    const title = record?.title || monthId;
+    if (!confirm(`Bạn có chắc chắn muốn xóa toàn bộ dữ liệu tài chính của ${title}? Thao tác không thể hoàn tác!`)) {
       return;
     }
     await onDeleteMonthlyFinance(monthId);
@@ -1324,6 +1334,74 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     if (remaining.length > 0) {
       setSelectedMonthKey(remaining[0].monthKey || remaining[0].id);
     }
+    setSaveSuccessMsg(`Đã xóa thành công ${title}!`);
+    setTimeout(() => setSaveSuccessMsg(null), 4000);
+  };
+
+  // --- LÀM TRỐNG TOÀN BỘ DỮ LIỆU CỦA 1 THÁNG (BẢNG TRẮNG) ---
+  const handleClearMonthData = async (monthId: string) => {
+    const record = finances.find((f) => f.id === monthId || f.monthKey === monthId);
+    const title = record?.title || monthId;
+    if (!confirm(`Bạn có chắc chắn muốn xóa sạch toàn bộ nguồn thu, chi phí và bảng lương của ${title}? Kỳ tháng vẫn được giữ lại nhưng các số liệu sẽ trở về 0.`)) {
+      return;
+    }
+    const emptyRecord: MonthlyFinanceRecord = {
+      ...(record || activeMonthRecord),
+      id: monthId,
+      monthKey: monthId,
+      revenueItems: [],
+      totalRevenue: 0,
+      officeCost: 0,
+      officeCostNote: '',
+      electricityCost: 0,
+      electricityCostNote: '',
+      waterCost: 0,
+      waterCostNote: '',
+      internetCost: 0,
+      internetCostNote: '',
+      otherCosts: 0,
+      otherCostsNote: '',
+      customExpenses: [],
+      salaryItems: [],
+      totalSalary: 0,
+      totalExpenses: 0,
+      netProfit: 0,
+      profitMargin: 0,
+      status: 'break_even',
+      adminSummaryNote: '',
+      updatedAt: new Date().toLocaleString('vi-VN'),
+      updatedBy: currentUser.name || 'Admin',
+    };
+    await onSaveMonthlyFinance(emptyRecord);
+    setSaveSuccessMsg(`Đã làm trống toàn bộ dữ liệu của ${title}!`);
+    setTimeout(() => setSaveSuccessMsg(null), 4000);
+  };
+
+  // --- XÓA HÀNG LOẠT CÁC THÁNG ĐƯỢC CHỌN (Yêu cầu 4: có thể chọn và xóa toàn bộ dữ liệu theo tháng) ---
+  const handleBatchDeleteSelectedMonths = async () => {
+    if (selectedMonthKeysToDelete.length === 0) {
+      alert('Vui lòng tích chọn ít nhất 1 tháng để xóa!');
+      return;
+    }
+    const count = selectedMonthKeysToDelete.length;
+    if (!confirm(`Bạn có chắc chắn muốn xóa toàn bộ dữ liệu của ${count} tháng đã chọn? Thao tác không thể hoàn tác!`)) {
+      return;
+    }
+    if (onDeleteBatchMonthlyFinances) {
+      await onDeleteBatchMonthlyFinances(selectedMonthKeysToDelete);
+    } else {
+      for (const mId of selectedMonthKeysToDelete) {
+        await onDeleteMonthlyFinance(mId);
+      }
+    }
+    const remaining = finances.filter((f) => !selectedMonthKeysToDelete.includes(f.id) && !selectedMonthKeysToDelete.includes(f.monthKey));
+    if (remaining.length > 0) {
+      setSelectedMonthKey(remaining[0].monthKey || remaining[0].id);
+    }
+    setSelectedMonthKeysToDelete([]);
+    setIsManageMonthsModalOpen(false);
+    setSaveSuccessMsg(`Đã xóa thành công ${count} kỳ tháng được chọn!`);
+    setTimeout(() => setSaveSuccessMsg(null), 4000);
   };
 
   // Xuất file CSV báo cáo tài chính tháng (Đầy đủ cột lương, ngân hàng, KPI, và chi phí ngoài ý muốn)
@@ -1457,7 +1535,36 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                   </option>
                 )}
               </select>
+
+              {/* Nút Xóa nhanh tháng hiện tại */}
+              {finances.some((f) => f.monthKey === selectedMonthKey || f.id === selectedMonthKey) && (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteMonth(selectedMonthKey)}
+                  className="ml-1 p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                  title="Xóa bỏ hoàn toàn kỳ tháng này khỏi hệ thống"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-500" />
+                </button>
+              )}
             </div>
+
+            {/* Nút Chọn & Xóa Toàn Bộ Dữ Liệu Theo Tháng (Yêu cầu 4) */}
+            {finances.length > 0 && (
+              <button
+                type="button"
+                id="btn-manage-delete-months"
+                onClick={() => {
+                  setSelectedMonthKeysToDelete([]);
+                  setIsManageMonthsModalOpen(true);
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                title="Tích chọn và xóa toàn bộ dữ liệu của từng tháng hoặc xóa hàng loạt các tháng"
+              >
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                <span>Chọn & Xóa Theo Tháng</span>
+              </button>
+            )}
 
             {/* Nút Xóa Hết Dữ Liệu Mẫu (Về Bảng Trắng) */}
             {onClearAllFinances && finances.length > 0 && (
@@ -4086,6 +4193,184 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL 6: QUẢN LÝ & CHỌN XÓA DỮ LIỆU THEO THÁNG (Yêu cầu 4) */}
+      {/* ========================================== */}
+      {isManageMonthsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+            <button
+              type="button"
+              onClick={() => setIsManageMonthsModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center space-x-2.5 mb-4 shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900">
+                  Chọn & Xóa Toàn Bộ Dữ Liệu Theo Tháng
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Tích chọn một hoặc nhiều tháng để xóa hàng loạt, hoặc làm trống dữ liệu từng tháng để nhập lại.
+                </p>
+              </div>
+            </div>
+
+            {/* THANH THAO TÁC HÀNG LOẠT */}
+            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl flex flex-wrap items-center justify-between gap-2 shrink-0 mb-3">
+              <label className="flex items-center space-x-2 text-xs font-bold text-slate-700 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={
+                    finances.length > 0 &&
+                    selectedMonthKeysToDelete.length === finances.length
+                  }
+                  onChange={(e) => {
+                    if (e.target.checked) {
+                      setSelectedMonthKeysToDelete(finances.map((f) => f.monthKey || f.id));
+                    } else {
+                      setSelectedMonthKeysToDelete([]);
+                    }
+                  }}
+                  className="w-4 h-4 text-rose-600 rounded cursor-pointer"
+                />
+                <span>
+                  Chọn tất cả ({finances.length} tháng)
+                </span>
+              </label>
+
+              <div className="flex items-center space-x-2">
+                <span className="text-xs text-slate-500 font-medium">
+                  Đã chọn: <strong className="text-rose-700 font-black">{selectedMonthKeysToDelete.length}</strong> tháng
+                </span>
+                <button
+                  type="button"
+                  disabled={selectedMonthKeysToDelete.length === 0}
+                  onClick={handleBatchDeleteSelectedMonths}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Xóa {selectedMonthKeysToDelete.length > 0 ? `(${selectedMonthKeysToDelete.length})` : ''} Tháng Đã Chọn</span>
+                </button>
+              </div>
+            </div>
+
+            {/* DANH SÁCH CÁC THÁNG */}
+            <div className="overflow-y-auto flex-1 divide-y divide-slate-100 border border-slate-200 rounded-2xl">
+              {finances.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">
+                  Hiện tại không có tháng nào trong hệ thống.
+                </div>
+              ) : (
+                finances.map((f) => {
+                  const mKey = f.monthKey || f.id;
+                  const isChecked = selectedMonthKeysToDelete.includes(mKey);
+                  const isCurrent = mKey === selectedMonthKey;
+
+                  return (
+                    <div
+                      key={mKey}
+                      className={`p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${
+                        isChecked ? 'bg-rose-50/60' : isCurrent ? 'bg-amber-50/40' : 'hover:bg-slate-50'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedMonthKeysToDelete((prev) => [...prev, mKey]);
+                            } else {
+                              setSelectedMonthKeysToDelete((prev) => prev.filter((id) => id !== mKey));
+                            }
+                          }}
+                          className="w-4 h-4 text-rose-600 rounded mt-0.5 cursor-pointer"
+                        />
+
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <h4 className="text-xs sm:text-sm font-black text-slate-900">
+                              {f.title || `Tháng ${f.month}/${f.year}`}
+                            </h4>
+                            <span className="font-mono text-[10px] text-slate-500 font-bold px-1.5 py-0.2 bg-slate-100 rounded">
+                              {mKey}
+                            </span>
+                            {isCurrent && (
+                              <span className="text-[10px] font-black px-1.5 py-0.2 bg-amber-100 text-amber-800 rounded">
+                                Đang xem
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Số liệu thống kê tóm tắt của tháng */}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[11px] text-slate-600">
+                            <span>
+                              Doanh thu: <b className="text-emerald-700 font-mono">{formatCurrencyVND(f.totalRevenue || 0)}</b> ({f.revenueItems?.length || 0} nguồn)
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Chi phí: <b className="text-rose-700 font-mono">{formatCurrencyVND(f.totalExpenses || 0)}</b>
+                            </span>
+                            <span>•</span>
+                            <span>
+                              Lương: <b className="text-blue-700 font-mono">{formatCurrencyVND(f.totalSalary || 0)}</b> ({f.salaryItems?.length || 0} NV)
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* NÚT THAO TÁC CHO TỪNG THÁNG */}
+                      <div className="flex items-center space-x-2 self-end sm:self-center shrink-0">
+                        {/* Làm trống dữ liệu tháng (giữ kỳ tháng) */}
+                        <button
+                          type="button"
+                          onClick={() => handleClearMonthData(mKey)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] font-bold transition-all cursor-pointer"
+                          title="Xóa toàn bộ số liệu thu, chi, lương để tháng này về bảng trắng"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                          <span>Làm Trống</span>
+                        </button>
+
+                        {/* Xóa hẳn kỳ tháng */}
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMonth(mKey)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition-all cursor-pointer"
+                          title="Xóa bỏ hoàn toàn kỳ tháng này"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Xóa Tháng</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            <div className="pt-3 mt-3 border-t border-slate-100 flex items-center justify-between shrink-0">
+              <span className="text-[11px] text-slate-500">
+                Gợi ý: Dữ liệu sau khi xóa sẽ được đồng bộ lên Cloud Firestore.
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsManageMonthsModalOpen(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
         </div>
       )}

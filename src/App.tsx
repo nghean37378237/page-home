@@ -2699,6 +2699,17 @@ export default function App() {
                 return next;
               });
             }}
+            onDeleteBatchMonthlyFinances={async (monthIds) => {
+              for (const mId of monthIds) {
+                await deleteCloudMonthlyFinance(mId);
+              }
+              setFinances((prev) => {
+                const idSet = new Set(monthIds);
+                const next = prev.filter((f) => !idSet.has(f.id) && !idSet.has(f.monthKey));
+                saveLocalFinanceBackup(next);
+                return next;
+              });
+            }}
             onRefreshFinances={async () => {
               const list = await getCloudMonthlyFinances();
               if (list && list.length > 0) {
