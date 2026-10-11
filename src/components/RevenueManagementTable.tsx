@@ -140,10 +140,23 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   // Copy số tài khoản trạng thái
   const [copiedBankAccId, setCopiedBankAccId] = useState<string | null>(null);
 
-  // Modal tạo tháng mới
+  // Modal tạo tháng mới & Sao chép dữ liệu từ tháng cũ
   const [isNewMonthModalOpen, setIsNewMonthModalOpen] = useState(false);
   const [newMonthNumber, setNewMonthNumber] = useState<number>(currentMonthNum);
   const [newMonthYear, setNewMonthYear] = useState<number>(currentYear);
+  const [newMonthCopySourceKey, setNewMonthCopySourceKey] = useState<string>('');
+  const [newMonthCopySalaries, setNewMonthCopySalaries] = useState<boolean>(true);
+  const [newMonthCopyOfficeCosts, setNewMonthCopyOfficeCosts] = useState<boolean>(true);
+  const [newMonthCopyExpenses, setNewMonthCopyExpenses] = useState<boolean>(true);
+  const [newMonthCopyRevenue, setNewMonthCopyRevenue] = useState<boolean>(true);
+
+  // Modal sao chép dữ liệu từ tháng khác vào tháng hiện tại
+  const [isCopyFromMonthModalOpen, setIsCopyFromMonthModalOpen] = useState(false);
+  const [copySourceMonthKey, setCopySourceMonthKey] = useState<string>('');
+  const [copySalariesOption, setCopySalariesOption] = useState<boolean>(true);
+  const [copyOfficeCostsOption, setCopyOfficeCostsOption] = useState<boolean>(true);
+  const [copyExpensesOption, setCopyExpensesOption] = useState<boolean>(true);
+  const [copyRevenueOption, setCopyRevenueOption] = useState<boolean>(true);
 
   // Modal thêm / sửa nguồn thu (Revenue Item)
   const [isRevenueModalOpen, setIsRevenueModalOpen] = useState(false);
@@ -1074,7 +1087,117 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     await onSaveMonthlyFinance(updatedRecord);
   };
 
-  // --- XỬ LÝ TẠO THÁNG MỚI ---
+  // --- HÀM SAO CHÉP DỮ LIỆU TỪ THÁNG KHÁC SANG THÁNG HIỆN TẠI (KHÔNG CẦN NHẬP LẠI) ---
+  const handleCopyMonthData = async (
+    sourceKey: string,
+    targetKey: string,
+    options: {
+      copySalaries: boolean;
+      copyOfficeCosts: boolean;
+      copyExpenses: boolean;
+      copyRevenue: boolean;
+    }
+  ) => {
+    const source = finances.find((f) => f.monthKey === sourceKey || f.id === sourceKey);
+    if (!source) {
+      alert('Không tìm thấy dữ liệu tháng nguồn để sao chép!');
+      return;
+    }
+
+    const currentTarget = finances.find((f) => f.monthKey === targetKey || f.id === targetKey) || activeMonthRecord;
+
+    // 1. Sao chép bảng lương & thông tin nhân sự
+    let newSalaryItems: StaffSalaryItem[] = currentTarget.salaryItems || [];
+    if (options.copySalaries && source.salaryItems && source.salaryItems.length > 0) {
+      newSalaryItems = source.salaryItems.map((item, idx) => ({
+        ...item,
+        id: `sal-copy-${Date.now()}-${idx}`,
+        // Đặt lại cờ thanh toán cho kỳ mới
+        isPaid: false,
+        paidDate: '',
+      }));
+    }
+
+    // 2. Sao chép chi phí văn phòng & điện nước
+    const newOfficeCost = options.copyOfficeCosts ? (source.officeCost || 0) : (currentTarget.officeCost || 0);
+    const newOfficeNote = options.copyOfficeCosts ? (source.officeCostNote || '') : (currentTarget.officeCostNote || '');
+    const newElectricityCost = options.copyOfficeCosts ? (source.electricityCost || 0) : (currentTarget.electricityCost || 0);
+    const newElectricityNote = options.copyOfficeCosts ? (source.electricityCostNote || '') : (currentTarget.electricityCostNote || '');
+    const newWaterCost = options.copyOfficeCosts ? (source.waterCost || 0) : (currentTarget.waterCost || 0);
+    const newWaterNote = options.copyOfficeCosts ? (source.waterCostNote || '') : (currentTarget.waterCostNote || '');
+    const newInternetCost = options.copyOfficeCosts ? (source.internetCost || 0) : (currentTarget.internetCost || 0);
+    const newInternetNote = options.copyOfficeCosts ? (source.internetCostNote || '') : (currentTarget.internetCostNote || '');
+    const newOtherCosts = options.copyOfficeCosts ? (source.otherCosts || 0) : (currentTarget.otherCosts || 0);
+    const newOtherNote = options.copyOfficeCosts ? (source.otherCostsNote || '') : (currentTarget.otherCostsNote || '');
+
+    // 3. Sao chép chi phí phát sinh / ngoài ý muốn
+    let newCustomExpenses: CustomExpenseItem[] = currentTarget.customExpenses || [];
+    if (options.copyExpenses && source.customExpenses && source.customExpenses.length > 0) {
+      newCustomExpenses = source.customExpenses.map((exp, idx) => ({
+        ...exp,
+        id: `exp-copy-${Date.now()}-${idx}`,
+        paidDate: new Date().toLocaleDateString('vi-VN'),
+      }));
+    }
+
+    // 4. Sao chép danh mục nguồn thu
+    let newRevenueItems: RevenueItem[] = currentTarget.revenueItems || [];
+    if (options.copyRevenue && source.revenueItems && source.revenueItems.length > 0) {
+      newRevenueItems = source.revenueItems.map((rev, idx) => ({
+        ...rev,
+        id: `rev-copy-${Date.now()}-${idx}`,
+        receivedDate: new Date().toLocaleDateString('vi-VN'),
+      }));
+    }
+
+    // Tính toán lại tổng chi phí & lợi nhuận
+    const totalRev = newRevenueItems.reduce((acc, it) => acc + (it.amount || 0), 0);
+    const totalSal = newSalaryItems.reduce((acc, it) => acc + (it.actualSalary || 0), 0);
+    const totalCustomExp = newCustomExpenses.reduce((acc, it) => acc + (it.amount || 0), 0);
+    const totalExp = newOfficeCost + newElectricityCost + newWaterCost + newInternetCost + newOtherCosts + totalSal + totalCustomExp;
+    const netProf = totalRev - totalExp;
+
+    const [yStr, mStr] = targetKey.split('-');
+    const mNum = parseInt(mStr, 10) || 1;
+    const yNum = parseInt(yStr, 10) || 2026;
+
+    const updatedRecord: MonthlyFinanceRecord = {
+      ...currentTarget,
+      id: targetKey,
+      monthKey: targetKey,
+      month: mNum,
+      year: yNum,
+      title: currentTarget.title || `Tháng ${String(mNum).padStart(2, '0')}/${yNum}`,
+      revenueItems: newRevenueItems,
+      totalRevenue: totalRev,
+      officeCost: newOfficeCost,
+      officeCostNote: newOfficeNote,
+      electricityCost: newElectricityCost,
+      electricityCostNote: newElectricityNote,
+      waterCost: newWaterCost,
+      waterCostNote: newWaterNote,
+      internetCost: newInternetCost,
+      internetCostNote: newInternetNote,
+      otherCosts: newOtherCosts,
+      otherCostsNote: newOtherNote,
+      customExpenses: newCustomExpenses,
+      salaryItems: newSalaryItems,
+      totalSalary: totalSal,
+      totalExpenses: totalExp,
+      netProfit: netProf,
+      profitMargin: totalRev > 0 ? Math.round((netProf / totalRev) * 1000) / 10 : 0,
+      status: netProf > 0 ? 'profitable' : netProf === 0 ? 'break_even' : 'loss',
+      updatedAt: new Date().toLocaleString('vi-VN'),
+      updatedBy: currentUser.name || 'Admin',
+    };
+
+    await onSaveMonthlyFinance(updatedRecord);
+    setIsCopyFromMonthModalOpen(false);
+    setSaveSuccessMsg(`Đã sao chép toàn bộ dữ liệu từ ${source.title || sourceKey} sang ${updatedRecord.title || targetKey} thành công! Bạn không cần phải nhập lại.`);
+    setTimeout(() => setSaveSuccessMsg(null), 5000);
+  };
+
+  // --- XỬ LÝ TẠO THÁNG MỚI (CÓ TÙY CHỌN SAO CHÉP TOÀN BỘ TỪ THÁNG CŨ) ---
   const handleCreateNewMonth = async (e: React.FormEvent) => {
     e.preventDefault();
     const monthKey = `${newMonthYear}-${String(newMonthNumber).padStart(2, '0')}`;
@@ -1089,52 +1212,106 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       return;
     }
 
-    // Tạo tháng mới với dữ liệu trắng hoàn toàn để Admin tự nhập
+    // Nếu Admin chọn sao chép từ một tháng cũ có sẵn
+    const sourceRecord = newMonthCopySourceKey
+      ? finances.find((f) => f.monthKey === newMonthCopySourceKey || f.id === newMonthCopySourceKey)
+      : null;
+
+    let initialSalaries: StaffSalaryItem[] = [];
+    let initialOfficeCost = 0;
+    let initialOfficeNote = '';
+    let initialElectricityCost = 0;
+    let initialElectricityNote = '';
+    let initialWaterCost = 0;
+    let initialWaterNote = '';
+    let initialInternetCost = 0;
+    let initialInternetNote = '';
+    let initialOtherCosts = 0;
+    let initialOtherNote = '';
+    let initialCustomExpenses: CustomExpenseItem[] = [];
+    let initialRevenueItems: RevenueItem[] = [];
+
+    if (sourceRecord) {
+      if (newMonthCopySalaries && sourceRecord.salaryItems) {
+        initialSalaries = sourceRecord.salaryItems.map((item, idx) => ({
+          ...item,
+          id: `sal-copy-${Date.now()}-${idx}`,
+          isPaid: false,
+          paidDate: '',
+        }));
+      }
+      if (newMonthCopyOfficeCosts) {
+        initialOfficeCost = sourceRecord.officeCost || 0;
+        initialOfficeNote = sourceRecord.officeCostNote || '';
+        initialElectricityCost = sourceRecord.electricityCost || 0;
+        initialElectricityNote = sourceRecord.electricityCostNote || '';
+        initialWaterCost = sourceRecord.waterCost || 0;
+        initialWaterNote = sourceRecord.waterCostNote || '';
+        initialInternetCost = sourceRecord.internetCost || 0;
+        initialInternetNote = sourceRecord.internetCostNote || '';
+        initialOtherCosts = sourceRecord.otherCosts || 0;
+        initialOtherNote = sourceRecord.otherCostsNote || '';
+      }
+      if (newMonthCopyExpenses && sourceRecord.customExpenses) {
+        initialCustomExpenses = sourceRecord.customExpenses.map((exp, idx) => ({
+          ...exp,
+          id: `exp-copy-${Date.now()}-${idx}`,
+          paidDate: new Date().toLocaleDateString('vi-VN'),
+        }));
+      }
+      if (newMonthCopyRevenue && sourceRecord.revenueItems) {
+        initialRevenueItems = sourceRecord.revenueItems.map((rev, idx) => ({
+          ...rev,
+          id: `rev-copy-${Date.now()}-${idx}`,
+          receivedDate: new Date().toLocaleDateString('vi-VN'),
+        }));
+      }
+    }
+
+    const totSal = initialSalaries.reduce((sum, it) => sum + (it.actualSalary || 0), 0);
+    const totCustom = initialCustomExpenses.reduce((sum, it) => sum + (it.amount || 0), 0);
+    const totRev = initialRevenueItems.reduce((sum, it) => sum + (it.amount || 0), 0);
+    const totExp = initialOfficeCost + initialElectricityCost + initialWaterCost + initialInternetCost + initialOtherCosts + totSal + totCustom;
+    const netProfit = totRev - totExp;
+
     const newRecord: MonthlyFinanceRecord = {
       id: monthKey,
       monthKey,
       month: newMonthNumber,
       year: newMonthYear,
       title,
-      revenueItems: [],
-      totalRevenue: 0,
-      officeCost: 0,
-      officeCostNote: '',
-      electricityCost: 0,
-      electricityCostNote: '',
-      waterCost: 0,
-      waterCostNote: '',
-      internetCost: 0,
-      internetCostNote: '',
-      otherCosts: 0,
-      otherCostsNote: '',
-      customExpenses: [],
-      salaryItems: [],
-      totalSalary: 0,
-      totalExpenses: 0,
-      netProfit: 0,
-      profitMargin: 0,
-      status: 'break_even',
-      adminSummaryNote: '',
+      revenueItems: initialRevenueItems,
+      totalRevenue: totRev,
+      officeCost: initialOfficeCost,
+      officeCostNote: initialOfficeNote,
+      electricityCost: initialElectricityCost,
+      electricityCostNote: initialElectricityNote,
+      waterCost: initialWaterCost,
+      waterCostNote: initialWaterNote,
+      internetCost: initialInternetCost,
+      internetCostNote: initialInternetNote,
+      otherCosts: initialOtherCosts,
+      otherCostsNote: initialOtherNote,
+      customExpenses: initialCustomExpenses,
+      salaryItems: initialSalaries,
+      totalSalary: totSal,
+      totalExpenses: totExp,
+      netProfit,
+      profitMargin: totRev > 0 ? Math.round((netProfit / totRev) * 1000) / 10 : 0,
+      status: netProfit > 0 ? 'profitable' : netProfit === 0 ? 'break_even' : 'loss',
+      adminSummaryNote: sourceRecord ? `Sao chép toàn bộ từ ${sourceRecord.title || newMonthCopySourceKey}` : '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toLocaleString('vi-VN'),
       updatedBy: currentUser.name || 'Admin',
     };
 
-    const totSal = (newRecord.salaryItems || []).reduce((sum, it) => sum + it.actualSalary, 0);
-    newRecord.totalSalary = totSal;
-    newRecord.totalExpenses =
-      newRecord.officeCost +
-      newRecord.electricityCost +
-      newRecord.waterCost +
-      (newRecord.internetCost || 0) +
-      (newRecord.otherCosts || 0) +
-      totSal;
-    newRecord.netProfit = 0 - newRecord.totalExpenses;
-
     await onSaveMonthlyFinance(newRecord);
     setSelectedMonthKey(monthKey);
     setIsNewMonthModalOpen(false);
+    if (sourceRecord) {
+      setSaveSuccessMsg(`Đã tạo ${title} và sao chép toàn bộ dữ liệu từ ${sourceRecord.title || newMonthCopySourceKey} thành công! Không cần nhập lại.`);
+      setTimeout(() => setSaveSuccessMsg(null), 5000);
+    }
   };
 
   // --- XÓA THÁNG ---
@@ -1300,11 +1477,38 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               </button>
             )}
 
+            {/* Nút Sao Chép Dữ Liệu Từ Tháng Khác (Áp dụng cho tháng hiện tại đang xem) */}
+            {finances.length > 0 && (
+              <button
+                type="button"
+                id="btn-copy-month-data"
+                onClick={() => {
+                  const otherMonths = finances.filter((f) => f.monthKey !== selectedMonthKey && f.id !== selectedMonthKey);
+                  if (otherMonths.length > 0) {
+                    setCopySourceMonthKey(otherMonths[0].monthKey || otherMonths[0].id);
+                  } else {
+                    setCopySourceMonthKey(finances[0].monthKey || finances[0].id);
+                  }
+                  setIsCopyFromMonthModalOpen(true);
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                title="Sao chép toàn bộ dữ liệu từ tháng cũ sang tháng này (Lương, nhân sự, chi phí, nguồn thu) mà không cần nhập lại"
+              >
+                <Copy className="w-4 h-4 text-blue-600" />
+                <span>Sao Chép Từ Tháng Cũ</span>
+              </button>
+            )}
+
             {/* Nút Tạo Tháng Mới */}
             <button
               type="button"
               id="btn-add-new-finance-month"
-              onClick={() => setIsNewMonthModalOpen(true)}
+              onClick={() => {
+                if (finances.length > 0 && !newMonthCopySourceKey) {
+                  setNewMonthCopySourceKey(finances[0].monthKey || finances[0].id);
+                }
+                setIsNewMonthModalOpen(true);
+              }}
               className="inline-flex items-center space-x-1.5 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -3579,11 +3783,11 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       )}
 
       {/* ========================================== */}
-      {/* MODAL 4: TẠO THÁNG MỚI */}
+      {/* MODAL 4: TẠO THÁNG MỚI (CÓ TÙY CHỌN SAO CHÉP TỪ THÁNG CŨ) */}
       {/* ========================================== */}
       {isNewMonthModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-sm w-full p-6 shadow-2xl relative">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
             <button
               type="button"
               onClick={() => setIsNewMonthModalOpen(false)}
@@ -3593,13 +3797,13 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
             </button>
 
             <div className="flex items-center space-x-2.5 mb-4">
-              <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+              <div className="w-9 h-9 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center shrink-0">
                 <Plus className="w-5 h-5" />
               </div>
               <div>
                 <h3 className="text-sm font-black text-slate-900">Tạo Kỳ Tài Chính Tháng Mới</h3>
                 <p className="text-[11px] text-slate-500">
-                  Hệ thống sẽ tự động sao chép bảng chi phí và danh sách nhân viên từ tháng trước sang!
+                  Có thể tạo bảng trắng hoặc sao chép toàn bộ dữ liệu từ tháng cũ sang để không phải nhập lại!
                 </p>
               </div>
             </div>
@@ -3637,9 +3841,79 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 </div>
               </div>
 
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600">
-                Mã tháng sẽ tạo:{' '}
-                <strong className="text-amber-800 font-mono">
+              {/* TÙY CHỌN SAO CHÉP TỪ THÁNG CŨ SANG THÁNG MỚI */}
+              <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2.5">
+                <div className="flex items-center space-x-1.5 text-blue-900 text-xs font-black">
+                  <Copy className="w-4 h-4 text-blue-600 shrink-0" />
+                  <span>Sao Chép Dữ Liệu Từ Tháng Cũ (Không Nhập Lại)</span>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-blue-800 mb-1">
+                    Chọn tháng cũ để sao chép sang:
+                  </label>
+                  <select
+                    value={newMonthCopySourceKey}
+                    onChange={(e) => setNewMonthCopySourceKey(e.target.value)}
+                    className="w-full px-2.5 py-1.5 bg-white border border-blue-300 rounded-xl text-xs font-bold text-slate-800"
+                  >
+                    <option value="">-- Tạo tháng trắng hoàn toàn (Nhập mới từ đầu) --</option>
+                    {finances.map((f) => (
+                      <option key={f.monthKey || f.id} value={f.monthKey || f.id}>
+                        Sao chép từ: {f.title || f.monthKey} ({f.salaryItems?.length || 0} nhân sự)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {newMonthCopySourceKey && (
+                  <div className="space-y-1.5 pt-1 border-t border-blue-200/80 text-[11px]">
+                    <span className="font-bold text-blue-900 block text-[10px] uppercase tracking-wide">
+                      Các dữ liệu sẽ tự động sao chép sang:
+                    </span>
+                    <label className="flex items-center space-x-2 text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newMonthCopySalaries}
+                        onChange={(e) => setNewMonthCopySalaries(e.target.checked)}
+                        className="w-3.5 h-3.5 text-blue-600 rounded"
+                      />
+                      <span>Bảng lương & nhân sự (Họ tên, ngày sinh, CCCD, ngày đi làm, lương thử việc/chính thức, STK ngân hàng, KPI %)</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newMonthCopyOfficeCosts}
+                        onChange={(e) => setNewMonthCopyOfficeCosts(e.target.checked)}
+                        className="w-3.5 h-3.5 text-blue-600 rounded"
+                      />
+                      <span>Chi phí cố định (Tiền văn phòng, điện, nước, internet)</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newMonthCopyExpenses}
+                        onChange={(e) => setNewMonthCopyExpenses(e.target.checked)}
+                        className="w-3.5 h-3.5 text-blue-600 rounded"
+                      />
+                      <span>Bảng chi phí phát sinh & ngoài ý muốn</span>
+                    </label>
+                    <label className="flex items-center space-x-2 text-slate-700 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={newMonthCopyRevenue}
+                        onChange={(e) => setNewMonthCopyRevenue(e.target.checked)}
+                        className="w-3.5 h-3.5 text-blue-600 rounded"
+                      />
+                      <span>Danh mục các nguồn doanh thu / khách hàng</span>
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-600 flex items-center justify-between">
+                <span>Mã kỳ tháng sẽ tạo:</span>
+                <strong className="text-amber-800 font-mono font-black">
                   {newMonthYear}-{String(newMonthNumber).padStart(2, '0')}
                 </strong>
               </div>
@@ -3656,7 +3930,159 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                   type="submit"
                   className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer"
                 >
-                  Tạo Tháng Này
+                  {newMonthCopySourceKey ? 'Tạo Tháng & Sao Chép Dữ Liệu' : 'Tạo Tháng Mới'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* MODAL 5: SAO CHÉP DỮ LIỆU TỪ THÁNG KHÁC SANG THÁNG ĐANG XEM */}
+      {/* ========================================== */}
+      {isCopyFromMonthModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-md w-full p-6 shadow-2xl relative">
+            <button
+              type="button"
+              onClick={() => setIsCopyFromMonthModalOpen(false)}
+              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center space-x-2.5 mb-4">
+              <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                <Copy className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900">
+                  Sao Chép Dữ Liệu Vào {activeMonthRecord.title || selectedMonthKey}
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Sao chép toàn bộ bảng lương, chi phí hoặc nguồn thu từ một tháng cũ sang mà không cần nhập lại.
+                </p>
+              </div>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!copySourceMonthKey) {
+                  alert('Vui lòng chọn tháng nguồn để sao chép!');
+                  return;
+                }
+                handleCopyMonthData(copySourceMonthKey, selectedMonthKey, {
+                  copySalaries: copySalariesOption,
+                  copyOfficeCosts: copyOfficeCostsOption,
+                  copyExpenses: copyExpensesOption,
+                  copyRevenue: copyRevenueOption,
+                });
+              }}
+              className="space-y-4"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Chọn Tháng Nguồn (Tháng Muốn Lấy Dữ Liệu): <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={copySourceMonthKey}
+                  onChange={(e) => setCopySourceMonthKey(e.target.value)}
+                  className="w-full px-3 py-2 border border-blue-300 bg-blue-50/50 rounded-xl text-xs font-black text-slate-900 focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">-- Chọn tháng nguồn --</option>
+                  {finances
+                    .filter((f) => f.monthKey !== selectedMonthKey && f.id !== selectedMonthKey)
+                    .map((f) => (
+                      <option key={f.monthKey || f.id} value={f.monthKey || f.id}>
+                        {f.title || f.monthKey} ({f.salaryItems?.length || 0} nhân sự, CP: {formatCurrencyVND(f.totalExpenses || 0)})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Hạng mục sao chép */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <span className="text-xs font-black text-slate-800 block">
+                  Tùy Chọn Hạng Mục Muốn Sao Chép:
+                </span>
+
+                <label className="flex items-start space-x-2.5 text-xs font-bold text-slate-800 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={copySalariesOption}
+                    onChange={(e) => setCopySalariesOption(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded mt-0.5 cursor-pointer"
+                  />
+                  <div>
+                    <span>Bảng Lương & Toàn Bộ Hồ Sơ Nhân Sự</span>
+                    <p className="text-[11px] text-slate-500 font-normal">
+                      Họ tên, ngày sinh, CCCD, ngày đi làm, lương thử việc/chính thức, ngày công, STK ngân hàng, tỷ lệ KPI %.
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-start space-x-2.5 text-xs font-bold text-slate-800 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={copyOfficeCostsOption}
+                    onChange={(e) => setCopyOfficeCostsOption(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded mt-0.5 cursor-pointer"
+                  />
+                  <div>
+                    <span>Chi Phí Cố Định Văn Phòng, Điện, Nước, Mạng</span>
+                    <p className="text-[11px] text-slate-500 font-normal">
+                      Tiền thuê mặt bằng, điện nước, internet và các ghi chú đi kèm.
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-start space-x-2.5 text-xs font-bold text-slate-800 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={copyExpensesOption}
+                    onChange={(e) => setCopyExpensesOption(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded mt-0.5 cursor-pointer"
+                  />
+                  <div>
+                    <span>Bảng Chi Phí Hàng Tháng & Ngoài Ý Muốn</span>
+                    <p className="text-[11px] text-slate-500 font-normal">
+                      Các khoản chi phát sinh tự thêm ngoài điện nước.
+                    </p>
+                  </div>
+                </label>
+
+                <label className="flex items-start space-x-2.5 text-xs font-bold text-slate-800 cursor-pointer p-1.5 hover:bg-white rounded-lg transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={copyRevenueOption}
+                    onChange={(e) => setCopyRevenueOption(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded mt-0.5 cursor-pointer"
+                  />
+                  <div>
+                    <span>Danh Mục Các Nguồn Tiền Về (Doanh Thu)</span>
+                    <p className="text-[11px] text-slate-500 font-normal">
+                      Nguồn thu, tên đối tác, số tiền và ghi chú hợp đồng.
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end space-x-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCopyFromMonthModalOpen(false)}
+                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={!copySourceMonthKey}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer"
+                >
+                  Xác Nhận Sao Chép Toàn Bộ
                 </button>
               </div>
             </form>
