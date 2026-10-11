@@ -18,6 +18,7 @@ import {
   Link as LinkIcon,
   Tag,
   ShieldCheck,
+  ShieldAlert,
   LayoutGrid,
   List,
   Eye,
@@ -162,7 +163,23 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     return scopedRecords;
   }, [scopedRecords, isAdmin, selectedStaffFilter]);
 
-  // Note counts (phân phạm vi theo nhân viên đang chọn)
+  // Map UID -> FullViaItem to cross-check live/dead/VHH status from B4 Full Via
+  const viaMapByUid = useMemo(() => {
+    const map = new Map<string, FullViaItem>();
+    if (!existingVias) return map;
+    existingVias.forEach((v) => {
+      if (v.uid) map.set(v.uid.trim(), v);
+    });
+    return map;
+  }, [existingVias]);
+
+  // Unique UIDs in staffScopedRecords
+  const uniqueUidsCount = useMemo(() => {
+    const set = new Set(staffScopedRecords.map((r) => r.uid?.trim()).filter(Boolean));
+    return set.size;
+  }, [staffScopedRecords]);
+
+  // Note counts & Via status counts (phân phạm vi theo nhân viên đang chọn)
   const noteCounts = useMemo(() => {
     let vhh = 0;
     let c282 = 0;
@@ -170,23 +187,67 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     let hanChe = 0;
     let none = 0;
 
+    const vhhUids = new Set<string>();
+    const hanCheUids = new Set<string>();
+    const c282Uids = new Set<string>();
+    const c956Uids = new Set<string>();
+
     staffScopedRecords.forEach((r) => {
       const n = (r.note || '').trim().toLowerCase();
-      if (!n) {
-        none++;
-      } else if (n === 'vhh' || n.includes('vhh')) {
+      const uid = (r.uid || '').trim();
+      const linked = uid ? viaMapByUid.get(uid) : undefined;
+      const lReport = (linked?.adminReportStatus || '').toLowerCase();
+      const lStatus = linked?.status || '';
+      const lNote = (linked?.note || '').toLowerCase();
+      const lShared = (linked?.sharedNote || '').toLowerCase();
+
+      const isVhh =
+        n === 'vhh' ||
+        n.includes('vhh') ||
+        n.includes('vô hiệu') ||
+        lReport === 'vhh' ||
+        lStatus === 'dead';
+
+      const isHanChe =
+        n.includes('hạn chế') ||
+        n.includes('han che') ||
+        lNote.includes('hạn chế') ||
+        lNote.includes('han che') ||
+        lShared.includes('hạn chế') ||
+        lShared.includes('han che');
+
+      const is282 = n.includes('282') || lStatus === 'checkpoint' || lNote.includes('282');
+      const is956 = n.includes('956') || lNote.includes('956');
+
+      if (isVhh) {
         vhh++;
-      } else if (n === '282' || n.includes('282')) {
-        c282++;
-      } else if (n === '956' || n.includes('956')) {
-        c956++;
-      } else if (n === 'hạn chế' || n.includes('hạn chế')) {
+        if (uid) vhhUids.add(uid);
+      } else if (isHanChe) {
         hanChe++;
+        if (uid) hanCheUids.add(uid);
+      } else if (is282) {
+        c282++;
+        if (uid) c282Uids.add(uid);
+      } else if (is956) {
+        c956++;
+        if (uid) c956Uids.add(uid);
+      } else if (!n) {
+        none++;
       }
     });
 
-    return { vhh, c282, c956, hanChe, none };
-  }, [staffScopedRecords]);
+    return {
+      vhh,
+      vhhUids: vhhUids.size,
+      hanChe,
+      hanCheUids: hanCheUids.size,
+      c282,
+      c282Uids: c282Uids.size,
+      c956,
+      c956Uids: c956Uids.size,
+      none,
+    };
+  }, [staffScopedRecords, viaMapByUid]);
 
   // Join status counts (phân phạm vi theo nhân viên đang chọn)
   const joinStatusCounts = useMemo(() => {
@@ -268,16 +329,38 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
       // Note filter: VHH, 282, 956, Hạn Chế, NONE
       if (selectedNoteFilter !== 'ALL') {
         const n = (r.note || '').trim().toLowerCase();
+        const uid = (r.uid || '').trim();
+        const linked = uid ? viaMapByUid.get(uid) : undefined;
+        const lReport = (linked?.adminReportStatus || '').toLowerCase();
+        const lStatus = linked?.status || '';
+        const lNote = (linked?.note || '').toLowerCase();
+        const lShared = (linked?.sharedNote || '').toLowerCase();
+
         if (selectedNoteFilter === 'NONE') {
           if (n) return false;
         } else if (selectedNoteFilter === 'VHH') {
-          if (n !== 'vhh' && !n.includes('vhh')) return false;
+          const isVhh =
+            n === 'vhh' ||
+            n.includes('vhh') ||
+            n.includes('vô hiệu') ||
+            lReport === 'vhh' ||
+            lStatus === 'dead';
+          if (!isVhh) return false;
         } else if (selectedNoteFilter === '282') {
-          if (n !== '282' && !n.includes('282')) return false;
+          const is282 = n.includes('282') || lStatus === 'checkpoint' || lNote.includes('282');
+          if (!is282) return false;
         } else if (selectedNoteFilter === '956') {
-          if (n !== '956' && !n.includes('956')) return false;
+          const is956 = n.includes('956') || lNote.includes('956');
+          if (!is956) return false;
         } else if (selectedNoteFilter === 'Hạn Chế') {
-          if (n !== 'hạn chế' && !n.includes('hạn chế')) return false;
+          const isHanChe =
+            n.includes('hạn chế') ||
+            n.includes('han che') ||
+            lNote.includes('hạn chế') ||
+            lNote.includes('han che') ||
+            lShared.includes('hạn chế') ||
+            lShared.includes('han che');
+          if (!isHanChe) return false;
         }
       }
 
@@ -293,7 +376,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
       return true;
     });
-  }, [scopedRecords, searchQuery, selectedStaffFilter, selectedNoteFilter, selectedJoinStatusFilter, selectedInteractionFilter, highlightedOnly, hasNoteOnly, isAdmin]);
+  }, [scopedRecords, searchQuery, selectedStaffFilter, selectedNoteFilter, selectedJoinStatusFilter, selectedInteractionFilter, highlightedOnly, hasNoteOnly, isAdmin, viaMapByUid]);
 
   // Grouped structure by groupId or groupName
   const groupedData = useMemo(() => {
@@ -415,6 +498,63 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
     navigator.clipboard.writeText(uids.join('\n'));
     triggerCopyFeedback('btn-copy-all', `Đã copy toàn bộ ${uids.length} UID vào clipboard!`);
+  };
+
+  const handleCopyVhhUids = () => {
+    const uids = staffScopedRecords
+      .filter((r) => {
+        const n = (r.note || '').trim().toLowerCase();
+        const uid = (r.uid || '').trim();
+        const linked = uid ? viaMapByUid.get(uid) : undefined;
+        const lReport = (linked?.adminReportStatus || '').toLowerCase();
+        const lStatus = linked?.status || '';
+        return (
+          n === 'vhh' ||
+          n.includes('vhh') ||
+          n.includes('vô hiệu') ||
+          lReport === 'vhh' ||
+          lStatus === 'dead'
+        );
+      })
+      .map((r) => r.uid?.trim())
+      .filter(Boolean);
+
+    const uniqueUids = Array.from(new Set(uids));
+    if (uniqueUids.length === 0) {
+      alert('Không có UID Via VHH nào trong danh sách hiện tại.');
+      return;
+    }
+    navigator.clipboard.writeText(uniqueUids.join('\n'));
+    triggerCopyFeedback('copy-vhh', `📋 Đã copy ${uniqueUids.length} UID Via VHH vào clipboard!`);
+  };
+
+  const handleCopyHanCheUids = () => {
+    const uids = staffScopedRecords
+      .filter((r) => {
+        const n = (r.note || '').trim().toLowerCase();
+        const uid = (r.uid || '').trim();
+        const linked = uid ? viaMapByUid.get(uid) : undefined;
+        const lNote = (linked?.note || '').toLowerCase();
+        const lShared = (linked?.sharedNote || '').toLowerCase();
+        return (
+          n.includes('hạn chế') ||
+          n.includes('han che') ||
+          lNote.includes('hạn chế') ||
+          lNote.includes('han che') ||
+          lShared.includes('hạn chế') ||
+          lShared.includes('han che')
+        );
+      })
+      .map((r) => r.uid?.trim())
+      .filter(Boolean);
+
+    const uniqueUids = Array.from(new Set(uids));
+    if (uniqueUids.length === 0) {
+      alert('Không có UID Via Hạn Chế nào trong danh sách hiện tại.');
+      return;
+    }
+    navigator.clipboard.writeText(uniqueUids.join('\n'));
+    triggerCopyFeedback('copy-hanche', `📋 Đã copy ${uniqueUids.length} UID Via Hạn Chế vào clipboard!`);
   };
 
   const handleCopyGroupUids = (rows: GroupRecord[], groupName: string) => {
@@ -899,17 +1039,183 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
           </div>
         </div>
 
-        {/* ROW 2: Horizontal Stats Ribbon */}
+        {/* ROW 2: KPI Statistics Cards for Group Management */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 pt-1">
+          {/* Card 1: Tổng Số Nhóm & Via */}
+          <div className="bg-slate-50 hover:bg-slate-100/80 transition-colors rounded-xl p-3 border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                Tổng Nhóm
+              </span>
+              <div className="w-7 h-7 rounded-lg bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                <Users className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-1.5">
+              <div className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                {totalGroupsCount} <span className="text-xs font-semibold text-slate-500">Nhóm</span>
+              </div>
+              <div className="text-[11px] text-slate-500 font-medium mt-0.5 truncate">
+                <b className="text-slate-700">{uniqueUidsCount}</b> Nick Via • <b className="text-slate-700">{staffScopedRecords.length}</b> Dòng
+              </div>
+            </div>
+          </div>
+
+          {/* Card 2: Trạng Thái Tham Gia */}
+          <div className="bg-emerald-50/60 hover:bg-emerald-50 transition-colors rounded-xl p-3 border border-emerald-200/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
+                Đã Tham Gia
+              </span>
+              <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-1.5">
+              <div className="text-xl sm:text-2xl font-black text-emerald-900 tracking-tight">
+                {joinStatusCounts.daJon} <span className="text-xs font-semibold text-emerald-700">Đã Jon</span>
+              </div>
+              <div className="text-[11px] text-emerald-700 font-medium mt-0.5 truncate">
+                Chờ duyệt: <b>{joinStatusCounts.choDuyet}</b> • Chưa: <b>{joinStatusCounts.chua}</b>
+              </div>
+            </div>
+          </div>
+
+          {/* Card 3: THỐNG KÊ VIA VHH (VÔ HIỆU HÓA) */}
+          <div className={`transition-all rounded-xl p-3 border shadow-2xs flex flex-col justify-between ${
+            selectedNoteFilter === 'VHH'
+              ? 'bg-rose-100/90 border-rose-400 ring-2 ring-rose-400'
+              : noteCounts.vhh > 0
+              ? 'bg-rose-50/70 hover:bg-rose-50 border-rose-200/90'
+              : 'bg-slate-50 border-slate-200/90'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider flex items-center gap-1">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
+                <span>Via VHH</span>
+              </span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                noteCounts.vhh > 0 ? 'bg-rose-600 text-white animate-pulse' : 'bg-slate-200 text-slate-600'
+              }`}>
+                {noteCounts.vhh} dòng
+              </span>
+            </div>
+            <div className="mt-1.5">
+              <div className="text-xl sm:text-2xl font-black text-rose-900 tracking-tight">
+                {noteCounts.vhhUids} <span className="text-xs font-semibold text-rose-700">Nick VHH</span>
+              </div>
+              <div className="flex items-center justify-between gap-1 mt-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedNoteFilter(selectedNoteFilter === 'VHH' ? 'ALL' : 'VHH')}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md cursor-pointer transition-colors ${
+                    selectedNoteFilter === 'VHH'
+                      ? 'bg-rose-700 text-white'
+                      : 'bg-white hover:bg-rose-100 text-rose-800 border border-rose-300'
+                  }`}
+                  title="Lọc danh sách các dòng có Nick Via VHH"
+                >
+                  {selectedNoteFilter === 'VHH' ? 'Đang lọc VHH' : 'Lọc VHH'}
+                </button>
+                {noteCounts.vhh > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleCopyVhhUids}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white cursor-pointer shadow-2xs transition-colors flex items-center gap-0.5"
+                    title="Sao chép toàn bộ UID nick Via VHH"
+                  >
+                    <Copy className="w-2.5 h-2.5" />
+                    <span>Copy UID</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Card 4: THỐNG KÊ VIA HẠN CHẾ */}
+          <div className={`transition-all rounded-xl p-3 border shadow-2xs flex flex-col justify-between ${
+            selectedNoteFilter === 'Hạn Chế'
+              ? 'bg-amber-100/90 border-amber-400 ring-2 ring-amber-400'
+              : noteCounts.hanChe > 0
+              ? 'bg-amber-50/70 hover:bg-amber-50 border-amber-200/90'
+              : 'bg-slate-50 border-slate-200/90'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-amber-800 uppercase tracking-wider flex items-center gap-1">
+                <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                <span>Via Hạn Chế</span>
+              </span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
+                noteCounts.hanChe > 0 ? 'bg-amber-600 text-white' : 'bg-slate-200 text-slate-600'
+              }`}>
+                {noteCounts.hanChe} dòng
+              </span>
+            </div>
+            <div className="mt-1.5">
+              <div className="text-xl sm:text-2xl font-black text-amber-950 tracking-tight">
+                {noteCounts.hanCheUids} <span className="text-xs font-semibold text-amber-800">Nick Hạn Chế</span>
+              </div>
+              <div className="flex items-center justify-between gap-1 mt-1 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setSelectedNoteFilter(selectedNoteFilter === 'Hạn Chế' ? 'ALL' : 'Hạn Chế')}
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-md cursor-pointer transition-colors ${
+                    selectedNoteFilter === 'Hạn Chế'
+                      ? 'bg-amber-700 text-white'
+                      : 'bg-white hover:bg-amber-100 text-amber-900 border border-amber-300'
+                  }`}
+                  title="Lọc danh sách các dòng có Nick Via bị Hạn Chế"
+                >
+                  {selectedNoteFilter === 'Hạn Chế' ? 'Đang lọc Hạn Chế' : 'Lọc Hạn Chế'}
+                </button>
+                {noteCounts.hanChe > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleCopyHanCheUids}
+                    className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-600 hover:bg-amber-700 text-white cursor-pointer shadow-2xs transition-colors flex items-center gap-0.5"
+                    title="Sao chép toàn bộ UID nick Via bị Hạn Chế"
+                  >
+                    <Copy className="w-2.5 h-2.5" />
+                    <span>Copy UID</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Card 5: Via Chính & Checkpoint */}
+          <div className="bg-indigo-50/50 hover:bg-indigo-50 transition-colors rounded-xl p-3 border border-indigo-200/80 shadow-2xs flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider flex items-center gap-1">
+                <ShieldCheck className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Via Chính & CP</span>
+              </span>
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">
+                {totalHighlightedCount} chính
+              </span>
+            </div>
+            <div className="mt-1.5">
+              <div className="text-xl sm:text-2xl font-black text-indigo-950 tracking-tight">
+                {totalHighlightedCount} <span className="text-xs font-semibold text-indigo-700">Via Chính</span>
+              </div>
+              <div className="text-[11px] text-indigo-700 font-medium mt-0.5 truncate">
+                CP 282: <b>{noteCounts.c282}</b> • CP 956: <b>{noteCounts.c956}</b>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ROW 3: Horizontal Stats Ribbon & Quick Filter Buttons */}
         <div className="bg-slate-50/90 rounded-xl p-2 border border-slate-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mr-1">
-              Thống kê:
+              Thống kê & Lọc:
             </span>
 
             {/* Total groups */}
             <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg bg-white text-slate-700 border border-slate-200 font-semibold shadow-2xs">
               <Users className="w-3.5 h-3.5 text-slate-500" />
-              <span>Tổng: <b className="text-slate-900">{totalGroupsCount}</b> Nhóm</span>
+              <span>Tổng: <b className="text-slate-900">{totalGroupsCount}</b> Nhóm ({uniqueUidsCount} Via)</span>
             </span>
 
             {/* Đã Jon */}
@@ -963,14 +1269,100 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               onClick={() => setHighlightedOnly(!highlightedOnly)}
               className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
                 highlightedOnly
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                  : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                  ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                  : 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
               }`}
               title="Nhấn để bật/tắt chỉ lọc Via Chính"
             >
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
+              <Check className="w-3.5 h-3.5 text-indigo-600" />
               <span>Via Chính: <b>{totalHighlightedCount}</b></span>
             </button>
+
+            {/* THỐNG KÊ VIA VHH */}
+            <button
+              type="button"
+              id="stat-btn-via-vhh"
+              onClick={() => setSelectedNoteFilter(selectedNoteFilter === 'VHH' ? 'ALL' : 'VHH')}
+              className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border shadow-2xs ${
+                selectedNoteFilter === 'VHH'
+                  ? 'bg-rose-600 text-white border-rose-600 ring-2 ring-rose-300'
+                  : noteCounts.vhh > 0
+                  ? 'bg-rose-100/90 text-rose-900 border-rose-300 hover:bg-rose-200'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+              title="Nhấn để lọc danh sách Via VHH (Vô Hiệu Hóa)"
+            >
+              <AlertTriangle className={`w-3.5 h-3.5 ${selectedNoteFilter === 'VHH' ? 'text-white' : 'text-rose-600'}`} />
+              <span>Via VHH:</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                selectedNoteFilter === 'VHH'
+                  ? 'bg-white text-rose-700'
+                  : noteCounts.vhh > 0
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-slate-100 text-slate-700'
+              }`}>
+                {noteCounts.vhh}
+              </span>
+            </button>
+
+            {/* THỐNG KÊ VIA HẠN CHẾ */}
+            <button
+              type="button"
+              id="stat-btn-via-han-che"
+              onClick={() => setSelectedNoteFilter(selectedNoteFilter === 'Hạn Chế' ? 'ALL' : 'Hạn Chế')}
+              className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border shadow-2xs ${
+                selectedNoteFilter === 'Hạn Chế'
+                  ? 'bg-amber-600 text-white border-amber-600 ring-2 ring-amber-300'
+                  : noteCounts.hanChe > 0
+                  ? 'bg-amber-100/90 text-amber-950 border-amber-300 hover:bg-amber-200'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+              title="Nhấn để lọc danh sách Nick Via bị Hạn Chế"
+            >
+              <ShieldAlert className={`w-3.5 h-3.5 ${selectedNoteFilter === 'Hạn Chế' ? 'text-white' : 'text-amber-600'}`} />
+              <span>Hạn Chế:</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                selectedNoteFilter === 'Hạn Chế'
+                  ? 'bg-white text-amber-800'
+                  : noteCounts.hanChe > 0
+                  ? 'bg-amber-600 text-white'
+                  : 'bg-slate-100 text-slate-700'
+              }`}>
+                {noteCounts.hanChe}
+              </span>
+            </button>
+
+            {/* Checkpoint 282 nếu có */}
+            {noteCounts.c282 > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedNoteFilter(selectedNoteFilter === '282' ? 'ALL' : '282')}
+                className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  selectedNoteFilter === '282'
+                    ? 'bg-orange-600 text-white border-orange-600 shadow-2xs'
+                    : 'bg-orange-50 text-orange-800 border-orange-200 hover:bg-orange-100'
+                }`}
+                title="Lọc các nick bị Checkpoint 282"
+              >
+                <span>CP 282: <b>{noteCounts.c282}</b></span>
+              </button>
+            )}
+
+            {/* Checkpoint 956 nếu có */}
+            {noteCounts.c956 > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelectedNoteFilter(selectedNoteFilter === '956' ? 'ALL' : '956')}
+                className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer border ${
+                  selectedNoteFilter === '956'
+                    ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                    : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                }`}
+                title="Lọc các nick bị Checkpoint 956"
+              >
+                <span>CP 956: <b>{noteCounts.c956}</b></span>
+              </button>
+            )}
           </div>
 
           <div className="text-[11px] text-slate-500 font-medium shrink-0">
@@ -1149,6 +1541,87 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
           </div>
         </div>
       </div>
+
+      {/* 🔴 Thông báo khi đang lọc Via VHH hoặc Hạn Chế */}
+      {selectedNoteFilter === 'VHH' && (
+        <div className="bg-rose-50 border border-rose-300 rounded-2xl p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              <AlertTriangle className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-black text-rose-950 flex items-center gap-1.5">
+                <span>Đang Lọc: {filteredRecords.length} Dòng Via Vô Hiệu Hóa (VHH)</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-200 text-rose-900">
+                  {noteCounts.vhhUids} Nick Via
+                </span>
+              </div>
+              <p className="text-[11px] text-rose-700 mt-0.5">
+                Danh sách các nick Via trong nhóm Facebook bị VHH hoặc đã báo lỗi ở Bảng 4. Bạn có thể sao chép nhanh UID hoặc bấm Đổi Via Nhóm.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleCopyVhhUids}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Sao chép toàn bộ UID nick Via VHH đang lọc"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy {noteCounts.vhhUids} UID VHH</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedNoteFilter('ALL')}
+              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-rose-100 text-rose-800 border border-rose-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Tắt Lọc VHH</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {selectedNoteFilter === 'Hạn Chế' && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-3.5 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              <ShieldAlert className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="font-black text-amber-950 flex items-center gap-1.5">
+                <span>Đang Lọc: {filteredRecords.length} Dòng Via Bị Hạn Chế</span>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-200 text-amber-900">
+                  {noteCounts.hanCheUids} Nick Via
+                </span>
+              </div>
+              <p className="text-[11px] text-amber-700 mt-0.5">
+                Danh sách các nick Via trong nhóm Facebook bị Facebook hạn chế tính năng. Bạn có thể sao chép UID hoặc tiến hành thay thế nick.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={handleCopyHanCheUids}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              title="Sao chép toàn bộ UID nick Via Hạn Chế đang lọc"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copy {noteCounts.hanCheUids} UID Hạn Chế</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedNoteFilter('ALL')}
+              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>Tắt Lọc Hạn Chế</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 🌟 THANH THAO TÁC KHI ĐÃ CHỌN DÒNG */}
       {selectedIds.size > 0 && (
