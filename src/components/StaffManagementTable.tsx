@@ -1703,7 +1703,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[300px] overflow-y-auto pr-1">
                   {ALL_TAB_KEYS.map((tabKey) => {
                     const tabDef = TAB_DEFINITIONS[tabKey];
-                    const isAdminOnlyTab = tabKey === 'staff_management';
+                    const isAdminOnlyTab = tabKey === 'staff_management' || tabKey === 'revenue';
                     const isChecked = !isAdminOnlyTab && selectedAllowedTabs.includes(tabKey);
 
                     if (isAdminOnlyTab) {
@@ -1711,7 +1711,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                         <div
                           key={tabKey}
                           className="p-3 rounded-xl border border-slate-200 bg-slate-100/70 select-none flex items-start space-x-2.5 opacity-60 cursor-not-allowed"
-                          title="Bảng Quản Trị Nhân Viên chỉ dành riêng cho Admin"
+                          title={tabKey === 'revenue' ? 'Bảng Quản Lý Doanh Thu chỉ dành riêng cho Admin' : 'Bảng Quản Trị Nhân Viên chỉ dành riêng cho Admin'}
                         >
                           <div className="mt-0.5 w-4 h-4 rounded border border-slate-300 bg-slate-200 flex items-center justify-center text-[10px] text-slate-500 font-bold shrink-0">
                             🔒
@@ -1726,7 +1726,9 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-2">
-                              Bảng quản trị nhân sự chỉ Admin quản lý, tự động ẩn khỏi nhân viên.
+                              {tabKey === 'revenue'
+                                ? 'Bảng doanh thu, chi phí & lương nhân viên chỉ Admin xem và quản lý.'
+                                : 'Bảng quản trị nhân sự chỉ Admin quản lý, tự động ẩn khỏi nhân viên.'}
                             </p>
                           </div>
                         </div>

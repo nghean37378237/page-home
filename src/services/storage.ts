@@ -1,5 +1,5 @@
-import { PageRecord, AppUser, UserAccount, FullViaItem, GroupRecord, ALL_TAB_KEYS } from '../types';
-import { INITIAL_PAGE_RECORDS } from '../data/initialData';
+import { PageRecord, AppUser, UserAccount, FullViaItem, GroupRecord, MonthlyFinanceRecord, ALL_TAB_KEYS } from '../types';
+import { INITIAL_PAGE_RECORDS, INITIAL_MONTHLY_FINANCES } from '../data/initialData';
 
 // Storage keys previously used for local storage - retained to purge legacy cache
 export const STORAGE_KEY = 'fanpage_sheets_records_v2';
@@ -9,6 +9,7 @@ export const ADMIN_SECURITY_KEY = 'fanpage_admin_security_v1';
 export const FULL_VIA_STORAGE_KEY = 'fanpage_full_vias_list_v2';
 export const CUSTOM_STAFF_KEY = 'fanpage_custom_staff_v1';
 export const GROUP_RECORDS_BACKUP_KEY = 'fanpage_group_records_safe_backup_v3';
+export const MONTHLY_FINANCES_BACKUP_KEY = 'fanpage_monthly_finances_safe_backup_v1';
 
 export const DEFAULT_STAFF_MEMBERS = ['Anh Quỳnh', 'Bảo', 'Phương My'];
 
@@ -301,3 +302,23 @@ export function getInitialFullViaItems(): FullViaItem[] {
 
   return Array.from(map.values());
 }
+
+export function saveLocalFinanceBackup(finances: MonthlyFinanceRecord[]): void {
+  try {
+    localStorage.setItem(MONTHLY_FINANCES_BACKUP_KEY, JSON.stringify(finances));
+  } catch (err) {
+    console.warn('[Storage] Không thể sao lưu dự phòng tài chính:', err);
+  }
+}
+
+export function getLocalFinanceBackup(): MonthlyFinanceRecord[] {
+  try {
+    const raw = localStorage.getItem(MONTHLY_FINANCES_BACKUP_KEY);
+    if (!raw) return INITIAL_MONTHLY_FINANCES;
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_MONTHLY_FINANCES;
+  } catch {
+    return INITIAL_MONTHLY_FINANCES;
+  }
+}
+

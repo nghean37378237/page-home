@@ -79,7 +79,8 @@ export type TabKey =
   | 'proxy'
   | 'fullvia'
   | 'staff_management'
-  | 'shared_accounts';
+  | 'shared_accounts'
+  | 'revenue';
 
 export interface TabPermissionConfig {
   id: TabKey;
@@ -98,9 +99,10 @@ export const ALL_TAB_KEYS: TabKey[] = [
   'fullvia',
   'staff_management',
   'shared_accounts',
+  'revenue',
 ];
 
-// Các bảng phân quyền cho nhân viên (Bảng 5 là Quản Trị Nhân Viên chỉ dành riêng cho Admin quản lý)
+// Các bảng phân quyền cho nhân viên (Bảng 5 Quản Trị NV & Bảng 7 Quản Lý Doanh Thu chỉ dành riêng cho Admin quản lý)
 export const STAFF_ASSIGNABLE_TABS: TabKey[] = [
   'fanpage',
   'group',
@@ -163,6 +165,15 @@ export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
     badgeName: 'TK Web',
     color: 'purple',
     description: 'Tài khoản web công cụ dùng chung (Canva, ChatGPT, CapCut...)',
+  },
+  revenue: {
+    id: 'revenue',
+    tabNumber: 7,
+    label: 'Bảng 7: Doanh Thu & Thu Chi',
+    shortLabel: 'B7 Doanh Thu',
+    badgeName: 'Doanh Thu',
+    color: 'amber',
+    description: 'Bảng quản lý doanh thu, tổng tiền về, chi phí văn phòng, điện, nước và lương nhân viên từng tháng (Chỉ Admin)',
   },
 };
 
@@ -308,5 +319,81 @@ export interface ProxyFilter {
   protocol: string;
   location: string;
 }
+
+// ==========================================
+// 7. QUẢN LÝ DOANH THU & THU CHI HÀNG THÁNG (CHỈ ADMIN)
+// ==========================================
+
+export interface RevenueItem {
+  id: string;
+  sourceName: string; // Tên nguồn thu (VD: Ads Facebook, Tiền Booking Page, Tiền Kéo Tương Tác Group, Hợp đồng đối tác...)
+  amount: number; // Số tiền (VNĐ)
+  receivedDate?: string; // Ngày nhận tiền (VD: 15/10/2026)
+  payerName?: string; // Khách hàng / Đối tác chi trả
+  note?: string; // Ghi chú thêm
+  createdAt?: string;
+}
+
+export interface StaffSalaryItem {
+  id: string;
+  staffName: string; // Tên nhân viên
+  baseSalary: number; // Lương cứng cơ bản (VNĐ)
+  kpiBonus: number; // Thưởng KPI / Doanh số / Đăng bài (VNĐ)
+  deduction: number; // Phạt / Trừ lương / Tạm ứng (VNĐ)
+  actualSalary: number; // Tổng thực nhận = baseSalary + kpiBonus - deduction
+  isPaid: boolean; // Đã thanh toán / Chưa thanh toán
+  paidDate?: string; // Ngày chi trả
+  note?: string; // Ghi chú (VD: Thưởng vượt 150 bài, Phạt đi muộn...)
+}
+
+export interface CustomExpenseItem {
+  id: string;
+  name: string; // Tên khoản chi (VD: Mua Tool nuôi nick, Thuê VPS, Bình nước uống, Bàn ghế mới,...)
+  category: 'office' | 'utility' | 'tools' | 'proxy' | 'other';
+  amount: number; // Số tiền (VNĐ)
+  paidDate?: string; // Ngày chi
+  note?: string;
+}
+
+export interface MonthlyFinanceRecord {
+  id: string; // ID tháng (VD: '2026-10', '2026-09')
+  monthKey: string; // '2026-10'
+  month: number; // 10
+  year: number; // 2026
+  title?: string; // "Tháng 10/2026"
+
+  // 1. DOANH THU / TỔNG TIỀN VỀ (Admin nhập)
+  manualTotalRevenue?: number; // Cho phép Admin nhập trực tiếp nếu không muốn chia nhỏ
+  revenueItems: RevenueItem[]; // Danh sách các khoản tiền về chi tiết
+  totalRevenue: number; // Tổng tiền về = sum(revenueItems) hoặc manualTotalRevenue
+
+  // 2. CHI PHÍ VĂN PHÒNG, ĐIỆN, NƯỚC (Admin nhập)
+  officeCost: number; // Chi phí văn phòng (tiền thuê mặt bằng, bảo vệ, văn phòng phẩm...)
+  officeCostNote?: string;
+  electricityCost: number; // Tiền điện
+  electricityCostNote?: string;
+  waterCost: number; // Tiền nước
+  waterCostNote?: string;
+  internetCost?: number; // Tiền mạng Internet & hạ tầng
+  internetCostNote?: string;
+  otherCosts?: number; // Chi phí phát sinh khác
+  otherCostsNote?: string;
+  customExpenses?: CustomExpenseItem[]; // Danh sách các khoản chi phát sinh khác
+
+  // 3. TIỀN LƯƠNG NHÂN VIÊN
+  salaryItems: StaffSalaryItem[]; // Bảng lương chi tiết từng nhân viên
+  totalSalary: number; // Tổng tiền lương nhân viên = sum(actualSalary)
+
+  // 4. TỔNG KẾT TÀI CHÍNH & LỢI NHUẬN
+  totalExpenses: number; // Tổng chi phí = officeCost + electricityCost + waterCost + internetCost + otherCosts + totalSalary + customExpenses
+  netProfit: number; // Lợi nhuận ròng = totalRevenue - totalExpenses
+  profitMargin?: number; // Tỷ suất sinh lời (%) = (netProfit / totalRevenue) * 100
+  status?: 'profitable' | 'loss' | 'break_even'; // Có lãi / Lỗ / Hòa vốn
+  adminSummaryNote?: string; // Nhận xét, tổng kết của Admin cho tháng
+  createdAt?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 
 

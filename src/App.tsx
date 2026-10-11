@@ -8,6 +8,7 @@ import {
   SharedAccount,
   GroupRecord,
   ProxyItem,
+  MonthlyFinanceRecord,
   TabKey,
   ALL_TAB_KEYS,
   TAB_DEFINITIONS,
@@ -22,6 +23,11 @@ import {
   subscribeToSharedAccounts,
   subscribeToGroupRecords,
   subscribeToProxies,
+  subscribeToMonthlyFinances,
+  getCloudMonthlyFinances,
+  setCloudMonthlyFinance,
+  updateCloudMonthlyFinance,
+  deleteCloudMonthlyFinance,
   setCloudPageRecord,
   updateCloudPageRecord,
   deleteCloudPageRecord,
@@ -62,6 +68,8 @@ import {
   migrateAndPreserveLocalStorage,
   saveLocalGroupBackup,
   getLocalGroupBackup,
+  saveLocalFinanceBackup,
+  getLocalFinanceBackup,
   DEFAULT_STAFF_MEMBERS,
   INITIAL_ACCOUNTS,
   DEFAULT_ADMIN_USER,
@@ -69,7 +77,7 @@ import {
   DEFAULT_ADMIN_SETTINGS,
   AdminSecuritySettings,
 } from './services/storage';
-import { INITIAL_PROXIES, INITIAL_GROUP_RECORDS } from './data/initialData';
+import { INITIAL_PROXIES, INITIAL_GROUP_RECORDS, INITIAL_MONTHLY_FINANCES } from './data/initialData';
 import { SheetHeader } from './components/SheetHeader';
 import { SheetFilterBar } from './components/SheetFilterBar';
 import { FanpageSheetTable } from './components/FanpageSheetTable';
@@ -93,7 +101,8 @@ import { ProxyManagementTable } from './components/ProxyManagementTable';
 import { ProxyAppView } from './components/ProxyAppView';
 import { AddEditProxyModal } from './components/AddEditProxyModal';
 import { BulkImportProxyModal } from './components/BulkImportProxyModal';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw } from 'lucide-react';
+import { RevenueManagementTable } from './components/RevenueManagementTable';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign } from 'lucide-react';
 
 export default function App() {
   // Application data stored purely in Cloud Firestore
@@ -103,6 +112,7 @@ export default function App() {
   const [sharedAccounts, setSharedAccounts] = useState<SharedAccount[]>([]);
   const [groupRecords, setGroupRecords] = useState<GroupRecord[]>([]);
   const [proxies, setProxies] = useState<ProxyItem[]>(INITIAL_PROXIES);
+  const [finances, setFinances] = useState<MonthlyFinanceRecord[]>(() => getLocalFinanceBackup());
   const [customStaffList, setCustomStaffList] = useState<string[]>([]);
   const [adminSettings, setAdminSettings] = useState<AdminSecuritySettings>(DEFAULT_ADMIN_SETTINGS);
   
@@ -178,8 +188,8 @@ export default function App() {
     } else {
       tabs = ['fanpage', 'fullvia'];
     }
-    // Bảng 5 (Quản trị nhân viên) chỉ có Admin quản lý - loại trừ khỏi danh sách bảng của nhân viên
-    return tabs.filter((t) => t !== 'staff_management');
+    // Bảng 5 (Quản trị nhân viên) & Bảng 7 (Doanh thu) chỉ có Admin quản lý - loại trừ khỏi danh sách bảng của nhân viên
+    return tabs.filter((t) => t !== 'staff_management' && t !== 'revenue');
   }, [currentUser, accounts]);
 
   // Tự động chuyển activeTab về bảng hợp lệ đầu tiên nếu bảng hiện tại không được phép
@@ -304,6 +314,7 @@ export default function App() {
     let unsubSharedAccounts: (() => void) | undefined;
     let unsubGroups: (() => void) | undefined;
     let unsubProxies: (() => void) | undefined;
+    let unsubFinances: (() => void) | undefined;
 
     async function initAuthenticatedSubscriptions() {
       try {
@@ -346,6 +357,26 @@ export default function App() {
             setProxies(cloudProxies);
           }
         });
+
+        // 6. Listen to live monthly finances in Cloud Firestore (Chỉ Admin)
+        unsubFinances = subscribeToMonthlyFinances((cloudFinances) => {
+          if (cloudFinances && cloudFinances.length > 0) {
+            setFinances(cloudFinances);
+            saveLocalFinanceBackup(cloudFinances);
+          } else {
+            setFinances(INITIAL_MONTHLY_FINANCES);
+            saveLocalFinanceBackup(INITIAL_MONTHLY_FINANCES);
+          }
+        });
+
+        getCloudMonthlyFinances()
+          .then((list) => {
+            if (list && list.length > 0) {
+              setFinances(list);
+              saveLocalFinanceBackup(list);
+            }
+          })
+          .catch((err) => console.warn('[App] Direct finance fetch warning:', err));
       } catch (err) {
         console.error('[App] Lỗi kết nối cơ sở dữ liệu đã xác thực:', err);
       }
@@ -360,6 +391,7 @@ export default function App() {
       unsubSharedAccounts?.();
       unsubGroups?.();
       unsubProxies?.();
+      unsubFinances?.();
     };
   }, [currentUser.isAuthenticated]);
 
@@ -2267,6 +2299,33 @@ export default function App() {
                 </button>
               )}
 
+              {/* TAB 7: Bảng 7 Quản Lý Doanh Thu & Thu Chi (CHỈ ADMIN) */}
+              {userAllowedTabs.includes('revenue') && currentUser.role === 'admin' && (
+                <button
+                  type="button"
+                  id="tab-btn-revenue-table"
+                  onClick={() => setActiveTab('revenue')}
+                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                    activeTab === 'revenue'
+                      ? 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/25'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80 border border-slate-200'
+                  }`}
+                  title="Bảng 7: Quản lý doanh thu, tổng tiền về, chi phí văn phòng, điện nước và lương nhân viên từng tháng (Chỉ Admin)"
+                >
+                  <DollarSign className="w-4 h-4 shrink-0 text-amber-300" />
+                  <span>Bảng 7: Doanh Thu & Thu Chi</span>
+                  <span
+                    className={`px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                      activeTab === 'revenue'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-white text-slate-800 border border-slate-200'
+                    }`}
+                  >
+                    {finances.length} Tháng
+                  </span>
+                </button>
+              )}
+
               {/* Huy hiệu phân quyền cho nhân viên */}
               {currentUser.role === 'staff' && (
                 <div className="hidden lg:flex items-center space-x-1 px-2.5 py-1 rounded-xl text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200/80 shrink-0">
@@ -2529,6 +2588,39 @@ export default function App() {
               if (tab) setAdminApprovalModalTab(tab);
               setIsAdminApprovalModalOpen(true);
             }}
+          />
+        ) : activeTab === 'revenue' ? (
+          <RevenueManagementTable
+            finances={finances}
+            currentUser={currentUser}
+            availableStaffNames={allStaffNames}
+            onSaveMonthlyFinance={async (record) => {
+              await setCloudMonthlyFinance(record);
+              setFinances((prev) => {
+                const exists = prev.some((f) => f.id === record.id || f.monthKey === record.monthKey);
+                const next = exists
+                  ? prev.map((f) => (f.id === record.id || f.monthKey === record.monthKey ? record : f))
+                  : [record, ...prev];
+                saveLocalFinanceBackup(next);
+                return next;
+              });
+            }}
+            onDeleteMonthlyFinance={async (monthId) => {
+              await deleteCloudMonthlyFinance(monthId);
+              setFinances((prev) => {
+                const next = prev.filter((f) => f.id !== monthId && f.monthKey !== monthId);
+                saveLocalFinanceBackup(next);
+                return next;
+              });
+            }}
+            onRefreshFinances={async () => {
+              const list = await getCloudMonthlyFinances();
+              if (list && list.length > 0) {
+                setFinances(list);
+                saveLocalFinanceBackup(list);
+              }
+            }}
+            onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
           />
         ) : (
           <SharedAccountsTable

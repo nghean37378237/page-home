@@ -17,11 +17,12 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem, GroupInteractionStatus } from '../types';
+import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem, GroupInteractionStatus, MonthlyFinanceRecord } from '../types';
 import {
   INITIAL_PAGE_RECORDS,
   INITIAL_GROUP_RECORDS,
   INITIAL_PROXIES,
+  INITIAL_MONTHLY_FINANCES,
 } from '../data/initialData';
 import {
   INITIAL_ACCOUNTS,
@@ -186,6 +187,7 @@ export const GENERAL_SETTINGS_DOC = 'general';
 export const SHARED_ACCOUNTS_COLLECTION = 'sharedAccounts';
 export const GROUP_RECORDS_COLLECTION = 'groupRecords';
 export const PROXIES_COLLECTION = 'proxies';
+export const MONTHLY_FINANCES_COLLECTION = 'monthlyFinances';
 
 export const INITIAL_SHARED_ACCOUNTS: SharedAccount[] = [
   {
@@ -538,6 +540,45 @@ export async function getCloudProxies(): Promise<ProxyItem[]> {
     return list;
   } catch (error) {
     console.error('[Firestore] Lỗi đọc proxies trực tiếp:', error);
+    return [];
+  }
+}
+
+// --- Monthly Finances (Chỉ Admin Quản Lý) ---
+export function subscribeToMonthlyFinances(
+  onData: (finances: MonthlyFinanceRecord[]) => void,
+  onError?: (err: Error) => void
+): Unsubscribe {
+  return onSnapshot(
+    collection(db, MONTHLY_FINANCES_COLLECTION),
+    (snapshot) => {
+      const list: MonthlyFinanceRecord[] = [];
+      snapshot.forEach((d) => {
+        list.push({ id: d.id, ...d.data() } as MonthlyFinanceRecord);
+      });
+      // Sắp xếp giảm dần theo thời gian (tháng mới nhất lên đầu)
+      list.sort((a, b) => (b.monthKey || '').localeCompare(a.monthKey || ''));
+      onData(list);
+    },
+    (error) => {
+      console.warn('[Firestore] Live monthlyFinances listener warning:', error);
+      if (onError) onError(error);
+      handleFirestoreError(error, OperationType.LIST, MONTHLY_FINANCES_COLLECTION);
+    }
+  );
+}
+
+export async function getCloudMonthlyFinances(): Promise<MonthlyFinanceRecord[]> {
+  try {
+    const snapshot = await getDocs(collection(db, MONTHLY_FINANCES_COLLECTION));
+    const list: MonthlyFinanceRecord[] = [];
+    snapshot.forEach((d) => {
+      list.push({ id: d.id, ...d.data() } as MonthlyFinanceRecord);
+    });
+    list.sort((a, b) => (b.monthKey || '').localeCompare(a.monthKey || ''));
+    return list;
+  } catch (error) {
+    console.error('[Firestore] Lỗi đọc monthly finances trực tiếp:', error);
     return [];
   }
 }
@@ -950,6 +991,61 @@ export async function batchDeleteCloudProxies(ids: string[]): Promise<void> {
     console.log(`[Firestore] Đã xóa hàng loạt ${ids.length} proxy.`);
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, PROXIES_COLLECTION);
+    throw error;
+  }
+}
+
+// --- Monthly Finance Operations ---
+export async function setCloudMonthlyFinance(record: MonthlyFinanceRecord): Promise<void> {
+  const path = `${MONTHLY_FINANCES_COLLECTION}/${record.id}`;
+  try {
+    const clean = sanitizeForFirestore(record);
+    await setDoc(doc(db, MONTHLY_FINANCES_COLLECTION, record.id), clean);
+    console.log(`[Firestore] Đã lưu thông tin tài chính tháng ${record.monthKey} thành công.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    throw error;
+  }
+}
+
+export async function updateCloudMonthlyFinance(id: string, updates: Partial<MonthlyFinanceRecord>): Promise<void> {
+  const path = `${MONTHLY_FINANCES_COLLECTION}/${id}`;
+  try {
+    const clean = sanitizeForFirestore(updates);
+    await updateDoc(doc(db, MONTHLY_FINANCES_COLLECTION, id), clean as DocumentData);
+    console.log(`[Firestore] Đã cập nhật tài chính tháng ${id} thành công.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+    throw error;
+  }
+}
+
+export async function deleteCloudMonthlyFinance(id: string): Promise<void> {
+  const path = `${MONTHLY_FINANCES_COLLECTION}/${id}`;
+  try {
+    await deleteDoc(doc(db, MONTHLY_FINANCES_COLLECTION, id));
+    console.log(`[Firestore] Đã xóa dữ liệu tài chính tháng ${id}.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+    throw error;
+  }
+}
+
+export async function batchSaveCloudMonthlyFinances(records: MonthlyFinanceRecord[]): Promise<void> {
+  if (!records.length) return;
+  const chunkSize = 400;
+  try {
+    for (let i = 0; i < records.length; i += chunkSize) {
+      const chunk = records.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((rec) => {
+        batch.set(doc(db, MONTHLY_FINANCES_COLLECTION, rec.id), sanitizeForFirestore(rec));
+      });
+      await batch.commit();
+    }
+    console.log(`[Firestore] Đã lưu hàng loạt ${records.length} bản ghi tài chính tháng.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, MONTHLY_FINANCES_COLLECTION);
     throw error;
   }
 }

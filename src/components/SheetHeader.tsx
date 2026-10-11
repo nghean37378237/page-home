@@ -23,7 +23,7 @@ import {
   KeyRound,
   Database,
 } from 'lucide-react';
-import { PageRecord, AppUser, FullViaItem } from '../types';
+import { PageRecord, AppUser, FullViaItem, TabKey } from '../types';
 import { exportSheetToCSV } from '../utils/helpers';
 import {
   downloadFanpageExcelTemplate,
@@ -38,7 +38,7 @@ interface SheetHeaderProps {
   currentUser: AppUser;
   availableUsers: AppUser[];
   pendingRequestsCount: number;
-  activeTab?: 'fanpage' | 'group' | 'proxy' | 'fullvia' | 'shared_accounts' | 'staff_management';
+  activeTab?: TabKey;
   activeStaffFilter?: string;
   viaList?: FullViaItem[];
   errorViaUids?: Set<string>;

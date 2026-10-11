@@ -207,5 +207,11 @@ service cloud.firestore {
       allow update: if isValidId(proxyId) && isValidProxyItem(request.resource.data);
       allow delete: if isValidId(proxyId);
     }
+
+    // 8. Monthly Finances (Doanh thu & Thu chi từng tháng)
+    match /monthlyFinances/{monthId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(monthId);
+    }
   }
 }
