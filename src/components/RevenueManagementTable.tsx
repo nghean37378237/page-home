@@ -13,6 +13,14 @@ import {
   DollarSign,
   TrendingUp,
   TrendingDown,
+  BarChart3,
+  ArrowUpRight,
+  ArrowDownRight,
+  ArrowRight,
+  ArrowUpDown,
+  SlidersHorizontal,
+  Minus,
+  Sparkles,
   Building2,
   Zap,
   Droplets,
@@ -210,6 +218,12 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [salaryNote, setSalaryNote] = useState('');
   // Quyền hiển thị cho nhân viên (Tích hiện / Bỏ tích ẩn số tiền)
   const [salaryIsVisibleToStaff, setSalaryIsVisibleToStaff] = useState(false);
+
+  // State sắp xếp & hiển thị bảng so sánh doanh thu các tháng
+  const [comparisonSortOrder, setComparisonSortOrder] = useState<'desc' | 'asc'>('desc');
+  // State chọn 2 tháng để đối chiếu trực tiếp chỉ số (Doanh thu, Chi phí, Lợi nhuận)
+  const [directCompareKeyA, setDirectCompareKeyA] = useState<string>('');
+  const [directCompareKeyB, setDirectCompareKeyB] = useState<string>('');
 
   // Hàm tự động gợi ý/điền nhanh thông tin nhân sự khi Admin chọn tên nhân viên
   const handleStaffNameChange = (name: string) => {
@@ -456,6 +470,339 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     if (expenseFilterType === 'all') return list;
     return list.filter((item) => (item.expenseType || 'unexpected') === expenseFilterType);
   }, [activeMonthRecord.customExpenses, expenseFilterType]);
+
+  // ==========================================
+  // THỐNG KÊ DOANH THU & SO SÁNH TĂNG GIẢM CÁC THÁNG (MoM ANALYTICS)
+  // ==========================================
+  const monthlyComparisonStats = useMemo(() => {
+    const allRecordsMap = new Map<string, MonthlyFinanceRecord>();
+    finances.forEach((f) => {
+      const key = f.monthKey || f.id || `${f.year}-${String(f.month).padStart(2, '0')}`;
+      allRecordsMap.set(key, f);
+    });
+
+    // Đảm bảo tháng đang chọn luôn có mặt với dữ liệu thời gian thực
+    if (selectedMonthKey && !allRecordsMap.has(selectedMonthKey)) {
+      allRecordsMap.set(selectedMonthKey, activeMonthRecord);
+    }
+
+    const recordsList = Array.from(allRecordsMap.values());
+
+    // Sắp xếp theo thứ tự thời gian tăng dần (cũ nhất -> mới nhất)
+    const sortedChronological = [...recordsList].sort((a, b) => {
+      const keyA = a.monthKey || a.id || `${a.year}-${String(a.month).padStart(2, '0')}`;
+      const keyB = b.monthKey || b.id || `${b.year}-${String(b.month).padStart(2, '0')}`;
+      return keyA.localeCompare(keyB);
+    });
+
+    return sortedChronological.map((f, idx, arr) => {
+      const mKey = f.monthKey || f.id || `${f.year}-${String(f.month).padStart(2, '0')}`;
+      const isCurrent = mKey === selectedMonthKey;
+
+      // Doanh thu
+      const rev = isCurrent
+        ? computedTotalRevenue
+        : (f.revenueItems && f.revenueItems.length > 0)
+        ? f.revenueItems.reduce((sum, it) => sum + (Number(it.amount) || 0), 0)
+        : (f.totalRevenue || 0);
+
+      // Chi phí lương & KPI
+      const sal = isCurrent
+        ? computedTotalSalary
+        : (f.salaryItems && f.salaryItems.length > 0)
+        ? f.salaryItems.reduce((sum, it) => sum + (Number(it.actualSalary) || 0), 0)
+        : (f.totalSalary || 0);
+
+      // Thưởng KPI
+      const kpi = isCurrent
+        ? computedTotalKpiBonus
+        : (f.salaryItems || []).reduce((sum, it) => sum + (Number(it.kpiBonus) || 0), 0);
+
+      // Phụ cấp mạng/điện online
+      const onlineSup = isCurrent
+        ? computedTotalOnlineSupport
+        : (f.salaryItems || []).reduce((sum, it) => sum + (Number(it.onlineSupportAllowance) || 0), 0);
+
+      // Chi phí cố định
+      const fixed = isCurrent
+        ? computedTotalFixedCosts
+        : (Number(f.officeCost) || 0) +
+          (Number(f.electricityCost) || 0) +
+          (Number(f.waterCost) || 0) +
+          (Number(f.internetCost) || 0) +
+          (f.customExpenses || []).filter((e) => e.expenseType === 'fixed').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+      // Chi phí ngoài ý muốn & khác
+      const unexp = isCurrent
+        ? computedTotalUnexpectedCosts
+        : (f.customExpenses || []).filter((e) => e.expenseType !== 'fixed').reduce((s, e) => s + (Number(e.amount) || 0), 0) + (Number(f.otherCosts) || 0);
+
+      // Tổng chi phí
+      const exp = isCurrent ? computedTotalExpenses : sal + fixed + unexp;
+
+      // Lợi nhuận ròng
+      const profit = isCurrent ? computedNetProfit : rev - exp;
+
+      // Tỷ suất sinh lời
+      const margin = rev > 0 ? Math.round((profit / rev) * 1000) / 10 : 0;
+
+      // So sánh với tháng liền kề trước đó
+      let prevRevenue = 0;
+      let prevProfit = 0;
+      let prevExpenses = 0;
+      let prevMonthTitle = '';
+      let diffRevenue = 0;
+      let diffRevenuePercent = 0;
+      let diffProfit = 0;
+      let diffProfitPercent = 0;
+      let diffExpenses = 0;
+      let diffExpensesPercent = 0;
+      let hasPrevious = false;
+
+      if (idx > 0) {
+        hasPrevious = true;
+        const prevF = arr[idx - 1];
+        const prevKey = prevF.monthKey || prevF.id || `${prevF.year}-${String(prevF.month).padStart(2, '0')}`;
+        prevMonthTitle = prevF.title || `Tháng ${prevF.month}/${prevF.year}`;
+
+        prevRevenue = prevKey === selectedMonthKey
+          ? computedTotalRevenue
+          : (prevF.revenueItems && prevF.revenueItems.length > 0)
+          ? prevF.revenueItems.reduce((s, it) => s + (Number(it.amount) || 0), 0)
+          : (prevF.totalRevenue || 0);
+
+        const prevSal = prevKey === selectedMonthKey
+          ? computedTotalSalary
+          : (prevF.salaryItems && prevF.salaryItems.length > 0)
+          ? prevF.salaryItems.reduce((s, it) => s + (Number(it.actualSalary) || 0), 0)
+          : (prevF.totalSalary || 0);
+
+        const prevFixed = prevKey === selectedMonthKey
+          ? computedTotalFixedCosts
+          : (Number(prevF.officeCost) || 0) +
+            (Number(prevF.electricityCost) || 0) +
+            (Number(prevF.waterCost) || 0) +
+            (Number(prevF.internetCost) || 0) +
+            (prevF.customExpenses || []).filter((e) => e.expenseType === 'fixed').reduce((s, e) => s + (Number(e.amount) || 0), 0);
+
+        const prevUnexp = prevKey === selectedMonthKey
+          ? computedTotalUnexpectedCosts
+          : (prevF.customExpenses || []).filter((e) => e.expenseType !== 'fixed').reduce((s, e) => s + (Number(e.amount) || 0), 0) + (Number(prevF.otherCosts) || 0);
+
+        prevExpenses = prevKey === selectedMonthKey ? computedTotalExpenses : prevSal + prevFixed + prevUnexp;
+        prevProfit = prevKey === selectedMonthKey ? computedNetProfit : prevRevenue - prevExpenses;
+
+        diffRevenue = rev - prevRevenue;
+        diffRevenuePercent = prevRevenue > 0
+          ? Math.round(((rev - prevRevenue) / prevRevenue) * 1000) / 10
+          : rev > 0 ? 100 : 0;
+
+        diffProfit = profit - prevProfit;
+        diffProfitPercent = prevProfit !== 0
+          ? Math.round(((profit - prevProfit) / Math.abs(prevProfit)) * 1000) / 10
+          : 0;
+
+        diffExpenses = exp - prevExpenses;
+        diffExpensesPercent = prevExpenses > 0
+          ? Math.round(((exp - prevExpenses) / prevExpenses) * 1000) / 10
+          : 0;
+      }
+
+      const revenueTrend: 'up' | 'down' | 'equal' | 'first' = !hasPrevious
+        ? 'first'
+        : diffRevenue > 0
+        ? 'up'
+        : diffRevenue < 0
+        ? 'down'
+        : 'equal';
+
+      const profitTrend: 'up' | 'down' | 'equal' | 'first' = !hasPrevious
+        ? 'first'
+        : diffProfit > 0
+        ? 'up'
+        : diffProfit < 0
+        ? 'down'
+        : 'equal';
+
+      return {
+        record: f,
+        monthKey: mKey,
+        month: f.month,
+        year: f.year,
+        title: f.title || `Tháng ${f.month}/${f.year}`,
+        revenue: rev,
+        salary: sal,
+        kpiBonus: kpi,
+        onlineSupport: onlineSup,
+        fixedCost: fixed,
+        unexpectedCost: unexp,
+        totalExpenses: exp,
+        netProfit: profit,
+        profitMargin: margin,
+        isCurrent,
+        hasPrevious,
+        prevMonthTitle,
+        prevRevenue,
+        diffRevenue,
+        diffRevenuePercent,
+        prevProfit,
+        diffProfit,
+        diffProfitPercent,
+        prevExpenses,
+        diffExpenses,
+        diffExpensesPercent,
+        revenueTrend,
+        profitTrend,
+      };
+    });
+  }, [
+    finances,
+    selectedMonthKey,
+    activeMonthRecord,
+    computedTotalRevenue,
+    computedTotalSalary,
+    computedTotalKpiBonus,
+    computedTotalOnlineSupport,
+    computedTotalFixedCosts,
+    computedTotalUnexpectedCosts,
+    computedTotalExpenses,
+    computedNetProfit,
+  ]);
+
+  // Tổng hợp chỉ số thống kê phân tích doanh thu qua các tháng
+  const revenueComparisonInsights = useMemo(() => {
+    if (monthlyComparisonStats.length === 0) {
+      return {
+        maxRevenueMonth: null,
+        minRevenueMonth: null,
+        avgRevenue: 0,
+        totalAllTimeRevenue: 0,
+        totalAllTimeProfit: 0,
+        bestGrowthMonth: null,
+        bestGrowthPercentMonth: null,
+        highestProfitMonth: null,
+        upMonthsCount: 0,
+        downMonthsCount: 0,
+        growthCountWithPrev: 0,
+        avgMoMGrowthPercent: 0,
+        currentMonthStat: null,
+        prevMonthStat: null,
+      };
+    }
+
+    const totalAllTimeRevenue = monthlyComparisonStats.reduce((sum, it) => sum + it.revenue, 0);
+    const totalAllTimeProfit = monthlyComparisonStats.reduce((sum, it) => sum + it.netProfit, 0);
+    const avgRevenue = Math.round(totalAllTimeRevenue / monthlyComparisonStats.length);
+
+    let maxRev = monthlyComparisonStats[0];
+    let minRev = monthlyComparisonStats[0];
+    let bestGrowthAmount = monthlyComparisonStats[0];
+    let bestGrowthPercent = monthlyComparisonStats[0];
+    let highestProfit = monthlyComparisonStats[0];
+    let upMonthsCount = 0;
+    let downMonthsCount = 0;
+    let totalGrowthPercentSum = 0;
+    let growthCountWithPrev = 0;
+
+    monthlyComparisonStats.forEach((it) => {
+      if (it.revenue > maxRev.revenue) maxRev = it;
+      if (it.revenue < minRev.revenue) minRev = it;
+      if (it.netProfit > highestProfit.netProfit) highestProfit = it;
+
+      if (it.hasPrevious) {
+        growthCountWithPrev += 1;
+        totalGrowthPercentSum += it.diffRevenuePercent;
+        if (it.diffRevenue > 0) upMonthsCount += 1;
+        else if (it.diffRevenue < 0) downMonthsCount += 1;
+
+        if (it.diffRevenue > (bestGrowthAmount?.diffRevenue || 0)) {
+          bestGrowthAmount = it;
+        }
+        if (it.diffRevenuePercent > (bestGrowthPercent?.diffRevenuePercent || 0)) {
+          bestGrowthPercent = it;
+        }
+      }
+    });
+
+    const avgMoMGrowthPercent = growthCountWithPrev > 0
+      ? Math.round((totalGrowthPercentSum / growthCountWithPrev) * 10) / 10
+      : 0;
+
+    const currentIdx = monthlyComparisonStats.findIndex((it) => it.isCurrent);
+    const currentMonthStat = currentIdx >= 0 ? monthlyComparisonStats[currentIdx] : monthlyComparisonStats[monthlyComparisonStats.length - 1];
+    const prevMonthStat = currentIdx > 0 ? monthlyComparisonStats[currentIdx - 1] : null;
+
+    return {
+      maxRevenueMonth: maxRev,
+      minRevenueMonth: minRev,
+      avgRevenue,
+      totalAllTimeRevenue,
+      totalAllTimeProfit,
+      bestGrowthMonth: bestGrowthAmount?.hasPrevious ? bestGrowthAmount : null,
+      bestGrowthPercentMonth: bestGrowthPercent?.hasPrevious ? bestGrowthPercent : null,
+      highestProfitMonth: highestProfit,
+      upMonthsCount,
+      downMonthsCount,
+      growthCountWithPrev,
+      avgMoMGrowthPercent,
+      currentMonthStat,
+      prevMonthStat,
+    };
+  }, [monthlyComparisonStats]);
+
+  // Bộ so sánh đối chiếu trực tiếp giữa 2 tháng bất kỳ do người dùng chọn
+  const directComparisonResult = useMemo(() => {
+    if (monthlyComparisonStats.length < 2) return null;
+
+    // Tháng mốc (Tháng A)
+    const keyA = directCompareKeyA || selectedMonthKey || monthlyComparisonStats[monthlyComparisonStats.length - 1]?.monthKey;
+    // Tháng đối chiếu (Tháng B)
+    let keyB = directCompareKeyB;
+    if (!keyB || keyB === keyA) {
+      const other = monthlyComparisonStats.slice().reverse().find((m) => m.monthKey !== keyA);
+      keyB = other ? other.monthKey : monthlyComparisonStats[0]?.monthKey;
+    }
+
+    const statA = monthlyComparisonStats.find((m) => m.monthKey === keyA) || monthlyComparisonStats[monthlyComparisonStats.length - 1];
+    const statB = monthlyComparisonStats.find((m) => m.monthKey === keyB) || monthlyComparisonStats[0];
+
+    if (!statA || !statB) return null;
+
+    const diffRev = statA.revenue - statB.revenue;
+    const diffRevPercent = statB.revenue > 0
+      ? Math.round(((statA.revenue - statB.revenue) / statB.revenue) * 1000) / 10
+      : (statA.revenue > 0 ? 100 : 0);
+
+    const diffExp = statA.totalExpenses - statB.totalExpenses;
+    const diffExpPercent = statB.totalExpenses > 0
+      ? Math.round(((statA.totalExpenses - statB.totalExpenses) / statB.totalExpenses) * 1000) / 10
+      : 0;
+
+    const diffProfit = statA.netProfit - statB.netProfit;
+    const diffProfitPercent = statB.netProfit !== 0
+      ? Math.round(((statA.netProfit - statB.netProfit) / Math.abs(statB.netProfit)) * 1000) / 10
+      : 0;
+
+    const diffSalary = statA.salary - statB.salary;
+    const diffKpi = statA.kpiBonus - statB.kpiBonus;
+    const diffOnline = statA.onlineSupport - statB.onlineSupport;
+
+    return {
+      statA,
+      statB,
+      keyA,
+      keyB,
+      diffRev,
+      diffRevPercent,
+      diffExp,
+      diffExpPercent,
+      diffProfit,
+      diffProfitPercent,
+      diffSalary,
+      diffKpi,
+      diffOnline,
+    };
+  }, [monthlyComparisonStats, directCompareKeyA, directCompareKeyB, selectedMonthKey]);
 
   // LƯU TOÀN BỘ BẢN GHI THÁNG LÊN CLOUD FIRESTORE
   const handleSaveMonth = async () => {
@@ -1631,6 +1978,25 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               </button>
             )}
 
+            {/* Nút Thống Kê & So Sánh Tăng Giảm Doanh Thu Các Tháng */}
+            <button
+              type="button"
+              id="btn-goto-revenue-growth-comparison"
+              onClick={() => setActiveSection('all_months')}
+              className={`inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-black transition-all shadow-2xs cursor-pointer ${
+                activeSection === 'all_months'
+                  ? 'bg-amber-600 text-white shadow-sm ring-2 ring-amber-300'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300'
+              }`}
+              title="Xem bảng thống kê & so sánh tăng giảm doanh thu giữa các tháng"
+            >
+              <BarChart3 className="w-4 h-4 text-amber-600" />
+              <span>📈 So Sánh Doanh Thu Các Tháng</span>
+              <span className="px-1.5 py-0.2 bg-amber-200 text-amber-900 rounded-full text-[10px] font-mono font-bold">
+                {monthlyComparisonStats.length}
+              </span>
+            </button>
+
             {/* Nút Sao Chép Dữ Liệu Từ Tháng Khác (Áp dụng cho tháng hiện tại đang xem) */}
             {finances.length > 0 && (
               <button
@@ -1922,9 +2288,10 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               : 'text-slate-700 hover:bg-slate-200'
           }`}
         >
-          <span>📅 Lịch Sử So Sánh Các Tháng</span>
+          <BarChart3 className="w-4 h-4 text-amber-400" />
+          <span>📈 Thống Kê & So Sánh Tăng Giảm Doanh Thu</span>
           <span className="px-1.5 py-0.2 bg-white/20 rounded-full text-[10px]">
-            {finances.length}
+            {monthlyComparisonStats.length}
           </span>
         </button>
       </div>
@@ -1975,6 +2342,145 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 </span>
               </div>
             </div>
+
+            {/* THẺ SO SÁNH TĂNG GIẢM DOANH THU VỚI THÁNG TRƯỚC (MoM STATS) */}
+            {revenueComparisonInsights.prevMonthStat ? (
+              <div className="bg-gradient-to-r from-blue-50/90 via-indigo-50/90 to-sky-50/90 border-2 border-indigo-300 rounded-2xl p-4 shadow-2xs space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-200/80 pb-2.5">
+                  <div className="flex items-center space-x-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                      <BarChart3 className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-indigo-950 uppercase tracking-wide">
+                        So Sánh Tăng Trưởng Doanh Thu (So Với Tháng Trước)
+                      </h4>
+                      <p className="text-[11px] text-indigo-800 font-medium">
+                        Đối chiếu giữa <strong>{activeMonthRecord.title || selectedMonthKey}</strong> và <strong>{revenueComparisonInsights.prevMonthStat.title}</strong>
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setActiveSection('all_months')}
+                    className="inline-flex items-center space-x-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer self-start sm:self-auto"
+                  >
+                    <span>Xem Bảng So Sánh & Biểu Đồ</span>
+                    <ArrowUpRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 font-mono">
+                  {/* Doanh thu biến động */}
+                  <div className="p-3 bg-white rounded-xl border border-indigo-200/80 shadow-2xs">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase flex items-center justify-between">
+                      <span>Biến Động Doanh Thu:</span>
+                      {(revenueComparisonInsights.currentMonthStat?.diffRevenue || 0) >= 0 ? (
+                        <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                      ) : (
+                        <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
+                      )}
+                    </div>
+                    <div className={`text-base font-black mt-1 ${
+                      (revenueComparisonInsights.currentMonthStat?.diffRevenue || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                    }`}>
+                      {(revenueComparisonInsights.currentMonthStat?.diffRevenue || 0) >= 0 ? '+' : ''}
+                      {formatCurrencyVND(revenueComparisonInsights.currentMonthStat?.diffRevenue || 0)}
+                    </div>
+                    <div className="text-[11px] font-bold mt-0.5 flex items-center space-x-1">
+                      <span className={`px-1.5 py-0.2 rounded-md ${
+                        (revenueComparisonInsights.currentMonthStat?.diffRevenuePercent || 0) >= 0
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {(revenueComparisonInsights.currentMonthStat?.diffRevenuePercent || 0) >= 0 ? '+' : ''}
+                        {revenueComparisonInsights.currentMonthStat?.diffRevenuePercent || 0}%
+                      </span>
+                      <span className="text-slate-400 font-sans text-[10px]">
+                        (Tháng trước: {formatCurrencyVND(revenueComparisonInsights.prevMonthStat.revenue)})
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Lợi nhuận biến động */}
+                  <div className="p-3 bg-white rounded-xl border border-indigo-200/80 shadow-2xs">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase flex items-center justify-between">
+                      <span>Biến Động Lợi Nhuận:</span>
+                      {(revenueComparisonInsights.currentMonthStat?.diffProfit || 0) >= 0 ? (
+                        <TrendingUp className="w-3.5 h-3.5 text-teal-600" />
+                      ) : (
+                        <TrendingDown className="w-3.5 h-3.5 text-rose-600" />
+                      )}
+                    </div>
+                    <div className={`text-base font-black mt-1 ${
+                      (revenueComparisonInsights.currentMonthStat?.diffProfit || 0) >= 0 ? 'text-teal-700' : 'text-rose-700'
+                    }`}>
+                      {(revenueComparisonInsights.currentMonthStat?.diffProfit || 0) >= 0 ? '+' : ''}
+                      {formatCurrencyVND(revenueComparisonInsights.currentMonthStat?.diffProfit || 0)}
+                    </div>
+                    <div className="text-[11px] font-bold mt-0.5 flex items-center space-x-1">
+                      <span className={`px-1.5 py-0.2 rounded-md ${
+                        (revenueComparisonInsights.currentMonthStat?.diffProfitPercent || 0) >= 0
+                          ? 'bg-teal-100 text-teal-800'
+                          : 'bg-rose-100 text-rose-800'
+                      }`}>
+                        {(revenueComparisonInsights.currentMonthStat?.diffProfitPercent || 0) >= 0 ? '+' : ''}
+                        {revenueComparisonInsights.currentMonthStat?.diffProfitPercent || 0}%
+                      </span>
+                      <span className="text-slate-400 font-sans text-[10px]">
+                        (Tháng trước: {formatCurrencyVND(revenueComparisonInsights.prevMonthStat.netProfit)})
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Chi phí biến động */}
+                  <div className="p-3 bg-white rounded-xl border border-indigo-200/80 shadow-2xs">
+                    <div className="text-[10px] font-bold text-slate-500 uppercase flex items-center justify-between">
+                      <span>Biến Động Chi Phí:</span>
+                      <Receipt className="w-3.5 h-3.5 text-slate-400" />
+                    </div>
+                    <div className="text-base font-black mt-1 text-slate-800">
+                      {(revenueComparisonInsights.currentMonthStat?.diffExpenses || 0) >= 0 ? '+' : ''}
+                      {formatCurrencyVND(revenueComparisonInsights.currentMonthStat?.diffExpenses || 0)}
+                    </div>
+                    <div className="text-[11px] font-bold mt-0.5 flex items-center space-x-1">
+                      <span className="px-1.5 py-0.2 rounded-md bg-slate-100 text-slate-700">
+                        {(revenueComparisonInsights.currentMonthStat?.diffExpensesPercent || 0) >= 0 ? '+' : ''}
+                        {revenueComparisonInsights.currentMonthStat?.diffExpensesPercent || 0}%
+                      </span>
+                      <span className="text-slate-400 font-sans text-[10px]">
+                        (Tháng trước: {formatCurrencyVND(revenueComparisonInsights.prevMonthStat.totalExpenses)})
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : monthlyComparisonStats.length > 1 ? (
+              <div className="bg-gradient-to-r from-amber-50 via-indigo-50 to-blue-50 border-2 border-indigo-200 rounded-2xl p-4 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center shadow-xs">
+                    <BarChart3 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                      Thống Kê So Sánh Tăng Giảm Doanh Thu
+                    </h4>
+                    <p className="text-[11px] text-slate-600 font-medium">
+                      Hệ thống đang có <b>{monthlyComparisonStats.length} tháng</b> dữ liệu. Nhấn để xem biểu đồ tăng trưởng và công cụ đối chiếu trực tiếp giữa các tháng.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveSection('all_months')}
+                  className="inline-flex items-center space-x-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer self-start sm:self-auto shrink-0"
+                >
+                  <span>Xem Bảng So Sánh & Biểu Đồ</span>
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : null}
 
             <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs">
               <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
@@ -3195,129 +3701,783 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
         </div>
       )}
 
-      {/* TAB 5: LỊCH SỬ SO SÁNH TẤT CẢ CÁC THÁNG (ALL MONTHS) */}
+      {/* TAB 5: LỊCH SỬ SO SÁNH & THỐNG KÊ TĂNG GIẢM DOANH THU CÁC THÁNG (ALL MONTHS) */}
       {activeSection === 'all_months' && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-2xs space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+        <div className="space-y-5 animate-fadeIn">
+          {/* Header Bảng So Sánh & Thao Tác */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h3 className="text-sm sm:text-base font-black text-slate-900 flex items-center space-x-2">
-                <FileSpreadsheet className="w-4 h-4 text-slate-700" />
-                <span>Bảng So Sánh Doanh Thu & Chi Phí Các Tháng Trong Hệ Thống</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Xem lại lịch sử thu chi, so sánh tăng trưởng và số dư qua từng tháng.
-              </p>
+              <div className="flex items-center space-x-2.5 mb-1">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center shadow-md">
+                  <BarChart3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2 flex-wrap">
+                    <span>Báo Cáo Thống Kê & So Sánh Tăng Giảm Doanh Thu Giữa Các Tháng</span>
+                    <span className="text-xs font-black text-amber-900 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300">
+                      {monthlyComparisonStats.length} Tháng Ghi Nhận
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Phân tích tốc độ tăng trưởng doanh thu (MoM), tỷ suất sinh lời, biến động chi phí và xu hướng tài chính toàn hệ thống.
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setIsNewMonthModalOpen(true)}
-              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Thêm Tháng Mới</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setComparisonSortOrder('desc')}
+                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    comparisonSortOrder === 'desc'
+                      ? 'bg-white text-slate-900 shadow-2xs font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Xếp tháng mới nhất lên đầu bảng"
+                >
+                  Mới nhất trước
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setComparisonSortOrder('asc')}
+                  className={`px-3 py-1.5 rounded-lg transition-all cursor-pointer ${
+                    comparisonSortOrder === 'asc'
+                      ? 'bg-white text-slate-900 shadow-2xs font-black'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                  title="Xếp theo trình tự thời gian từ cũ đến mới"
+                >
+                  Cũ nhất trước
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsNewMonthModalOpen(true)}
+                className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer hover:scale-[1.02]"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>+ Thêm Tháng Mới</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsManageMonthsModalOpen(true)}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-colors border border-slate-200 cursor-pointer"
+                title="Quản lý và chọn xóa tháng"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                <span>Quản Lý Tháng</span>
+              </button>
+            </div>
           </div>
 
-          <div className="overflow-x-auto border border-slate-200 rounded-xl">
-            <table className="w-full text-xs text-left">
-              <thead className="bg-slate-50 text-slate-700 font-black border-b border-slate-200 text-[11px] uppercase tracking-wide">
-                <tr>
-                  <th className="py-3 px-3">Tháng / Năm</th>
-                  <th className="py-3 px-3 text-right">Tổng Tiền Về (Doanh Thu)</th>
-                  <th className="py-3 px-3 text-right">Tiền VP + Điện + Nước</th>
-                  <th className="py-3 px-3 text-right">Chi Phí Ngoài Ý Muốn</th>
-                  <th className="py-3 px-3 text-right">Lương Nhân Viên</th>
-                  <th className="py-3 px-3 text-right">Tổng Chi Phí</th>
-                  <th className="py-3 px-3 text-right font-black">Lợi Nhuận Ròng</th>
-                  <th className="py-3 px-3 text-center">Tỷ Suất Sinh Lời</th>
-                  <th className="py-3 px-3 text-center">Thao Tác</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {finances.map((f) => {
-                  const isCurrent = f.monthKey === selectedMonthKey || f.id === selectedMonthKey;
-                  const fixedCost = (f.officeCost || 0) + (f.electricityCost || 0) + (f.waterCost || 0);
-                  const unexpectedCost = (f.customExpenses || [])
-                    .filter((e) => e.expenseType === 'unexpected')
-                    .reduce((sum, e) => sum + (e.amount || 0), 0);
-                  const isProfitable = (f.netProfit || 0) >= 0;
+          {/* Dàn 4 Thẻ KPI Phân Tích Cấp Điều Hành (Executive KPI Analytics Cards) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {/* Thẻ 1: Tăng Trưởng Doanh Thu Tháng Đang Xem */}
+            <div className="bg-gradient-to-br from-indigo-50/90 via-blue-50/80 to-white border-2 border-indigo-200 rounded-2xl p-4 shadow-2xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-indigo-950 uppercase tracking-wide">
+                  Tăng Trưởng Tháng Này (MoM)
+                </span>
+                <span className="w-7 h-7 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                  {(revenueComparisonInsights.currentMonthStat?.diffRevenue || 0) >= 0 ? (
+                    <TrendingUp className="w-4 h-4" />
+                  ) : (
+                    <TrendingDown className="w-4 h-4" />
+                  )}
+                </span>
+              </div>
+
+              {revenueComparisonInsights.prevMonthStat ? (
+                <>
+                  <div className={`text-xl font-black font-mono mt-1 ${
+                    (revenueComparisonInsights.currentMonthStat?.diffRevenue || 0) >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                  }`}>
+                    {(revenueComparisonInsights.currentMonthStat?.diffRevenue || 0) >= 0 ? '+' : ''}
+                    {formatCurrencyVND(revenueComparisonInsights.currentMonthStat?.diffRevenue || 0)}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs font-bold">
+                    <span className={`px-2 py-0.5 rounded-full font-mono text-[11px] ${
+                      (revenueComparisonInsights.currentMonthStat?.diffRevenuePercent || 0) >= 0
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {(revenueComparisonInsights.currentMonthStat?.diffRevenuePercent || 0) >= 0 ? '+' : ''}
+                      {revenueComparisonInsights.currentMonthStat?.diffRevenuePercent || 0}%
+                    </span>
+                    <span className="text-slate-500 text-[11px]">
+                      so với {revenueComparisonInsights.prevMonthStat.title}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="text-lg font-black text-slate-800 font-mono mt-1">
+                    {formatCurrencyVND(computedTotalRevenue)}
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    Tháng đầu tiên trong danh sách ghi nhận
+                  </span>
+                </>
+              )}
+            </div>
+
+            {/* Thẻ 2: Kỷ Lục Doanh Thu Cao Nhất */}
+            <div className="bg-gradient-to-br from-emerald-50/90 via-teal-50/80 to-white border-2 border-emerald-200 rounded-2xl p-4 shadow-2xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-emerald-950 uppercase tracking-wide">
+                  Kỷ Lục Doanh Thu Cao Nhất
+                </span>
+                <span className="w-7 h-7 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <Sparkles className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="text-xl font-black text-emerald-800 font-mono mt-1">
+                {formatCurrencyVND(revenueComparisonInsights.maxRevenueMonth?.revenue || 0)}
+              </div>
+              <div className="text-xs text-emerald-700 font-bold flex items-center space-x-1">
+                <span>🏆 Đạt được:</span>
+                <span className="underline cursor-pointer" onClick={() => revenueComparisonInsights.maxRevenueMonth && setSelectedMonthKey(revenueComparisonInsights.maxRevenueMonth.monthKey)}>
+                  {revenueComparisonInsights.maxRevenueMonth?.title || 'Chưa có'}
+                </span>
+              </div>
+            </div>
+
+            {/* Thẻ 3: Tỷ Lệ Tăng Trưởng Toàn Hệ Thống */}
+            <div className="bg-gradient-to-br from-amber-50/90 via-yellow-50/80 to-white border-2 border-amber-200 rounded-2xl p-4 shadow-2xs space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-amber-950 uppercase tracking-wide">
+                  Tăng Trưởng TB & Hiệu Suất
+                </span>
+                <span className="w-7 h-7 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
+                  <BarChart3 className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="text-xl font-black text-amber-900 font-mono mt-1 flex items-baseline gap-1.5">
+                <span>{revenueComparisonInsights.avgMoMGrowthPercent >= 0 ? '+' : ''}{revenueComparisonInsights.avgMoMGrowthPercent}%</span>
+                <span className="text-xs text-amber-700 font-bold font-sans">TB/tháng</span>
+              </div>
+              <div className="text-xs text-amber-800 font-medium flex items-center justify-between">
+                <span>TB: <b>{formatCurrencyVND(revenueComparisonInsights.avgRevenue)}</b></span>
+                <span className="font-bold text-[11px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded">
+                  🟢 {revenueComparisonInsights.upMonthsCount} tăng | 🔴 {revenueComparisonInsights.downMonthsCount} giảm
+                </span>
+              </div>
+            </div>
+
+            {/* Thẻ 4: Tổng Doanh Thu Lũy Kế */}
+            <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white border border-slate-700 rounded-2xl p-4 shadow-xl space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black text-slate-300 uppercase tracking-wide">
+                  Tổng Doanh Thu Lũy Kế
+                </span>
+                <span className="w-7 h-7 rounded-xl bg-amber-500 text-slate-950 flex items-center justify-center font-bold text-xs shadow-xs">
+                  Σ
+                </span>
+              </div>
+              <div className="text-xl font-black text-amber-300 font-mono mt-1">
+                {formatCurrencyVND(revenueComparisonInsights.totalAllTimeRevenue)}
+              </div>
+              <div className="text-[11px] text-slate-300 flex items-center justify-between">
+                <span>Tổng Lợi Nhuận:</span>
+                <span className={`font-mono font-bold ${revenueComparisonInsights.totalAllTimeProfit >= 0 ? 'text-teal-400' : 'text-rose-400'}`}>
+                  {revenueComparisonInsights.totalAllTimeProfit >= 0 ? '+' : ''}
+                  {formatCurrencyVND(revenueComparisonInsights.totalAllTimeProfit)}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* CÔNG CỤ ĐỐI CHIẾU TRỰC TIẾP 2 THÁNG BẤT KỲ (DIRECT 2-MONTH COMPARATIVE ANALYZER) */}
+          {monthlyComparisonStats.length >= 2 && directComparisonResult && (
+            <div className="bg-gradient-to-br from-indigo-50/70 via-slate-50 to-blue-50/60 border-2 border-indigo-200 rounded-2xl p-4 sm:p-5 shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100 pb-3">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+                    <ArrowUpDown className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide flex items-center gap-2">
+                      <span>Đối Chiếu Trực Tiếp Giữa 2 Tháng Tùy Chọn</span>
+                      <span className="text-[10px] font-black bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded-full border border-indigo-300">
+                        So Sánh Tùy Biến
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Chọn 2 tháng bất kỳ để phân tích sự chênh lệch doanh thu, biến động chi phí, lương & KPI, và lợi nhuận ròng.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Bộ Chọn 2 Tháng & Nút Đổi Chiều */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center space-x-1.5 bg-white p-1.5 rounded-xl border border-indigo-200 shadow-2xs text-xs">
+                    <span className="text-[10px] font-black text-indigo-900 uppercase px-1">Mốc A:</span>
+                    <select
+                      value={directComparisonResult.keyA}
+                      onChange={(e) => setDirectCompareKeyA(e.target.value)}
+                      className="bg-indigo-50/80 font-black text-indigo-950 px-2 py-1 rounded-lg border border-indigo-200 focus:outline-hidden cursor-pointer"
+                    >
+                      {monthlyComparisonStats.map((m) => (
+                        <option key={m.monthKey} value={m.monthKey}>
+                          {m.title} {m.isCurrent ? '(Đang xem)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const temp = directComparisonResult.keyA;
+                      setDirectCompareKeyA(directComparisonResult.keyB);
+                      setDirectCompareKeyB(temp);
+                    }}
+                    className="p-2 bg-white hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl transition-all shadow-2xs cursor-pointer"
+                    title="Đổi chiều so sánh A <-> B"
+                  >
+                    <ArrowUpDown className="w-4 h-4" />
+                  </button>
+
+                  <div className="flex items-center space-x-1.5 bg-white p-1.5 rounded-xl border border-indigo-200 shadow-2xs text-xs">
+                    <span className="text-[10px] font-black text-slate-700 uppercase px-1">Đối Chiếu B:</span>
+                    <select
+                      value={directComparisonResult.keyB}
+                      onChange={(e) => setDirectCompareKeyB(e.target.value)}
+                      className="bg-slate-100 font-black text-slate-900 px-2 py-1 rounded-lg border border-slate-200 focus:outline-hidden cursor-pointer"
+                    >
+                      {monthlyComparisonStats.map((m) => (
+                        <option key={m.monthKey} value={m.monthKey}>
+                          {m.title}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Dàn 4 Thẻ So Sánh Chênh Lệch A vs B */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* 1. Doanh Thu */}
+                <div className="bg-white border-2 border-emerald-200 rounded-xl p-3.5 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black text-emerald-950 uppercase">
+                    <span>Doanh Thu (Tiền Về)</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                      directComparisonResult.diffRev >= 0 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {directComparisonResult.diffRev >= 0 ? '+' : ''}{directComparisonResult.diffRevPercent}%
+                    </span>
+                  </div>
+                  <div className="space-y-1 font-mono text-xs">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>{directComparisonResult.statA.title}:</span>
+                      <strong className="text-emerald-700 font-black">{formatCurrencyVND(directComparisonResult.statA.revenue)}</strong>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-500">
+                      <span>{directComparisonResult.statB.title}:</span>
+                      <span>{formatCurrencyVND(directComparisonResult.statB.revenue)}</span>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-600">Chênh lệch (A - B):</span>
+                    <span className={`font-mono font-black ${
+                      directComparisonResult.diffRev >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                    }`}>
+                      {directComparisonResult.diffRev >= 0 ? '+' : ''}{formatCurrencyVND(directComparisonResult.diffRev)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 2. Tổng Chi Phí */}
+                <div className="bg-white border-2 border-rose-200 rounded-xl p-3.5 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black text-rose-950 uppercase">
+                    <span>Tổng Chi Phí Phải Chi</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                      directComparisonResult.diffExp > 0 ? 'bg-rose-100 text-rose-800' : 'bg-emerald-100 text-emerald-800'
+                    }`}>
+                      {directComparisonResult.diffExp >= 0 ? '+' : ''}{directComparisonResult.diffExpPercent}%
+                    </span>
+                  </div>
+                  <div className="space-y-1 font-mono text-xs">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>{directComparisonResult.statA.title}:</span>
+                      <strong className="text-rose-700 font-black">{formatCurrencyVND(directComparisonResult.statA.totalExpenses)}</strong>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-500">
+                      <span>{directComparisonResult.statB.title}:</span>
+                      <span>{formatCurrencyVND(directComparisonResult.statB.totalExpenses)}</span>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-600">Chênh lệch:</span>
+                    <span className={`font-mono font-black ${
+                      directComparisonResult.diffExp > 0 ? 'text-rose-700' : 'text-emerald-700'
+                    }`}>
+                      {directComparisonResult.diffExp >= 0 ? '+' : ''}{formatCurrencyVND(directComparisonResult.diffExp)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 3. Lợi Nhuận Ròng */}
+                <div className="bg-white border-2 border-teal-200 rounded-xl p-3.5 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black text-teal-950 uppercase">
+                    <span>Lợi Nhuận Ròng (Tiền Dư)</span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                      directComparisonResult.diffProfit >= 0 ? 'bg-teal-100 text-teal-800' : 'bg-rose-100 text-rose-800'
+                    }`}>
+                      {directComparisonResult.diffProfit >= 0 ? '+' : ''}{directComparisonResult.diffProfitPercent}%
+                    </span>
+                  </div>
+                  <div className="space-y-1 font-mono text-xs">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>{directComparisonResult.statA.title}:</span>
+                      <strong className="text-teal-700 font-black">{formatCurrencyVND(directComparisonResult.statA.netProfit)}</strong>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-500">
+                      <span>{directComparisonResult.statB.title}:</span>
+                      <span>{formatCurrencyVND(directComparisonResult.statB.netProfit)}</span>
+                    </div>
+                  </div>
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-600">Chênh lệch:</span>
+                    <span className={`font-mono font-black ${
+                      directComparisonResult.diffProfit >= 0 ? 'text-teal-700' : 'text-rose-700'
+                    }`}>
+                      {directComparisonResult.diffProfit >= 0 ? '+' : ''}{formatCurrencyVND(directComparisonResult.diffProfit)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 4. Quỹ Lương & KPI & Online */}
+                <div className="bg-white border-2 border-indigo-200 rounded-xl p-3.5 shadow-2xs space-y-2">
+                  <div className="flex items-center justify-between text-xs font-black text-indigo-950 uppercase">
+                    <span>Lương, KPI & Phụ Cấp</span>
+                    <Users className="w-4 h-4 text-indigo-600" />
+                  </div>
+                  <div className="space-y-1 font-mono text-[11px]">
+                    <div className="flex justify-between items-center text-slate-600">
+                      <span>Quỹ lương {directComparisonResult.statA.title}:</span>
+                      <strong className="text-indigo-900">{formatCurrencyVND(directComparisonResult.statA.salary)}</strong>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-500">
+                      <span>Quỹ lương {directComparisonResult.statB.title}:</span>
+                      <span>{formatCurrencyVND(directComparisonResult.statB.salary)}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-indigo-700 font-bold">
+                      <span>Chênh lệch lương:</span>
+                      <span>{directComparisonResult.diffSalary >= 0 ? '+' : ''}{formatCurrencyVND(directComparisonResult.diffSalary)}</span>
+                    </div>
+                  </div>
+                  <div className="pt-1.5 border-t border-slate-100 flex items-center justify-between text-[11px] text-indigo-900 font-bold">
+                    <span>Chênh lệch KPI Doanh Thu:</span>
+                    <span className="font-mono">
+                      {directComparisonResult.diffKpi >= 0 ? '+' : ''}{formatCurrencyVND(directComparisonResult.diffKpi)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Banner Nhận Định So Sánh Tự Động */}
+              <div className="p-3 bg-white rounded-xl border border-indigo-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                <div className="flex items-center space-x-2">
+                  <span className="text-base shrink-0">
+                    {directComparisonResult.diffRev > 0 ? '🚀' : directComparisonResult.diffRev < 0 ? '⚠️' : '⏸️'}
+                  </span>
+                  <div className="text-slate-800">
+                    <b>Nhận định đối chiếu:</b> Doanh thu <b>{directComparisonResult.statA.title}</b>{' '}
+                    {directComparisonResult.diffRev > 0 ? (
+                      <span className="text-emerald-700 font-bold">
+                        tăng {formatCurrencyVND(directComparisonResult.diffRev)} (+{directComparisonResult.diffRevPercent}%)
+                      </span>
+                    ) : directComparisonResult.diffRev < 0 ? (
+                      <span className="text-rose-700 font-bold">
+                        giảm {formatCurrencyVND(Math.abs(directComparisonResult.diffRev))} ({directComparisonResult.diffRevPercent}%)
+                      </span>
+                    ) : (
+                      <span className="text-slate-600 font-bold">tương đương (0%)</span>
+                    )}{' '}
+                    so với <b>{directComparisonResult.statB.title}</b>. Lợi nhuận ròng{' '}
+                    {directComparisonResult.diffProfit >= 0 ? (
+                      <span className="text-teal-700 font-bold">
+                        tăng +{formatCurrencyVND(directComparisonResult.diffProfit)}
+                      </span>
+                    ) : (
+                      <span className="text-rose-700 font-bold">
+                        giảm {formatCurrencyVND(Math.abs(directComparisonResult.diffProfit))}
+                      </span>
+                    )}.
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedMonthKey(directComparisonResult.statA.monthKey);
+                      setActiveSection('overview');
+                    }}
+                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                  >
+                    Xem Chi Tiết {directComparisonResult.statA.title} →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Biểu Đồ Cột Trực Quan Tăng Trưởng Doanh Thu Từng Tháng (Visual MoM Growth Bar Chart) */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide flex items-center space-x-2">
+                  <BarChart3 className="w-4 h-4 text-indigo-600" />
+                  <span>Biểu Đồ So Sánh Tăng Trưởng Doanh Thu Theo Trình Tự Thời Gian</span>
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Màu xanh thể hiện tháng tăng trưởng so với tháng trước; Màu đỏ thể hiện tháng giảm sút. Click vào cột để chuyển xem tháng đó.
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-3 text-xs font-bold shrink-0">
+                <span className="flex items-center space-x-1">
+                  <span className="w-3 h-3 rounded-md bg-emerald-500"></span>
+                  <span className="text-slate-600">Tăng Trưởng</span>
+                </span>
+                <span className="flex items-center space-x-1">
+                  <span className="w-3 h-3 rounded-md bg-rose-500"></span>
+                  <span className="text-slate-600">Giảm Sút</span>
+                </span>
+                <span className="flex items-center space-x-1">
+                  <span className="w-3 h-3 rounded-md bg-indigo-600 ring-2 ring-indigo-300"></span>
+                  <span className="text-slate-900">Tháng Đang Xem</span>
+                </span>
+              </div>
+            </div>
+
+            {/* Container Biểu Đồ Cột */}
+            <div className="pt-6 pb-2 px-2 overflow-x-auto">
+              <div className="min-w-[620px] h-64 flex items-end justify-between gap-3 sm:gap-4 border-b-2 border-slate-200 pb-2">
+                {monthlyComparisonStats.map((item) => {
+                  const maxVal = Math.max(1, revenueComparisonInsights.maxRevenueMonth?.revenue || 1);
+                  const rawPercent = Math.round((item.revenue / maxVal) * 100);
+                  const barHeightPercent = Math.max(14, rawPercent);
+                  const isCurrent = item.isCurrent;
+
+                  // Màu gradient
+                  let gradientClass = 'from-blue-500 to-indigo-600';
+                  if (item.revenueTrend === 'up') gradientClass = 'from-emerald-500 to-teal-600';
+                  else if (item.revenueTrend === 'down') gradientClass = 'from-rose-500 to-amber-600';
 
                   return (
-                    <tr
-                      key={f.id || f.monthKey}
-                      className={`hover:bg-slate-50 transition-colors ${
-                        isCurrent ? 'bg-amber-50/60 font-bold' : ''
-                      }`}
+                    <div
+                      key={item.monthKey}
+                      onClick={() => {
+                        setSelectedMonthKey(item.monthKey);
+                        setActiveSection('overview');
+                      }}
+                      className="flex-1 flex flex-col items-center h-full justify-end group cursor-pointer transition-all"
+                      title={`${item.title}: ${formatCurrencyVND(item.revenue)} (${item.diffRevenuePercent >= 0 ? '+' : ''}${item.diffRevenuePercent}% so với tháng trước)`}
                     >
-                      <td className="py-3 px-3 font-black text-slate-900 flex items-center space-x-2">
-                        {isCurrent && <span className="w-2 h-2 rounded-full bg-amber-500"></span>}
-                        <span>{f.title || `Tháng ${f.month}/${f.year}`}</span>
-                        {isCurrent && (
-                          <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full font-bold">
+                      {/* Top Label: Doanh thu & Badge % */}
+                      <div className="mb-2 text-center transition-transform group-hover:scale-105 space-y-0.5">
+                        <span className="font-mono font-black text-slate-800 text-[11px] block whitespace-nowrap">
+                          {formatCurrencyVND(item.revenue)}
+                        </span>
+                        {item.hasPrevious && (
+                          <span
+                            className={`inline-flex items-center space-x-0.5 px-1.5 py-0.2 rounded-md text-[10px] font-black font-mono ${
+                              item.diffRevenue >= 0
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}
+                          >
+                            {item.diffRevenue >= 0 ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
+                            <span>
+                              {item.diffRevenuePercent >= 0 ? '+' : ''}
+                              {item.diffRevenuePercent}%
+                            </span>
+                          </span>
+                        )}
+                        {item.isCurrent && (
+                          <span className="block text-[9px] font-black uppercase text-indigo-700 bg-indigo-100 px-1.5 py-0.2 rounded-full mt-0.5">
                             Đang xem
                           </span>
                         )}
-                      </td>
-                      <td className="py-3 px-3 text-right font-black text-emerald-700 font-mono">
-                        {formatCurrencyVND(f.totalRevenue || 0)}
-                      </td>
-                      <td className="py-3 px-3 text-right text-slate-700 font-mono">
-                        {formatCurrencyVND(fixedCost)}
-                      </td>
-                      <td className="py-3 px-3 text-right text-rose-700 font-mono font-bold">
-                        {formatCurrencyVND(unexpectedCost)}
-                      </td>
-                      <td className="py-3 px-3 text-right text-blue-700 font-bold font-mono">
-                        {formatCurrencyVND(f.totalSalary || 0)}
-                      </td>
-                      <td className="py-3 px-3 text-right text-rose-700 font-bold font-mono">
-                        {formatCurrencyVND(f.totalExpenses || 0)}
-                      </td>
-                      <td
-                        className={`py-3 px-3 text-right font-black text-sm font-mono ${
-                          isProfitable ? 'text-teal-700' : 'text-rose-700'
-                        }`}
-                      >
-                        {isProfitable ? '+' : ''}
-                        {formatCurrencyVND(f.netProfit || 0)}
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
-                            isProfitable ? 'bg-teal-100 text-teal-800' : 'bg-rose-100 text-rose-800'
+                      </div>
+
+                      {/* Cột biểu đồ */}
+                      <div className="w-full max-w-[56px] relative flex items-end justify-center">
+                        <div
+                          style={{ height: `${barHeightPercent}%` }}
+                          className={`w-full rounded-t-xl bg-gradient-to-t ${gradientClass} transition-all duration-300 shadow-sm group-hover:brightness-110 relative ${
+                            isCurrent ? 'ring-4 ring-indigo-400/60 ring-offset-1' : ''
                           }`}
                         >
-                          {f.profitMargin || 0}%
-                        </span>
-                      </td>
-                      <td className="py-3 px-3 text-center">
-                        <div className="flex items-center justify-center space-x-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedMonthKey(f.monthKey || f.id);
-                              setActiveSection('overview');
-                            }}
-                            className="px-2 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 rounded-lg text-xs font-bold cursor-pointer transition-colors"
-                          >
-                            Xem Tháng
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteMonth(f.id || f.monthKey)}
-                            className="p-1 text-slate-400 hover:text-rose-600 rounded-lg cursor-pointer"
-                            title="Xóa dữ liệu tháng này"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {/* Đỉnh cột lấp lánh */}
+                          <div className="absolute top-0 inset-x-0 h-1.5 bg-white/40 rounded-t-xl"></div>
                         </div>
-                      </td>
-                    </tr>
+                      </div>
+
+                      {/* Chân cột: Tên tháng */}
+                      <div className="mt-2 text-center">
+                        <span className={`text-[11px] font-bold block whitespace-nowrap transition-colors ${
+                          isCurrent ? 'text-indigo-900 font-black' : 'text-slate-600 group-hover:text-slate-900'
+                        }`}>
+                          {item.title}
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">
+                          Lãi: {formatCurrencyVND(item.netProfit)}
+                        </span>
+                      </div>
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Bảng Thống Kê So Sánh Tăng / Giảm Chi Tiết */}
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h4 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wide flex items-center space-x-2">
+                  <FileSpreadsheet className="w-4 h-4 text-amber-600" />
+                  <span>Bảng Chi Tiết Biến Động Doanh Thu & Lợi Nhuận Qua Từng Tháng</span>
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Bảng tổng hợp đối chiếu doanh thu, chi phí, lợi nhuận và mức tăng giảm (MoM) so với tháng trước.
+                </p>
+              </div>
+
+              <span className="text-xs text-slate-400 font-medium">
+                Đang hiển thị {monthlyComparisonStats.length} tháng ({comparisonSortOrder === 'desc' ? 'Mới nhất trên cùng' : 'Cũ nhất trên cùng'})
+              </span>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-xs text-left">
+                <thead className="bg-slate-50 text-slate-700 font-black border-b border-slate-200 text-[11px] uppercase tracking-wide">
+                  <tr>
+                    <th className="py-3 px-3 w-12 text-center text-slate-400">#</th>
+                    <th className="py-3 px-3 min-w-[150px]">Tháng / Năm</th>
+                    <th className="py-3 px-3 text-right min-w-[150px]">Tổng Doanh Thu</th>
+                    <th className="py-3 px-3 text-center min-w-[180px]">Tăng / Giảm Doanh Thu (MoM)</th>
+                    <th className="py-3 px-3 text-right min-w-[140px]">Tổng Chi Phí</th>
+                    <th className="py-3 px-3 text-right min-w-[150px]">Lợi Nhuận Ròng</th>
+                    <th className="py-3 px-3 text-center min-w-[110px]">Tỷ Suất Lãi</th>
+                    <th className="py-3 px-3 text-center min-w-[130px]">Đánh Giá Xu Hướng</th>
+                    <th className="py-3 px-3 text-center min-w-[140px]">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {(() => {
+                    const displayList = comparisonSortOrder === 'desc'
+                      ? [...monthlyComparisonStats].reverse()
+                      : monthlyComparisonStats;
+
+                    return displayList.map((item, idx) => {
+                      const isCurrent = item.isCurrent;
+                      const isMaxRevenue = revenueComparisonInsights.maxRevenueMonth?.monthKey === item.monthKey;
+                      const isProfitable = item.netProfit >= 0;
+
+                      return (
+                        <tr
+                          key={item.monthKey}
+                          className={`hover:bg-slate-50/80 transition-colors ${
+                            isCurrent ? 'bg-amber-50/70 font-semibold' : ''
+                          }`}
+                        >
+                          {/* STT */}
+                          <td className="py-3.5 px-3 text-center font-bold text-slate-400">
+                            {idx + 1}
+                          </td>
+
+                          {/* Tháng / Năm */}
+                          <td className="py-3.5 px-3">
+                            <div className="flex items-center space-x-2">
+                              {isCurrent && <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0"></span>}
+                              <div>
+                                <span className="font-black text-slate-900 text-sm block">
+                                  {item.title}
+                                </span>
+                                {isCurrent && (
+                                  <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.2 rounded-full font-bold inline-block mt-0.5">
+                                    Tháng Đang Xem
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Tổng Doanh Thu */}
+                          <td className="py-3.5 px-3 text-right">
+                            <div className="font-mono font-black text-sm text-emerald-700">
+                              {formatCurrencyVND(item.revenue)}
+                            </div>
+                            {isMaxRevenue && (
+                              <span className="text-[10px] text-amber-700 font-bold bg-amber-100 px-1.5 py-0.2 rounded inline-block mt-0.5">
+                                🏆 Cao nhất
+                              </span>
+                            )}
+                          </td>
+
+                          {/* So Sánh Tăng / Giảm Doanh Thu (MoM) */}
+                          <td className="py-3.5 px-3 text-center">
+                            {item.hasPrevious ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-center space-x-1 font-mono font-bold">
+                                  <span
+                                    className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-xs font-black ${
+                                      item.diffRevenue >= 0
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-rose-100 text-rose-800'
+                                    }`}
+                                  >
+                                    {item.diffRevenue >= 0 ? (
+                                      <TrendingUp className="w-3.5 h-3.5" />
+                                    ) : (
+                                      <TrendingDown className="w-3.5 h-3.5" />
+                                    )}
+                                    <span>
+                                      {item.diffRevenue >= 0 ? '+' : ''}
+                                      {item.diffRevenuePercent}%
+                                    </span>
+                                  </span>
+                                </div>
+                                <div className={`font-mono text-xs font-black ${
+                                  item.diffRevenue >= 0 ? 'text-emerald-700' : 'text-rose-700'
+                                }`}>
+                                  {item.diffRevenue >= 0 ? '+' : ''}
+                                  {formatCurrencyVND(item.diffRevenue)}
+                                </div>
+                                <span className="text-[10px] text-slate-400 block">
+                                  (vs {item.prevMonthTitle})
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500">
+                                Tháng Khởi Đầu
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Tổng Chi Phí */}
+                          <td className="py-3.5 px-3 text-right">
+                            <div className="font-mono font-bold text-slate-800">
+                              {formatCurrencyVND(item.totalExpenses)}
+                            </div>
+                            {item.hasPrevious && (
+                              <span className={`text-[10px] font-mono block mt-0.5 ${
+                                item.diffExpenses > 0 ? 'text-rose-600 font-bold' : 'text-emerald-600 font-bold'
+                              }`}>
+                                {item.diffExpenses >= 0 ? '+' : ''}
+                                {formatCurrencyVND(item.diffExpenses)} ({item.diffExpensesPercent >= 0 ? '+' : ''}{item.diffExpensesPercent}%)
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Lợi Nhuận Ròng */}
+                          <td className="py-3.5 px-3 text-right">
+                            <div className={`font-mono font-black text-sm ${
+                              isProfitable ? 'text-teal-700' : 'text-rose-700'
+                            }`}>
+                              {isProfitable ? '+' : ''}
+                              {formatCurrencyVND(item.netProfit)}
+                            </div>
+                            {item.hasPrevious && (
+                              <span className={`text-[10px] font-mono block mt-0.5 ${
+                                item.diffProfit >= 0 ? 'text-teal-600 font-bold' : 'text-rose-600 font-bold'
+                              }`}>
+                                {item.diffProfit >= 0 ? '+' : ''}
+                                {formatCurrencyVND(item.diffProfit)} ({item.diffProfitPercent >= 0 ? '+' : ''}{item.diffProfitPercent}%)
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Tỷ Suất Lợi Nhuận */}
+                          <td className="py-3.5 px-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-black font-mono ${
+                              item.profitMargin >= 30
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : item.profitMargin >= 10
+                                ? 'bg-teal-100 text-teal-800'
+                                : item.profitMargin >= 0
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              {item.profitMargin}%
+                            </span>
+                          </td>
+
+                          {/* Đánh Giá Xu Hướng */}
+                          <td className="py-3.5 px-3 text-center">
+                            {isMaxRevenue ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                <span>🏆 Kỷ Lục Doanh Thu</span>
+                              </span>
+                            ) : item.diffRevenuePercent >= 15 ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                <span>🚀 Bứt Phá Mạnh</span>
+                              </span>
+                            ) : item.diffRevenuePercent > 0 ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-teal-50 text-teal-800 border border-teal-200">
+                                <span>📈 Tăng Trưởng Tốt</span>
+                              </span>
+                            ) : item.diffRevenuePercent === 0 ? (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                                <span>⏸️ Ổn Định</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-800 border border-rose-200">
+                                <span>📉 Cần Thúc Đẩy</span>
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Thao Tác */}
+                          <td className="py-3.5 px-3 text-center">
+                            <div className="flex items-center justify-center space-x-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedMonthKey(item.monthKey);
+                                  setActiveSection('overview');
+                                }}
+                                className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-950 rounded-lg text-xs font-bold cursor-pointer transition-colors"
+                              >
+                                Xem Tháng
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCopySourceMonthKey(item.monthKey);
+                                  setIsCopyFromMonthModalOpen(true);
+                                }}
+                                className="p-1 text-slate-400 hover:text-blue-600 rounded-lg cursor-pointer"
+                                title="Sao chép dữ liệu tháng này sang tháng khác"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMonth(item.record.id || item.monthKey)}
+                                className="p-1 text-slate-400 hover:text-rose-600 rounded-lg cursor-pointer"
+                                title="Xóa dữ liệu tháng này"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    });
+                  })()}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
