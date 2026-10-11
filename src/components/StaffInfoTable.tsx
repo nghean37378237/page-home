@@ -24,6 +24,7 @@ import {
   ChevronDown,
   Contact,
   Award,
+  Wifi,
 } from 'lucide-react';
 
 interface StaffInfoTableProps {
@@ -627,11 +628,30 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                       </td>
                     </tr>
 
-                    {/* 4. Thưởng khác (nếu có) */}
+                    {/* 4. Hỗ trợ tiền mạng, điện cho nhân viên làm online (Yêu cầu 5) */}
+                    {(staffSalaryItem.isOnlineStaff || (staffSalaryItem.onlineSupportAllowance && staffSalaryItem.onlineSupportAllowance > 0)) ? (
+                      <tr className="hover:bg-slate-50/70 bg-indigo-50/30">
+                        <td className="py-2.5 px-3.5 font-bold text-indigo-950 flex items-center space-x-1.5">
+                          <Wifi className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>4. Hỗ Trợ Tiền Mạng & Điện (Làm Online)</span>
+                        </td>
+                        <td className="py-2.5 px-3.5 text-center text-indigo-800 font-semibold text-[11px]">
+                          Phụ cấp làm việc từ xa
+                        </td>
+                        <td className="py-2.5 px-3.5 text-right font-mono font-black text-indigo-800">
+                          +{formatVND(staffSalaryItem.onlineSupportAllowance || 0)}
+                        </td>
+                        <td className="py-2.5 px-3.5 text-indigo-700 text-[11px]">
+                          Cộng thêm vào lương
+                        </td>
+                      </tr>
+                    ) : null}
+
+                    {/* 5. Thưởng khác (nếu có) */}
                     {staffSalaryItem.otherBonus ? (
                       <tr className="hover:bg-slate-50/70">
                         <td className="py-2.5 px-3.5 font-bold text-teal-900">
-                          4. Thưởng Khác (Chuyên cần, đột xuất)
+                          5. Thưởng Khác (Chuyên cần, đột xuất)
                         </td>
                         <td className="py-2.5 px-3.5 text-center text-teal-700">-</td>
                         <td className="py-2.5 px-3.5 text-right font-mono font-bold text-teal-800">
@@ -641,11 +661,11 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                       </tr>
                     ) : null}
 
-                    {/* 5. Khấu trừ phạt / tạm ứng (nếu có) */}
+                    {/* 6. Khấu trừ phạt / tạm ứng (nếu có) */}
                     {staffSalaryItem.deduction ? (
                       <tr className="hover:bg-slate-50/70">
                         <td className="py-2.5 px-3.5 font-bold text-rose-900">
-                          5. Khấu Trừ / Phạt / Tạm Ứng
+                          6. Khấu Trừ / Phạt / Tạm Ứng
                         </td>
                         <td className="py-2.5 px-3.5 text-center text-rose-700">-</td>
                         <td className="py-2.5 px-3.5 text-right font-mono font-bold text-rose-800">

@@ -200,6 +200,9 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [salaryRevenueGeneratedInput, setSalaryRevenueGeneratedInput] = useState('');
   const [salaryRevenueSourceName, setSalaryRevenueSourceName] = useState('');
   const [salaryKpiRate, setSalaryKpiRate] = useState<number>(10); // Mặc định 10%
+  // Hỗ trợ tiền mạng, điện cho nhân viên làm online (Yêu cầu 5: cộng vào lương thực nhận cho NV online)
+  const [salaryIsOnlineStaff, setSalaryIsOnlineStaff] = useState(false);
+  const [salaryOnlineSupportInput, setSalaryOnlineSupportInput] = useState('0');
   const [salaryOtherBonusInput, setSalaryOtherBonusInput] = useState('0');
   const [salaryDeductionInput, setSalaryDeductionInput] = useState('0');
   const [salaryIsPaid, setSalaryIsPaid] = useState(false);
@@ -249,6 +252,12 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       }
       if (matchedPastSalary?.contractType) {
         setSalaryContractType(matchedPastSalary.contractType);
+      }
+      if (matchedPastSalary?.isOnlineStaff !== undefined) {
+        setSalaryIsOnlineStaff(Boolean(matchedPastSalary.isOnlineStaff));
+      }
+      if (matchedPastSalary?.onlineSupportAllowance) {
+        setSalaryOnlineSupportInput(String(matchedPastSalary.onlineSupportAllowance));
       }
     }
   };
@@ -362,6 +371,12 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const computedTotalKpiBonus = useMemo(() => {
     if (!activeMonthRecord.salaryItems) return 0;
     return activeMonthRecord.salaryItems.reduce((sum, item) => sum + (Number(item.kpiBonus) || 0), 0);
+  }, [activeMonthRecord.salaryItems]);
+
+  // Tổng tiền phụ cấp hỗ trợ mạng, điện cho nhân viên làm online (Yêu cầu 5)
+  const computedTotalOnlineSupport = useMemo(() => {
+    if (!activeMonthRecord.salaryItems) return 0;
+    return activeMonthRecord.salaryItems.reduce((sum, item) => sum + (Number(item.onlineSupportAllowance) || 0), 0);
   }, [activeMonthRecord.salaryItems]);
 
   // 3. Phân loại & Tổng chi phí trong bảng chi phí hàng tháng
@@ -596,6 +611,8 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryRevenueGeneratedInput('');
     setSalaryRevenueSourceName('');
     setSalaryKpiRate(10);
+    setSalaryIsOnlineStaff(false);
+    setSalaryOnlineSupportInput('0');
     setSalaryOtherBonusInput('0');
     setSalaryDeductionInput('0');
     setSalaryIsPaid(false);
@@ -626,6 +643,8 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryRevenueGeneratedInput(item.revenueGenerated ? String(item.revenueGenerated) : '');
     setSalaryRevenueSourceName(item.revenueSourceName || '');
     setSalaryKpiRate(item.kpiRate ?? 10);
+    setSalaryIsOnlineStaff(Boolean(item.isOnlineStaff));
+    setSalaryOnlineSupportInput(item.onlineSupportAllowance ? String(item.onlineSupportAllowance) : '0');
     setSalaryOtherBonusInput(String(item.otherBonus || 0));
     setSalaryDeductionInput(String(item.deduction || 0));
     setSalaryIsPaid(item.isPaid || false);
@@ -651,10 +670,13 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     const revGen = parseNumberInput(salaryRevenueGeneratedInput);
     const kpiBonusAmount = Math.round(revGen * (salaryKpiRate / 100));
 
+    // Phụ cấp hỗ trợ mạng, điện cho nhân viên làm online (Yêu cầu 5: cộng vào lương thực nhận cho NV online)
+    const onlineSupportAmount = parseNumberInput(salaryOnlineSupportInput);
+
     const otherBonus = parseNumberInput(salaryOtherBonusInput);
     const deduction = parseNumberInput(salaryDeductionInput);
 
-    const totalActual = Math.max(0, salaryByDays + kpiBonusAmount + otherBonus - deduction);
+    const totalActual = Math.max(0, salaryByDays + kpiBonusAmount + onlineSupportAmount + otherBonus - deduction);
 
     return {
       chosenBase,
@@ -663,6 +685,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       salaryByDays,
       revGen,
       kpiBonusAmount,
+      onlineSupportAmount,
       otherBonus,
       deduction,
       totalActual,
@@ -675,6 +698,8 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     salaryActualDaysInput,
     salaryRevenueGeneratedInput,
     salaryKpiRate,
+    salaryOnlineSupportInput,
+    salaryIsOnlineStaff,
     salaryOtherBonusInput,
     salaryDeductionInput,
   ]);
@@ -693,6 +718,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       salaryByDays,
       revGen,
       kpiBonusAmount,
+      onlineSupportAmount,
       otherBonus,
       deduction,
       totalActual,
@@ -725,6 +751,8 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               revenueSourceName: salaryRevenueSourceName.trim(),
               kpiRate: salaryKpiRate,
               kpiBonus: kpiBonusAmount,
+              isOnlineStaff: salaryIsOnlineStaff,
+              onlineSupportAllowance: onlineSupportAmount,
               otherBonus,
               deduction,
               actualSalary: totalActual,
@@ -756,6 +784,8 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
         revenueSourceName: salaryRevenueSourceName.trim(),
         kpiRate: salaryKpiRate,
         kpiBonus: kpiBonusAmount,
+        isOnlineStaff: salaryIsOnlineStaff,
+        onlineSupportAllowance: onlineSupportAmount,
         otherBonus,
         deduction,
         actualSalary: totalActual,
@@ -925,9 +955,11 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
           revenueSourceName: '',
           kpiRate: pastSal?.kpiRate ?? 10,
           kpiBonus: 0,
+          isOnlineStaff: pastSal?.isOnlineStaff || false,
+          onlineSupportAllowance: pastSal?.onlineSupportAllowance || 0,
           otherBonus: 0,
           deduction: 0,
-          actualSalary: 0,
+          actualSalary: pastSal?.onlineSupportAllowance || 0,
           isPaid: false,
           note: '',
         };
@@ -1433,11 +1465,12 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     lines.push(`5. Tiền Mạng Internet & Proxy:,${workingInternetCost}`);
     lines.push(`6. Chi Phí Ngoài Ý Muốn (Phát Sinh):,${computedUnexpectedExpenses}`);
     lines.push(`7. Chi Phí Hàng Tháng Khác:,${computedTotalCustomExpenses}`);
-    lines.push(`8. Tổng Tiền Lương Nhân Viên (gồm KPI):,${computedTotalSalary}`);
+    lines.push(`8. Tổng Tiền Lương Nhân Viên (gồm KPI & Online):,${computedTotalSalary}`);
     lines.push(`9. Tổng Thưởng KPI Doanh Thu Đã Chi:,${computedTotalKpiBonus}`);
-    lines.push(`10. TỔNG CHI PHÍ PHẢI CHI:,${computedTotalExpenses}`);
-    lines.push(`11. LỢI NHUẬN RÒNG (TIỀN DƯ):,${computedNetProfit}`);
-    lines.push(`12. Tỷ Suất Lợi Nhuận:,${computedProfitMargin}%`);
+    lines.push(`10. Tổng Tiền Hỗ Trợ Mạng & Điện Cho NV Online:,${computedTotalOnlineSupport}`);
+    lines.push(`11. TỔNG CHI PHÍ PHẢI CHI:,${computedTotalExpenses}`);
+    lines.push(`12. LỢI NHUẬN RÒNG (TIỀN DƯ):,${computedNetProfit}`);
+    lines.push(`13. Tỷ Suất Lợi Nhuận:,${computedProfitMargin}%`);
     lines.push('');
     lines.push('--- CHI TIẾT NGUỒN TIỀN VỀ (DOANH THU) ---');
     lines.push('STT,Nguồn Thu,Đối Tác / Khách Hàng,Ngày Nhận,Số Tiền (VNĐ),Ghi Chú');
@@ -1446,10 +1479,10 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     });
     lines.push('');
     lines.push('--- CHI TIẾT BẢNG LƯƠNG & HỒ SƠ NHÂN VIÊN ---');
-    lines.push('STT,Tên Nhân Viên,Ngày Sinh,Số CCCD,Ngày Vào Làm,Chế Độ,Lương Hợp Đồng,Ngày Công Thực Tế,Lương Theo Ngày Công,Ngân Hàng,Số Tài Khoản,Chủ Tài Khoản,Doanh Thu Mang Về,Tỷ Lệ KPI (%),Tiền Thưởng KPI,Thưởng Khác,Trừ / Phạt,Tổng Thực Nhận (VNĐ),Trạng Thái,Ngày Chi Trả,Ghi Chú');
+    lines.push('STT,Tên Nhân Viên,Ngày Sinh,Số CCCD,Ngày Vào Làm,Chế Độ,Lương Hợp Đồng,Ngày Công Thực Tế,Lương Theo Ngày Công,Ngân Hàng,Số Tài Khoản,Chủ Tài Khoản,Doanh Thu Mang Về,Tỷ Lệ KPI (%),Tiền Thưởng KPI,Hỗ Trợ Mạng & Điện (Online),Thưởng Khác,Trừ / Phạt,Tổng Thực Nhận (VNĐ),Trạng Thái,Ngày Chi Trả,Ghi Chú');
     (activeMonthRecord.salaryItems || []).forEach((it, idx) => {
       lines.push(
-        `${idx + 1},"${it.staffName}","${it.dateOfBirth || ''}","${it.citizenId || ''}","${it.startDate || ''}","${it.contractType === 'probation' ? 'Thử Việc' : 'Chính Thức'}",${it.baseSalary},"${it.actualWorkingDays || 26}/${it.standardWorkingDays || 26}",${it.salaryByWorkingDays || it.baseSalary},"${it.bankName || ''}","${it.bankAccountNumber || ''}","${it.bankAccountHolder || ''}",${it.revenueGenerated || 0},"${it.kpiRate || 10}%",${it.kpiBonus || 0},${it.otherBonus || 0},${it.deduction || 0},${it.actualSalary},"${it.isPaid ? 'Đã Thanh Toán' : 'Chưa Thanh Toán'}","${it.paidDate || ''}","${it.note || ''}"`
+        `${idx + 1},"${it.staffName}","${it.dateOfBirth || ''}","${it.citizenId || ''}","${it.startDate || ''}","${it.contractType === 'probation' ? 'Thử Việc' : 'Chính Thức'}",${it.baseSalary},"${it.actualWorkingDays || 26}/${it.standardWorkingDays || 26}",${it.salaryByWorkingDays || it.baseSalary},"${it.bankName || ''}","${it.bankAccountNumber || ''}","${it.bankAccountHolder || ''}",${it.revenueGenerated || 0},"${it.kpiRate || 10}%",${it.kpiBonus || 0},${it.onlineSupportAllowance || 0},${it.otherBonus || 0},${it.deduction || 0},${it.actualSalary},"${it.isPaid ? 'Đã Thanh Toán' : 'Chưa Thanh Toán'}","${it.paidDate || ''}","${it.note || ''}"`
       );
     });
     lines.push('');
@@ -2804,7 +2837,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
           </form>
 
           {/* Dàn tóm tắt quỹ lương */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-xl flex items-center justify-between">
               <div>
                 <span className="text-[10px] font-black text-blue-800 uppercase tracking-wide block">
@@ -2827,6 +2860,21 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 </span>
               </div>
               <Percent className="w-5 h-5 text-emerald-600" />
+            </div>
+
+            <div className="p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-indigo-800 uppercase tracking-wide block">
+                  Hỗ Trợ Mạng & Điện (Online)
+                </span>
+                <span className="text-base sm:text-lg font-black text-indigo-800 font-mono">
+                  {formatCurrencyVND(computedTotalOnlineSupport)}
+                </span>
+                <span className="text-[10px] text-indigo-700 block font-medium">
+                  {activeMonthRecord.salaryItems?.filter((s) => s.isOnlineStaff || (s.onlineSupportAllowance && s.onlineSupportAllowance > 0)).length || 0} NV làm online
+                </span>
+              </div>
+              <Wifi className="w-5 h-5 text-indigo-600" />
             </div>
 
             <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
@@ -2858,6 +2906,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                   <th className="py-2.5 px-3 text-center">Ngày Công Thực Tế</th>
                   <th className="py-2.5 px-3 text-right">Lương Theo Công</th>
                   <th className="py-2.5 px-3 text-right">Doanh Thu Mang Về & KPI</th>
+                  <th className="py-2.5 px-3 text-right">Hỗ Trợ Mạng/Điện (Online)</th>
                   <th className="py-2.5 px-3 text-right">Thưởng Khác / Trừ</th>
                   <th className="py-2.5 px-3 text-right">Tổng Thực Nhận</th>
                   <th className="py-2.5 px-3 text-center">Hiển Thị Cho NV</th>
@@ -2870,7 +2919,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {!activeMonthRecord.salaryItems || activeMonthRecord.salaryItems.length === 0 ? (
                   <tr>
-                    <td colSpan={14} className="py-8 text-center text-slate-400">
+                    <td colSpan={15} className="py-8 text-center text-slate-400">
                       Chưa có nhân viên nào trong bảng lương tháng này. Hãy bấm{' '}
                       <strong>"Đồng Bộ NV Hệ Thống"</strong> hoặc <strong>"+ Thêm Nhân Viên"</strong>!
                     </td>
@@ -2996,6 +3045,30 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                             </div>
                           ) : (
                             <div className="text-[10px] text-slate-400">KPI cứng</div>
+                          )}
+                        </td>
+
+                        {/* Hỗ trợ tiền mạng, điện cho nhân viên làm online (Yêu cầu 5: cộng vào lương) */}
+                        <td className="py-2.5 px-3 text-right font-mono">
+                          {item.onlineSupportAllowance && item.onlineSupportAllowance > 0 ? (
+                            <div>
+                              <div className="font-black text-indigo-700">
+                                +{formatCurrencyVND(item.onlineSupportAllowance)}
+                              </div>
+                              <span className="inline-flex items-center space-x-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200">
+                                <Wifi className="w-2.5 h-2.5 text-indigo-600" />
+                                <span>Làm Online</span>
+                              </span>
+                            </div>
+                          ) : item.isOnlineStaff ? (
+                            <div>
+                              <span className="inline-flex items-center space-x-1 px-1.5 py-0.2 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
+                                <Wifi className="w-2.5 h-2.5 text-slate-400" />
+                                <span>Online (0đ)</span>
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-slate-400 font-mono">-</span>
                           )}
                         </td>
 
@@ -3745,6 +3818,90 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 </div>
               </div>
 
+              {/* HỖ TRỢ TIỀN MẠNG & ĐIỆN CHO NHÂN VIÊN LÀM ONLINE (YÊU CẦU 5) */}
+              <div className="p-3.5 bg-gradient-to-r from-indigo-50/90 via-sky-50/90 to-blue-50/90 border-2 border-indigo-300 rounded-2xl space-y-2.5 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center space-x-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={salaryIsOnlineStaff}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setSalaryIsOnlineStaff(checked);
+                        if (checked && (!salaryOnlineSupportInput || salaryOnlineSupportInput === '0')) {
+                          setSalaryOnlineSupportInput('300000');
+                        }
+                      }}
+                      className="w-4 h-4 text-indigo-600 rounded border-indigo-300 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <span className="text-xs font-black text-indigo-950 uppercase flex items-center space-x-1.5">
+                      <Wifi className="w-4 h-4 text-indigo-600" />
+                      <span>Hỗ Trợ Tiền Mạng, Điện (Nhân Viên Làm Online)</span>
+                    </span>
+                  </label>
+                  <span className="text-indigo-800 font-mono font-black text-xs">
+                    +{formatCurrencyVND(previewSalaryCalculation.onlineSupportAmount)}
+                  </span>
+                </div>
+
+                <p className="text-[11px] text-indigo-900 font-medium leading-relaxed">
+                  🌐 Khoản tiền hỗ trợ mạng & điện này sẽ được <strong>cộng trực tiếp vào tổng lương thực nhận</strong> cho nhân viên làm online (và trừ vào lợi nhuận công ty).
+                </p>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 pt-1">
+                  <div className="flex-1">
+                    <label className="block text-[10px] font-bold text-indigo-900 mb-1">
+                      Số Tiền Hỗ Trợ Mạng & Điện (VNĐ):
+                    </label>
+                    <input
+                      type="text"
+                      value={salaryOnlineSupportInput}
+                      onChange={(e) => {
+                        setSalaryOnlineSupportInput(e.target.value);
+                        if (parseNumberInput(e.target.value) > 0 && !salaryIsOnlineStaff) {
+                          setSalaryIsOnlineStaff(true);
+                        }
+                      }}
+                      placeholder="300000"
+                      className="w-full px-3 py-1.5 bg-white border border-indigo-300 rounded-xl text-xs font-black text-indigo-950 font-mono focus:ring-2 focus:ring-indigo-200"
+                    />
+                    {parseNumberInput(salaryOnlineSupportInput) > 0 && (
+                      <span className="text-[10px] text-indigo-700 block mt-0.5 font-bold">
+                        = {formatCurrencyVND(parseNumberInput(salaryOnlineSupportInput))}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="shrink-0 space-y-1">
+                    <span className="text-[10px] font-bold text-indigo-800 block">⚡ Mức hỗ trợ phổ biến:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { label: '300k Mạng', val: '300000' },
+                        { label: '500k Mạng+Điện', val: '500000' },
+                        { label: '700k', val: '700000' },
+                        { label: '1 Triệu', val: '1000000' },
+                      ].map((preset) => (
+                        <button
+                          key={preset.val}
+                          type="button"
+                          onClick={() => {
+                            setSalaryOnlineSupportInput(preset.val);
+                            setSalaryIsOnlineStaff(true);
+                          }}
+                          className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                            salaryOnlineSupportInput === preset.val
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                              : 'bg-white text-indigo-800 border-indigo-200 hover:bg-indigo-100'
+                          }`}
+                        >
+                          {preset.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {/* Thưởng khác & Khấu trừ phạt */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
@@ -3774,7 +3931,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 <div>
                   <span className="text-xs font-black text-blue-900 block">Tổng Lương Thực Nhận:</span>
                   <span className="text-[10px] text-blue-700">
-                    Lương theo công ({formatCurrencyVND(previewSalaryCalculation.salaryByDays)}) + KPI ({formatCurrencyVND(previewSalaryCalculation.kpiBonusAmount)}) - Trừ
+                    Lương theo công ({formatCurrencyVND(previewSalaryCalculation.salaryByDays)}) + KPI ({formatCurrencyVND(previewSalaryCalculation.kpiBonusAmount)}) {previewSalaryCalculation.onlineSupportAmount > 0 ? `+ Hỗ trợ online (${formatCurrencyVND(previewSalaryCalculation.onlineSupportAmount)})` : ''} - Trừ
                   </span>
                 </div>
                 <span className="text-lg font-black text-blue-800 font-mono">

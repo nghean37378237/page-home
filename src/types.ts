@@ -388,11 +388,15 @@ export interface StaffSalaryItem {
   kpiBonus: number; // Tiền thưởng KPI doanh thu = (revenueGenerated * kpiRate / 100)
   otherBonus?: number; // Thưởng chuyên cần, thưởng thêm khác (nếu có)
 
+  // 4b. Hỗ trợ tiền mạng, điện cho nhân viên làm Online (Yêu cầu 5: cộng vào lương thực nhận cho NV online)
+  isOnlineStaff?: boolean; // Tích chọn nếu là nhân viên làm Online / Từ xa
+  onlineSupportAllowance?: number; // Tiền hỗ trợ mạng, điện cho nhân viên làm online (VNĐ, VD: 300.000, 500.000)
+
   // 5. Khấu trừ / Phạt / Tạm ứng
   deduction: number; // Phạt / Trừ lương / Tạm ứng (VNĐ)
 
   // 6. Tổng thực nhận
-  actualSalary: number; // Tổng thực nhận = salaryByWorkingDays + kpiBonus + (otherBonus || 0) - deduction
+  actualSalary: number; // Tổng thực nhận = salaryByWorkingDays + kpiBonus + (onlineSupportAllowance || 0) + (otherBonus || 0) - deduction
 
   // 7. Quyền hiển thị cho nhân viên (Yêu cầu mới: Admin tích chọn thì mới cho hiện ở Tab Thông Tin Nhân Viên, bỏ tích thì Lương và Doanh thu bỏ trống)
   isVisibleToStaff?: boolean; // true = Admin đã tích cho hiện | false / undefined = Bỏ tích, ẩn số tiền Lương & Doanh thu
