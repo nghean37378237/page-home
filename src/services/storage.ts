@@ -311,14 +311,33 @@ export function saveLocalFinanceBackup(finances: MonthlyFinanceRecord[]): void {
   }
 }
 
+export function clearLocalFinanceBackup(): void {
+  try {
+    localStorage.removeItem(MONTHLY_FINANCES_BACKUP_KEY);
+  } catch (err) {
+    console.warn('[Storage] Không thể xóa bộ nhớ đệm tài chính:', err);
+  }
+}
+
 export function getLocalFinanceBackup(): MonthlyFinanceRecord[] {
   try {
     const raw = localStorage.getItem(MONTHLY_FINANCES_BACKUP_KEY);
-    if (!raw) return INITIAL_MONTHLY_FINANCES;
+    if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_MONTHLY_FINANCES;
+    if (!Array.isArray(parsed)) return [];
+    // Tự động loại bỏ hoàn toàn các bản ghi mẫu cũ để đảm bảo Admin tự nhập từ đầu
+    const filtered = parsed.filter((rec: MonthlyFinanceRecord) => {
+      const isMock =
+        rec.revenueItems?.some((r) => r.id?.startsWith('rev-10-') || r.id?.startsWith('rev-09-')) ||
+        rec.customExpenses?.some((e) => e.id?.startsWith('exp-10-')) ||
+        rec.salaryItems?.some((s) => s.id?.startsWith('sal-10-') || s.id?.startsWith('sal-09-')) ||
+        (rec.id === '2026-10' && (rec.totalRevenue === 190000000 || rec.officeCost === 18000000)) ||
+        (rec.id === '2026-09' && (rec.totalRevenue === 165000000 || rec.officeCost === 18000000));
+      return !isMock;
+    });
+    return filtered;
   } catch {
-    return INITIAL_MONTHLY_FINANCES;
+    return [];
   }
 }
 

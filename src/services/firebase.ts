@@ -1031,6 +1031,27 @@ export async function deleteCloudMonthlyFinance(id: string): Promise<void> {
   }
 }
 
+export async function clearAllCloudMonthlyFinances(): Promise<void> {
+  try {
+    const snapshot = await getDocs(collection(db, MONTHLY_FINANCES_COLLECTION));
+    if (snapshot.empty) return;
+    const chunkSize = 400;
+    const docs = snapshot.docs;
+    for (let i = 0; i < docs.length; i += chunkSize) {
+      const chunk = docs.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((d) => {
+        batch.delete(d.ref);
+      });
+      await batch.commit();
+    }
+    console.log(`[Firestore] Đã xóa toàn bộ ${docs.length} bản ghi tài chính tháng.`);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, MONTHLY_FINANCES_COLLECTION);
+    throw error;
+  }
+}
+
 export async function batchSaveCloudMonthlyFinances(records: MonthlyFinanceRecord[]): Promise<void> {
   if (!records.length) return;
   const chunkSize = 400;

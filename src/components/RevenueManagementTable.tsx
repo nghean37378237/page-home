@@ -47,6 +47,7 @@ interface RevenueManagementTableProps {
   availableStaffNames: string[];
   onSaveMonthlyFinance: (record: MonthlyFinanceRecord) => Promise<void> | void;
   onDeleteMonthlyFinance: (monthId: string) => Promise<void> | void;
+  onClearAllFinances?: () => Promise<void> | void;
   onRefreshFinances?: () => Promise<void> | void;
   onNavigateToTab?: (tab: string) => void;
 }
@@ -101,6 +102,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   availableStaffNames,
   onSaveMonthlyFinance,
   onDeleteMonthlyFinance,
+  onClearAllFinances,
   onNavigateToTab,
 }) => {
   const isAdmin = currentUser.role === 'admin';
@@ -150,12 +152,12 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [editingSalaryItem, setEditingSalaryItem] = useState<StaffSalaryItem | null>(null);
   const [salaryStaffName, setSalaryStaffName] = useState('');
   const [salaryContractType, setSalaryContractType] = useState<EmployeeContractType>('official');
-  const [salaryProbationInput, setSalaryProbationInput] = useState('6000000');
-  const [salaryOfficialInput, setSalaryOfficialInput] = useState('9000000');
+  const [salaryProbationInput, setSalaryProbationInput] = useState('');
+  const [salaryOfficialInput, setSalaryOfficialInput] = useState('');
   const [salaryStandardDays, setSalaryStandardDays] = useState<number>(26);
   const [salaryActualDaysInput, setSalaryActualDaysInput] = useState('26');
   // Tài khoản ngân hàng của nhân viên
-  const [salaryBankName, setSalaryBankName] = useState('MB Bank');
+  const [salaryBankName, setSalaryBankName] = useState('');
   const [salaryBankAccountNumber, setSalaryBankAccountNumber] = useState('');
   const [salaryBankAccountHolder, setSalaryBankAccountHolder] = useState('');
   // Thưởng KPI tiền về theo doanh thu nguồn làm được (5% hoặc 10%)
@@ -178,7 +180,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [expenseCategory, setExpenseCategory] = useState<'office' | 'utility' | 'tools' | 'proxy' | 'hardware' | 'unexpected' | 'other'>('unexpected');
   const [expenseAmountInput, setExpenseAmountInput] = useState('');
   const [expenseDate, setExpenseDate] = useState('');
-  const [expensePayer, setExpensePayer] = useState('Admin');
+  const [expensePayer, setExpensePayer] = useState('');
   const [expensePaymentMethod, setExpensePaymentMethod] = useState<'transfer' | 'cash'>('transfer');
   const [expenseNote, setExpenseNote] = useState('');
 
@@ -190,7 +192,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     const found = finances.find((f) => f.monthKey === selectedMonthKey || f.id === selectedMonthKey);
     if (found) return found;
 
-    // Nếu chưa có, tạo cấu trúc rỗng tạm thời cho tháng này
+    // Nếu chưa có, tạo cấu trúc rỗng trắng hoàn toàn cho tháng này (Admin tự nhập từ đầu)
     const [yStr, mStr] = selectedMonthKey.split('-');
     const y = parseInt(yStr, 10) || currentYear;
     const m = parseInt(mStr, 10) || currentMonthNum;
@@ -203,23 +205,23 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       title: `Tháng ${String(m).padStart(2, '0')}/${y}`,
       revenueItems: [],
       totalRevenue: 0,
-      officeCost: 18000000,
-      officeCostNote: 'Tiền thuê văn phòng làm việc',
-      electricityCost: 4500000,
-      electricityCostNote: 'Tiền điện văn phòng & dàn máy tính',
-      waterCost: 400000,
-      waterCostNote: 'Tiền nước sinh hoạt',
-      internetCost: 3200000,
-      internetCostNote: 'Internet & Proxy',
-      otherCosts: 1500000,
-      otherCostsNote: 'Chi phí văn phòng phẩm & tiếp khách',
+      officeCost: 0,
+      officeCostNote: '',
+      electricityCost: 0,
+      electricityCostNote: '',
+      waterCost: 0,
+      waterCostNote: '',
+      internetCost: 0,
+      internetCostNote: '',
+      otherCosts: 0,
+      otherCostsNote: '',
       customExpenses: [],
       salaryItems: [],
       totalSalary: 0,
-      totalExpenses: 27600000,
-      netProfit: -27600000,
+      totalExpenses: 0,
+      netProfit: 0,
       profitMargin: 0,
-      status: 'loss',
+      status: 'break_even',
       adminSummaryNote: '',
     };
   }, [finances, selectedMonthKey, currentYear, currentMonthNum]);
@@ -483,14 +485,14 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setEditingSalaryItem(null);
     setSalaryStaffName(defaultStaff || availableStaffNames[0] || '');
     setSalaryContractType('official');
-    setSalaryOfficialInput('9000000');
-    setSalaryProbationInput('6000000');
+    setSalaryOfficialInput('');
+    setSalaryProbationInput('');
     setSalaryStandardDays(26);
     setSalaryActualDaysInput('26');
-    setSalaryBankName('MB Bank');
+    setSalaryBankName('');
     setSalaryBankAccountNumber('');
     setSalaryBankAccountHolder('');
-    setSalaryRevenueGeneratedInput('30000000');
+    setSalaryRevenueGeneratedInput('');
     setSalaryRevenueSourceName('');
     setSalaryKpiRate(10);
     setSalaryOtherBonusInput('0');
@@ -505,11 +507,11 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setEditingSalaryItem(item);
     setSalaryStaffName(item.staffName || '');
     setSalaryContractType(item.contractType || 'official');
-    setSalaryOfficialInput(String(item.officialSalary || item.baseSalary || 9000000));
-    setSalaryProbationInput(String(item.probationSalary || 6000000));
+    setSalaryOfficialInput(item.officialSalary ? String(item.officialSalary) : item.baseSalary ? String(item.baseSalary) : '');
+    setSalaryProbationInput(item.probationSalary ? String(item.probationSalary) : '');
     setSalaryStandardDays(item.standardWorkingDays || 26);
     setSalaryActualDaysInput(String(item.actualWorkingDays ?? 26));
-    setSalaryBankName(item.bankName || 'MB Bank');
+    setSalaryBankName(item.bankName || '');
     setSalaryBankAccountNumber(item.bankAccountNumber || '');
     setSalaryBankAccountHolder(item.bankAccountHolder || '');
     setSalaryRevenueGeneratedInput(item.revenueGenerated ? String(item.revenueGenerated) : '');
@@ -740,24 +742,24 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
         id: `sal-sync-${Date.now()}-${i}`,
         staffName: st,
         contractType: 'official' as EmployeeContractType,
-        officialSalary: 9000000,
-        probationSalary: 6500000,
-        baseSalary: 9000000,
+        officialSalary: 0,
+        probationSalary: 0,
+        baseSalary: 0,
         standardWorkingDays: 26,
         actualWorkingDays: 26,
-        salaryByWorkingDays: 9000000,
-        bankName: 'MB Bank',
+        salaryByWorkingDays: 0,
+        bankName: '',
         bankAccountNumber: '',
         bankAccountHolder: st.toUpperCase(),
-        revenueGenerated: 25000000,
-        revenueSourceName: 'Dự án Fanpage / Group',
+        revenueGenerated: 0,
+        revenueSourceName: '',
         kpiRate: 10,
-        kpiBonus: 2500000,
+        kpiBonus: 0,
         otherBonus: 0,
         deduction: 0,
-        actualSalary: 11500000,
+        actualSalary: 0,
         isPaid: false,
-        note: 'Đồng bộ từ danh sách nhân viên',
+        note: '',
       })),
     ];
 
@@ -951,8 +953,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       return;
     }
 
-    // Sao chép các chi phí văn phòng và danh sách nhân viên từ tháng gần nhất
-    const previousMonth = finances[0];
+    // Tạo tháng mới với dữ liệu trắng hoàn toàn để Admin tự nhập
     const newRecord: MonthlyFinanceRecord = {
       id: monthKey,
       monthKey,
@@ -961,54 +962,24 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       title,
       revenueItems: [],
       totalRevenue: 0,
-      officeCost: previousMonth?.officeCost || 18000000,
-      officeCostNote: previousMonth?.officeCostNote || 'Tiền thuê văn phòng làm việc',
-      electricityCost: previousMonth?.electricityCost || 4500000,
-      electricityCostNote: previousMonth?.electricityCostNote || 'Tiền điện văn phòng & máy tính',
-      waterCost: previousMonth?.waterCost || 400000,
-      waterCostNote: previousMonth?.waterCostNote || 'Tiền nước sinh hoạt',
-      internetCost: previousMonth?.internetCost || 3200000,
-      internetCostNote: previousMonth?.internetCostNote || 'Internet & Proxy',
-      otherCosts: 1000000,
-      otherCostsNote: 'Chi phí văn phòng phẩm phát sinh',
+      officeCost: 0,
+      officeCostNote: '',
+      electricityCost: 0,
+      electricityCostNote: '',
+      waterCost: 0,
+      waterCostNote: '',
+      internetCost: 0,
+      internetCostNote: '',
+      otherCosts: 0,
+      otherCostsNote: '',
       customExpenses: [],
-      salaryItems: previousMonth?.salaryItems
-        ? previousMonth.salaryItems.map((s, idx) => ({
-            ...s,
-            id: `sal-new-${Date.now()}-${idx}`,
-            isPaid: false,
-            paidDate: '',
-          }))
-        : availableStaffNames
-            .filter((n) => n.trim().toLowerCase() !== 'quản lý (admin)')
-            .map((name, idx) => ({
-              id: `sal-init-${Date.now()}-${idx}`,
-              staffName: name,
-              contractType: 'official' as EmployeeContractType,
-              officialSalary: 9000000,
-              probationSalary: 6500000,
-              baseSalary: 9000000,
-              standardWorkingDays: 26,
-              actualWorkingDays: 26,
-              salaryByWorkingDays: 9000000,
-              bankName: 'MB Bank',
-              bankAccountNumber: '',
-              bankAccountHolder: name.toUpperCase(),
-              revenueGenerated: 25000000,
-              kpiRate: 10,
-              kpiBonus: 2500000,
-              otherBonus: 0,
-              deduction: 0,
-              actualSalary: 11500000,
-              isPaid: false,
-              note: '',
-            })),
+      salaryItems: [],
       totalSalary: 0,
       totalExpenses: 0,
       netProfit: 0,
       profitMargin: 0,
       status: 'break_even',
-      adminSummaryNote: `Kế hoạch tài chính & thu chi ${title}`,
+      adminSummaryNote: '',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toLocaleString('vi-VN'),
       updatedBy: currentUser.name || 'Admin',
@@ -1175,6 +1146,24 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               </select>
             </div>
 
+            {/* Nút Xóa Hết Dữ Liệu Mẫu (Về Bảng Trắng) */}
+            {onClearAllFinances && finances.length > 0 && (
+              <button
+                type="button"
+                id="btn-clear-finance-samples"
+                onClick={async () => {
+                  if (confirm('Bạn có chắc chắn muốn xóa hết tất cả các tháng và dữ liệu mẫu trong Bảng 7 để Admin tự nhập từ đầu?')) {
+                    await onClearAllFinances();
+                  }
+                }}
+                className="inline-flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+                title="Xóa hết dữ liệu mẫu trong Bảng 7 về bảng trắng hoàn toàn"
+              >
+                <Trash2 className="w-4 h-4 text-rose-600" />
+                <span>Xóa Hết Dữ Liệu Mẫu</span>
+              </button>
+            )}
+
             {/* Nút Tạo Tháng Mới */}
             <button
               type="button"
@@ -1217,6 +1206,25 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
           <div className="mt-3 p-2.5 bg-emerald-50 border border-emerald-300 rounded-xl flex items-center space-x-2 text-xs font-bold text-emerald-800 animate-fadeIn">
             <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{saveSuccessMsg}</span>
+          </div>
+        )}
+
+        {/* Thông báo bảng trống cho Admin khi chưa có tháng nào được tạo */}
+        {finances.length === 0 && (
+          <div className="mt-3 p-3 bg-amber-50/90 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-amber-900 animate-fadeIn">
+            <div className="flex items-start sm:items-center space-x-2">
+              <span className="text-base shrink-0">📝</span>
+              <div>
+                <span className="font-bold">Bảng 7 đang để trắng hoàn toàn:</span> Tất cả dữ liệu mặc định đã được xóa sạch. Admin hãy bấm nút <b>"+ Thêm Tháng Mới"</b> hoặc nhập doanh thu, chi phí, bảng lương bên dưới rồi bấm <b>"Lưu Thay Đổi"</b> để lưu trữ!
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsNewMonthModalOpen(true)}
+              className="self-start sm:self-auto shrink-0 px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            >
+              + Tạo Tháng Mới
+            </button>
           </div>
         )}
       </div>

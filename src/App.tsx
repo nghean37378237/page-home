@@ -59,6 +59,7 @@ import {
   batchDeleteCloudProxies,
   saveCloudSettings,
   resetCloudFirestoreToDefaults,
+  clearAllCloudMonthlyFinances,
 } from './services/firebase';
 import {
   loadCurrentUserSession,
@@ -70,6 +71,7 @@ import {
   getLocalGroupBackup,
   saveLocalFinanceBackup,
   getLocalFinanceBackup,
+  clearLocalFinanceBackup,
   DEFAULT_STAFF_MEMBERS,
   INITIAL_ACCOUNTS,
   DEFAULT_ADMIN_USER,
@@ -359,21 +361,42 @@ export default function App() {
         });
 
         // 6. Listen to live monthly finances in Cloud Firestore (Chỉ Admin)
+        const isLegacyMockFinance = (rec: MonthlyFinanceRecord) => {
+          return (
+            rec.revenueItems?.some((r) => r.id?.startsWith('rev-10-') || r.id?.startsWith('rev-09-')) ||
+            rec.customExpenses?.some((e) => e.id?.startsWith('exp-10-')) ||
+            rec.salaryItems?.some((s) => s.id?.startsWith('sal-10-') || s.id?.startsWith('sal-09-')) ||
+            (rec.id === '2026-10' && (rec.totalRevenue === 190000000 || rec.officeCost === 18000000)) ||
+            (rec.id === '2026-09' && (rec.totalRevenue === 165000000 || rec.officeCost === 18000000))
+          );
+        };
+
         unsubFinances = subscribeToMonthlyFinances((cloudFinances) => {
           if (cloudFinances && cloudFinances.length > 0) {
-            setFinances(cloudFinances);
-            saveLocalFinanceBackup(cloudFinances);
+            const mockRecords = cloudFinances.filter(isLegacyMockFinance);
+            if (mockRecords.length > 0) {
+              mockRecords.forEach((m) => {
+                deleteCloudMonthlyFinance(m.id).catch(() => {});
+              });
+            }
+            const cleanList = cloudFinances.filter((f) => !isLegacyMockFinance(f));
+            setFinances(cleanList);
+            saveLocalFinanceBackup(cleanList);
           } else {
-            setFinances(INITIAL_MONTHLY_FINANCES);
-            saveLocalFinanceBackup(INITIAL_MONTHLY_FINANCES);
+            setFinances([]);
+            clearLocalFinanceBackup();
           }
         });
 
         getCloudMonthlyFinances()
           .then((list) => {
             if (list && list.length > 0) {
-              setFinances(list);
-              saveLocalFinanceBackup(list);
+              const cleanList = list.filter((f) => !isLegacyMockFinance(f));
+              setFinances(cleanList);
+              saveLocalFinanceBackup(cleanList);
+            } else {
+              setFinances([]);
+              clearLocalFinanceBackup();
             }
           })
           .catch((err) => console.warn('[App] Direct finance fetch warning:', err));
@@ -2660,6 +2683,11 @@ export default function App() {
                 setFinances(list);
                 saveLocalFinanceBackup(list);
               }
+            }}
+            onClearAllFinances={async () => {
+              await clearAllCloudMonthlyFinances();
+              setFinances([]);
+              clearLocalFinanceBackup();
             }}
             onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
           />
