@@ -7,6 +7,7 @@ import {
   EmployeeContractType,
   ExpenseType,
   AppUser,
+  UserAccount,
 } from '../types';
 import {
   DollarSign,
@@ -39,12 +40,17 @@ import {
   Check,
   Wrench,
   Percent,
+  Calendar,
+  Briefcase,
+  UserCheck,
+  Contact,
 } from 'lucide-react';
 
 interface RevenueManagementTableProps {
   finances: MonthlyFinanceRecord[];
   currentUser: AppUser;
   availableStaffNames: string[];
+  accounts?: UserAccount[];
   onSaveMonthlyFinance: (record: MonthlyFinanceRecord) => Promise<void> | void;
   onDeleteMonthlyFinance: (monthId: string) => Promise<void> | void;
   onClearAllFinances?: () => Promise<void> | void;
@@ -100,6 +106,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   finances,
   currentUser,
   availableStaffNames,
+  accounts = [],
   onSaveMonthlyFinance,
   onDeleteMonthlyFinance,
   onClearAllFinances,
@@ -151,6 +158,12 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [isSalaryModalOpen, setIsSalaryModalOpen] = useState(false);
   const [editingSalaryItem, setEditingSalaryItem] = useState<StaffSalaryItem | null>(null);
   const [salaryStaffName, setSalaryStaffName] = useState('');
+
+  // Thông tin nhân sự bổ sung (Yêu cầu: Ngày tháng năm sinh, Số CCCD, Ngày bắt đầu đi làm)
+  const [salaryDateOfBirth, setSalaryDateOfBirth] = useState('');
+  const [salaryCitizenId, setSalaryCitizenId] = useState('');
+  const [salaryStartDate, setSalaryStartDate] = useState('');
+
   const [salaryContractType, setSalaryContractType] = useState<EmployeeContractType>('official');
   const [salaryProbationInput, setSalaryProbationInput] = useState('');
   const [salaryOfficialInput, setSalaryOfficialInput] = useState('');
@@ -169,6 +182,51 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [salaryIsPaid, setSalaryIsPaid] = useState(false);
   const [salaryPaidDate, setSalaryPaidDate] = useState('');
   const [salaryNote, setSalaryNote] = useState('');
+
+  // Hàm tự động gợi ý/điền nhanh thông tin nhân sự khi Admin chọn tên nhân viên
+  const handleStaffNameChange = (name: string) => {
+    setSalaryStaffName(name);
+    if (!editingSalaryItem && name.trim()) {
+      const trimmed = name.trim().toLowerCase();
+      const matchedAccount = accounts.find((a) => a.username.trim().toLowerCase() === trimmed);
+      let matchedPastSalary: StaffSalaryItem | undefined;
+      for (const fin of finances) {
+        const found = fin.salaryItems?.find((s) => s.staffName.trim().toLowerCase() === trimmed);
+        if (found) {
+          matchedPastSalary = found;
+          break;
+        }
+      }
+
+      if (matchedAccount?.dateOfBirth || matchedPastSalary?.dateOfBirth) {
+        setSalaryDateOfBirth(matchedAccount?.dateOfBirth || matchedPastSalary?.dateOfBirth || '');
+      }
+      if (matchedAccount?.citizenId || matchedPastSalary?.citizenId) {
+        setSalaryCitizenId(matchedAccount?.citizenId || matchedPastSalary?.citizenId || '');
+      }
+      if (matchedAccount?.startDate || matchedPastSalary?.startDate) {
+        setSalaryStartDate(matchedAccount?.startDate || matchedPastSalary?.startDate || '');
+      }
+      if (matchedAccount?.bankAccountNumber || matchedPastSalary?.bankAccountNumber) {
+        setSalaryBankAccountNumber(matchedAccount?.bankAccountNumber || matchedPastSalary?.bankAccountNumber || '');
+      }
+      if (matchedAccount?.bankName || matchedPastSalary?.bankName) {
+        setSalaryBankName(matchedAccount?.bankName || matchedPastSalary?.bankName || '');
+      }
+      if (matchedAccount?.bankAccountHolder || matchedPastSalary?.bankAccountHolder) {
+        setSalaryBankAccountHolder(matchedAccount?.bankAccountHolder || matchedPastSalary?.bankAccountHolder || '');
+      }
+      if (matchedPastSalary?.probationSalary && !salaryProbationInput) {
+        setSalaryProbationInput(String(matchedPastSalary.probationSalary));
+      }
+      if (matchedPastSalary?.officialSalary && !salaryOfficialInput) {
+        setSalaryOfficialInput(String(matchedPastSalary.officialSalary));
+      }
+      if (matchedPastSalary?.contractType) {
+        setSalaryContractType(matchedPastSalary.contractType);
+      }
+    }
+  };
 
   // ==========================================
   // STATE CHO MODAL BẢNG CHI PHÍ & CHI PHÍ NGOÀI Ý MUỐN
@@ -483,7 +541,11 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   // ==========================================
   const handleOpenAddSalary = (defaultStaff?: string) => {
     setEditingSalaryItem(null);
-    setSalaryStaffName(defaultStaff || availableStaffNames[0] || '');
+    const initialName = defaultStaff || availableStaffNames[0] || '';
+    setSalaryStaffName(initialName);
+    setSalaryDateOfBirth('');
+    setSalaryCitizenId('');
+    setSalaryStartDate('');
     setSalaryContractType('official');
     setSalaryOfficialInput('');
     setSalaryProbationInput('');
@@ -500,12 +562,19 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryIsPaid(false);
     setSalaryPaidDate('');
     setSalaryNote('');
+
+    if (initialName) {
+      handleStaffNameChange(initialName);
+    }
     setIsSalaryModalOpen(true);
   };
 
   const handleOpenEditSalary = (item: StaffSalaryItem) => {
     setEditingSalaryItem(item);
     setSalaryStaffName(item.staffName || '');
+    setSalaryDateOfBirth(item.dateOfBirth || '');
+    setSalaryCitizenId(item.citizenId || '');
+    setSalaryStartDate(item.startDate || '');
     setSalaryContractType(item.contractType || 'official');
     setSalaryOfficialInput(item.officialSalary ? String(item.officialSalary) : item.baseSalary ? String(item.baseSalary) : '');
     setSalaryProbationInput(item.probationSalary ? String(item.probationSalary) : '');
@@ -598,6 +667,9 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
           ? {
               ...item,
               staffName: salaryStaffName.trim(),
+              dateOfBirth: salaryDateOfBirth.trim(),
+              citizenId: salaryCitizenId.trim(),
+              startDate: salaryStartDate.trim(),
               contractType: salaryContractType,
               probationSalary: probation,
               officialSalary: official,
@@ -625,6 +697,9 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       const newItem: StaffSalaryItem = {
         id: `sal-${Date.now()}`,
         staffName: salaryStaffName.trim(),
+        dateOfBirth: salaryDateOfBirth.trim(),
+        citizenId: salaryCitizenId.trim(),
+        startDate: salaryStartDate.trim(),
         contractType: salaryContractType,
         probationSalary: probation,
         officialSalary: official,
@@ -738,29 +813,45 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
 
     const newSalaryItems: StaffSalaryItem[] = [
       ...(activeMonthRecord.salaryItems || []),
-      ...missingStaff.map((st, i) => ({
-        id: `sal-sync-${Date.now()}-${i}`,
-        staffName: st,
-        contractType: 'official' as EmployeeContractType,
-        officialSalary: 0,
-        probationSalary: 0,
-        baseSalary: 0,
-        standardWorkingDays: 26,
-        actualWorkingDays: 26,
-        salaryByWorkingDays: 0,
-        bankName: '',
-        bankAccountNumber: '',
-        bankAccountHolder: st.toUpperCase(),
-        revenueGenerated: 0,
-        revenueSourceName: '',
-        kpiRate: 10,
-        kpiBonus: 0,
-        otherBonus: 0,
-        deduction: 0,
-        actualSalary: 0,
-        isPaid: false,
-        note: '',
-      })),
+      ...missingStaff.map((st, i) => {
+        const trimmed = st.trim().toLowerCase();
+        const acc = accounts.find((a) => a.username.trim().toLowerCase() === trimmed);
+        let pastSal: StaffSalaryItem | undefined;
+        for (const fin of finances) {
+          const found = fin.salaryItems?.find((s) => s.staffName.trim().toLowerCase() === trimmed);
+          if (found) {
+            pastSal = found;
+            break;
+          }
+        }
+
+        return {
+          id: `sal-sync-${Date.now()}-${i}`,
+          staffName: st,
+          dateOfBirth: acc?.dateOfBirth || pastSal?.dateOfBirth || '',
+          citizenId: acc?.citizenId || pastSal?.citizenId || '',
+          startDate: acc?.startDate || pastSal?.startDate || '',
+          contractType: (pastSal?.contractType || 'official') as EmployeeContractType,
+          officialSalary: pastSal?.officialSalary || 0,
+          probationSalary: pastSal?.probationSalary || 0,
+          baseSalary: pastSal?.baseSalary || 0,
+          standardWorkingDays: 26,
+          actualWorkingDays: 26,
+          salaryByWorkingDays: 0,
+          bankName: acc?.bankName || pastSal?.bankName || '',
+          bankAccountNumber: acc?.bankAccountNumber || pastSal?.bankAccountNumber || '',
+          bankAccountHolder: acc?.bankAccountHolder || pastSal?.bankAccountHolder || st.toUpperCase(),
+          revenueGenerated: 0,
+          revenueSourceName: '',
+          kpiRate: pastSal?.kpiRate ?? 10,
+          kpiBonus: 0,
+          otherBonus: 0,
+          deduction: 0,
+          actualSalary: 0,
+          isPaid: false,
+          note: '',
+        };
+      }),
     ];
 
     const newTotalSalary = newSalaryItems.reduce((acc, it) => acc + (it.actualSalary || 0), 0);
@@ -1040,11 +1131,11 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       lines.push(`${idx + 1},"${it.sourceName}","${it.payerName || ''}","${it.receivedDate || ''}",${it.amount},"${it.note || ''}"`);
     });
     lines.push('');
-    lines.push('--- CHI TIẾT BẢNG LƯƠNG NHÂN VIÊN ---');
-    lines.push('STT,Tên Nhân Viên,Chế Độ,Lương Hợp Đồng,Ngày Công Thực Tế,Lương Theo Ngày Công,Ngân Hàng,Số Tài Khoản,Chủ Tài Khoản,Doanh Thu Mang Về,Tỷ Lệ KPI (%),Tiền Thưởng KPI,Thưởng Khác,Trừ / Phạt,Tổng Thực Nhận (VNĐ),Trạng Thái,Ngày Chi Trả,Ghi Chú');
+    lines.push('--- CHI TIẾT BẢNG LƯƠNG & HỒ SƠ NHÂN VIÊN ---');
+    lines.push('STT,Tên Nhân Viên,Ngày Sinh,Số CCCD,Ngày Vào Làm,Chế Độ,Lương Hợp Đồng,Ngày Công Thực Tế,Lương Theo Ngày Công,Ngân Hàng,Số Tài Khoản,Chủ Tài Khoản,Doanh Thu Mang Về,Tỷ Lệ KPI (%),Tiền Thưởng KPI,Thưởng Khác,Trừ / Phạt,Tổng Thực Nhận (VNĐ),Trạng Thái,Ngày Chi Trả,Ghi Chú');
     (activeMonthRecord.salaryItems || []).forEach((it, idx) => {
       lines.push(
-        `${idx + 1},"${it.staffName}","${it.contractType === 'probation' ? 'Thử Việc' : 'Chính Thức'}",${it.baseSalary},"${it.actualWorkingDays || 26}/${it.standardWorkingDays || 26}",${it.salaryByWorkingDays || it.baseSalary},"${it.bankName || ''}","${it.bankAccountNumber || ''}","${it.bankAccountHolder || ''}",${it.revenueGenerated || 0},"${it.kpiRate || 10}%",${it.kpiBonus || 0},${it.otherBonus || 0},${it.deduction || 0},${it.actualSalary},"${it.isPaid ? 'Đã Thanh Toán' : 'Chưa Thanh Toán'}","${it.paidDate || ''}","${it.note || ''}"`
+        `${idx + 1},"${it.staffName}","${it.dateOfBirth || ''}","${it.citizenId || ''}","${it.startDate || ''}","${it.contractType === 'probation' ? 'Thử Việc' : 'Chính Thức'}",${it.baseSalary},"${it.actualWorkingDays || 26}/${it.standardWorkingDays || 26}",${it.salaryByWorkingDays || it.baseSalary},"${it.bankName || ''}","${it.bankAccountNumber || ''}","${it.bankAccountHolder || ''}",${it.revenueGenerated || 0},"${it.kpiRate || 10}%",${it.kpiBonus || 0},${it.otherBonus || 0},${it.deduction || 0},${it.actualSalary},"${it.isPaid ? 'Đã Thanh Toán' : 'Chưa Thanh Toán'}","${it.paidDate || ''}","${it.note || ''}"`
       );
     });
     lines.push('');
@@ -2273,6 +2364,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 <tr>
                   <th className="py-2.5 px-3 w-10 text-center">STT</th>
                   <th className="py-2.5 px-3">Nhân Viên & Chế Độ</th>
+                  <th className="py-2.5 px-3">Hồ Sơ Nhân Sự (Ngày Sinh / CCCD / Đi Làm)</th>
                   <th className="py-2.5 px-3">Tài Khoản Ngân Hàng (STK / Chủ TK)</th>
                   <th className="py-2.5 px-3 text-center">Ngày Công Thực Tế</th>
                   <th className="py-2.5 px-3 text-right">Lương Theo Công</th>
@@ -2288,7 +2380,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {!activeMonthRecord.salaryItems || activeMonthRecord.salaryItems.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="py-8 text-center text-slate-400">
+                    <td colSpan={13} className="py-8 text-center text-slate-400">
                       Chưa có nhân viên nào trong bảng lương tháng này. Hãy bấm{' '}
                       <strong>"Đồng Bộ NV Hệ Thống"</strong> hoặc <strong>"+ Thêm Nhân Viên"</strong>!
                     </td>
@@ -2324,6 +2416,40 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                               ({formatCurrencyVND(item.baseSalary)})
                             </span>
                           </div>
+                        </td>
+
+                        {/* Thông tin nhân sự: Ngày sinh, Số CCCD, Ngày bắt đầu đi làm (Yêu cầu mới) */}
+                        <td className="py-2.5 px-3">
+                          {item.dateOfBirth || item.citizenId || item.startDate ? (
+                            <div className="space-y-1">
+                              {item.citizenId && (
+                                <div className="flex items-center space-x-1.5 font-mono text-slate-900 font-bold">
+                                  <span className="text-[10px] px-1 py-0.2 bg-slate-100 border border-slate-200 rounded text-slate-600 font-sans font-black">
+                                    CCCD
+                                  </span>
+                                  <span className="text-xs">{item.citizenId}</span>
+                                </div>
+                              )}
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-600">
+                                {item.dateOfBirth && (
+                                  <span className="inline-flex items-center space-x-1 text-slate-700">
+                                    <Calendar className="w-3 h-3 text-blue-500 shrink-0" />
+                                    <span>Sinh: <b>{item.dateOfBirth}</b></span>
+                                  </span>
+                                )}
+                                {item.startDate && (
+                                  <span className="inline-flex items-center space-x-1 text-slate-700">
+                                    <Briefcase className="w-3 h-3 text-amber-600 shrink-0" />
+                                    <span>Đi làm: <b>{item.startDate}</b></span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="text-[11px] text-slate-400 italic">
+                              Chưa cập nhật hồ sơ
+                            </div>
+                          )}
                         </td>
 
                         {/* Tài khoản ngân hàng của nhân viên (Cột mới yêu cầu) */}
@@ -2760,7 +2886,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                     list="staff-salary-suggestions"
                     placeholder="Ví dụ: Anh Quỳnh, Phương My..."
                     value={salaryStaffName}
-                    onChange={(e) => setSalaryStaffName(e.target.value)}
+                    onChange={(e) => handleStaffNameChange(e.target.value)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
                   />
                   <datalist id="staff-salary-suggestions">
@@ -2797,6 +2923,60 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                     >
                       Thử Việc
                     </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* KHỐI HỒ SƠ NHÂN SỰ: NGÀY SINH, SỐ CCCD, NGÀY BẮT ĐẦU ĐI LÀM (YÊU CẦU MỚI) */}
+              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2">
+                <div className="text-xs font-black text-blue-900 flex items-center justify-between">
+                  <span className="flex items-center space-x-1.5">
+                    <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Hồ Sơ Nhân Sự (Ngày Sinh • Số CCCD • Ngày Đi Làm)</span>
+                  </span>
+                  <span className="text-[10px] text-blue-600/80 font-bold">
+                    Admin quản lý
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                      Ngày Tháng Năm Sinh
+                    </label>
+                    <input
+                      type="text"
+                      value={salaryDateOfBirth}
+                      onChange={(e) => setSalaryDateOfBirth(e.target.value)}
+                      placeholder="VD: 15/08/1998"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                      Số CCCD / CMND
+                    </label>
+                    <input
+                      type="text"
+                      value={salaryCitizenId}
+                      onChange={(e) => setSalaryCitizenId(e.target.value)}
+                      placeholder="VD: 001298012345"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                      Ngày Bắt Đầu Đi Làm
+                    </label>
+                    <input
+                      type="text"
+                      value={salaryStartDate}
+                      onChange={(e) => setSalaryStartDate(e.target.value)}
+                      placeholder="VD: 01/06/2023"
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
                 </div>
               </div>

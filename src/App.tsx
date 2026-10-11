@@ -2658,6 +2658,7 @@ export default function App() {
             finances={finances}
             currentUser={currentUser}
             availableStaffNames={allStaffNames}
+            accounts={accounts}
             onSaveMonthlyFinance={async (record) => {
               await setCloudMonthlyFinance(record);
               setFinances((prev) => {

@@ -189,6 +189,14 @@ export interface UserAccount {
   requestNote?: string; // Lời nhắn xin cấp quyền
   adminNote?: string; // Ghi chú của Admin
   allowedTabs?: TabKey[]; // Danh sách Bảng/Tab được phân quyền thấy: ['fanpage', 'fullvia', ...]
+
+  // Thông tin nhân sự hồ sơ
+  dateOfBirth?: string; // Ngày tháng năm sinh
+  citizenId?: string; // Số CCCD / CMND
+  startDate?: string; // Ngày bắt đầu đi làm
+  bankName?: string;
+  bankAccountNumber?: string;
+  bankAccountHolder?: string;
 }
 
 export interface AppUser {
@@ -339,6 +347,11 @@ export type EmployeeContractType = 'official' | 'probation'; // 'Chính Thức' 
 export interface StaffSalaryItem {
   id: string;
   staffName: string; // Tên nhân viên
+
+  // Thông tin nhân sự (Yêu cầu mới: Ngày sinh, CCCD, Ngày đi làm)
+  dateOfBirth?: string; // Ngày tháng năm sinh (VD: 15/08/1998)
+  citizenId?: string; // Số CCCD / CMND (VD: 001298012345)
+  startDate?: string; // Ngày bắt đầu đi làm (VD: 01/06/2023)
 
   // 1. Chế độ lương & Mức lương
   contractType?: EmployeeContractType; // 'official' (Chính thức) | 'probation' (Thử việc)
