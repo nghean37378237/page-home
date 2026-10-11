@@ -483,6 +483,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                   </div>
                   <div className="text-[11px] text-blue-800 font-bold mt-1">
                     = Lương công + Thưởng KPI
+                    {staffSalaryItem.onlineSupportAllowance ? ` + Tiền mạng/điện online` : ''}
                     {staffSalaryItem.otherBonus ? ` + Thưởng khác` : ''}
                     {staffSalaryItem.deduction ? ` - Trừ` : ''}
                   </div>

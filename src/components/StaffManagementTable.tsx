@@ -41,6 +41,10 @@ import {
   Layers,
   Network,
   Globe,
+  ChevronDown,
+  ChevronUp,
+  Filter,
+  BadgeCheck,
 } from 'lucide-react';
 
 interface StaffManagementTableProps {
@@ -116,9 +120,11 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  // State nhập nhanh nhân viên mới trực tiếp trên giao diện (không bị che - Yêu cầu 3)
+  // State nhập nhanh nhân viên mới trực tiếp trên giao diện (khoa học, không bị che)
   const [quickStaffName, setQuickStaffName] = useState('');
   const [quickStaffPin, setQuickStaffPin] = useState('123456');
+  const [quickStaffNote, setQuickStaffNote] = useState('');
+  const [isMasterAdminExpanded, setIsMasterAdminExpanded] = useState(false);
 
   // Change PIN modal state (both Admin and Staff for their own account)
   const [pinModalAccount, setPinModalAccount] = useState<UserAccount | null>(null);
@@ -258,7 +264,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     }
   };
 
-  // Thêm nhanh nhân viên trực tiếp từ thanh nhập (Yêu cầu 3)
+  // Thêm nhanh nhân viên trực tiếp từ thanh nhập (Khoa học, thuận tiện)
   const handleQuickCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = quickStaffName.trim();
@@ -267,11 +273,13 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
       return;
     }
     const cleanPin = quickStaffPin.trim() || '123456';
+    const cleanNote = quickStaffNote.trim() || 'Thêm nhanh từ thanh quản trị';
     setIsSubmittingAdd(true);
     try {
-      await onAddStaff(cleanName, cleanPin, 'Thêm nhanh từ thanh quản trị', undefined, ['fanpage', 'fullvia', 'staff_management']);
+      await onAddStaff(cleanName, cleanPin, cleanNote, undefined, ['fanpage', 'fullvia', 'staff_management']);
       setQuickStaffName('');
       setQuickStaffPin('123456');
+      setQuickStaffNote('');
     } catch (err: any) {
       alert(err.message || 'Lỗi khi thêm nhân viên');
     } finally {
@@ -406,32 +414,32 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     <div className="max-w-[1700px] mx-auto px-4 sm:px-6 py-6 space-y-6">
       {isAdmin ? (
         <>
-          {/* Admin Top Banner & Title */}
+          {/* 1. HEADER & HUB ĐIỀU KHIỂN CHÍNH */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 sm:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
               <div className="flex items-center space-x-3 mb-1.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md">
-                  <Users className="w-5 h-5" />
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-md">
+                  <Users className="w-6 h-6" />
                 </div>
                 <div>
                   <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2 flex-wrap">
-                    <span>Bảng Quản Trị Nhân Viên</span>
+                    <span>Bảng 5: Quản Trị Nhân Viên & Phân Quyền</span>
                     <span className="text-xs font-black text-amber-800 bg-amber-100 px-2.5 py-0.5 rounded-full border border-amber-300 flex items-center gap-1">
                       <Shield className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Chỉ Admin Quản Lý</span>
+                      <span>Chỉ Admin</span>
                     </span>
                     <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                      Cloud Firestore Real-time
+                      Cloud Firestore Realtime
                     </span>
                   </h1>
                   <p className="text-xs text-slate-500 font-medium mt-0.5">
-                    Toàn quyền quản trị nhân sự: Thêm nhân viên, cấp mật khẩu PIN, phân quyền xem Bảng 1..6 và theo dõi phân công công việc.
+                    Hệ thống quản lý nhân sự tập trung: Cấp mã PIN, phân quyền truy cập Bảng 1..6, kiểm soát tài khoản và bảo mật Google SSO.
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
                 id="btn-add-staff-top"
@@ -443,10 +451,26 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   setAddError(null);
                   setIsAddModalOpen(true);
                 }}
-                className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                className="inline-flex items-center space-x-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.02]"
               >
                 <UserPlus className="w-4 h-4" />
-                <span>Thêm Nhân Viên Mới</span>
+                <span>+ Thêm Nhân Viên Mới</span>
+              </button>
+
+              <button
+                type="button"
+                id="btn-toggle-master-admin-bar"
+                onClick={() => setIsMasterAdminExpanded(!isMasterAdminExpanded)}
+                className={`inline-flex items-center space-x-1.5 px-3 py-2.5 text-xs font-bold rounded-xl border transition-all cursor-pointer ${
+                  isMasterAdminExpanded
+                    ? 'bg-slate-900 text-amber-300 border-slate-700 shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                }`}
+                title="Hiện/Ẩn thanh thông tin bảo mật Master Admin"
+              >
+                <KeyRound className="w-4 h-4 text-amber-500" />
+                <span>Bảo Mật Admin</span>
+                {isMasterAdminExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
 
               {onOpenDeleteStaffModal && (
@@ -454,11 +478,11 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   type="button"
                   id="btn-delete-staff-data-top"
                   onClick={() => onOpenDeleteStaffModal()}
-                  className="inline-flex items-center space-x-2 px-3.5 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition-colors cursor-pointer"
+                  className="inline-flex items-center space-x-1.5 px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition-colors cursor-pointer"
                   title="Chọn xóa toàn bộ dữ liệu của 1 nhân viên bất kỳ"
                 >
-                  <Trash2 className="w-4 h-4 text-rose-600" />
-                  <span>Xóa Toàn Bộ Dữ Liệu 1 NV</span>
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Xóa Dữ Liệu 1 NV</span>
                 </button>
               )}
 
@@ -467,42 +491,222 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   type="button"
                   id="btn-open-advanced-security"
                   onClick={() => onOpenAdminModal('security_db')}
-                  className="inline-flex items-center space-x-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors cursor-pointer"
+                  className="inline-flex items-center space-x-1.5 px-3 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 transition-colors cursor-pointer"
                 >
-                  <Shield className="w-4 h-4 text-indigo-600" />
-                  <span>Bảo Mật & CSDL Cloud</span>
+                  <Shield className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>CSDL Cloud</span>
                 </button>
               )}
             </div>
           </div>
 
-          {/* THANH NHẬP NHANH TÊN NHÂN VIÊN MỚI (TRỰC TIẾP, KHÔNG BỊ CHE - YÊU CẦU 3) */}
+          {/* 2. DẢI BẢO MẬT MASTER ADMIN & QUẢN TRỊ TỐI CAO (GỌN GÀNG, ĐẲNG CẤP) */}
+          {isMasterAdminExpanded && (
+            <div className="bg-gradient-to-r from-slate-900 via-[#0e1c36] to-slate-900 border border-slate-700/80 rounded-2xl p-4 sm:p-5 shadow-lg text-white animate-fadeIn">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="space-y-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-black uppercase tracking-wider">
+                      <Shield className="w-3 h-3 text-amber-400" />
+                      <span>Master Admin</span>
+                    </span>
+                    <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold">
+                      <Lock className="w-3 h-3 text-emerald-400" />
+                      <span>Bảo Vệ Đang BẬT</span>
+                    </span>
+                    <span
+                      className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold ${
+                        requireGoogleOnly
+                          ? 'bg-sky-500/20 text-sky-300 border border-sky-500/30'
+                          : 'bg-slate-800 text-slate-400 border border-slate-700'
+                      }`}
+                    >
+                      <span>Google SSO: {requireGoogleOnly ? 'Bắt buộc' : 'Linh hoạt'}</span>
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5 pt-0.5 text-xs">
+                    <div>
+                      <span className="text-slate-400 text-[10px] block">Tên Quản Trị:</span>
+                      <span className="font-bold text-white text-xs">{adminName}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 text-[10px] block">Email Admin:</span>
+                      <span className="font-mono text-sky-300 text-xs font-semibold">{adminEmail}</span>
+                    </div>
+
+                    <div>
+                      <span className="text-slate-400 text-[10px] block">Mật Khẩu Master PIN:</span>
+                      <div className="flex items-center space-x-1.5 mt-0.5">
+                        <span className="font-mono font-bold text-amber-300 bg-black/50 px-2 py-0.5 rounded border border-slate-700 text-xs">
+                          {showAdminPinInBanner ? adminPin : '••••••••'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAdminPinInBanner(!showAdminPinInBanner)}
+                          className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                          title={showAdminPinInBanner ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                        >
+                          {showAdminPinInBanner ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(adminPin, 'admin-master-pin')}
+                          className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                          title="Sao chép mật khẩu"
+                        >
+                          {copiedKey === 'admin-master-pin' ? (
+                            <Check className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Copy className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {onToggleRequireGoogleOnly && (
+                    <button
+                      type="button"
+                      id="btn-toggle-google-only"
+                      onClick={() => onToggleRequireGoogleOnly(!requireGoogleOnly)}
+                      className={`inline-flex items-center space-x-1 px-3 py-2 rounded-xl font-bold text-xs shadow-xs transition-all cursor-pointer ${
+                        requireGoogleOnly
+                          ? 'bg-sky-600 hover:bg-sky-500 text-white'
+                          : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
+                      }`}
+                    >
+                      <Shield className="w-3.5 h-3.5 text-sky-300" />
+                      <span>Google SSO: {requireGoogleOnly ? 'Bắt Buộc' : 'Tùy Chọn'}</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    id="btn-edit-admin-profile"
+                    onClick={() => {
+                      setEditAdminPin(adminPin);
+                      setEditAdminName(adminName);
+                      setEditAdminEmail(adminEmail);
+                      setIsAdminProfileModalOpen(true);
+                    }}
+                    className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                  >
+                    <KeyRound className="w-3.5 h-3.5 text-slate-950" />
+                    <span>Đổi Mật Khẩu Admin</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. DÀN THỐNG KÊ NHÂN SỰ KHOA HỌC (CLICK ĐỂ LỌC TRỰC TIẾP) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+            <div
+              onClick={() => setStatusFilter('all')}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                statusFilter === 'all'
+                  ? 'bg-blue-50/90 border-blue-400 ring-2 ring-blue-500/20 shadow-xs'
+                  : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-slate-600">Tổng Nhân Sự</span>
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center ${statusFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'}`}>
+                  <Users className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="text-2xl font-black text-slate-900 mt-2">{counts.total}</div>
+              <div className="text-[11px] text-slate-500 mt-0.5">Tất cả nhân sự trong hệ thống</div>
+            </div>
+
+            <div
+              onClick={() => setStatusFilter('approved')}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                statusFilter === 'approved'
+                  ? 'bg-emerald-50/90 border-emerald-400 ring-2 ring-emerald-500/20 shadow-xs'
+                  : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-800">Đang Hoạt Động</span>
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center ${statusFilter === 'approved' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-600'}`}>
+                  <CheckCircle2 className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="text-2xl font-black text-emerald-700 mt-2">{counts.active}</div>
+              <div className="text-[11px] text-emerald-700/80 mt-0.5">Đã duyệt & đang làm việc</div>
+            </div>
+
+            <div
+              onClick={() => setStatusFilter('pending')}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                statusFilter === 'pending'
+                  ? 'bg-amber-50/90 border-amber-400 ring-2 ring-amber-500/20 shadow-xs'
+                  : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-amber-800">Chờ Phê Duyệt</span>
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center ${statusFilter === 'pending' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-600'}`}>
+                  <Clock className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="text-2xl font-black text-amber-700 mt-2">{counts.pending}</div>
+              <div className="text-[11px] text-amber-700/80 mt-0.5">Cần Admin xét duyệt vào app</div>
+            </div>
+
+            <div
+              onClick={() => setStatusFilter('blocked')}
+              className={`p-4 rounded-2xl border transition-all cursor-pointer ${
+                statusFilter === 'blocked'
+                  ? 'bg-rose-50/90 border-rose-400 ring-2 ring-rose-500/20 shadow-xs'
+                  : 'bg-white border-slate-200 hover:border-slate-300 shadow-2xs'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-rose-800">Tạm Khóa Quyền</span>
+                <span className={`w-7 h-7 rounded-lg flex items-center justify-center ${statusFilter === 'blocked' ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-600'}`}>
+                  <Lock className="w-4 h-4" />
+                </span>
+              </div>
+              <div className="text-2xl font-black text-rose-700 mt-2">{counts.blocked}</div>
+              <div className="text-[11px] text-rose-700/80 mt-0.5">Không thể đăng nhập vào hệ thống</div>
+            </div>
+          </div>
+
+          {/* 4. THANH THÊM NHANH NHÂN VIÊN MỚI (TRỰC TIẾP, NỔI BẬT, KHÔNG BỊ CHE) */}
           <form
             onSubmit={handleQuickCreateStaff}
-            className="p-3.5 bg-gradient-to-r from-blue-50/95 via-indigo-50/95 to-sky-50/95 border-2 border-blue-400 rounded-2xl flex flex-col sm:flex-row sm:items-center gap-2.5 shadow-2xs"
+            className="p-4 bg-gradient-to-r from-blue-50/90 via-indigo-50/80 to-sky-50/90 border-2 border-blue-400 rounded-2xl flex flex-col md:flex-row md:items-center gap-3 shadow-2xs"
           >
-            <div className="flex items-center space-x-2 shrink-0">
-              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
-                <UserPlus className="w-4 h-4" />
+            <div className="flex items-center space-x-2.5 shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                <UserPlus className="w-5 h-5" />
               </div>
               <div>
                 <span className="text-xs font-black text-blue-950 uppercase tracking-wide block">
-                  Nhập Họ Và Tên Nhân Viên Mới:
+                  Thêm Nhanh Nhân Viên Mới:
                 </span>
-                <span className="text-[10px] text-blue-700 font-semibold">
-                  Tạo tài khoản nhân viên trực tiếp lên Cloud Firestore
+                <span className="text-[11px] text-blue-700 font-semibold">
+                  Tạo tài khoản và lưu tức thì lên Cloud
                 </span>
               </div>
             </div>
+
             <div className="flex-1 min-w-[200px]">
               <input
                 type="text"
-                placeholder="👉 Nhập họ và tên nhân viên mới vào đây (VD: Hoàng Long, Thu Hà...)"
+                placeholder="👉 Nhập họ và tên nhân viên (VD: Hoàng Long, Thu Hà...)"
                 value={quickStaffName}
                 onChange={(e) => setQuickStaffName(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-500 rounded-xl text-xs font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-hidden shadow-xs"
               />
             </div>
+
             <div className="w-28 shrink-0">
               <input
                 type="text"
@@ -513,197 +717,44 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-800 text-center"
               />
             </div>
-            <button
-              type="submit"
-              disabled={isSubmittingAdd}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all shadow-xs shrink-0 cursor-pointer hover:scale-[1.02] flex items-center justify-center space-x-1.5 disabled:opacity-60"
-            >
-              {isSubmittingAdd ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-              <span>+ Thêm Ngay</span>
-            </button>
+
+            <div className="flex-1 min-w-[170px] hidden lg:block">
+              <input
+                type="text"
+                placeholder="Ghi chú phân công (tùy chọn)..."
+                value={quickStaffNote}
+                onChange={(e) => setQuickStaffNote(e.target.value)}
+                className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder:text-slate-400"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="submit"
+                disabled={isSubmittingAdd}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer hover:scale-[1.02] flex items-center justify-center space-x-1.5 disabled:opacity-60"
+              >
+                {isSubmittingAdd ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-4 h-4" />}
+                <span>+ Thêm Ngay</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAddName(quickStaffName);
+                  setAddPin(quickStaffPin);
+                  setAddNote(quickStaffNote);
+                  setIsAddModalOpen(true);
+                }}
+                className="px-3 py-2.5 bg-white hover:bg-slate-100 text-blue-700 text-xs font-bold rounded-xl border border-blue-300 transition-colors cursor-pointer"
+                title="Mở form nâng cao có chọn phân quyền bảng 1..6"
+              >
+                <span>Phân Quyền Chi Tiết...</span>
+              </button>
+            </div>
           </form>
 
-          {/* MASTER ADMIN SECURITY & APP LOCKDOWN BANNER */}
-          <div className="bg-gradient-to-r from-slate-900 via-[#0f1d3a] to-slate-900 border border-slate-700/80 rounded-2xl p-5 shadow-xl text-white">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              {/* Left info */}
-              <div className="space-y-2">
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-black uppercase tracking-wider">
-                    <Shield className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Tài Khoản Quản Trị Tối Cao</span>
-                  </div>
-                  <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs font-bold">
-                    <Lock className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>Khóa Bảo Vệ Ứng Dụng Đang BẬT</span>
-                  </div>
-                  <div
-                    className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-bold ${
-                      requireGoogleOnly
-                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40'
-                        : 'bg-slate-800/80 text-slate-400 border border-slate-700'
-                    }`}
-                  >
-                    <Shield className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Bắt Buộc Đăng Nhập Google: {requireGoogleOnly ? 'ĐANG BẬT' : 'ĐANG TẮT'}</span>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2 pt-1 text-xs">
-                  <div>
-                    <span className="text-slate-400 block text-[11px]">Tên Quản Trị Admin:</span>
-                    <span className="font-bold text-white text-sm">{adminName}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-400 block text-[11px]">Email Admin Chính Thức:</span>
-                    <span className="font-mono text-sky-300 text-sm font-semibold">{adminEmail}</span>
-                  </div>
-
-                  <div>
-                    <span className="text-slate-400 block text-[11px]">Mật Khẩu Master Admin:</span>
-                    <div className="flex items-center space-x-2 mt-0.5">
-                      <span className="font-mono font-bold text-amber-300 bg-black/40 px-2.5 py-0.5 rounded-md border border-slate-700">
-                        {showAdminPinInBanner ? adminPin : '••••••••'}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAdminPinInBanner(!showAdminPinInBanner)}
-                        className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                        title={showAdminPinInBanner ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                      >
-                        {showAdminPinInBanner ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(adminPin, 'admin-master-pin')}
-                        className="p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
-                        title="Sao chép mật khẩu"
-                      >
-                        {copiedKey === 'admin-master-pin' ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <p className="text-[11px] text-slate-300/90 leading-relaxed pt-1">
-                  🛡️ <strong>Chính sách khóa app:</strong> Người dùng chung email trình duyệt vẫn <em>không thể</em> truy cập vào app nếu không biết đúng Mật khẩu Admin hoặc Mã PIN nhân viên.
-                </p>
-              </div>
-
-              {/* Right Action Button */}
-              <div className="shrink-0 flex flex-wrap items-center gap-2">
-                {onToggleRequireGoogleOnly && (
-                  <button
-                    type="button"
-                    id="btn-toggle-google-only"
-                    onClick={() => onToggleRequireGoogleOnly(!requireGoogleOnly)}
-                    className={`inline-flex items-center space-x-1.5 px-3.5 py-2.5 rounded-xl font-black text-xs shadow-md transition-all cursor-pointer ${
-                      requireGoogleOnly
-                        ? 'bg-sky-600 hover:bg-sky-500 text-white'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700'
-                    }`}
-                    title={
-                      requireGoogleOnly
-                        ? 'Đang bắt buộc 100% nhân viên & admin đăng nhập bằng Google. Bấm để chuyển sang chế độ linh hoạt.'
-                        : 'Bấm để bật chế độ BẮT BUỘC ĐĂNG NHẬP GOOGLE.'
-                    }
-                  >
-                    <Shield className="w-4 h-4 text-sky-300" />
-                    <span>Google SSO: {requireGoogleOnly ? 'Đang Bắt Buộc' : 'Tắt'}</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  id="btn-edit-admin-profile"
-                  onClick={() => {
-                    setEditAdminPin(adminPin);
-                    setEditAdminName(adminName);
-                    setEditAdminEmail(adminEmail);
-                    setIsAdminProfileModalOpen(true);
-                  }}
-                  className="inline-flex items-center space-x-2 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-lg transition-all cursor-pointer hover:scale-[1.02]"
-                >
-                  <KeyRound className="w-4 h-4 text-slate-950" />
-                  <span>Đổi Mật Khẩu & Quản Trị Admin</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Metrics Summary Cards */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-            <div
-              onClick={() => setStatusFilter('all')}
-              className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                statusFilter === 'all'
-                  ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-500/20 shadow-xs'
-                  : 'bg-white border-slate-200 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-slate-500">Tổng Nhân Sự</span>
-                <Users className="w-4 h-4 text-blue-600" />
-              </div>
-              <div className="text-2xl font-black text-slate-900 mt-1">{counts.total}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Tất cả nhân sự trong hệ thống</div>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('approved')}
-              className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                statusFilter === 'approved'
-                  ? 'bg-emerald-50/80 border-emerald-300 ring-2 ring-emerald-500/20 shadow-xs'
-                  : 'bg-white border-slate-200 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-700">Đang Hoạt Động</span>
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              </div>
-              <div className="text-2xl font-black text-emerald-700 mt-1">{counts.active}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Có quyền đăng nhập & quản lý</div>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('pending')}
-              className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                statusFilter === 'pending'
-                  ? 'bg-amber-50/80 border-amber-300 ring-2 ring-amber-500/20 shadow-xs'
-                  : 'bg-white border-slate-200 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-amber-700">Chờ Quản Lý Duyệt</span>
-                <Clock className="w-4 h-4 text-amber-600" />
-              </div>
-              <div className="text-2xl font-black text-amber-700 mt-1">{counts.pending}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Cần phê duyệt để vào hệ thống</div>
-            </div>
-
-            <div
-              onClick={() => setStatusFilter('blocked')}
-              className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                statusFilter === 'blocked'
-                  ? 'bg-rose-50/80 border-rose-300 ring-2 ring-rose-500/20 shadow-xs'
-                  : 'bg-white border-slate-200 hover:border-slate-300'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-rose-700">Tạm Khóa Quyền</span>
-                <Lock className="w-4 h-4 text-rose-600" />
-              </div>
-              <div className="text-2xl font-black text-rose-700 mt-1">{counts.blocked}</div>
-              <div className="text-[11px] text-slate-400 mt-0.5">Không thể đăng nhập</div>
-            </div>
-          </div>
-
-          {/* Filter and Search Bar for Admin */}
+          {/* 5. THANH TÌM KIẾM & BỘ LỌC TRẠNG THÁI */}
           <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-3.5 flex flex-col sm:flex-row items-center justify-between gap-3">
             <div className="relative w-full sm:w-80">
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -713,11 +764,24 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 placeholder="Tìm theo tên nhân viên, email, ghi chú..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-blue-500 focus:outline-hidden"
+                className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:bg-white focus:border-blue-500 focus:outline-hidden"
               />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  title="Xóa tìm kiếm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
             </div>
 
             <div className="flex items-center space-x-2 w-full sm:w-auto justify-between sm:justify-end">
+              <span className="text-[11px] text-slate-400 hidden md:inline">
+                Hiển thị: <strong className="text-slate-700 font-bold">{filteredStaff.length}</strong>/{counts.total} nhân viên
+              </span>
               <div className="flex items-center space-x-1 text-xs font-semibold bg-slate-100 p-1 rounded-lg border border-slate-200">
                 <button
                   type="button"
@@ -940,22 +1004,20 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-xs">
             <thead>
-              <tr className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
-                <th className="py-3 px-3.5 w-12 text-center">STT</th>
-                <th className="py-3 px-4 min-w-[200px]">Tên Nhân Viên</th>
-                <th className="py-3 px-3.5 min-w-[120px]">Trạng Thái</th>
-                <th className="py-3 px-3.5 min-w-[170px]">Mật Khẩu / Mã PIN</th>
-                <th className="py-3 px-3.5 min-w-[260px]">Phân Quyền Bảng (1..6)</th>
-                <th className="py-3 px-3.5 min-w-[100px] text-center">Phụ Trách</th>
-                <th className="py-3 px-3.5 min-w-[140px]">Ngày Tham Gia</th>
-                <th className="py-3 px-4 min-w-[180px]">Ghi Chú</th>
-                <th className="py-3 px-4 min-w-[240px] text-right">Thao Tác Quản Lý</th>
+              <tr className="bg-slate-50/90 text-slate-700 font-bold border-b border-slate-200 uppercase tracking-wider text-[11px]">
+                <th className="py-3 px-3.5 w-12 text-center text-slate-400">#</th>
+                <th className="py-3 px-4 min-w-[220px]">Nhân Viên</th>
+                <th className="py-3 px-3.5 min-w-[180px]">Trạng Thái & Mã PIN</th>
+                <th className="py-3 px-3.5 min-w-[240px]">Phân Quyền Bảng (1..6)</th>
+                <th className="py-3 px-3.5 min-w-[200px] text-center">Phụ Trách Nghiệp Vụ</th>
+                <th className="py-3 px-3.5 min-w-[170px]">Ghi Chú & Ngày Vào</th>
+                <th className="py-3 px-4 min-w-[180px] text-right">Thao Tác</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {filteredStaff.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-12 text-center text-slate-400">
+                  <td colSpan={7} className="py-12 text-center text-slate-400">
                     <Users className="w-8 h-8 mx-auto text-slate-300 mb-2" />
                     <p className="font-semibold text-sm text-slate-600">Không tìm thấy nhân viên nào</p>
                     <p className="text-xs text-slate-400 mt-1">
@@ -972,176 +1034,207 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   const staffViasCount = viaList.filter(
                     (v) => v.staffName?.trim().toLowerCase() === staffNameLower
                   ).length;
+                  const staffGroupsCount = groupRecords.filter(
+                    (g) => g.staffName?.trim().toLowerCase() === staffNameLower
+                  ).length;
                   const isPinVisible = Boolean(visiblePins[acc.id]);
+
+                  // Danh sách các bảng nhân viên ĐƯỢC PHÉP truy cập
+                  const allowedTabsList = ALL_TAB_KEYS.filter((tabKey) => {
+                    if (acc.role === 'admin') return true;
+                    if (tabKey === 'staff_management' || tabKey === 'revenue') return false;
+                    return acc.allowedTabs && acc.allowedTabs.length > 0
+                      ? acc.allowedTabs.includes(tabKey)
+                      : ALL_TAB_KEYS.includes(tabKey);
+                  });
 
                   return (
                     <tr key={acc.id} className="hover:bg-slate-50/80 transition-colors">
                       {/* STT */}
-                      <td className="py-3 px-3.5 text-center font-bold text-slate-400">
+                      <td className="py-3.5 px-3.5 text-center font-bold text-slate-400">
                         {index + 1}
                       </td>
 
                       {/* Tên & Email */}
-                      <td className="py-3 px-4">
+                      <td className="py-3.5 px-4">
                         <div className="flex items-center space-x-3">
-                          <div className="w-8 h-8 rounded-full bg-linear-to-br from-blue-500 to-indigo-600 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
                             {acc.username.charAt(0).toUpperCase()}
                           </div>
                           <div className="min-w-0">
-                            <div className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+                            <div className="font-black text-slate-900 text-sm flex items-center gap-1.5 flex-wrap">
                               <span>{acc.username}</span>
-                              {acc.role === 'admin' && (
-                                <span className="bg-amber-100 text-amber-800 text-[10px] font-extrabold px-1.5 py-0.2 rounded">
+                              {acc.role === 'admin' ? (
+                                <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-1.5 py-0.2 rounded-md">
                                   ADMIN
+                                </span>
+                              ) : (
+                                <span className="bg-slate-100 text-slate-600 text-[10px] font-bold px-1.5 py-0.2 rounded-md">
+                                  NV
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-400 truncate">
-                              {acc.email || 'Chưa liên kết email'}
+                            <div className="text-[11px] text-slate-400 font-mono truncate max-w-[180px]">
+                              {acc.email || <span className="italic font-sans text-slate-300">Chưa liên kết email</span>}
                             </div>
                           </div>
                         </div>
                       </td>
 
-                      {/* Trạng Thái */}
-                      <td className="py-3 px-3.5">
-                        {acc.status === 'approved' && (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                            <span>Hoạt Động</span>
-                          </span>
-                        )}
-                        {acc.status === 'pending' && (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                            <span>Chờ Duyệt</span>
-                          </span>
-                        )}
-                        {acc.status === 'blocked' && (
-                          <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
-                            <span>Tạm Khóa</span>
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Mật Khẩu / PIN */}
-                      <td className="py-3 px-3.5">
-                        <div className="flex items-center space-x-1.5 bg-slate-100 px-2.5 py-1.5 rounded-lg border border-slate-200 w-fit">
-                          <Key className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                          <span className="font-mono font-bold text-slate-800 tracking-wider">
-                            {isPinVisible ? acc.pin || '123456' : '••••••'}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => togglePinVisibility(acc.id)}
-                            className="text-slate-400 hover:text-slate-600 p-0.5 ml-1 cursor-pointer"
-                            title={isPinVisible ? 'Ẩn PIN' : 'Hiện PIN'}
-                          >
-                            {isPinVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleCopy(acc.pin || '123456', `pin-${acc.id}`)}
-                            className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer"
-                            title="Sao chép mật khẩu PIN"
-                          >
-                            {copiedKey === `pin-${acc.id}` ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-600" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
+                      {/* Trạng Thái & Mã PIN */}
+                      <td className="py-3.5 px-3.5">
+                        <div className="space-y-1.5">
+                          <div>
+                            {acc.status === 'approved' && (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                <span>Hoạt Động</span>
+                              </span>
                             )}
-                          </button>
+                            {acc.status === 'pending' && (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                <span>Chờ Duyệt</span>
+                              </span>
+                            )}
+                            {acc.status === 'blocked' && (
+                              <span className="inline-flex items-center space-x-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                                <span>Tạm Khóa</span>
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center space-x-1 bg-slate-100/90 px-2 py-1 rounded-lg border border-slate-200 w-fit">
+                            <Key className="w-3 h-3 text-slate-400 shrink-0" />
+                            <span className="font-mono font-bold text-slate-800 tracking-wider text-xs">
+                              {isPinVisible ? acc.pin || '123456' : '••••••'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => togglePinVisibility(acc.id)}
+                              className="text-slate-400 hover:text-slate-600 p-0.5 ml-0.5 cursor-pointer"
+                              title={isPinVisible ? 'Ẩn PIN' : 'Hiện PIN'}
+                            >
+                              {isPinVisible ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopy(acc.pin || '123456', `pin-${acc.id}`)}
+                              className="text-slate-400 hover:text-blue-600 p-0.5 cursor-pointer"
+                              title="Sao chép mật khẩu PIN"
+                            >
+                              {copiedKey === `pin-${acc.id}` ? (
+                                <Check className="w-3 h-3 text-emerald-600" />
+                              ) : (
+                                <Copy className="w-3 h-3" />
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </td>
 
                       {/* Phân Quyền Bảng (1..6) */}
-                      <td className="py-3 px-3.5">
-                        <div className="flex flex-col gap-1.5">
-                          <div className="flex flex-wrap items-center gap-1">
-                            {ALL_TAB_KEYS.map((tabKey) => {
-                              const tabDef = TAB_DEFINITIONS[tabKey];
-                              const isAllowed =
-                                acc.role === 'admin' ||
-                                (acc.allowedTabs && acc.allowedTabs.length > 0
-                                  ? acc.allowedTabs.includes(tabKey)
-                                  : ALL_TAB_KEYS.includes(tabKey));
-
-                              let activeColorClass = 'bg-emerald-50 text-emerald-800 border-emerald-300';
-                              if (tabDef.color === 'red') activeColorClass = 'bg-red-50 text-red-800 border-red-300';
-                              else if (tabDef.color === 'teal') activeColorClass = 'bg-teal-50 text-teal-800 border-teal-300';
-                              else if (tabDef.color === 'indigo') activeColorClass = 'bg-indigo-50 text-indigo-800 border-indigo-300';
-                              else if (tabDef.color === 'blue') activeColorClass = 'bg-blue-50 text-blue-800 border-blue-300';
-                              else if (tabDef.color === 'purple') activeColorClass = 'bg-purple-50 text-purple-800 border-purple-300';
-
-                              return (
-                                <span
-                                  key={tabKey}
-                                  className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-all ${
-                                    isAllowed
-                                      ? activeColorClass
-                                      : 'bg-slate-100 text-slate-400 border-slate-200 line-through opacity-40'
-                                  }`}
-                                  title={isAllowed ? `${tabDef.label}: Được phép xem` : `${tabDef.label}: Đang bị ẩn`}
-                                >
-                                  <span>{tabDef.shortLabel}</span>
-                                </span>
-                              );
-                            })}
-                          </div>
-                          {isAdmin && (
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] text-slate-400 font-medium">
-                                {acc.role === 'admin'
-                                  ? 'Toàn quyền (Admin)'
-                                  : `${(acc.allowedTabs || ['fanpage', 'fullvia']).filter((t) => t !== 'staff_management').length}/5 Bảng`}
-                              </span>
-                              {acc.role !== 'admin' && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenPermissionModal(acc)}
-                                  className="inline-flex items-center space-x-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold rounded border border-blue-200 transition-colors cursor-pointer"
-                                  title={`Cài đặt phân quyền các bảng cho ${acc.username}`}
-                                >
-                                  <SlidersHorizontal className="w-2.5 h-2.5" />
-                                  <span>Sửa Quyền</span>
-                                </button>
-                              )}
+                      <td className="py-3.5 px-3.5">
+                        <div className="space-y-1.5">
+                          {acc.role === 'admin' ? (
+                            <div className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-200 text-[10px] font-black">
+                              <Shield className="w-3 h-3 text-amber-600" />
+                              <span>Toàn quyền Quản Trị (Tất cả bảng)</span>
                             </div>
+                          ) : (
+                            <>
+                              <div className="flex flex-wrap items-center gap-1">
+                                {allowedTabsList.map((tabKey) => {
+                                  const tabDef = TAB_DEFINITIONS[tabKey];
+                                  let colorClass = 'bg-emerald-50 text-emerald-800 border-emerald-300';
+                                  if (tabDef.color === 'red') colorClass = 'bg-red-50 text-red-800 border-red-300';
+                                  else if (tabDef.color === 'teal') colorClass = 'bg-teal-50 text-teal-800 border-teal-300';
+                                  else if (tabDef.color === 'indigo') colorClass = 'bg-indigo-50 text-indigo-800 border-indigo-300';
+                                  else if (tabDef.color === 'blue') colorClass = 'bg-blue-50 text-blue-800 border-blue-300';
+                                  else if (tabDef.color === 'purple') colorClass = 'bg-purple-50 text-purple-800 border-purple-300';
+
+                                  return (
+                                    <span
+                                      key={tabKey}
+                                      className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold border ${colorClass}`}
+                                      title={tabDef.label}
+                                    >
+                                      {tabDef.shortLabel}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+
+                              {isAdmin && (
+                                <div className="flex items-center justify-between pt-0.5">
+                                  <span className="text-[10px] text-slate-500 font-semibold">
+                                    Được xem: {allowedTabsList.length}/5 Bảng
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenPermissionModal(acc)}
+                                    className="inline-flex items-center space-x-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold rounded-md border border-blue-200 transition-colors cursor-pointer"
+                                    title={`Chỉnh sửa phân quyền các bảng cho ${acc.username}`}
+                                  >
+                                    <SlidersHorizontal className="w-2.5 h-2.5" />
+                                    <span>Sửa Quyền</span>
+                                  </button>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       </td>
 
-                      {/* Thống Kê Phụ Trách */}
-                      <td className="py-3 px-3.5 text-center">
-                        <div className="flex items-center justify-center space-x-2">
-                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200">
+                      {/* Khối Lượng Phụ Trách Nghiệp Vụ */}
+                      <td className="py-3.5 px-3.5 text-center">
+                        <div className="flex flex-wrap items-center justify-center gap-1.5">
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200" title="Số lượng Fanpage đang phụ trách (Bảng 1)">
                             <FileSpreadsheet className="w-3 h-3 text-emerald-600" />
                             <span>{staffPagesCount} Page</span>
                           </span>
-                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200">
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 text-[11px] font-bold border border-indigo-200" title="Số lượng Nick Via đang giữ (Bảng 4)">
                             <KeyRound className="w-3 h-3 text-indigo-600" />
                             <span>{staffViasCount} Via</span>
+                          </span>
+                          <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 text-[11px] font-bold border border-rose-200" title="Số lượng Group Facebook phụ trách (Bảng 2)">
+                            <Users className="w-3 h-3 text-rose-600" />
+                            <span>{staffGroupsCount} Grp</span>
                           </span>
                         </div>
                       </td>
 
-                      {/* Ngày Tham Gia */}
-                      <td className="py-3 px-3.5 text-slate-500 font-medium">
-                        <div>{acc.approvedAt || acc.createdAt || 'Mặc định'}</div>
-                      </td>
-
-                      {/* Ghi Chú */}
-                      <td className="py-3 px-4 text-slate-600">
-                        <div className="truncate max-w-[200px]" title={acc.adminNote || 'Không có ghi chú'}>
-                          {acc.adminNote || <span className="text-slate-400 italic">Không có ghi chú</span>}
+                      {/* Ghi Chú & Ngày Vào */}
+                      <td className="py-3.5 px-3.5">
+                        <div className="space-y-0.5">
+                          <div className="text-xs text-slate-700 font-medium truncate max-w-[170px]" title={acc.adminNote || 'Chưa có ghi chú'}>
+                            {acc.adminNote || <span className="text-slate-400 italic">Không có ghi chú</span>}
+                          </div>
+                          <div className="text-[10px] text-slate-400 flex items-center space-x-1">
+                            <Clock className="w-3 h-3 text-slate-300" />
+                            <span>{acc.approvedAt || acc.createdAt || 'Hệ thống'}</span>
+                          </div>
                         </div>
                       </td>
 
                       {/* Thao Tác Quản Lý */}
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3.5 px-4 text-right">
                         {isAdmin ? (
                           <div className="flex items-center justify-end space-x-1.5">
+                            {/* Phê Duyệt nếu Pending */}
+                            {acc.status === 'pending' && (
+                              <button
+                                type="button"
+                                onClick={() => onApproveAccount(acc.id)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center space-x-1"
+                                title="Phê duyệt nhân viên vào hệ thống"
+                              >
+                                <Check className="w-3 h-3" />
+                                <span>Duyệt</span>
+                              </button>
+                            )}
+
                             {/* Đổi PIN */}
                             <button
                               type="button"
@@ -1153,19 +1246,20 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                 setPinChangeSuccess(null);
                               }}
                               className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors cursor-pointer"
-                              title="Đổi mật khẩu PIN"
+                              title="Đổi mật khẩu PIN cho nhân viên"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
 
-                            {/* Phê Duyệt nếu Pending */}
-                            {acc.status === 'pending' && (
+                            {/* Chuyển sang góc nhìn NV */}
+                            {onSwitchToStaffView && acc.status === 'approved' && (
                               <button
                                 type="button"
-                                onClick={() => onApproveAccount(acc.id)}
-                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                                onClick={() => onSwitchToStaffView(acc.username)}
+                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
+                                title={`Mở giao diện dưới góc nhìn của ${acc.username}`}
                               >
-                                Duyệt Vào
+                                <ExternalLink className="w-3.5 h-3.5" />
                               </button>
                             )}
 
@@ -1175,7 +1269,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                 type="button"
                                 onClick={() => onBlockAccount(acc.id)}
                                 className="p-1.5 text-amber-700 hover:bg-amber-50 rounded-lg border border-amber-200 transition-colors cursor-pointer"
-                                title="Tạm khóa quyền truy cập"
+                                title="Tạm khóa quyền đăng nhập"
                               >
                                 <Lock className="w-3.5 h-3.5" />
                               </button>
@@ -1190,18 +1284,6 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                               </button>
                             ) : null}
 
-                            {/* Chuyển sang góc nhìn NV */}
-                            {onSwitchToStaffView && acc.status === 'approved' && (
-                              <button
-                                type="button"
-                                onClick={() => onSwitchToStaffView(acc.username)}
-                                className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg border border-indigo-200 transition-colors cursor-pointer"
-                                title={`Xem dưới góc nhìn của ${acc.username}`}
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
                             {/* Xóa Nhân Viên */}
                             <button
                               type="button"
@@ -1215,7 +1297,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                 }
                               }}
                               className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
-                              title={`Xóa toàn bộ dữ liệu của nhân viên ${acc.username}`}
+                              title={`Xóa dữ liệu & tài khoản của ${acc.username}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>
