@@ -3258,139 +3258,183 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       {/* (Lương thử việc, Lương chính thức, Ngày công thực tế, STK Ngân hàng, KPI 5% / 10%) */}
       {/* ========================================== */}
       {isSalaryModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-fadeIn overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 shadow-2xl relative my-8">
-            <button
-              type="button"
-              onClick={() => setIsSalaryModalOpen(false)}
-              className="absolute top-4 right-4 p-1.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 cursor-pointer"
-            >
-              <X className="w-5 h-5" />
-            </button>
-
-            <div className="flex items-center space-x-2.5 mb-4 border-b border-slate-100 pb-3">
-              <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                <Users className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5 animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-xl w-full shadow-2xl relative max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Header: Cố định trên cùng, không bao giờ bị che */}
+            <div className="p-4 sm:p-5 pb-3 border-b border-slate-100 flex items-center justify-between shrink-0 bg-white">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    {editingSalaryItem ? 'Cập Nhật Lương & Hồ Sơ Nhân Viên' : 'Thêm Nhân Viên Vào Bảng Lương'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    {activeMonthRecord.title || selectedMonthKey} • Tính lương theo ngày công & KPI doanh thu
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-sm font-black text-slate-900">
-                  {editingSalaryItem ? 'Cập Nhật Lương & Thưởng KPI Nhân Viên' : 'Thêm Nhân Viên Vào Bảng Lương'}
-                </h3>
-                <p className="text-[11px] text-slate-500">
-                  Tính lương theo ngày công thực tế + Thưởng KPI doanh thu mang về (5% - 10%)
-                </p>
-              </div>
+              <button
+                type="button"
+                onClick={() => setIsSalaryModalOpen(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 cursor-pointer"
+                title="Đóng cửa sổ"
+              >
+                <X className="w-5 h-5" />
+              </button>
             </div>
 
-            <form onSubmit={handleSaveSalaryItem} className="space-y-3.5">
-              {/* Tên nhân viên & Chế độ */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Tên Nhân Viên <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    list="staff-salary-suggestions"
-                    placeholder="Ví dụ: Anh Quỳnh, Phương My..."
-                    value={salaryStaffName}
-                    onChange={(e) => handleStaffNameChange(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500"
-                  />
-                  <datalist id="staff-salary-suggestions">
-                    {availableStaffNames.map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
+            {/* Form: Có khung cuộn bên trong, bắt đầu ngay từ ô Tên Nhân Viên */}
+            <form onSubmit={handleSaveSalaryItem} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+                {/* 1. KHỐI TÊN NHÂN VIÊN (NỔI BẬT NHẤT Ở ĐẦU FORM, KHÔNG BAO GIỜ BỊ CHE) */}
+                <div className="p-4 bg-gradient-to-r from-blue-50/90 to-indigo-50/90 border-2 border-blue-400 rounded-2xl shadow-xs space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label htmlFor="salary-staff-name-input" className="text-xs font-black text-blue-950 flex items-center space-x-1.5">
+                      <UserCheck className="w-4 h-4 text-blue-600" />
+                      <span>HỌ VÀ TÊN NHÂN VIÊN <span className="text-rose-600 font-black">*</span></span>
+                    </label>
+                    <span className="text-[10px] font-extrabold text-blue-800 bg-white px-2.5 py-0.5 rounded-full border border-blue-200 shadow-2xs">
+                      Bắt buộc nhập
+                    </span>
+                  </div>
+
+                  {/* Input nhập tên trực tiếp */}
+                  <div>
+                    <input
+                      id="salary-staff-name-input"
+                      type="text"
+                      required
+                      autoFocus
+                      list="staff-salary-suggestions"
+                      placeholder="👉 Nhập họ và tên nhân viên vào đây (VD: Anh Quỳnh, Phương My...)"
+                      value={salaryStaffName}
+                      onChange={(e) => handleStaffNameChange(e.target.value)}
+                      className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-500 rounded-xl text-sm font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-hidden shadow-xs"
+                    />
+                    <datalist id="staff-salary-suggestions">
+                      {availableStaffNames.map((name) => (
+                        <option key={name} value={name} />
+                      ))}
+                    </datalist>
+                  </div>
+
+                  {/* Danh sách gợi ý bấm nhanh tên nhân viên có sẵn trong hệ thống */}
+                  {availableStaffNames.length > 0 && (
+                    <div className="pt-1.5 border-t border-blue-200/70">
+                      <span className="text-[10px] font-bold text-blue-900 block mb-1">
+                        ⚡ Hoặc bấm chọn nhanh từ danh sách nhân viên:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                        {availableStaffNames.map((name) => {
+                          const isSelected = salaryStaffName.trim().toLowerCase() === name.trim().toLowerCase();
+                          return (
+                            <button
+                              key={name}
+                              type="button"
+                              onClick={() => handleStaffNameChange(name)}
+                              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-blue-600 text-white shadow-xs ring-2 ring-blue-300'
+                                  : 'bg-white hover:bg-blue-100 text-blue-900 border border-blue-200'
+                              }`}
+                            >
+                              + {name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
+                {/* 2. CHẾ ĐỘ HỢP ĐỒNG */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Chế Độ Hợp Đồng <span className="text-rose-500">*</span>
                   </label>
-                  <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-xl">
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1.5 rounded-xl">
                     <button
                       type="button"
                       onClick={() => setSalaryContractType('official')}
-                      className={`py-1.5 text-xs font-black rounded-lg cursor-pointer transition-all ${
+                      className={`py-2 text-xs font-black rounded-lg cursor-pointer transition-all ${
                         salaryContractType === 'official'
                           ? 'bg-emerald-600 text-white shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      Chính Thức
+                      ✓ Chính Thức
                     </button>
                     <button
                       type="button"
                       onClick={() => setSalaryContractType('probation')}
-                      className={`py-1.5 text-xs font-black rounded-lg cursor-pointer transition-all ${
+                      className={`py-2 text-xs font-black rounded-lg cursor-pointer transition-all ${
                         salaryContractType === 'probation'
                           ? 'bg-amber-600 text-white shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
-                      Thử Việc
+                      ⏳ Thử Việc
                     </button>
                   </div>
                 </div>
-              </div>
 
-              {/* KHỐI HỒ SƠ NHÂN SỰ: NGÀY SINH, SỐ CCCD, NGÀY BẮT ĐẦU ĐI LÀM (YÊU CẦU MỚI) */}
-              <div className="p-3 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2">
-                <div className="text-xs font-black text-blue-900 flex items-center justify-between">
-                  <span className="flex items-center space-x-1.5">
-                    <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Hồ Sơ Nhân Sự (Ngày Sinh • Số CCCD • Ngày Đi Làm)</span>
-                  </span>
-                  <span className="text-[10px] text-blue-600/80 font-bold">
-                    Admin quản lý
-                  </span>
+                {/* KHỐI HỒ SƠ NHÂN SỰ: NGÀY SINH, SỐ CCCD, NGÀY BẮT ĐẦU ĐI LÀM (YÊU CẦU MỚI) */}
+                <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-2xl space-y-2.5">
+                  <div className="text-xs font-black text-blue-900 flex items-center justify-between">
+                    <span className="flex items-center space-x-1.5">
+                      <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                      <span>Hồ Sơ Nhân Sự (Ngày Sinh • Số CCCD • Ngày Đi Làm)</span>
+                    </span>
+                    <span className="text-[10px] text-blue-600/80 font-bold">
+                      Admin quản lý
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                        Ngày Tháng Năm Sinh
+                      </label>
+                      <input
+                        type="text"
+                        value={salaryDateOfBirth}
+                        onChange={(e) => setSalaryDateOfBirth(e.target.value)}
+                        placeholder="VD: 15/08/1998"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                        Số CCCD / CMND
+                      </label>
+                      <input
+                        type="text"
+                        value={salaryCitizenId}
+                        onChange={(e) => setSalaryCitizenId(e.target.value)}
+                        placeholder="VD: 001298012345"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold font-mono text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                        Ngày Đi Làm
+                      </label>
+                      <input
+                        type="text"
+                        value={salaryStartDate}
+                        onChange={(e) => setSalaryStartDate(e.target.value)}
+                        placeholder="VD: 01/06/2023"
+                        className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-700 mb-1">
-                      Ngày Tháng Năm Sinh
-                    </label>
-                    <input
-                      type="text"
-                      value={salaryDateOfBirth}
-                      onChange={(e) => setSalaryDateOfBirth(e.target.value)}
-                      placeholder="VD: 15/08/1998"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-700 mb-1">
-                      Số CCCD / CMND
-                    </label>
-                    <input
-                      type="text"
-                      value={salaryCitizenId}
-                      onChange={(e) => setSalaryCitizenId(e.target.value)}
-                      placeholder="VD: 001298012345"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-700 mb-1">
-                      Ngày Bắt Đầu Đi Làm
-                    </label>
-                    <input
-                      type="text"
-                      value={salaryStartDate}
-                      onChange={(e) => setSalaryStartDate(e.target.value)}
-                      placeholder="VD: 01/06/2023"
-                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* Mức lương Thử việc & Chính thức */}
+                {/* Mức lương Thử việc & Chính thức */}
               <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
                 <div>
                   <label className="block text-[11px] font-bold text-amber-800 mb-1">
@@ -3667,20 +3711,32 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 />
               </div>
 
-              <div className="pt-2 flex items-center justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setIsSalaryModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
-                >
-                  Hủy
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer"
-                >
-                  {editingSalaryItem ? 'Lưu Cập Nhật' : 'Lưu Vào Bảng Lương'}
-                </button>
+              </div>
+
+              {/* Footer: Cố định ở dưới cùng, luôn bấm được Lưu / Hủy mà không phải cuộn xuống đáy */}
+              <div className="p-3.5 sm:p-4 border-t border-slate-200 bg-slate-50 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-500 hidden sm:inline">
+                  {salaryStaffName.trim() ? (
+                    <span>Đang cập nhật: <b className="text-blue-900 font-bold">{salaryStaffName}</b></span>
+                  ) : (
+                    <span className="text-rose-600 font-bold">* Vui lòng nhập tên nhân viên</span>
+                  )}
+                </span>
+                <div className="flex items-center space-x-2 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setIsSalaryModalOpen(false)}
+                    className="px-4 py-2 border border-slate-300 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md transition-all cursor-pointer"
+                  >
+                    {editingSalaryItem ? 'Lưu Cập Nhật' : 'Lưu Vào Bảng Lương'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

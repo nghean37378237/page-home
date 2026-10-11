@@ -1178,11 +1178,12 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
 
       {/* Modal Thêm Nhân Viên Mới */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-fadeIn">
-            <div className="flex items-center justify-between mb-4">
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-slate-200 max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Header: Cố định trên cùng */}
+            <div className="flex items-center justify-between p-5 pb-3 border-b border-slate-100 shrink-0 bg-white">
               <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0">
                   <UserPlus className="w-4 h-4" />
                 </div>
                 <div>
@@ -1193,156 +1194,167 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
               <button
                 type="button"
                 onClick={() => setIsAddModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 cursor-pointer"
+                title="Đóng"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {addError && (
-              <div className="mb-4 p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start space-x-2">
-                <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                <span>{addError}</span>
-              </div>
-            )}
+            {/* Form: Cuộn mượt mà bên trong, bắt đầu ngay từ Tên Nhân Viên */}
+            <form onSubmit={handleCreateStaff} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-5 space-y-4">
+                {addError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start space-x-2">
+                    <AlertCircle className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
+                    <span>{addError}</span>
+                  </div>
+                )}
 
-            <form onSubmit={handleCreateStaff} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Tên Nhân Viên <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Ví dụ: Hoàng Long, Thu Hà..."
-                  value={addName}
-                  onChange={(e) => setAddName(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Mật Khẩu Đăng Nhập / Mã PIN <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="Mặc định: 123456"
-                  value={addPin}
-                  onChange={(e) => setAddPin(e.target.value)}
-                  required
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
-                />
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Mã này nhân viên sẽ dùng kèm tên để đăng nhập vào trang tính.
-                </p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Email Nhân Viên (Tùy chọn)
-                </label>
-                <input
-                  type="email"
-                  placeholder="nhanvien@gmail.com"
-                  value={addEmail}
-                  onChange={(e) => setAddEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Ghi Chú Phân Công
-                </label>
-                <textarea
-                  rows={2}
-                  placeholder="Ví dụ: Đăng Page mảng Reels, quản lý Via BM..."
-                  value={addNote}
-                  onChange={(e) => setAddNote(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
-                />
-              </div>
-
-              {/* Phân quyền bảng cho nhân viên mới */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-slate-700">
-                    Phân Quyền Bảng Hiển Thị (1..6)
+                {/* Khối Nhập Tên Nhân Viên Nổi Bật */}
+                <div className="p-3.5 bg-blue-50/80 border-2 border-blue-400 rounded-2xl space-y-1.5">
+                  <label htmlFor="add-staff-name-input" className="block text-xs font-black text-blue-950 flex items-center justify-between">
+                    <span>HỌ VÀ TÊN NHÂN VIÊN MỚI <span className="text-rose-500 font-black">*</span></span>
+                    <span className="text-[10px] font-bold text-blue-700 bg-white px-2 py-0.5 rounded-full border border-blue-200">
+                      Bắt buộc
+                    </span>
                   </label>
-                  <span className="text-[11px] text-blue-600 font-semibold">
-                    Đã chọn {addAllowedTabs.filter((t) => t !== 'staff_management').length}/5 bảng
-                  </span>
+                  <input
+                    id="add-staff-name-input"
+                    type="text"
+                    placeholder="👉 Nhập họ và tên (VD: Hoàng Long, Thu Hà...)"
+                    value={addName}
+                    onChange={(e) => setAddName(e.target.value)}
+                    required
+                    autoFocus
+                    className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-500 rounded-xl text-sm font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:border-blue-600 focus:ring-2 focus:ring-blue-600 focus:outline-hidden shadow-xs"
+                  />
                 </div>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  <button
-                    type="button"
-                    onClick={() => setAddAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'])}
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
-                  >
-                    Tất cả (5 bảng)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAddAllowedTabs(['fanpage'])}
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer"
-                  >
-                    Chỉ Fanpage
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAddAllowedTabs(['fanpage', 'fullvia'])}
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer"
-                  >
-                    Fanpage + Via
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAddAllowedTabs(['fanpage', 'group'])}
-                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-700 cursor-pointer"
-                  >
-                    Fanpage + Group
-                  </button>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Mật Khẩu Đăng Nhập / Mã PIN <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Mặc định: 123456"
+                    value={addPin}
+                    onChange={(e) => setAddPin(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Mã này nhân viên sẽ dùng kèm tên để đăng nhập vào trang tính.
+                  </p>
                 </div>
-                <div className="grid grid-cols-2 gap-1.5">
-                  {(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'] as TabKey[]).map((tabKey) => {
-                    const tabDef = TAB_DEFINITIONS[tabKey];
-                    const isChecked = addAllowedTabs.includes(tabKey);
-                    return (
-                      <label
-                        key={tabKey}
-                        className={`flex items-center space-x-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
-                          isChecked
-                            ? 'bg-blue-50/70 border-blue-300 font-bold text-blue-900'
-                            : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={() => {
-                            setAddAllowedTabs((prev) => {
-                              if (prev.includes(tabKey)) {
-                                if (prev.length <= 1) return prev;
-                                return prev.filter((t) => t !== tabKey);
-                              } else {
-                                return [...prev, tabKey];
-                              }
-                            });
-                          }}
-                          className="w-3.5 h-3.5 text-blue-600 rounded cursor-pointer"
-                        />
-                        <span className="truncate">{tabDef.label}</span>
-                      </label>
-                    );
-                  })}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Email Nhân Viên (Tùy chọn)
+                  </label>
+                  <input
+                    type="email"
+                    placeholder="nhanvien@gmail.com"
+                    value={addEmail}
+                    onChange={(e) => setAddEmail(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                  />
                 </div>
-                <p className="text-[11px] text-slate-400 mt-1">
-                  Nhân viên chỉ thấy các bảng được chọn, giúp giao diện gọn gàng.
-                </p>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Ghi Chú Phân Công
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Ví dụ: Đăng Page mảng Reels, quản lý Via BM..."
+                    value={addNote}
+                    onChange={(e) => setAddNote(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                  />
+                </div>
+
+                {/* Phân quyền bảng cho nhân viên mới */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Phân Quyền Bảng Hiển Thị (1..6)
+                    </label>
+                    <span className="text-[11px] text-blue-600 font-semibold">
+                      Đã chọn {addAllowedTabs.filter((t) => t !== 'staff_management').length}/5 bảng
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setAddAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'])}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                    >
+                      Tất cả (5 bảng)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddAllowedTabs(['fanpage'])}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 cursor-pointer"
+                    >
+                      Chỉ Fanpage
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddAllowedTabs(['fanpage', 'fullvia'])}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 cursor-pointer"
+                    >
+                      Fanpage + Via
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddAllowedTabs(['fanpage', 'group'])}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-700 cursor-pointer"
+                    >
+                      Fanpage + Group
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'] as TabKey[]).map((tabKey) => {
+                      const tabDef = TAB_DEFINITIONS[tabKey];
+                      const isChecked = addAllowedTabs.includes(tabKey);
+                      return (
+                        <label
+                          key={tabKey}
+                          className={`flex items-center space-x-2 p-2 rounded-lg border text-xs cursor-pointer transition-colors ${
+                            isChecked
+                              ? 'bg-blue-50/70 border-blue-300 font-bold text-blue-900'
+                              : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => {
+                              setAddAllowedTabs((prev) => {
+                                if (prev.includes(tabKey)) {
+                                  if (prev.length <= 1) return prev;
+                                  return prev.filter((t) => t !== tabKey);
+                                } else {
+                                  return [...prev, tabKey];
+                                }
+                              });
+                            }}
+                            className="w-3.5 h-3.5 text-blue-600 rounded cursor-pointer"
+                          />
+                          <span className="truncate">{tabDef.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Nhân viên chỉ thấy các bảng được chọn, giúp giao diện gọn gàng.
+                  </p>
+                </div>
               </div>
 
-              <div className="flex items-center justify-end space-x-2 pt-2">
+              {/* Footer: Cố định dưới cùng */}
+              <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-end space-x-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
@@ -1353,7 +1365,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmittingAdd}
-                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-60"
+                  className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-60"
                 >
                   {isSubmittingAdd && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
                   <span>Lưu Nhân Viên Mới</span>
