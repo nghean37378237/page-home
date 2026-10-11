@@ -144,6 +144,26 @@
         "updatedAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["id", "ip", "port"]
+    },
+    "MonthlyFinanceRecord": {
+      "title": "MonthlyFinanceRecord",
+      "description": "Monthly financial reports, revenue, utilities, unexpected expenses, and staff payroll",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "monthKey": { "type": "string", "maxLength": 50 },
+        "month": { "type": "number" },
+        "year": { "type": "number" },
+        "title": { "type": "string", "maxLength": 100 },
+        "totalRevenue": { "type": "number" },
+        "officeCost": { "type": "number" },
+        "electricityCost": { "type": "number" },
+        "waterCost": { "type": "number" },
+        "totalSalary": { "type": "number" },
+        "totalExpenses": { "type": "number" },
+        "netProfit": { "type": "number" }
+      },
+      "required": ["id", "monthKey", "month", "year", "totalRevenue", "totalExpenses", "netProfit"]
     }
   },
   "firestore": {
@@ -174,6 +194,10 @@
     "/proxies/{proxyId}": {
       "schema": "ProxyItem",
       "description": "Collection storing proxy list and network configurations"
+    },
+    "/monthlyFinances/{monthId}": {
+      "schema": "MonthlyFinanceRecord",
+      "description": "Collection storing monthly finances and revenue management"
     }
   }
 }

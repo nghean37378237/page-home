@@ -334,25 +334,59 @@ export interface RevenueItem {
   createdAt?: string;
 }
 
+export type EmployeeContractType = 'official' | 'probation'; // 'Chính Thức' | 'Thử Việc'
+
 export interface StaffSalaryItem {
   id: string;
   staffName: string; // Tên nhân viên
-  baseSalary: number; // Lương cứng cơ bản (VNĐ)
-  kpiBonus: number; // Thưởng KPI / Doanh số / Đăng bài (VNĐ)
+
+  // 1. Chế độ lương & Mức lương
+  contractType?: EmployeeContractType; // 'official' (Chính thức) | 'probation' (Thử việc)
+  probationSalary?: number; // Mức lương thử việc (VNĐ/tháng, VD: 6.000.000)
+  officialSalary?: number; // Mức lương chính thức (VNĐ/tháng, VD: 9.000.000)
+  baseSalary: number; // Mức lương cơ bản áp dụng (lấy theo thử việc/chính thức hoặc nhập trực tiếp)
+
+  // 2. Ngày công làm việc thực tế
+  standardWorkingDays?: number; // Ngày công chuẩn trong tháng (mặc định 26 ngày công)
+  actualWorkingDays?: number; // Ngày công đi làm thực tế (VD: 24 công, 26 công, 22.5 công)
+  salaryByWorkingDays?: number; // Tiền lương theo ngày công = (baseSalary / standardWorkingDays) * actualWorkingDays
+
+  // 3. Thông tin tài khoản ngân hàng của nhân viên
+  bankName?: string; // Tên ngân hàng (MB Bank, Techcombank, Vietcombank, VPBank, TPBank...)
+  bankAccountNumber?: string; // Số tài khoản ngân hàng (VD: 0389123456789)
+  bankAccountHolder?: string; // Tên chủ tài khoản (VD: NGUYEN VAN A)
+
+  // 4. Thưởng KPI tiền về doanh thu do nhân viên đó làm được (5%, 10%)
+  revenueGenerated?: number; // Doanh thu tiền về nhân viên đó mang lại (VNĐ)
+  revenueSourceName?: string; // Nguồn/dự án/khách hàng mang tiền về (tùy chọn)
+  kpiRate?: number; // Tỷ lệ thưởng KPI doanh thu % (5%, 10% hoặc tùy chỉnh)
+  kpiBonus: number; // Tiền thưởng KPI doanh thu = (revenueGenerated * kpiRate / 100)
+  otherBonus?: number; // Thưởng chuyên cần, thưởng thêm khác (nếu có)
+
+  // 5. Khấu trừ / Phạt / Tạm ứng
   deduction: number; // Phạt / Trừ lương / Tạm ứng (VNĐ)
-  actualSalary: number; // Tổng thực nhận = baseSalary + kpiBonus - deduction
+
+  // 6. Tổng thực nhận
+  actualSalary: number; // Tổng thực nhận = salaryByWorkingDays + kpiBonus + (otherBonus || 0) - deduction
+
   isPaid: boolean; // Đã thanh toán / Chưa thanh toán
   paidDate?: string; // Ngày chi trả
-  note?: string; // Ghi chú (VD: Thưởng vượt 150 bài, Phạt đi muộn...)
+  note?: string; // Ghi chú (VD: Lương chính thức 25 công + KPI 10% Ads Page X...)
 }
+
+export type ExpenseType = 'unexpected' | 'fixed' | 'tools' | 'other'; // 'Chi phí ngoài ý muốn / Phát sinh' | 'Cố định' | 'Công cụ' | 'Khác'
 
 export interface CustomExpenseItem {
   id: string;
-  name: string; // Tên khoản chi (VD: Mua Tool nuôi nick, Thuê VPS, Bình nước uống, Bàn ghế mới,...)
-  category: 'office' | 'utility' | 'tools' | 'proxy' | 'other';
+  name: string; // Tên khoản chi (VD: Sửa máy tính hỏng, Mua switch mạng, Mua Tool nuôi nick, Bàn ghế mới,...)
+  expenseType?: ExpenseType; // Phân loại: 'unexpected' (Ngoài ý muốn / Phát sinh) | 'fixed' (Cố định tự thêm) | 'tools' | 'other'
+  category?: 'office' | 'utility' | 'tools' | 'proxy' | 'hardware' | 'unexpected' | 'other';
   amount: number; // Số tiền (VNĐ)
   paidDate?: string; // Ngày chi
-  note?: string;
+  payer?: string; // Người chi / Người duyệt
+  paymentMethod?: 'transfer' | 'cash'; // 'Chuyển khoản' | 'Tiền mặt'
+  note?: string; // Lý do chi / Ghi chú phát sinh ngoài ý muốn
+  createdAt?: string;
 }
 
 export interface MonthlyFinanceRecord {
