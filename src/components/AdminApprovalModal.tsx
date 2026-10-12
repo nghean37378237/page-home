@@ -1458,10 +1458,13 @@ export function AdminApprovalModal({
                                   ></div>
                                 </div>
 
-                                <div className="flex items-center space-x-1.5 text-[10px] text-slate-500">
-                                  <span>✍️ {stats.manualPostsCount} Tay</span>
-                                  <span>•</span>
-                                  <span>⚙️ {stats.toolPostsCount} Tool</span>
+                                <div className="flex items-center space-x-1 text-[10px] font-bold">
+                                  <span className="bg-emerald-50 text-emerald-800 px-1.5 py-0.2 rounded border border-emerald-200" title={`Đăng tay: ${stats.manualPostsCount} Page`}>
+                                    ✍️ {stats.manualPostsCount} Tay
+                                  </span>
+                                  <span className="bg-purple-50 text-purple-800 px-1.5 py-0.2 rounded border border-purple-200" title={`Đăng tool: ${stats.toolPostsCount} Page`}>
+                                    🤖 {stats.toolPostsCount} Tool
+                                  </span>
                                 </div>
                               </div>
                             </td>

@@ -2729,6 +2729,7 @@ export default function App() {
             currentUser={currentUser}
             finances={finances}
             accounts={accounts}
+            records={records}
             availableStaffNames={allStaffNames}
             onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
           />

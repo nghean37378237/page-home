@@ -4,6 +4,7 @@ import {
   StaffSalaryItem,
   UserAccount,
   AppUser,
+  PageRecord,
 } from '../types';
 import {
   User,
@@ -25,6 +26,10 @@ import {
   Contact,
   Award,
   Wifi,
+  PenTool,
+  Bot,
+  FileSpreadsheet,
+  ExternalLink,
 } from 'lucide-react';
 
 interface StaffInfoTableProps {
@@ -32,6 +37,7 @@ interface StaffInfoTableProps {
   finances: MonthlyFinanceRecord[];
   accounts: UserAccount[];
   availableStaffNames?: string[];
+  records?: PageRecord[];
   onNavigateToTab?: (tab: string) => void;
 }
 
@@ -40,6 +46,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
   finances,
   accounts,
   availableStaffNames = [],
+  records = [],
   onNavigateToTab,
 }) => {
   const isAdmin = currentUser.role === 'admin';
@@ -104,6 +111,45 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
   // Quyền hiển thị lương: Admin đã tích chọn trong Bảng 7 mới cho hiện số tiền
   // Nếu Admin bỏ tích hoặc chưa tích: Lương, Doanh thu và Tổng lương BỎ TRỐNG
   const isVisibleToStaff = Boolean(staffSalaryItem?.isVisibleToStaff);
+
+  // Thống kê số lượng Page Đăng Tay vs Tool của nhân viên đang xem
+  const staffWorkStats = useMemo(() => {
+    const cleanTarget = selectedStaffName.trim().toLowerCase();
+    const myPages = (records || []).filter(
+      (r) => (r.staffName || '').trim().toLowerCase() === cleanTarget
+    );
+    const manualPages = myPages.filter((r) => r.postingMethod === 'Đăng Tay');
+    const toolPages = myPages.filter((r) => r.postingMethod === 'Tool');
+    const timerPages = myPages.filter((r) => r.postingMethod === 'Hẹn Giờ');
+
+    const manualActual = manualPages.reduce((s, r) => s + (r.actualPosts || 0), 0);
+    const manualTarget = manualPages.reduce((s, r) => s + (r.targetPosts || 0), 0);
+    const toolActual = toolPages.reduce((s, r) => s + (r.actualPosts || 0), 0);
+    const toolTarget = toolPages.reduce((s, r) => s + (r.targetPosts || 0), 0);
+
+    const totalActual = myPages.reduce((s, r) => s + (r.actualPosts || 0), 0);
+    const totalTarget = myPages.reduce((s, r) => s + (r.targetPosts || 0), 0);
+    const completionRate = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100) : (myPages.length > 0 ? 100 : 0);
+
+    const manualRatio = myPages.length > 0 ? Math.round((manualPages.length / myPages.length) * 100) : 0;
+    const toolRatio = myPages.length > 0 ? Math.round((toolPages.length / myPages.length) * 100) : 0;
+
+    return {
+      totalPages: myPages.length,
+      manualCount: manualPages.length,
+      toolCount: toolPages.length,
+      timerCount: timerPages.length,
+      manualActual,
+      manualTarget,
+      toolActual,
+      toolTarget,
+      totalActual,
+      totalTarget,
+      completionRate,
+      manualRatio,
+      toolRatio,
+    };
+  }, [records, selectedStaffName]);
 
   const formatVND = (num?: number) => {
     if (num === undefined || num === null) return '0 ₫';
@@ -313,6 +359,100 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
             ) : (
               <div className="pl-5 text-slate-400 italic text-xs">
                 Chưa có số tài khoản ngân hàng
+              </div>
+            )}
+          </div>
+
+          {/* KHỐI THỐNG KÊ QUẢN LÝ FANPAGE: ĐĂNG TAY VS TOOL */}
+          <div className="p-4 bg-gradient-to-br from-teal-50 via-emerald-50/60 to-white border-2 border-teal-300 rounded-2xl shadow-2xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="p-1.5 bg-teal-600 text-white rounded-xl shadow-2xs">
+                  <FileSpreadsheet className="w-4 h-4" />
+                </span>
+                <div>
+                  <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
+                    Fanpage Đang Phụ Trách
+                  </h4>
+                  <p className="text-[10px] text-slate-500">
+                    Phân loại Đăng Tay vs Tool (Bảng 1)
+                  </p>
+                </div>
+              </div>
+              <span className="font-mono font-black text-teal-800 text-xs bg-teal-100 px-2.5 py-0.5 rounded-full border border-teal-300">
+                {staffWorkStats.totalPages} Page
+              </span>
+            </div>
+
+            {/* Dàn 2 Thẻ Tay vs Tool */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {/* Đăng tay */}
+              <div className="p-2.5 bg-white border border-emerald-300 rounded-xl shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-black text-emerald-950 uppercase">
+                  <span className="flex items-center space-x-1">
+                    <PenTool className="w-3 h-3 text-emerald-600" />
+                    <span>Đăng Tay</span>
+                  </span>
+                  <span className="font-mono text-emerald-700 bg-emerald-50 px-1 rounded font-bold">
+                    {staffWorkStats.manualRatio}%
+                  </span>
+                </div>
+                <div className="text-base font-black text-emerald-800 font-mono">
+                  {staffWorkStats.manualCount} <span className="text-[10px] font-sans text-slate-500 font-normal">Page</span>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono">
+                  Bài hôm nay: <strong className="text-emerald-700">{staffWorkStats.manualActual}</strong>/{staffWorkStats.manualTarget}
+                </div>
+              </div>
+
+              {/* Đăng tool */}
+              <div className="p-2.5 bg-white border border-purple-300 rounded-xl shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-[10px] font-black text-purple-950 uppercase">
+                  <span className="flex items-center space-x-1">
+                    <Bot className="w-3 h-3 text-purple-600" />
+                    <span>Đăng Tool</span>
+                  </span>
+                  <span className="font-mono text-purple-700 bg-purple-50 px-1 rounded font-bold">
+                    {staffWorkStats.toolRatio}%
+                  </span>
+                </div>
+                <div className="text-base font-black text-purple-800 font-mono">
+                  {staffWorkStats.toolCount} <span className="text-[10px] font-sans text-slate-500 font-normal">Page</span>
+                </div>
+                <div className="text-[10px] text-slate-500 font-mono">
+                  Bài hôm nay: <strong className="text-purple-700">{staffWorkStats.toolActual}</strong>/{staffWorkStats.toolTarget}
+                </div>
+              </div>
+            </div>
+
+            {/* Thanh tỷ lệ & nút mở bảng 1 */}
+            {staffWorkStats.totalPages > 0 && (
+              <div className="space-y-1 pt-0.5">
+                <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
+                  <div
+                    style={{ width: `${staffWorkStats.manualRatio}%` }}
+                    className="bg-emerald-500 h-full"
+                    title={`Đăng Tay: ${staffWorkStats.manualRatio}%`}
+                  />
+                  <div
+                    style={{ width: `${staffWorkStats.toolRatio}%` }}
+                    className="bg-purple-600 h-full"
+                    title={`Đăng Tool: ${staffWorkStats.toolRatio}%`}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold">
+                  <span>Tiến độ: {staffWorkStats.completionRate}% ({staffWorkStats.totalActual}/{staffWorkStats.totalTarget} bài)</span>
+                  {onNavigateToTab && (
+                    <button
+                      type="button"
+                      onClick={() => onNavigateToTab('fanpage')}
+                      className="text-teal-700 hover:text-teal-900 inline-flex items-center space-x-0.5 cursor-pointer font-bold"
+                    >
+                      <span>Vào Bảng 1</span>
+                      <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>

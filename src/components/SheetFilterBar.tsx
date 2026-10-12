@@ -218,16 +218,21 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
 
             {/* Từng nhân viên */}
             {staffList.map((name) => {
-              const isSelected = filter.staffName?.trim().toLowerCase() === name.trim().toLowerCase();
-              const staffPagesCount = records.filter(
-                (r) => r.staffName?.trim().toLowerCase() === name.trim().toLowerCase()
-              ).length;
+              const nameLower = name.trim().toLowerCase();
+              const isSelected = filter.staffName?.trim().toLowerCase() === nameLower;
+              const staffRecords = records.filter(
+                (r) => (r.staffName || '').trim().toLowerCase() === nameLower
+              );
+              const staffPagesCount = staffRecords.length;
+              const manualCount = staffRecords.filter((r) => r.postingMethod === 'Đăng Tay').length;
+              const toolCount = staffRecords.filter((r) => r.postingMethod === 'Tool').length;
 
               return (
                 <button
                   key={name}
                   type="button"
                   onClick={() => onChangeFilter({ ...filter, staffName: isSelected ? '' : name })}
+                  title={`${name}: ${staffPagesCount} Fanpage (✍️ ${manualCount} Đăng Tay • 🤖 ${toolCount} Đăng Tool)`}
                   className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
                     isSelected
                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
@@ -243,6 +248,11 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   >
                     {staffPagesCount}
                   </span>
+                  {isSelected && (manualCount > 0 || toolCount > 0) && (
+                    <span className="text-[9px] font-mono opacity-90 pl-0.5">
+                      (✍️{manualCount} • 🤖{toolCount})
+                    </span>
+                  )}
                 </button>
               );
             })}

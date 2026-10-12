@@ -45,6 +45,12 @@ import {
   ChevronUp,
   Filter,
   BadgeCheck,
+  BarChart3,
+  Bot,
+  PenTool,
+  TrendingUp,
+  PieChart,
+  ArrowUpDown,
 } from 'lucide-react';
 
 interface StaffManagementTableProps {
@@ -125,6 +131,17 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const [quickStaffPin, setQuickStaffPin] = useState('123456');
   const [quickStaffNote, setQuickStaffNote] = useState('');
   const [isMasterAdminExpanded, setIsMasterAdminExpanded] = useState(false);
+  // State hiển thị phần đếm thống kê Đăng Tay vs Tool
+  const [isPostingStatsExpanded, setIsPostingStatsExpanded] = useState(true);
+  const [postingStatsSearch, setPostingStatsSearch] = useState('');
+  const [postingStatsFilter, setPostingStatsFilter] = useState<'all' | 'has_manual' | 'has_tool' | 'completed' | 'incomplete'>('all');
+  const [postingStatsSort, setPostingStatsSort] = useState<'total_desc' | 'manual_desc' | 'tool_desc' | 'manual_ratio_desc' | 'tool_ratio_desc' | 'completion_desc' | 'name_asc'>('total_desc');
+  // Modal xem chi tiết danh sách Fanpage của 1 nhân viên cụ thể
+  const [inspectStaffModal, setInspectStaffModal] = useState<{
+    staffName: string;
+    tab: 'all' | 'manual' | 'tool' | 'timer';
+  } | null>(null);
+  const [inspectPageSearch, setInspectPageSearch] = useState('');
 
   // Change PIN modal state (both Admin and Staff for their own account)
   const [pinModalAccount, setPinModalAccount] = useState<UserAccount | null>(null);
@@ -186,16 +203,21 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
 
   // Personal work statistics for current employee
   const myWorkStats = useMemo(() => {
-    const pagesCount = records.filter(
+    const myPages = records.filter(
       (r) => (r.staffName || '').trim().toLowerCase() === myStaffNameLower
-    ).length;
+    );
+    const pagesCount = myPages.length;
+    const manualPages = myPages.filter((r) => r.postingMethod === 'Đăng Tay').length;
+    const toolPages = myPages.filter((r) => r.postingMethod === 'Tool').length;
+    const manualActualPosts = myPages.filter((r) => r.postingMethod === 'Đăng Tay').reduce((s, r) => s + (r.actualPosts || 0), 0);
+    const toolActualPosts = myPages.filter((r) => r.postingMethod === 'Tool').reduce((s, r) => s + (r.actualPosts || 0), 0);
     const viasCount = viaList.filter(
       (v) => (v.staffName || '').trim().toLowerCase() === myStaffNameLower
     ).length;
     const groupsCount = groupRecords.filter(
       (g) => (g.staffName || '').trim().toLowerCase() === myStaffNameLower
     ).length;
-    return { pagesCount, viasCount, groupsCount };
+    return { pagesCount, manualPages, toolPages, manualActualPosts, toolActualPosts, viasCount, groupsCount };
   }, [records, viaList, groupRecords, myStaffNameLower]);
 
   const filteredStaff = useMemo(() => {
@@ -224,6 +246,170 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     const blocked = staffAccounts.filter((a) => a.status === 'blocked').length;
     return { total, active, pending, blocked };
   }, [staffAccounts]);
+
+  // 4. THỐNG KÊ ĐẾM SỐ LƯỢNG ĐĂNG TAY VS ĐĂNG TOOL CỦA TỪNG NHÂN VIÊN
+  const rawStaffPostingStats = useMemo(() => {
+    // Thu thập tất cả nhân viên từ staffAccounts và từ danh sách records
+    const staffNamesMap = new Map<string, { account?: UserAccount; username: string }>();
+    staffAccounts.forEach((acc) => {
+      const key = acc.username.trim().toLowerCase();
+      if (key) staffNamesMap.set(key, { account: acc, username: acc.username });
+    });
+
+    records.forEach((r) => {
+      const s = r.staffName?.trim();
+      if (s) {
+        const key = s.toLowerCase();
+        if (!staffNamesMap.has(key)) {
+          staffNamesMap.set(key, { username: s });
+        }
+      }
+    });
+
+    return Array.from(staffNamesMap.values()).map(({ account, username }) => {
+      const staffNameLower = username.trim().toLowerCase();
+      const staffRecords = records.filter(
+        (r) => (r.staffName || '').trim().toLowerCase() === staffNameLower
+      );
+      const staffVias = viaList.filter(
+        (v) => (v.staffName || '').trim().toLowerCase() === staffNameLower
+      );
+
+      const manualRecords = staffRecords.filter((r) => r.postingMethod === 'Đăng Tay');
+      const toolRecords = staffRecords.filter((r) => r.postingMethod === 'Tool');
+      const timerRecords = staffRecords.filter((r) => r.postingMethod === 'Hẹn Giờ');
+
+      const manualPages = manualRecords.length;
+      const toolPages = toolRecords.length;
+      const timerPages = timerRecords.length;
+
+      const manualActual = manualRecords.reduce((s, r) => s + (r.actualPosts || 0), 0);
+      const manualTarget = manualRecords.reduce((s, r) => s + (r.targetPosts || 0), 0);
+
+      const toolActual = toolRecords.reduce((s, r) => s + (r.actualPosts || 0), 0);
+      const toolTarget = toolRecords.reduce((s, r) => s + (r.targetPosts || 0), 0);
+
+      const timerActual = timerRecords.reduce((s, r) => s + (r.actualPosts || 0), 0);
+      const timerTarget = timerRecords.reduce((s, r) => s + (r.targetPosts || 0), 0);
+
+      const totalPages = staffRecords.length;
+      const totalActual = staffRecords.reduce((s, r) => s + (r.actualPosts || 0), 0);
+      const totalTarget = staffRecords.reduce((s, r) => s + (r.targetPosts || 0), 0);
+
+      const manualRatio = totalPages > 0 ? Math.round((manualPages / totalPages) * 100) : 0;
+      const toolRatio = totalPages > 0 ? Math.round((toolPages / totalPages) * 100) : 0;
+
+      const completionRate = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100) : (totalPages > 0 ? 100 : 0);
+
+      return {
+        id: account?.id || `staff-${staffNameLower}`,
+        username,
+        account,
+        role: account?.role || 'staff',
+        status: account?.status || 'approved',
+        totalPages,
+        viasCount: staffVias.length,
+        manualPages,
+        manualActual,
+        manualTarget,
+        manualRatio,
+        toolPages,
+        toolActual,
+        toolTarget,
+        toolRatio,
+        timerPages,
+        timerActual,
+        timerTarget,
+        totalActual,
+        totalTarget,
+        completionRate,
+        records: staffRecords,
+      };
+    });
+  }, [staffAccounts, records, viaList]);
+
+  // Bộ lọc & sắp xếp chuyên sâu cho bảng Thống kê Đăng Tay vs Tool
+  const staffPostingStats = useMemo(() => {
+    let list = [...rawStaffPostingStats];
+
+    // Lọc theo tìm kiếm tên nhân viên
+    if (postingStatsSearch.trim()) {
+      const q = postingStatsSearch.trim().toLowerCase();
+      list = list.filter((s) => s.username.toLowerCase().includes(q));
+    }
+
+    // Lọc theo phương thức & tiến độ
+    if (postingStatsFilter === 'has_manual') {
+      list = list.filter((s) => s.manualPages > 0);
+    } else if (postingStatsFilter === 'has_tool') {
+      list = list.filter((s) => s.toolPages > 0);
+    } else if (postingStatsFilter === 'completed') {
+      list = list.filter((s) => s.totalTarget > 0 && s.totalActual >= s.totalTarget);
+    } else if (postingStatsFilter === 'incomplete') {
+      list = list.filter((s) => s.totalTarget > 0 && s.totalActual < s.totalTarget);
+    }
+
+    // Sắp xếp linh hoạt
+    list.sort((a, b) => {
+      if (postingStatsSort === 'total_desc') return b.totalPages - a.totalPages;
+      if (postingStatsSort === 'manual_desc') return b.manualPages - a.manualPages;
+      if (postingStatsSort === 'tool_desc') return b.toolPages - a.toolPages;
+      if (postingStatsSort === 'manual_ratio_desc') return b.manualRatio - a.manualRatio;
+      if (postingStatsSort === 'tool_ratio_desc') return b.toolRatio - a.toolRatio;
+      if (postingStatsSort === 'completion_desc') return b.completionRate - a.completionRate;
+      if (postingStatsSort === 'name_asc') return a.username.localeCompare(b.username, 'vi');
+      return b.totalPages - a.totalPages;
+    });
+
+    return list;
+  }, [rawStaffPostingStats, postingStatsSearch, postingStatsFilter, postingStatsSort]);
+
+  // Tổng hợp Đăng Tay vs Tool toàn đội (tính trên toàn bộ rawStaffPostingStats)
+  const teamPostingSummary = useMemo(() => {
+    let totalManualPages = 0;
+    let totalToolPages = 0;
+    let totalTimerPages = 0;
+    let totalManualActual = 0;
+    let totalManualTarget = 0;
+    let totalToolActual = 0;
+    let totalToolTarget = 0;
+    let totalActualAll = 0;
+    let totalTargetAll = 0;
+    let totalPagesAll = 0;
+
+    rawStaffPostingStats.forEach((s) => {
+      totalManualPages += s.manualPages;
+      totalToolPages += s.toolPages;
+      totalTimerPages += s.timerPages;
+      totalManualActual += s.manualActual;
+      totalManualTarget += s.manualTarget;
+      totalToolActual += s.toolActual;
+      totalToolTarget += s.toolTarget;
+      totalActualAll += s.totalActual;
+      totalTargetAll += s.totalTarget;
+      totalPagesAll += s.totalPages;
+    });
+
+    const manualRatio = totalPagesAll > 0 ? Math.round((totalManualPages / totalPagesAll) * 100) : 0;
+    const toolRatio = totalPagesAll > 0 ? Math.round((totalToolPages / totalPagesAll) * 100) : 0;
+    const completionRate = totalTargetAll > 0 ? Math.round((totalActualAll / totalTargetAll) * 100) : (totalPagesAll > 0 ? 100 : 0);
+
+    return {
+      totalManualPages,
+      totalToolPages,
+      totalTimerPages,
+      totalManualActual,
+      totalManualTarget,
+      totalToolActual,
+      totalToolTarget,
+      totalActualAll,
+      totalTargetAll,
+      totalPagesAll,
+      manualRatio,
+      toolRatio,
+      completionRate,
+    };
+  }, [rawStaffPostingStats]);
 
   const togglePinVisibility = (accountId: string) => {
     setVisiblePins((prev) => ({ ...prev, [accountId]: !prev[accountId] }));
@@ -972,7 +1158,9 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                     </div>
                     <div className="text-2xl font-black text-white">{myWorkStats.pagesCount}</div>
                     <div className="text-xs text-slate-300 font-semibold mt-0.5">Fanpage Quản Lý</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5">Bảng 1 (Tiến độ bài)</div>
+                    <div className="text-[10px] text-emerald-300 font-bold mt-1 bg-white/10 px-2 py-0.5 rounded-full inline-block">
+                      ✍️ {myWorkStats.manualPages} Tay • 🤖 {myWorkStats.toolPages} Tool
+                    </div>
                   </div>
 
                   <div className="bg-white/5 border border-white/10 rounded-xl p-4 text-center">
@@ -998,6 +1186,497 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
           )}
         </div>
       )}
+
+      {/* 6. BẢNG ĐẾM THỐNG KÊ ĐĂNG TAY HAY ĐĂNG TOOL SỐ LƯỢNG TỪNG NHÂN VIÊN (YÊU CẦU MỚI) */}
+      <div className="bg-white rounded-2xl border-2 border-slate-200 shadow-2xs overflow-hidden animate-fadeIn">
+        {/* Header của mục Thống Kê */}
+        <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-50 via-teal-50/50 to-indigo-50/40 border-b border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-600 to-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+              <BarChart3 className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-sm sm:text-base font-black text-slate-900 tracking-tight flex items-center gap-2">
+                  <span>Bảng Đếm Thống Kê Đăng Tay vs Đăng Tool Từng Nhân Viên</span>
+                </h3>
+                <span className="text-[10px] font-black bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-300">
+                  ✍️ {teamPostingSummary.totalManualPages} Page Đăng Tay
+                </span>
+                <span className="text-[10px] font-black bg-purple-100 text-purple-900 px-2 py-0.5 rounded-full border border-purple-300">
+                  🤖 {teamPostingSummary.totalToolPages} Page Đăng Tool
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Đối chiếu chi tiết số lượng Fanpage đăng tay, đăng tool, số bài đăng hôm nay và tỷ lệ hoàn thành chỉ tiêu của từng nhân sự.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsPostingStatsExpanded(!isPostingStatsExpanded)}
+              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer"
+            >
+              {isPostingStatsExpanded ? (
+                <>
+                  <ChevronUp className="w-4 h-4 text-slate-500" />
+                  <span>Thu Gọn Thống Kê</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="w-4 h-4 text-slate-500" />
+                  <span>Mở Rộng Thống Kê ({staffPostingStats.length} NV)</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Nội dung thống kê chi tiết khi mở rộng */}
+        {isPostingStatsExpanded && (
+          <div className="p-4 sm:p-5 space-y-4">
+            {/* Dàn 4 Thẻ KPI Tóm Tắt Nhanh */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              {/* Card 1: Tổng Đăng Tay */}
+              <div className="p-3.5 bg-gradient-to-br from-emerald-50 to-teal-50/60 border-2 border-emerald-200 rounded-xl shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs font-black text-emerald-950 uppercase tracking-wide">
+                  <span className="flex items-center space-x-1">
+                    <PenTool className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>Tổng Page Đăng Tay</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-emerald-200/80 text-emerald-900 px-1.5 py-0.2 rounded font-bold">
+                    {teamPostingSummary.manualRatio}% toàn đội
+                  </span>
+                </div>
+                <div className="text-2xl font-black text-emerald-800 font-mono">
+                  {teamPostingSummary.totalManualPages} <span className="text-xs font-sans font-bold text-emerald-600">Page</span>
+                </div>
+                <div className="text-[11px] text-emerald-700 font-bold flex items-center justify-between pt-0.5">
+                  <span>Bài hôm nay:</span>
+                  <span className="font-mono">{teamPostingSummary.totalManualActual}/{teamPostingSummary.totalManualTarget} bài</span>
+                </div>
+              </div>
+
+              {/* Card 2: Tổng Đăng Tool */}
+              <div className="p-3.5 bg-gradient-to-br from-purple-50 to-indigo-50/60 border-2 border-purple-200 rounded-xl shadow-2xs space-y-1">
+                <div className="flex items-center justify-between text-xs font-black text-purple-950 uppercase tracking-wide">
+                  <span className="flex items-center space-x-1">
+                    <Bot className="w-3.5 h-3.5 text-purple-600" />
+                    <span>Tổng Page Đăng Tool</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-purple-200/80 text-purple-900 px-1.5 py-0.2 rounded font-bold">
+                    {teamPostingSummary.toolRatio}% toàn đội
+                  </span>
+                </div>
+                <div className="text-2xl font-black text-purple-800 font-mono">
+                  {teamPostingSummary.totalToolPages} <span className="text-xs font-sans font-bold text-purple-600">Page</span>
+                </div>
+                <div className="text-[11px] text-purple-700 font-bold flex items-center justify-between pt-0.5">
+                  <span>Bài hôm nay:</span>
+                  <span className="font-mono">{teamPostingSummary.totalToolActual}/{teamPostingSummary.totalToolTarget} bài</span>
+                </div>
+              </div>
+
+              {/* Card 3: Cơ Cấu Tỷ Lệ Toàn Đội */}
+              <div className="p-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl shadow-2xs space-y-1.5">
+                <div className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center justify-between">
+                  <span>Cơ Cấu Phương Thức</span>
+                  <span className="text-[10px] text-slate-500 font-bold">
+                    Tổng: {teamPostingSummary.totalPagesAll} Page
+                  </span>
+                </div>
+                {/* Visual Ratio Bar */}
+                <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
+                  <div
+                    style={{ width: `${teamPostingSummary.manualRatio}%` }}
+                    className="bg-emerald-500 h-full transition-all"
+                    title={`Đăng Tay: ${teamPostingSummary.manualRatio}%`}
+                  />
+                  <div
+                    style={{ width: `${teamPostingSummary.toolRatio}%` }}
+                    className="bg-purple-600 h-full transition-all"
+                    title={`Đăng Tool: ${teamPostingSummary.toolRatio}%`}
+                  />
+                </div>
+                <div className="flex items-center justify-between text-[10px] font-bold text-slate-600 pt-0.5">
+                  <span className="flex items-center space-x-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    <span>Đăng Tay: {teamPostingSummary.manualRatio}%</span>
+                  </span>
+                  <span className="flex items-center space-x-1">
+                    <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                    <span>Tool: {teamPostingSummary.toolRatio}%</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Card 4: Tổng Tiến Độ Bài Đăng Toàn Đội */}
+              <div className="p-3.5 bg-gradient-to-br from-blue-50 to-sky-50 border-2 border-blue-200 rounded-xl shadow-2xs space-y-1">
+                <div className="text-xs font-black text-blue-950 uppercase tracking-wide flex items-center justify-between">
+                  <span>Tiến Độ Đăng Bài Hôm Nay</span>
+                  <span className="text-[10px] font-mono bg-blue-200 text-blue-900 px-1.5 py-0.2 rounded font-bold">
+                    {teamPostingSummary.completionRate}%
+                  </span>
+                </div>
+                <div className="text-2xl font-black text-blue-900 font-mono">
+                  {teamPostingSummary.totalActualAll} <span className="text-xs font-sans font-bold text-blue-600">/ {teamPostingSummary.totalTargetAll} bài</span>
+                </div>
+                <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden mt-1 shadow-inner">
+                  <div
+                    style={{ width: `${Math.min(100, teamPostingSummary.completionRate)}%` }}
+                    className={`h-full rounded-full transition-all ${
+                      teamPostingSummary.completionRate >= 100 ? 'bg-emerald-500' : 'bg-blue-600'
+                    }`}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Thanh Công Cụ: Tìm Kiếm, Bộ Lọc & Sắp Xếp Bảng Đếm Thống Kê */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+              {/* Bên trái: Ô tìm kiếm & Các nút lọc nhanh */}
+              <div className="flex flex-wrap items-center gap-2 flex-1">
+                {/* Ô tìm kiếm */}
+                <div className="relative min-w-[200px] max-w-[280px]">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={postingStatsSearch}
+                    onChange={(e) => setPostingStatsSearch(e.target.value)}
+                    placeholder="Tìm tên nhân viên..."
+                    className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-normal focus:outline-hidden focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
+                  />
+                  {postingStatsSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setPostingStatsSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+
+                {/* Các nút lọc phương thức & tiến độ */}
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setPostingStatsFilter('all')}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      postingStatsFilter === 'all'
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                    }`}
+                  >
+                    Tất Cả ({rawStaffPostingStats.length})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPostingStatsFilter('has_manual')}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      postingStatsFilter === 'has_manual'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                        : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+                    }`}
+                  >
+                    <PenTool className="w-3 h-3" />
+                    <span>Có Đăng Tay ({rawStaffPostingStats.filter((s) => s.manualPages > 0).length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPostingStatsFilter('has_tool')}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      postingStatsFilter === 'has_tool'
+                        ? 'bg-purple-600 text-white border-purple-600 shadow-2xs'
+                        : 'bg-white text-purple-800 border-purple-300 hover:bg-purple-50'
+                    }`}
+                  >
+                    <Bot className="w-3 h-3" />
+                    <span>Có Đăng Tool ({rawStaffPostingStats.filter((s) => s.toolPages > 0).length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPostingStatsFilter('completed')}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      postingStatsFilter === 'completed'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                        : 'bg-white text-blue-800 border-blue-300 hover:bg-blue-50'
+                    }`}
+                  >
+                    <Check className="w-3 h-3" />
+                    <span>Đạt Chỉ Tiêu ({rawStaffPostingStats.filter((s) => s.totalTarget > 0 && s.totalActual >= s.totalTarget).length})</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPostingStatsFilter('incomplete')}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                      postingStatsFilter === 'incomplete'
+                        ? 'bg-amber-600 text-white border-amber-600 shadow-2xs'
+                        : 'bg-white text-amber-800 border-amber-300 hover:bg-amber-50'
+                    }`}
+                  >
+                    <Clock className="w-3 h-3" />
+                    <span>Chưa Xong ({rawStaffPostingStats.filter((s) => s.totalTarget > 0 && s.totalActual < s.totalTarget).length})</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Bên phải: Dropdown sắp xếp */}
+              <div className="flex items-center space-x-2 shrink-0">
+                <span className="text-[11px] font-bold text-slate-500 flex items-center space-x-1">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Sắp xếp:</span>
+                </span>
+                <select
+                  value={postingStatsSort}
+                  onChange={(e) => setPostingStatsSort(e.target.value as any)}
+                  className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-hidden focus:border-teal-500 cursor-pointer shadow-2xs"
+                >
+                  <option value="total_desc">Tổng Page (Nhiều nhất)</option>
+                  <option value="manual_desc">✍️ Đăng Tay (Nhiều nhất)</option>
+                  <option value="tool_desc">🤖 Đăng Tool (Nhiều nhất)</option>
+                  <option value="manual_ratio_desc">% Đăng Tay cao nhất</option>
+                  <option value="tool_ratio_desc">% Đăng Tool cao nhất</option>
+                  <option value="completion_desc">🎯 Tiến độ cao nhất</option>
+                  <option value="name_asc">Tên nhân viên (A → Z)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Bảng Chi Tiết Từng Nhân Viên */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wide">
+                  <tr>
+                    <th className="py-2.5 px-3 w-10 text-center text-slate-400">#</th>
+                    <th className="py-2.5 px-3 min-w-[170px]">Nhân Viên</th>
+                    <th className="py-2.5 px-3 text-center min-w-[100px]">Tổng Page</th>
+                    <th className="py-2.5 px-3 min-w-[180px] bg-emerald-50/70 text-emerald-950 font-black">
+                      ✍️ ĐĂNG TAY (Bấm xem Page)
+                    </th>
+                    <th className="py-2.5 px-3 min-w-[180px] bg-purple-50/70 text-purple-950 font-black">
+                      🤖 ĐĂNG TOOL (Bấm xem Page)
+                    </th>
+                    <th className="py-2.5 px-3 text-center min-w-[140px]">Tỷ Lệ Tay / Tool</th>
+                    <th className="py-2.5 px-3 text-center min-w-[130px]">Tiến Độ Hôm Nay</th>
+                    <th className="py-2.5 px-3 text-center min-w-[90px]">Nick Via</th>
+                    <th className="py-2.5 px-3 text-center min-w-[140px]">Thao Tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {staffPostingStats.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-8 text-center text-slate-400">
+                        Không tìm thấy nhân viên phù hợp với bộ lọc hiện tại
+                      </td>
+                    </tr>
+                  ) : (
+                    staffPostingStats.map((stat, idx) => {
+                      const isDone = stat.totalTarget > 0 && stat.totalActual >= stat.totalTarget;
+
+                      return (
+                        <tr key={stat.id} className="hover:bg-slate-50/90 transition-colors">
+                          {/* STT */}
+                          <td className="py-3 px-3 text-center font-bold text-slate-400">
+                            {idx + 1}
+                          </td>
+
+                          {/* Tên nhân viên */}
+                          <td className="py-3 px-3">
+                            <div className="flex items-center space-x-2.5">
+                              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-black text-xs flex items-center justify-center shrink-0 shadow-2xs">
+                                {stat.username.charAt(0).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-black text-slate-900 text-xs">
+                                  {stat.username}
+                                </div>
+                                <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded ${
+                                  stat.status === 'approved'
+                                    ? 'bg-emerald-50 text-emerald-700'
+                                    : stat.status === 'pending'
+                                    ? 'bg-amber-50 text-amber-700'
+                                    : 'bg-rose-50 text-rose-700'
+                                }`}>
+                                  {stat.status === 'approved' ? 'Hoạt động' : stat.status === 'pending' ? 'Chờ duyệt' : 'Tạm khóa'}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Tổng Page */}
+                          <td className="py-3 px-3 text-center">
+                            <span className="font-mono font-black text-slate-800 text-sm">
+                              {stat.totalPages}
+                            </span>
+                            <span className="text-[10px] text-slate-400 block font-sans">Fanpage</span>
+                          </td>
+
+                          {/* Cột ĐĂNG TAY */}
+                          <td
+                            className="py-3 px-3 bg-emerald-50/30 hover:bg-emerald-100/60 cursor-pointer transition-colors group"
+                            onClick={() => setInspectStaffModal({ staffName: stat.username, tab: 'manual' })}
+                            title={`Bấm để xem danh sách ${stat.manualPages} Page Đăng Tay của ${stat.username}`}
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-mono font-black text-emerald-700 text-xs group-hover:underline">
+                                  {stat.manualPages} Page
+                                </span>
+                                <span className="text-[10px] font-black font-mono text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded">
+                                  {stat.manualRatio}%
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-600 font-mono">
+                                Đã đăng: <strong className="text-emerald-700 font-black">{stat.manualActual}</strong>
+                                <span className="text-slate-400"> / {stat.manualTarget} bài</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Cột ĐĂNG TOOL */}
+                          <td
+                            className="py-3 px-3 bg-purple-50/30 hover:bg-purple-100/60 cursor-pointer transition-colors group"
+                            onClick={() => setInspectStaffModal({ staffName: stat.username, tab: 'tool' })}
+                            title={`Bấm để xem danh sách ${stat.toolPages} Page Đăng Tool của ${stat.username}`}
+                          >
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-mono font-black text-purple-700 text-xs group-hover:underline">
+                                  {stat.toolPages} Page
+                                </span>
+                                <span className="text-[10px] font-black font-mono text-purple-800 bg-purple-100 px-1.5 py-0.2 rounded">
+                                  {stat.toolRatio}%
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-600 font-mono">
+                                Đã đăng: <strong className="text-purple-700 font-black">{stat.toolActual}</strong>
+                                <span className="text-slate-400"> / {stat.toolTarget} bài</span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Tỷ lệ thanh bar trực quan Tay vs Tool */}
+                          <td className="py-3 px-3 text-center">
+                            {stat.totalPages > 0 ? (
+                              <div className="space-y-1">
+                                <div className="w-full h-2.5 bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
+                                  <div
+                                    style={{ width: `${stat.manualRatio}%` }}
+                                    className="bg-emerald-500 h-full"
+                                    title={`Đăng Tay: ${stat.manualRatio}%`}
+                                  />
+                                  <div
+                                    style={{ width: `${stat.toolRatio}%` }}
+                                    className="bg-purple-600 h-full"
+                                    title={`Đăng Tool: ${stat.toolRatio}%`}
+                                  />
+                                </div>
+                                <div className="text-[10px] font-mono font-bold text-slate-500 flex justify-between">
+                                  <span className="text-emerald-700">{stat.manualRatio}% Tay</span>
+                                  <span className="text-purple-700">{stat.toolRatio}% Tool</span>
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">Chưa giao Page</span>
+                            )}
+                          </td>
+
+                          {/* Tiến độ hôm nay */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="space-y-0.5">
+                              <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                isDone
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : stat.totalActual > 0
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-slate-100 text-slate-500'
+                              }`}>
+                                {isDone ? (
+                                  <>
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    <span>Đạt Chỉ Tiêu</span>
+                                  </>
+                                ) : (
+                                  <span>{stat.completionRate}%</span>
+                                )}
+                              </span>
+                              <div className="text-[10px] text-slate-500 font-mono">
+                                {stat.totalActual}/{stat.totalTarget} bài
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Nick Via */}
+                          <td className="py-3 px-3 text-center font-mono font-bold text-slate-700">
+                            <span className="inline-flex items-center space-x-1 bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md border border-indigo-200 text-xs">
+                              <KeyRound className="w-3 h-3 text-indigo-500" />
+                              <span>{stat.viasCount}</span>
+                            </span>
+                          </td>
+
+                          {/* Thao tác */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                              <button
+                                type="button"
+                                onClick={() => setInspectStaffModal({ staffName: stat.username, tab: 'all' })}
+                                className="px-2 py-1 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                                title={`Xem danh sách tất cả ${stat.totalPages} Fanpage của ${stat.username}`}
+                              >
+                                📋 {stat.totalPages} Page
+                              </button>
+                              {onSwitchToStaffView && (
+                                <button
+                                  type="button"
+                                  onClick={() => onSwitchToStaffView(stat.username)}
+                                  className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                                  title={`Chuyển sang góc nhìn nhân viên ${stat.username}`}
+                                >
+                                  Góc nhìn NV →
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+                <tfoot className="bg-slate-100/90 font-black text-xs border-t-2 border-slate-300">
+                  <tr>
+                    <td colSpan={2} className="py-2.5 px-3 uppercase text-slate-700">
+                      TỔNG CỘNG TOÀN ĐỘI:
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono text-slate-900 text-sm">
+                      {teamPostingSummary.totalPagesAll}
+                    </td>
+                    <td className="py-2.5 px-3 bg-emerald-100/60 font-mono text-emerald-900 text-xs">
+                      {teamPostingSummary.totalManualPages} Page ({teamPostingSummary.totalManualActual}/{teamPostingSummary.totalManualTarget} bài)
+                    </td>
+                    <td className="py-2.5 px-3 bg-purple-100/60 font-mono text-purple-900 text-xs">
+                      {teamPostingSummary.totalToolPages} Page ({teamPostingSummary.totalToolActual}/{teamPostingSummary.totalToolTarget} bài)
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono text-slate-800 text-[11px]">
+                      {teamPostingSummary.manualRatio}% Tay / {teamPostingSummary.toolRatio}% Tool
+                    </td>
+                    <td className="py-2.5 px-3 text-center font-mono text-blue-900 text-xs">
+                      {teamPostingSummary.totalActualAll}/{teamPostingSummary.totalTargetAll} bài ({teamPostingSummary.completionRate}%)
+                    </td>
+                    <td colSpan={2}></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Staff Table */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
@@ -1203,6 +1882,38 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                             <span>{staffGroupsCount} Grp</span>
                           </span>
                         </div>
+                        {/* Chi tiết Đăng Tay vs Tool của nhân viên */}
+                        {staffPagesCount > 0 && (
+                          <div className="mt-1.5 flex flex-col items-center justify-center gap-1 text-[10px]">
+                            <div className="flex items-center justify-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => setInspectStaffModal({ staffName: acc.username, tab: 'manual' })}
+                                className="inline-flex items-center space-x-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-black px-2 py-0.5 rounded border border-emerald-300 shadow-2xs cursor-pointer transition-colors"
+                                title={`Bấm xem danh sách ${records.filter((r) => r.staffName?.trim().toLowerCase() === staffNameLower && r.postingMethod === 'Đăng Tay').length} Fanpage đăng tay`}
+                              >
+                                <PenTool className="w-2.5 h-2.5 text-emerald-700" />
+                                <span>{records.filter((r) => r.staffName?.trim().toLowerCase() === staffNameLower && r.postingMethod === 'Đăng Tay').length} Tay</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInspectStaffModal({ staffName: acc.username, tab: 'tool' })}
+                                className="inline-flex items-center space-x-0.5 bg-purple-100 hover:bg-purple-200 text-purple-900 font-black px-2 py-0.5 rounded border border-purple-300 shadow-2xs cursor-pointer transition-colors"
+                                title={`Bấm xem danh sách ${records.filter((r) => r.staffName?.trim().toLowerCase() === staffNameLower && r.postingMethod === 'Tool').length} Fanpage đăng tool`}
+                              >
+                                <Bot className="w-2.5 h-2.5 text-purple-700" />
+                                <span>{records.filter((r) => r.staffName?.trim().toLowerCase() === staffNameLower && r.postingMethod === 'Tool').length} Tool</span>
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setInspectStaffModal({ staffName: acc.username, tab: 'all' })}
+                              className="text-[10px] text-teal-700 hover:text-teal-900 font-bold hover:underline cursor-pointer"
+                            >
+                              🔍 Xem chi tiết DS Page
+                            </button>
+                          </div>
+                        )}
                       </td>
 
                       {/* Ghi Chú & Ngày Vào */}
@@ -1979,6 +2690,317 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal Xem Chi Tiết Danh Sách Fanpage Của Nhân Viên */}
+      {inspectStaffModal && (() => {
+        const staffNameLower = inspectStaffModal.staffName.trim().toLowerCase();
+        const staffRecs = records.filter(
+          (r) => (r.staffName || '').trim().toLowerCase() === staffNameLower
+        );
+        const manualRecs = staffRecs.filter((r) => r.postingMethod === 'Đăng Tay');
+        const toolRecs = staffRecs.filter((r) => r.postingMethod === 'Tool');
+        const timerRecs = staffRecs.filter((r) => r.postingMethod === 'Hẹn Giờ');
+
+        let displayRecs = staffRecs;
+        if (inspectStaffModal.tab === 'manual') displayRecs = manualRecs;
+        else if (inspectStaffModal.tab === 'tool') displayRecs = toolRecs;
+        else if (inspectStaffModal.tab === 'timer') displayRecs = timerRecs;
+
+        if (inspectPageSearch.trim()) {
+          const q = inspectPageSearch.trim().toLowerCase();
+          displayRecs = displayRecs.filter(
+            (r) =>
+              (r.pageName || '').toLowerCase().includes(q) ||
+              (r.viaUid || '').toLowerCase().includes(q) ||
+              (r.pageLink || '').toLowerCase().includes(q) ||
+              (r.status || '').toLowerCase().includes(q)
+          );
+        }
+
+        return (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/75 backdrop-blur-xs p-2 sm:p-4 flex items-center justify-center min-h-screen animate-fadeIn">
+            <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl border-2 border-teal-500 flex flex-col max-h-[92vh] overflow-hidden">
+              {/* Header */}
+              <div className="p-4 sm:p-5 bg-gradient-to-r from-teal-50 via-emerald-50 to-indigo-50 border-b border-slate-200 flex items-center justify-between shrink-0">
+                <div className="flex items-center space-x-3">
+                  <div className="w-10 h-10 rounded-2xl bg-teal-600 text-white font-black text-sm flex items-center justify-center shadow-xs shrink-0">
+                    {inspectStaffModal.staffName.charAt(0).toUpperCase()}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-base font-black text-slate-900">
+                        Chi Tiết Fanpage: {inspectStaffModal.staffName}
+                      </h3>
+                      <span className="text-[10px] font-black bg-teal-100 text-teal-900 px-2 py-0.5 rounded-full border border-teal-300">
+                        Tổng {staffRecs.length} Fanpage
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Danh sách cụ thể từng Fanpage đăng tay hay chạy tool, link Page và tiến độ bài đăng hôm nay.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectStaffModal(null);
+                    setInspectPageSearch('');
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-full transition-colors cursor-pointer"
+                  title="Đóng"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Sub-header: Tabs & Search */}
+              <div className="p-3 sm:p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
+                {/* Tabs */}
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setInspectStaffModal({ ...inspectStaffModal, tab: 'all' })}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      inspectStaffModal.tab === 'all'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-white text-slate-700 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    Tất Cả ({staffRecs.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInspectStaffModal({ ...inspectStaffModal, tab: 'manual' })}
+                    className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      inspectStaffModal.tab === 'manual'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-white text-emerald-800 hover:bg-emerald-50 border border-emerald-300'
+                    }`}
+                  >
+                    <PenTool className="w-3.5 h-3.5" />
+                    <span>✍️ Đăng Tay ({manualRecs.length})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInspectStaffModal({ ...inspectStaffModal, tab: 'tool' })}
+                    className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      inspectStaffModal.tab === 'tool'
+                        ? 'bg-purple-600 text-white shadow-xs'
+                        : 'bg-white text-purple-800 hover:bg-purple-50 border border-purple-300'
+                    }`}
+                  >
+                    <Bot className="w-3.5 h-3.5" />
+                    <span>🤖 Đăng Tool ({toolRecs.length})</span>
+                  </button>
+                  {timerRecs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setInspectStaffModal({ ...inspectStaffModal, tab: 'timer' })}
+                      className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        inspectStaffModal.tab === 'timer'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'bg-white text-amber-800 hover:bg-amber-50 border border-amber-300'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>⏰ Hẹn Giờ ({timerRecs.length})</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Search */}
+                <div className="relative min-w-[200px]">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={inspectPageSearch}
+                    onChange={(e) => setInspectPageSearch(e.target.value)}
+                    placeholder="Tìm tên Page, UID Via..."
+                    className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 placeholder:font-normal focus:outline-hidden focus:border-teal-500"
+                  />
+                  {inspectPageSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setInspectPageSearch('')}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Table Body */}
+              <div className="flex-1 overflow-y-auto p-3 sm:p-4">
+                {displayRecs.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400">
+                    <FileSpreadsheet className="w-10 h-10 mx-auto text-slate-300 mb-2" />
+                    <p className="text-xs font-bold">Không tìm thấy Fanpage nào</p>
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200 text-[11px] uppercase tracking-wide">
+                        <tr>
+                          <th className="py-2.5 px-3 w-10 text-center text-slate-400">#</th>
+                          <th className="py-2.5 px-3 min-w-[200px]">Tên Fanpage</th>
+                          <th className="py-2.5 px-3 min-w-[130px]">Phương Thức</th>
+                          <th className="py-2.5 px-3 min-w-[130px]">Nick Via</th>
+                          <th className="py-2.5 px-3 text-center min-w-[120px]">Bài Hôm Nay</th>
+                          <th className="py-2.5 px-3 text-center min-w-[100px]">Trạng Thái</th>
+                          <th className="py-2.5 px-3 text-center min-w-[100px]">Tương Tác</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {displayRecs.map((r, i) => {
+                          const isDone = r.isCompleted || (r.targetPosts > 0 && r.actualPosts >= r.targetPosts);
+                          const isManual = r.postingMethod === 'Đăng Tay';
+                          const isTool = r.postingMethod === 'Tool';
+
+                          return (
+                            <tr key={r.id || `inspect-${i}`} className="hover:bg-slate-50/80 transition-colors">
+                              <td className="py-2.5 px-3 text-center font-bold text-slate-400">
+                                {i + 1}
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div>
+                                  <div className="font-black text-slate-900 text-xs">
+                                    {r.pageName || 'Không tên'}
+                                  </div>
+                                  {r.pageLink ? (
+                                    <a
+                                      href={r.pageLink.startsWith('http') ? r.pageLink : `https://${r.pageLink}`}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center space-x-1 text-[11px] text-blue-600 hover:text-blue-800 hover:underline mt-0.5"
+                                    >
+                                      <span className="truncate max-w-[240px]">{r.pageLink}</span>
+                                      <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                    </a>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 italic">Chưa có link</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <span
+                                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black border shadow-2xs ${
+                                    isManual
+                                      ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
+                                      : isTool
+                                      ? 'bg-purple-50 text-purple-900 border-purple-300'
+                                      : 'bg-amber-50 text-amber-900 border-amber-300'
+                                  }`}
+                                >
+                                  {isManual ? (
+                                    <>
+                                      <PenTool className="w-3 h-3 text-emerald-700" />
+                                      <span>✍️ Đăng Tay</span>
+                                    </>
+                                  ) : isTool ? (
+                                    <>
+                                      <Bot className="w-3 h-3 text-purple-700" />
+                                      <span>🤖 Đăng Tool</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Clock className="w-3 h-3 text-amber-700" />
+                                      <span>⏰ {r.postingMethod}</span>
+                                    </>
+                                  )}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="space-y-0.5">
+                                  <div className="font-mono font-bold text-slate-800 text-[11px]">
+                                    {r.viaUid || <span className="text-slate-400 italic">Chưa gán Via</span>}
+                                  </div>
+                                  {r.isViaError && (
+                                    <span className="text-[9px] font-bold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 inline-block">
+                                      ⚠️ Via Lỗi
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <div className="space-y-0.5">
+                                  <span
+                                    className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                      isDone
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : (r.actualPosts || 0) > 0
+                                        ? 'bg-amber-100 text-amber-800'
+                                        : 'bg-slate-100 text-slate-500'
+                                    }`}
+                                  >
+                                    {isDone ? (
+                                      <>
+                                        <Check className="w-2.5 h-2.5 text-emerald-600" />
+                                        <span>Đạt Chỉ Tiêu</span>
+                                      </>
+                                    ) : (
+                                      <span>{r.actualPosts || 0} / {r.targetPosts || 0} bài</span>
+                                    )}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    r.status === 'Đề Xuất'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : r.status === 'Mất Đề Xuất'
+                                      ? 'bg-amber-100 text-amber-800'
+                                      : r.status === 'Đình Chỉ'
+                                      ? 'bg-rose-100 text-rose-800'
+                                      : 'bg-slate-100 text-slate-700'
+                                  }`}
+                                >
+                                  {r.status || 'Bình thường'}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-3 text-center">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    r.interaction === 'TỐT'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : r.interaction === 'Bình Thường'
+                                      ? 'bg-blue-100 text-blue-800'
+                                      : 'bg-slate-100 text-slate-600'
+                                  }`}
+                                >
+                                  {r.interaction || 'Chưa đánh giá'}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+                <span className="text-xs text-slate-500">
+                  Hiển thị <strong>{displayRecs.length}</strong> / {staffRecs.length} Fanpage của {inspectStaffModal.staffName}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectStaffModal(null);
+                    setInspectPageSearch('');
+                  }}
+                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Đóng
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
