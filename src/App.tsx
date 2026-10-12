@@ -105,6 +105,7 @@ import { AddEditProxyModal } from './components/AddEditProxyModal';
 import { BulkImportProxyModal } from './components/BulkImportProxyModal';
 import { RevenueManagementTable } from './components/RevenueManagementTable';
 import { StaffInfoTable } from './components/StaffInfoTable';
+import { getCleanBmName } from './utils/helpers';
 import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact } from 'lucide-react';
 
 export default function App() {
@@ -333,7 +334,25 @@ export default function App() {
 
         // 1. Listen to live page records in Cloud Firestore
         unsubRecords = subscribeToPageRecords((cloudRecords) => {
-          setRecords(cloudRecords);
+          let hasDirtyBm = false;
+          const cleanedRecords = cloudRecords.map((r) => {
+            const clean = getCleanBmName(r.bmNote);
+            if (r.bmNote && r.bmNote !== clean) {
+              hasDirtyBm = true;
+            }
+            return { ...r, bmNote: clean };
+          });
+          setRecords(cleanedRecords);
+
+          // Tự động dọn dẹp các bản ghi cũ có dấu | trong bmNote trên Firestore
+          if (hasDirtyBm) {
+            const dirtyToClean = cloudRecords
+              .filter((r) => r.bmNote && r.bmNote !== getCleanBmName(r.bmNote))
+              .map((r) => ({ ...r, bmNote: getCleanBmName(r.bmNote) }));
+            batchSaveCloudPageRecords(dirtyToClean).catch((err) =>
+              console.warn('[App] Auto-clean dirty BM in Firestore:', err)
+            );
+          }
         });
 
         // 2. Listen to live full vias (passwords, 2FA, raw strings)
@@ -823,7 +842,7 @@ export default function App() {
         const matchVia = r.viaUid.toLowerCase().includes(query);
         const matchFull = (r.fullVia || '').toLowerCase().includes(query);
         const matchStaff = r.staffName.toLowerCase().includes(query);
-        const matchNote = (r.bmNote || '').toLowerCase().includes(query);
+        const matchNote = getCleanBmName(r.bmNote).toLowerCase().includes(query);
         const matchTransfer = (r.viaTransferNote || '').toLowerCase().includes(query);
         if (!matchPage && !matchVia && !matchFull && !matchStaff && !matchNote && !matchTransfer) {
           return false;
@@ -841,10 +860,11 @@ export default function App() {
       }
 
       if (filter.bmFilter && filter.bmFilter !== 'all') {
+        const cleanBm = getCleanBmName(r.bmNote);
         if (filter.bmFilter === '__none__') {
-          if (r.bmNote?.trim()) return false;
+          if (cleanBm) return false;
         } else {
-          if (r.bmNote?.trim().toLowerCase() !== filter.bmFilter.trim().toLowerCase()) {
+          if (cleanBm.toLowerCase() !== getCleanBmName(filter.bmFilter).toLowerCase()) {
             return false;
           }
         }
@@ -1314,12 +1334,11 @@ export default function App() {
       prev.map((r) => {
         if (!pageIds.includes(r.id)) return r;
 
-        let newBmNote = r.bmNote || '';
-        if (appendHistoryNote && historyNoteText) {
-          newBmNote = newBmNote
-            ? `${newBmNote} | [${historyNoteText}]`
-            : `[${historyNoteText}]`;
-        }
+        // BM luôn luôn chỉ giữ tên BM sạch, bỏ hết từ dấu | phía sau
+        const cleanBm = (r.bmNote || '').split('|')[0].trim();
+        const transferNoteMsg = appendHistoryNote && historyNoteText
+          ? historyNoteText
+          : `Đã đổi sang Via ${targetCleanVia}`;
 
         const now = new Date();
         const dateStr = `${now.getDate()}/${now.getMonth() + 1}`;
@@ -1327,10 +1346,10 @@ export default function App() {
           ...r,
           viaUid: targetCleanVia,
           staffName: targetCleanStaff,
-          bmNote: newBmNote,
+          bmNote: cleanBm,
           viaTransferStatus: 'completed',
           viaTransferColor: 'green',
-          viaTransferNote: `Đã đổi sang Via ${targetCleanVia}`,
+          viaTransferNote: transferNoteMsg,
           viaTransferUpdatedAt: dateStr,
           isViaFixed: true,
           isViaError: false,
@@ -1515,8 +1534,12 @@ export default function App() {
       return;
     }
 
-    const sanitizedUpdates =
-      currentUser.role === 'staff' ? { ...updates, staffName: existing.staffName } : updates;
+    const sanitizedUpdates = {
+      ...(currentUser.role === 'staff' ? { ...updates, staffName: existing.staffName } : updates),
+    };
+    if (sanitizedUpdates.bmNote !== undefined) {
+      sanitizedUpdates.bmNote = getCleanBmName(sanitizedUpdates.bmNote);
+    }
 
     await updateCloudPageRecord(id, sanitizedUpdates);
   };
@@ -2055,11 +2078,13 @@ export default function App() {
   ) => {
     const recordStaff =
       currentUser.role === 'staff' ? currentUser.name : (data.staffName || 'Nhân Viên');
+    const cleanBm = getCleanBmName(data.bmNote);
 
     if (data.id) {
       const updatedRec: PageRecord = {
         ...(records.find((r) => r.id === data.id) || {}),
         ...data,
+        bmNote: cleanBm,
         id: data.id,
         staffName: recordStaff,
       } as PageRecord;
@@ -2095,6 +2120,7 @@ export default function App() {
     } else {
       const newRec: PageRecord = {
         ...data,
+        bmNote: cleanBm,
         id: `row-${Date.now()}`,
         staffName: recordStaff,
       };
@@ -2137,6 +2163,7 @@ export default function App() {
 
     const newRecords: PageRecord[] = batchData.map((d, idx) => ({
       ...d,
+      bmNote: getCleanBmName(d.bmNote),
       id: `row-${Date.now()}-${idx}`,
       staffName: recordStaff,
     }));
@@ -2170,6 +2197,7 @@ export default function App() {
       ...record,
       id: `row-${Date.now()}`,
       pageName: `${record.pageName} (Thêm cùng Via)`,
+      bmNote: getCleanBmName(record.bmNote),
       actualPosts: 0,
       isCompleted: false,
     };
@@ -2571,6 +2599,7 @@ export default function App() {
 
             <FanpageSheetTable
               records={filteredRecords}
+              allRecords={records}
               currentUser={currentUser}
               errorViaUids={errorViaUids}
               fixedViaUids={fixedViaUids}

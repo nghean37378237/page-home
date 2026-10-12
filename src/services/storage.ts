@@ -1,5 +1,6 @@
 import { PageRecord, AppUser, UserAccount, FullViaItem, GroupRecord, MonthlyFinanceRecord, ALL_TAB_KEYS } from '../types';
 import { INITIAL_PAGE_RECORDS, INITIAL_MONTHLY_FINANCES } from '../data/initialData';
+import { getCleanBmName } from '../utils/helpers';
 
 // Storage keys previously used for local storage - retained to purge legacy cache
 export const STORAGE_KEY = 'fanpage_sheets_records_v2';
@@ -292,7 +293,7 @@ export function getInitialFullViaItems(): FullViaItem[] {
         pass: parts[1]?.trim() || 'QuynhFb2024!',
         twoFa: parts[2]?.trim() || 'JBSWY3DPEHPK3PXP',
         staffName: r.staffName || 'Anh Quỳnh',
-        note: r.bmNote || 'Via chính nuôi page',
+        note: getCleanBmName(r.bmNote) || 'Via chính nuôi page',
         status: 'active',
         createdAt: '15/09/2026',
         rawFullVia: r.fullVia || `${uid}|${parts[1]?.trim() || 'QuynhFb2024!'}|${parts[2]?.trim() || 'JBSWY3DPEHPK3PXP'}`,

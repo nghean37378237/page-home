@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
 import { PageRecord, FullViaItem, GroupRecord, ProxyItem } from '../types';
+import { getCleanBmName } from './helpers';
 
 export const SAMPLE_FANPAGE_ROWS = [
   {
@@ -201,7 +202,7 @@ export function exportFanpageToXLSX(records: PageRecord[]): void {
     'NGÀY ĐĂNG TAY': r.postingMethod === 'Đăng Tay' ? (r.postingDate || r.date || '') : '',
     'TƯƠNG TÁC': r.interaction || 'TỐT',
     'NGÀY TT': r.interactionDate || r.date || '',
-    'GHI CHÚ BM': r.bmNote || '',
+    'GHI CHÚ BM': getCleanBmName(r.bmNote),
     'Chỉ tiêu bài': r.targetPosts || 0,
     'Đã đăng': r.actualPosts || 0,
     'Tiến độ': r.isCompleted ? 'Đã xong' : 'Chưa xong',

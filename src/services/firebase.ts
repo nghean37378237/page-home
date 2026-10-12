@@ -32,6 +32,7 @@ import {
   AdminSecuritySettings,
   getInitialFullViaItems,
 } from './storage';
+import { getCleanBmName } from '../utils/helpers';
 
 // 1. Initialize Firebase App and Firestore Database instance with ignoreUndefinedProperties: true
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
@@ -589,7 +590,11 @@ export async function getCloudMonthlyFinances(): Promise<MonthlyFinanceRecord[]>
 export async function setCloudPageRecord(record: PageRecord): Promise<void> {
   const path = `${PAGE_RECORDS_COLLECTION}/${record.id}`;
   try {
-    await setDoc(doc(db, PAGE_RECORDS_COLLECTION, record.id), record);
+    const cleanRecord = {
+      ...record,
+      bmNote: getCleanBmName(record.bmNote),
+    };
+    await setDoc(doc(db, PAGE_RECORDS_COLLECTION, record.id), cleanRecord);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -598,7 +603,11 @@ export async function setCloudPageRecord(record: PageRecord): Promise<void> {
 export async function updateCloudPageRecord(id: string, updates: Partial<PageRecord>): Promise<void> {
   const path = `${PAGE_RECORDS_COLLECTION}/${id}`;
   try {
-    await updateDoc(doc(db, PAGE_RECORDS_COLLECTION, id), updates as DocumentData);
+    const cleanUpdates =
+      updates.bmNote !== undefined
+        ? { ...updates, bmNote: getCleanBmName(updates.bmNote) }
+        : updates;
+    await updateDoc(doc(db, PAGE_RECORDS_COLLECTION, id), cleanUpdates as DocumentData);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -621,7 +630,11 @@ export async function batchSaveCloudPageRecords(records: PageRecord[]): Promise<
       const chunk = records.slice(i, i + chunkSize);
       const batch = writeBatch(db);
       chunk.forEach((rec) => {
-        batch.set(doc(db, PAGE_RECORDS_COLLECTION, rec.id), rec);
+        const cleanRec = {
+          ...rec,
+          bmNote: getCleanBmName(rec.bmNote),
+        };
+        batch.set(doc(db, PAGE_RECORDS_COLLECTION, rec.id), cleanRec);
       });
       await batch.commit();
     }

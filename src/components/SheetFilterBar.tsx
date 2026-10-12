@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { Search, Filter, X, Lock, Layers, Plus, AlertTriangle, Trash2, ArrowRightLeft, CheckCircle2, Zap, Users } from 'lucide-react';
 import { SheetFilter, PageRecord, AppUser } from '../types';
+import { getCleanBmName } from '../utils/helpers';
 
 interface SheetFilterBarProps {
   filter: SheetFilter;
@@ -172,11 +173,11 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     ).length;
   }, [staffScopedRecords]);
 
-  // Danh sách các BM hiện có trong scope records
+  // Danh sách các BM hiện có trong scope records (luôn bỏ phần sau dấu |)
   const bmOptions = useMemo(() => {
     const map = new Map<string, number>();
     staffScopedRecords.forEach((r) => {
-      const b = r.bmNote?.trim();
+      const b = getCleanBmName(r.bmNote);
       if (b) {
         map.set(b, (map.get(b) || 0) + 1);
       }

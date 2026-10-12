@@ -32,6 +32,7 @@ import {
   LIKE_COUNT_OPTIONS,
   POSTING_METHOD_OPTIONS,
   INTERACTION_OPTIONS,
+  getCleanBmName,
 } from '../utils/helpers';
 
 interface AddEditPageModalProps {
@@ -113,15 +114,18 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
     return existingVias.find((v) => v.viaUid === trimmed) || null;
   }, [viaUid, existingVias]);
 
-  // Danh sách tất cả tên BM hiện tại trong hệ thống để làm list lựa chọn
+  // Danh sách tất cả tên BM hiện tại trong hệ thống để làm list lựa chọn (luôn bỏ phần sau dấu |)
   const existingBmList = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
     const defaultBms = ['B-BM ANH QUYNH', 'E-BM BAO 2', 'BM Bao 1', 'BM 1 5K+', 'BM MY 1'];
     defaultBms.forEach((b) => {
-      map.set(b.trim().toLowerCase(), { name: b.trim(), count: 0 });
+      const clean = getCleanBmName(b);
+      if (clean) {
+        map.set(clean.toLowerCase(), { name: clean, count: 0 });
+      }
     });
     allRecords.forEach((r) => {
-      const b = r.bmNote?.trim();
+      const b = getCleanBmName(r.bmNote);
       if (b) {
         const key = b.toLowerCase();
         if (map.has(key)) {
@@ -157,7 +161,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       );
       setInteraction(initialRecord.interaction || 'TỐT');
       setInteractionDate(initialRecord.interactionDate || initialRecord.date || '15/9');
-      setBmNote(initialRecord.bmNote || '');
+      setBmNote(getCleanBmName(initialRecord.bmNote));
       setViaTransferStatus(initialRecord.viaTransferStatus || 'none');
       setViaTransferNote(initialRecord.viaTransferNote || '');
       setViaTransferColor(initialRecord.viaTransferColor || 'gray');
@@ -192,7 +196,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       const existingViaBm = allRecords.find(
         (r) => r.viaUid.trim().toLowerCase() === presetViaData.viaUid.trim().toLowerCase() && r.bmNote?.trim()
       );
-      setBmNote(existingViaBm?.bmNote || '');
+      setBmNote(getCleanBmName(existingViaBm?.bmNote));
       setTargetPosts(3);
       setActualPosts(0);
       setIsCompleted(false);
@@ -276,7 +280,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
             : undefined,
         interaction,
         interactionDate: interactionDate.trim() || date.trim() || '15/9',
-        bmNote: bmNote.trim(),
+        bmNote: getCleanBmName(bmNote),
         viaTransferStatus: viaTransferStatus !== 'none' ? viaTransferStatus : undefined,
         viaTransferNote: viaTransferNote.trim() || undefined,
         viaTransferColor: viaTransferColor !== 'gray' ? viaTransferColor : undefined,
@@ -318,7 +322,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
           : undefined,
       interaction,
       interactionDate: interactionDate.trim() || date.trim() || '15/9',
-      bmNote: bmNote.trim(),
+      bmNote: getCleanBmName(bmNote),
       viaTransferStatus: viaTransferStatus !== 'none' ? viaTransferStatus : undefined,
       viaTransferNote: viaTransferNote.trim() || undefined,
       viaTransferColor: viaTransferColor !== 'gray' ? viaTransferColor : undefined,
@@ -782,12 +786,12 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
                   <select
                     value={
                       existingBmList.some(
-                        (b) => b.name.toLowerCase() === bmNote.trim().toLowerCase()
+                        (b) => b.name.toLowerCase() === getCleanBmName(bmNote).toLowerCase()
                       )
                         ? existingBmList.find(
-                            (b) => b.name.toLowerCase() === bmNote.trim().toLowerCase()
+                            (b) => b.name.toLowerCase() === getCleanBmName(bmNote).toLowerCase()
                           )?.name
-                        : bmNote
+                        : getCleanBmName(bmNote)
                         ? '__custom__'
                         : ''
                     }
@@ -796,7 +800,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
                       if (val === '__custom__') {
                         // User can type custom BM into the input
                       } else {
-                        setBmNote(val);
+                        setBmNote(getCleanBmName(val));
                       }
                     }}
                     className="w-1/2 px-2.5 py-2 border border-slate-300 rounded-lg text-slate-900 font-bold bg-white text-xs focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 shadow-2xs cursor-pointer"
@@ -817,6 +821,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
                     placeholder="Hoặc tự gõ tên BM..."
                     value={bmNote}
                     onChange={(e) => setBmNote(e.target.value)}
+                    onBlur={() => setBmNote(getCleanBmName(bmNote))}
                     className="w-1/2 px-2.5 py-2 border border-slate-300 rounded-lg text-slate-900 font-medium text-xs focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 shadow-2xs"
                   />
                 </div>
@@ -831,9 +836,9 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
                       <button
                         key={bm.name}
                         type="button"
-                        onClick={() => setBmNote(bm.name)}
+                        onClick={() => setBmNote(getCleanBmName(bm.name))}
                         className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
-                          bmNote.trim().toLowerCase() === bm.name.toLowerCase()
+                          getCleanBmName(bmNote).toLowerCase() === bm.name.toLowerCase()
                             ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
                             : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
                         }`}

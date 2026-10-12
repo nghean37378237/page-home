@@ -18,6 +18,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { PageRecord, FullViaItem, AppUser } from '../types';
+import { getCleanBmName } from '../utils/helpers';
 
 export interface TransferPageViaParams {
   pageIds: string[];
@@ -548,7 +549,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                       </span>
                       {currentSinglePage.bmNote && (
                         <span className="px-2 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-amber-900 font-medium truncate max-w-full">
-                          BM: <strong>{currentSinglePage.bmNote}</strong>
+                          BM: <strong>{getCleanBmName(currentSinglePage.bmNote)}</strong>
                         </span>
                       )}
                     </div>

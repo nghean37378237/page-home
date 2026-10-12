@@ -64,6 +64,7 @@ import {
   getLikeCountBadgeStyle,
   getPostingMethodBadgeStyle,
   getInteractionBadgeStyle,
+  getCleanBmName,
 } from '../utils/helpers';
 
 export interface ViaTheme {
@@ -299,6 +300,7 @@ export const getViaTransferCellStyle = (
 
 interface FanpageSheetTableProps {
   records: PageRecord[];
+  allRecords?: PageRecord[];
   currentUser: AppUser;
   errorViaUids?: Set<string>;
   fixedViaUids?: Set<string>;
@@ -341,6 +343,7 @@ export type SheetRowItem =
 
 export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   records,
+  allRecords,
   currentUser,
   errorViaUids,
   fixedViaUids,
@@ -401,15 +404,19 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   const [editingBmRecordId, setEditingBmRecordId] = useState<string | null>(null);
   const [editingBmValue, setEditingBmValue] = useState<string>('');
 
-  // 1. Thu thập danh sách tất cả BM hiện tại để làm list lựa chọn
+  // 1. Thu thập danh sách tất cả BM hiện tại để làm list lựa chọn (loại bỏ phần sau dấu |)
   const existingBmList = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
     const defaultBms = ['B-BM ANH QUYNH', 'E-BM BAO 2', 'BM Bao 1', 'BM 1 5K+', 'BM MY 1'];
     defaultBms.forEach((b) => {
-      map.set(b.trim().toLowerCase(), { name: b.trim(), count: 0 });
+      const clean = getCleanBmName(b);
+      if (clean) {
+        map.set(clean.toLowerCase(), { name: clean, count: 0 });
+      }
     });
-    records.forEach((r) => {
-      const b = r.bmNote?.trim();
+    const pool = allRecords && allRecords.length > 0 ? allRecords : records;
+    pool.forEach((r) => {
+      const b = getCleanBmName(r.bmNote);
       if (b) {
         const key = b.toLowerCase();
         if (map.has(key)) {
@@ -422,20 +429,21 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     return Array.from(map.values()).sort(
       (a, b) => b.count - a.count || a.name.localeCompare(b.name, 'vi')
     );
-  }, [records]);
+  }, [records, allRecords]);
 
   // 2. Map tra cứu BM theo Nick Via để tự động gợi ý mặc định nếu cùng Via đã có Page gắn BM
   const viaBmMap = useMemo(() => {
     const map = new Map<string, string>();
-    records.forEach((r) => {
+    const pool = allRecords && allRecords.length > 0 ? allRecords : records;
+    pool.forEach((r) => {
       const uid = r.viaUid?.trim().toLowerCase();
-      const bm = r.bmNote?.trim();
+      const bm = getCleanBmName(r.bmNote);
       if (uid && bm && !map.has(uid)) {
         map.set(uid, bm);
       }
     });
     return map;
-  }, [records]);
+  }, [records, allRecords]);
 
   // Thống kê Đăng Tay vs Tool cho từng nhân viên trên Bảng 1
   const staffPostingBreakdown = useMemo(() => {
@@ -2262,7 +2270,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         </div>
                       </td>
 
-                      {/* Col M: GHI CHÚ BM (DANH SÁCH LỰA CHỌN TẤT CẢ BM HIỆN TẠI HOẶC THÊM MỚI) */}
+                      {/* Col M: GHI CHÚ BM (DANH SÁCH LỰA CHỌN TẤT CẢ BM HIỆN TẠI HOẶC THÊM MỚI, BỎ HẾT TỪ DẤU | PHÍA SAU) */}
                       <td className="px-1.5 py-1 border-r border-slate-300 whitespace-nowrap text-xs">
                         {editingBmRecordId === record.id ? (
                           <div className="flex items-center space-x-1 min-w-[125px] max-w-[160px]">
@@ -2274,7 +2282,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                               onChange={(e) => setEditingBmValue(e.target.value)}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
-                                  onUpdateRecord(record.id, { bmNote: editingBmValue.trim() });
+                                  onUpdateRecord(record.id, { bmNote: getCleanBmName(editingBmValue) });
                                   setEditingBmRecordId(null);
                                 } else if (e.key === 'Escape') {
                                   setEditingBmRecordId(null);
@@ -2286,11 +2294,11 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                             <button
                               type="button"
                               onClick={() => {
-                                onUpdateRecord(record.id, { bmNote: editingBmValue.trim() });
+                                onUpdateRecord(record.id, { bmNote: getCleanBmName(editingBmValue) });
                                 setEditingBmRecordId(null);
                               }}
                               className="px-1.5 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 shrink-0 cursor-pointer shadow-2xs"
-                              title="Lưu tên BM"
+                              title="Lưu tên BM (tự động bỏ ký tự sau dấu |)"
                             >
                               Lưu
                             </button>
@@ -2307,25 +2315,25 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                           <div className="flex flex-col space-y-0.5 min-w-[120px] max-w-[155px]">
                             <div className="flex items-center space-x-1">
                               <select
-                                value={record.bmNote || ''}
+                                value={getCleanBmName(record.bmNote)}
                                 onChange={(e) => {
                                   const val = e.target.value;
                                   if (val === '__custom_new_bm__') {
-                                    setEditingBmValue(record.bmNote || '');
+                                    setEditingBmValue(getCleanBmName(record.bmNote));
                                     setEditingBmRecordId(record.id);
                                   } else {
-                                    onUpdateRecord(record.id, { bmNote: val });
+                                    onUpdateRecord(record.id, { bmNote: getCleanBmName(val) });
                                   }
                                 }}
                                 className={`w-full appearance-none px-1.5 py-0.5 rounded text-[11px] font-bold border focus:outline-hidden cursor-pointer transition-colors shadow-2xs truncate ${
-                                  record.bmNote
+                                  getCleanBmName(record.bmNote)
                                     ? 'bg-slate-50 text-slate-900 border-slate-300 hover:bg-white'
                                     : 'bg-amber-50/80 text-amber-900 border-amber-300/80 font-normal hover:bg-amber-100/70'
                                 }`}
                                 title={
-                                  record.bmNote
-                                    ? `BM hiện tại: ${record.bmNote}`
-                                    : 'Chưa có BM - Bấm chọn từ danh sách hoặc thêm mới'
+                                  getCleanBmName(record.bmNote)
+                                    ? `BM hiện tại: ${getCleanBmName(record.bmNote)}`
+                                    : 'Chưa có BM - Chọn từ danh sách tất cả BM hiện tại hoặc thêm mới'
                                 }
                               >
                                 <option value="">— Chưa có BM —</option>
@@ -2334,11 +2342,13 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                     {bm.name} {bm.count > 0 ? `(${bm.count})` : ''}
                                   </option>
                                 ))}
-                                {record.bmNote &&
+                                {getCleanBmName(record.bmNote) &&
                                   !existingBmList.some(
-                                    (b) => b.name.toLowerCase() === record.bmNote.trim().toLowerCase()
+                                    (b) => b.name.toLowerCase() === getCleanBmName(record.bmNote).toLowerCase()
                                   ) && (
-                                    <option value={record.bmNote}>{record.bmNote}</option>
+                                    <option value={getCleanBmName(record.bmNote)}>
+                                      {getCleanBmName(record.bmNote)}
+                                    </option>
                                   )}
                                 <option value="__custom_new_bm__">➕ Thêm BM mới...</option>
                               </select>
@@ -2347,7 +2357,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setEditingBmValue(record.bmNote || '');
+                                  setEditingBmValue(getCleanBmName(record.bmNote));
                                   setEditingBmRecordId(record.id);
                                 }}
                                 className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors shrink-0 cursor-pointer"
@@ -2358,14 +2368,14 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                             </div>
 
                             {/* Gợi ý nhanh: nếu Page này chưa có BM nhưng Nick Via này đã có Page khác gắn BM */}
-                            {!record.bmNote &&
+                            {!getCleanBmName(record.bmNote) &&
                               record.viaUid &&
                               viaBmMap.has(record.viaUid.trim().toLowerCase()) && (
                                 <button
                                   type="button"
                                   onClick={() => {
                                     const suggested = viaBmMap.get(record.viaUid.trim().toLowerCase())!;
-                                    onUpdateRecord(record.id, { bmNote: suggested });
+                                    onUpdateRecord(record.id, { bmNote: getCleanBmName(suggested) });
                                   }}
                                   className="text-[9.5px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded px-1 py-0.2 text-left truncate flex items-center gap-0.5 cursor-pointer shadow-2xs"
                                   title={`Bấm để lấy theo BM của cùng Via này: ${viaBmMap.get(

@@ -99,6 +99,15 @@ export function getInteractionBadgeStyle(interaction: InteractionQuality): strin
   }
 }
 
+/**
+ * Cắt bỏ phần ghi chú lịch sử sau dấu | để lấy tên BM sạch
+ * Ví dụ: "Elarby Travel | [Chuyển từ Via 1000...]" -> "Elarby Travel"
+ */
+export function getCleanBmName(bm?: string | null): string {
+  if (!bm) return '';
+  return bm.split('|')[0].trim();
+}
+
 export interface ParsedFullVia {
   uid: string;
   pass: string;
@@ -210,7 +219,7 @@ export function exportSheetToCSV(records: PageRecord[]): void {
     `"${(r.blockStatus || '').replace(/"/g, '""')}"`,
     `"${(r.postingMethod || '').replace(/"/g, '""')}"`,
     `"${(r.interaction || '').replace(/"/g, '""')}"`,
-    `"${(r.bmNote || '').replace(/"/g, '""')}"`,
+    `"${(getCleanBmName(r.bmNote)).replace(/"/g, '""')}"`,
     `"${r.targetPosts}"`,
     `"${r.actualPosts}"`,
     `"${r.isCompleted ? 'Đã hoàn thành' : 'Chưa hoàn thành'}"`,

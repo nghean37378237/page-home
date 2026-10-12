@@ -29,7 +29,7 @@ import {
   downloadFanpageExcelTemplate,
   SAMPLE_FANPAGE_ROWS,
 } from '../utils/excelTemplates';
-import { getStatusBadgeStyle, getLikeCountBadgeStyle } from '../utils/helpers';
+import { getStatusBadgeStyle, getLikeCountBadgeStyle, getCleanBmName } from '../utils/helpers';
 
 interface BulkImportFanpageModalProps {
   isOpen: boolean;
@@ -263,7 +263,7 @@ export const BulkImportFanpageModal: React.FC<BulkImportFanpageModalProps> = ({
       const rawMethod = getVal(colIndex.method);
       const rawInter = getVal(colIndex.interaction);
       const rawInterDate = colIndex.interDate >= 0 ? getVal(colIndex.interDate) : undefined;
-      const bmNoteVal = getVal(colIndex.bmNote);
+      const bmNoteVal = getCleanBmName(getVal(colIndex.bmNote));
 
       const targetVal = parseInt(getVal(colIndex.target), 10) || 3;
       const actualVal = parseInt(getVal(colIndex.actual), 10) || 0;
@@ -358,7 +358,7 @@ export const BulkImportFanpageModal: React.FC<BulkImportFanpageModalProps> = ({
             postingDate: item.postingDate,
             interaction: normalizeInteraction(item.interaction),
             interactionDate: item.interactionDate || item.date || `${new Date().getDate()}/${new Date().getMonth() + 1}`,
-            bmNote: item.bmNote || '',
+            bmNote: getCleanBmName(item.bmNote),
             targetPosts: Number(item.targetPosts) || 3,
             actualPosts: Number(item.actualPosts) || 0,
             isCompleted: Boolean(item.isCompleted),
@@ -425,7 +425,7 @@ export const BulkImportFanpageModal: React.FC<BulkImportFanpageModalProps> = ({
       postingDate: r.postingDate,
       interaction: r.interaction,
       interactionDate: r.interactionDate || r.date || '15/9',
-      bmNote: r.bmNote,
+      bmNote: getCleanBmName(r.bmNote),
       targetPosts: r.targetPosts,
       actualPosts: r.actualPosts,
       isCompleted: r.isCompleted,

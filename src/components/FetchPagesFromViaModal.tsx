@@ -20,6 +20,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { PageRecord, FullViaItem, AppUser, PageStatus, BlockStatus, PostingMethod, InteractionQuality } from '../types';
+import { getCleanBmName } from '../utils/helpers';
 
 interface ExtractedPageItem {
   id: string;
@@ -458,7 +459,7 @@ export const FetchPagesFromViaModal: React.FC<FetchPagesFromViaModalProps> = ({
           postingMethod: defaultPosting,
           interaction: defaultInteraction,
           interactionDate: fullDateStr,
-          bmNote: syncVia?.note ? `Via: ${syncVia.note}` : '',
+          bmNote: syncVia?.note ? getCleanBmName(syncVia.note) : '',
           targetPosts: defaultTargetPosts,
           actualPosts: 0,
           isCompleted: false,
