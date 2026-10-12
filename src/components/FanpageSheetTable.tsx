@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   ExternalLink,
   Trash2,
@@ -365,6 +365,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 }) => {
   const [copiedViaId, setCopiedViaId] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [mergeViaCells, setMergeViaCells] = useState<boolean>(true);
   const [editingStaffName, setEditingStaffName] = useState<{ [oldName: string]: string }>({});
@@ -1248,6 +1249,50 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 Chuẩn
               </button>
             </div>
+
+            {/* Phím cuộn ngang nhanh chống khuất cột */}
+            <div className="inline-flex rounded-lg border border-slate-300 bg-white p-0.5 shadow-2xs items-center gap-0.5">
+              <span className="text-[10px] text-slate-500 font-bold px-1 select-none flex items-center gap-0.5">
+                <ArrowRightLeft className="w-2.5 h-2.5 text-emerald-600" />
+                <span>Xem cột:</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => scrollContainerRef.current?.scrollTo({ left: 0, behavior: 'smooth' })}
+                className="px-2 py-0.5 rounded text-[11px] font-bold text-slate-700 hover:text-emerald-900 hover:bg-emerald-50 transition-all cursor-pointer"
+                title="Cuộn về đầu bảng (xem Tên NV, Nick Via, Tên Page)"
+              >
+                ◀ Đầu (Via/Page)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (scrollContainerRef.current) {
+                    const mid = (scrollContainerRef.current.scrollWidth - scrollContainerRef.current.clientWidth) / 2;
+                    scrollContainerRef.current.scrollTo({ left: mid > 0 ? mid : 500, behavior: 'smooth' });
+                  }
+                }}
+                className="px-2 py-0.5 rounded text-[11px] font-bold text-slate-700 hover:text-emerald-900 hover:bg-emerald-50 transition-all cursor-pointer"
+                title="Cuộn đến giữa bảng (Trạng thái, Chặn, Đăng bài, Tương tác)"
+              >
+                ● Giữa (Trạng thái)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (scrollContainerRef.current) {
+                    scrollContainerRef.current.scrollTo({
+                      left: scrollContainerRef.current.scrollWidth,
+                      behavior: 'smooth',
+                    });
+                  }
+                }}
+                className="px-2 py-0.5 rounded text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-all cursor-pointer shadow-2xs"
+                title="Cuộn về cuối bảng (xem Ghi chú BM, Tiến độ, Đổi Via, Thao tác)"
+              >
+                Cuối (BM/Đổi Via) ▶
+              </button>
+            </div>
           </div>
 
           {/* Phải: Sắp xếp khoa học & Chế độ màu */}
@@ -1314,6 +1359,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
       {/* Spreadsheet Container */}
       <div className="bg-white border-2 border-[#2e7d32] rounded-lg shadow-sm overflow-hidden">
         <div
+          ref={scrollContainerRef}
           className={`overflow-x-auto overflow-y-auto ${
             viewportHeight === 'compact'
               ? 'max-h-[380px]'
@@ -1322,111 +1368,113 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               : 'max-h-none'
           }`}
         >
-          <table className="w-full border-collapse text-left text-xs font-sans">
-            {/* Sheet row labels (A, B, C, D, E, F, G, H, I, J, K) */}
+          <table className="w-full min-w-[1480px] border-collapse text-left text-xs font-sans">
+            {/* Sheet row labels (A, B, C, D, E, F, G, H, I, J, K, L, M, N) */}
             <thead className="sticky top-0 z-20 shadow-xs">
               <tr className="bg-[#f3f4f6] text-slate-500 text-[10px] font-mono border-b border-slate-300 h-5">
-                <th className="w-8 min-w-[34px] max-w-[36px] px-1 py-0.5 text-center border-r border-slate-300 font-normal">#</th>
-                <th className="w-20 min-w-[80px] max-w-[90px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">B</th>
-                <th className="w-56 min-w-[210px] max-w-[240px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">C</th>
-                <th className="w-36 min-w-[125px] max-w-[145px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">D</th>
-                <th className="w-24 min-w-[95px] max-w-[110px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">E</th>
-                <th className="w-22 min-w-[85px] max-w-[95px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">F</th>
-                <th className="w-12 min-w-[50px] max-w-[55px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">G</th>
-                <th className="w-22 min-w-[82px] max-w-[92px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">H</th>
-                <th className="w-24 min-w-[88px] max-w-[98px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">I</th>
-                <th className="w-26 min-w-[96px] max-w-[110px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">J</th>
-                <th className="w-18 min-w-[70px] max-w-[80px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">K</th>
-                <th className="w-12 min-w-[52px] max-w-[58px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
+                <th className="w-8 min-w-[32px] px-0.5 py-0.5 text-center border-r border-slate-300 font-normal">#</th>
+                <th className="w-18 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">B</th>
+                <th className="w-56 min-w-[200px] max-w-[240px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">C</th>
+                <th className="w-32 min-w-[115px] max-w-[140px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">D</th>
+                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">E</th>
+                <th className="w-24 min-w-[82px] max-w-[95px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">F</th>
+                <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">G</th>
+                <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">H</th>
+                <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">I</th>
+                <th className="w-24 min-w-[85px] max-w-[98px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">J</th>
+                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">K</th>
+                <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
                 <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-slate-700">M - BM</th>
-                <th className="w-28 min-w-[105px] max-w-[115px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-blue-700">TIẾN ĐỘ</th>
-                <th className="w-60 min-w-[210px] max-w-[260px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">N - GHI CHÚ ĐỔI VIA (ADMIN)</th>
-                <th className="w-16 min-w-[65px] max-w-[75px] px-0.5 py-0.5 text-center font-normal">Thao Tác</th>
+                <th className="w-24 min-w-[95px] max-w-[110px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-blue-700">TIẾN ĐỘ</th>
+                <th className="w-48 min-w-[190px] max-w-[225px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">N - ĐỔI VIA</th>
+                <th className="w-20 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center font-normal border-l border-slate-300">Thao Tác</th>
               </tr>
 
               {/* Green Headers from Google Sheet */}
               <tr className="bg-[#38761d] text-white text-[11px] uppercase tracking-wider font-bold select-none border-b-2 border-slate-400 h-7">
-                <th className="w-8 min-w-[34px] max-w-[36px] px-1 py-0.5 text-center border-r border-emerald-800/80">STT</th>
-                <th className="w-20 min-w-[80px] max-w-[90px] px-1 py-0.5 border-r border-emerald-800/80 text-center">
+                <th className="w-8 min-w-[32px] px-0.5 py-0.5 text-center border-r border-emerald-800/80">STT</th>
+                <th className="w-18 min-w-[70px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center">
                   <div className="flex flex-col items-center leading-tight">
                     <span>TÊN NV</span>
-                    <span className="text-[8px] font-normal opacity-85 lowercase">
-                      {mergeViaCells ? '(gộp ô)' : '(tách ô)'}
+                    <span className="text-[7.5px] font-normal opacity-85 lowercase">
+                      {mergeViaCells ? '(gộp ô)' : '(tách)'}
                     </span>
                   </div>
                 </th>
-                <th className="w-56 min-w-[210px] max-w-[240px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left">
+                <th className="w-56 min-w-[200px] max-w-[240px] px-1 py-0.5 border-r border-emerald-800/80 text-left">
                   <div className="flex items-center justify-between">
-                    <span className="font-extrabold tracking-tight">VIA (UID) & GHI CHÚ CHUNG</span>
+                    <span className="font-extrabold tracking-tight text-[10px]">VIA & GHI CHÚ</span>
                     <button
                       type="button"
                       onClick={handleCopyAllViaUids}
-                      className={`inline-flex items-center space-x-1 text-[9px] font-bold px-1.5 py-0.5 rounded border transition-all cursor-pointer ${
+                      className={`inline-flex items-center space-x-0.5 text-[8.5px] font-bold px-1 py-0.2 rounded border transition-all cursor-pointer ${
                         copiedViaId === 'all-vias'
                           ? 'bg-white text-emerald-900 border-white font-black shadow-2xs'
                           : 'bg-emerald-900/90 hover:bg-emerald-800 text-emerald-100 border-emerald-700/80'
                       }`}
-                      title="Sao chép toàn bộ UID nick Via trên bảng (1 UID / dòng)"
+                      title="Sao chép toàn bộ UID nick Via trên bảng"
                     >
-                      <Copy className="w-2.5 h-2.5" />
-                      <span>{copiedViaId === 'all-vias' ? 'Đã Copy!' : 'Copy UID'}</span>
+                      <Copy className="w-2 h-2" />
+                      <span>{copiedViaId === 'all-vias' ? 'Đã Copy!' : 'Copy'}</span>
                     </button>
                   </div>
                 </th>
 
-                <th className="w-36 min-w-[125px] max-w-[145px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left">
+                <th className="w-32 min-w-[115px] max-w-[140px] px-1 py-0.5 border-r border-emerald-800/80 text-left text-[10.5px]">
                   TÊN PAGE
                 </th>
-                <th className="w-24 min-w-[95px] max-w-[110px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left">
-                  LINK PAGE
+                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-left text-[10.5px]">
+                  LINK
                 </th>
-                <th className="w-22 min-w-[85px] max-w-[95px] px-1 py-0.5 border-r border-emerald-800/80 text-center">
-                  <span>Trạng Thái</span>
+                <th className="w-24 min-w-[82px] max-w-[95px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]">
+                  TRẠNG THÁI
                 </th>
-                <th className="w-12 min-w-[50px] max-w-[55px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center">
-                  Ngày
+                <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]">
+                  NGÀY
                 </th>
-                <th className="w-22 min-w-[82px] max-w-[92px] px-1 py-0.5 border-r border-emerald-800/80 text-center">
+                <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]">
                   CHẶN
                 </th>
-                <th className="w-24 min-w-[88px] max-w-[98px] px-1 py-0.5 border-r border-emerald-800/80 text-center" title="Đếm Like: Có 2 trạng thái 'Đếm Like' (mặc định) và 'Bỏ Đếm Like'">
+                <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]" title="Đếm Like">
                   ĐẾM LIKE
                 </th>
-                <th className="w-26 min-w-[96px] max-w-[110px] px-1 py-0.5 border-r border-emerald-800/80 text-center" title="Phương thức đăng: Đăng Tay / Tool / Hẹn Giờ. Khi chọn Đăng Tay sẽ tự động ghi nhận và hiển thị ngày chọn">
+                <th className="w-24 min-w-[85px] max-w-[98px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Phương thức đăng">
                   <div className="flex flex-col items-center leading-tight">
                     <span>ĐĂNG BÀI</span>
-                    <span className="text-[8px] font-normal opacity-85 lowercase">(tay / tool)</span>
+                    <span className="text-[7.5px] font-normal opacity-85 lowercase">(tay / tool)</span>
                   </div>
                 </th>
-                <th className="w-18 min-w-[70px] max-w-[80px] px-1 py-0.5 border-r border-emerald-800/80 text-center">
+                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]">
                   TƯƠNG TÁC
                 </th>
-                <th className="w-12 min-w-[52px] max-w-[58px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center" title="Ngày nhảy tự động theo ngày hiện tại khi chọn trạng thái cột tương tác">
+                <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Ngày nhảy tự động theo ngày hiện tại khi chọn trạng thái cột tương tác">
                   <div className="flex flex-col items-center leading-tight">
                     <span>NGÀY TT</span>
-                    <span className="text-[8px] font-normal opacity-85 lowercase">(tự nhảy)</span>
+                    <span className="text-[7.5px] font-normal opacity-85 lowercase">(tự nhảy)</span>
                   </div>
                 </th>
-                <th className="w-36 min-w-[130px] max-w-[160px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left" title="Ghi chú BM: Chọn từ danh sách tất cả BM hiện tại hoặc tự nhập BM mới">
+                <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 border-r border-emerald-800/80 text-left text-[10.5px]" title="Ghi chú BM">
                   <div className="flex items-center justify-between">
                     <span>GHI CHÚ BM</span>
-                    <span className="text-[8px] font-normal opacity-90 lowercase bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-600/50 shrink-0">
+                    <span className="text-[7.5px] font-normal opacity-90 bg-emerald-950/60 px-1 py-0.1 rounded border border-emerald-600/50 shrink-0">
                       {existingBmList.length} BM
                     </span>
                   </div>
                 </th>
-                <th className="w-28 min-w-[105px] max-w-[115px] px-1 py-0.5 border-r border-emerald-800/80 text-center bg-[#255e11]">
+                <th className="w-24 min-w-[95px] max-w-[110px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center bg-[#255e11] text-[10.5px]">
                   TIẾN ĐỘ
                 </th>
-                <th className="w-60 min-w-[210px] max-w-[260px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left bg-[#1d5212]" title="Ghi chú màu admin note khi đang làm đổi page qua via này via khác khi via lỗi (VD: Đang add via, Đã đổi xong)">
+                <th className="w-48 min-w-[190px] max-w-[225px] px-1 py-0.5 border-r border-emerald-800/80 text-left bg-[#1d5212]" title="Ghi chú màu admin note khi đang làm đổi page qua via này via khác khi via lỗi (VD: Đang add via, Đã đổi xong)">
                   <div className="flex items-center justify-between">
-                    <span className="font-extrabold tracking-tight">GHI CHÚ ĐỔI VIA (ADMIN NOTE)</span>
-                    <span className="text-[8px] font-bold text-amber-200 bg-amber-950/70 px-1 py-0.2 rounded border border-amber-600/60 shrink-0">
-                      Màu note
+                    <span className="font-extrabold tracking-tight text-[10px]">ĐỔI VIA (ADMIN)</span>
+                    <span className="text-[7.5px] font-bold text-amber-200 bg-amber-950/70 px-1 py-0.1 rounded border border-amber-600/60 shrink-0">
+                      Note
                     </span>
                   </div>
                 </th>
-                <th className="w-16 min-w-[65px] max-w-[75px] px-0.5 py-0.5 text-center">Thao Tác</th>
+                <th className="w-20 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center text-[10px] bg-[#38761d] border-l border-emerald-800/80">
+                  Thao Tác
+                </th>
               </tr>
             </thead>
 
@@ -2473,7 +2521,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                           record.viaTransferColor
                         )}`}
                       >
-                        <div className="flex flex-col space-y-1 w-full min-w-[200px] max-w-[250px]">
+                        <div className="flex flex-col space-y-1 w-full min-w-[190px] max-w-[225px]">
                           {/* Hàng 1: Trạng thái đổi via + Phím tắt nhanh 1-click */}
                           <div className="flex items-center justify-between gap-1">
                             <select
@@ -2674,7 +2722,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                       </td>
 
                       {/* Actions */}
-                      <td className="px-0.5 py-1 text-center whitespace-nowrap">
+                      <td className="px-1 py-1 text-center whitespace-nowrap bg-white/50">
                         <div className="flex items-center justify-center space-x-0.5">
                           <button
                             type="button"
