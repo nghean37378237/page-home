@@ -1368,7 +1368,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               : 'max-h-none'
           }`}
         >
-          <table className="w-full min-w-[1480px] border-collapse text-left text-xs font-sans">
+          <table className="w-full min-w-[1360px] border-collapse text-left text-xs font-sans">
             {/* Sheet row labels (A, B, C, D, E, F, G, H, I, J, K, L, M, N) */}
             <thead className="sticky top-0 z-20 shadow-xs">
               <tr className="bg-[#f3f4f6] text-slate-500 text-[10px] font-mono border-b border-slate-300 h-5">
@@ -1381,11 +1381,10 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">G</th>
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">H</th>
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">I</th>
-                <th className="w-24 min-w-[85px] max-w-[98px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">J</th>
+                <th className="w-32 min-w-[125px] max-w-[145px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-emerald-800">J - ĐĂNG BÀI & TIẾN ĐỘ</th>
                 <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">K</th>
                 <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
                 <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-slate-700">M - BM</th>
-                <th className="w-24 min-w-[95px] max-w-[110px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-blue-700">TIẾN ĐỘ</th>
                 <th className="w-48 min-w-[190px] max-w-[225px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">N - ĐỔI VIA</th>
                 <th className="w-20 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center font-normal border-l border-slate-300">Thao Tác</th>
               </tr>
@@ -1438,10 +1437,10 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]" title="Đếm Like">
                   ĐẾM LIKE
                 </th>
-                <th className="w-24 min-w-[85px] max-w-[98px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Phương thức đăng">
+                <th className="w-32 min-w-[125px] max-w-[145px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Phương thức đăng bài và tiến độ bài đăng hôm nay (Đã gộp gọn)">
                   <div className="flex flex-col items-center leading-tight">
-                    <span>ĐĂNG BÀI</span>
-                    <span className="text-[7.5px] font-normal opacity-85 lowercase">(tay / tool)</span>
+                    <span>ĐĂNG BÀI & TIẾN ĐỘ</span>
+                    <span className="text-[7.5px] font-normal opacity-85 lowercase">(tay/tool • tiến độ)</span>
                   </div>
                 </th>
                 <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]">
@@ -1461,9 +1460,6 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                     </span>
                   </div>
                 </th>
-                <th className="w-24 min-w-[95px] max-w-[110px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center bg-[#255e11] text-[10.5px]">
-                  TIẾN ĐỘ
-                </th>
                 <th className="w-48 min-w-[190px] max-w-[225px] px-1 py-0.5 border-r border-emerald-800/80 text-left bg-[#1d5212]" title="Ghi chú màu admin note khi đang làm đổi page qua via này via khác khi via lỗi (VD: Đang add via, Đã đổi xong)">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold tracking-tight text-[10px]">ĐỔI VIA (ADMIN)</span>
@@ -1482,7 +1478,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             <tbody className="divide-y divide-slate-300 text-slate-800">
               {paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="py-8 text-center text-slate-400 bg-white">
+                  <td colSpan={15} className="py-8 text-center text-slate-400 bg-white">
                     Không tìm thấy dòng nào phù hợp. Hãy đặt lại bộ lọc hoặc tạo thêm Page mới.
                   </td>
                 </tr>
@@ -1497,7 +1493,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         <td className="px-1 py-1 text-center border-r border-emerald-300 font-mono text-emerald-800 text-[10px] bg-emerald-100/50 select-none">
                           {startIndex + index + 1}
                         </td>
-                        <td colSpan={15} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
+                        <td colSpan={14} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center space-x-2">
                               <button
@@ -2190,47 +2186,42 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         </select>
                       </td>
 
-                      {/* Col J: ĐĂNG TAY, TOOL */}
+                      {/* Col J: ĐĂNG TAY, TOOL & TIẾN ĐỘ (ĐÃ GỘP GỌN) */}
                       <td className="px-1 py-1 border-r border-slate-300 text-center whitespace-nowrap">
-                        <div className="flex flex-col items-center justify-center space-y-1">
-                          <select
-                            value={record.postingMethod}
-                            onChange={(e) => {
-                              const newMethod = e.target.value as PostingMethod;
-                              const now = new Date();
-                              const todayDateStr = `${now.getDate()}/${now.getMonth() + 1}`;
-                              onUpdateRecord(record.id, {
-                                postingMethod: newMethod,
-                                ...(newMethod === 'Đăng Tay'
-                                  ? { postingDate: record.postingDate || todayDateStr }
-                                  : {}),
-                              });
-                            }}
-                            className={`w-full appearance-none px-1.5 py-0.5 text-center font-bold rounded text-[11px] border focus:outline-hidden cursor-pointer transition-colors shadow-2xs ${getPostingMethodBadgeStyle(
-                              record.postingMethod
-                            )}`}
-                            title={`Phương thức: ${record.postingMethod}${
-                              record.postingMethod === 'Đăng Tay'
-                                ? ` (Ngày chọn: ${record.postingDate || record.date || 'Hôm nay'})`
-                                : ''
-                            }`}
-                          >
-                            {POSTING_METHOD_OPTIONS.map((opt) => (
-                              <option key={opt} value={opt} className="bg-white text-slate-800 font-bold">
-                                {opt}
-                              </option>
-                            ))}
-                          </select>
-
-                          {/* Khi chọn Đăng Tay -> hiển thị ngày chọn: Đăng Tay */}
-                          {record.postingMethod === 'Đăng Tay' && (
-                            <div
-                              className="flex items-center justify-center space-x-0.5 px-1 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-300 text-[10px] font-bold shadow-2xs w-full"
-                              title="Ngày chọn: Đăng Tay (Tự động lưu ngày khi chọn Đăng Tay, có thể chỉnh sửa)"
+                        <div className="flex flex-col items-center justify-center space-y-1 w-full min-w-[115px] max-w-[135px] mx-auto">
+                          {/* Hàng 1: Phương thức đăng (Đăng Tay / Tool) */}
+                          <div className="w-full flex items-center gap-1">
+                            <select
+                              value={record.postingMethod}
+                              onChange={(e) => {
+                                const newMethod = e.target.value as PostingMethod;
+                                const now = new Date();
+                                const todayDateStr = `${now.getDate()}/${now.getMonth() + 1}`;
+                                onUpdateRecord(record.id, {
+                                  postingMethod: newMethod,
+                                  ...(newMethod === 'Đăng Tay'
+                                    ? { postingDate: record.postingDate || todayDateStr }
+                                    : {}),
+                                });
+                              }}
+                              className={`w-full appearance-none px-1.5 py-0.5 text-center font-bold rounded text-[10.5px] border focus:outline-hidden cursor-pointer transition-colors shadow-2xs ${getPostingMethodBadgeStyle(
+                                record.postingMethod
+                              )}`}
+                              title={`Phương thức: ${record.postingMethod}${
+                                record.postingMethod === 'Đăng Tay'
+                                  ? ` (Ngày chọn: ${record.postingDate || record.date || 'Hôm nay'})`
+                                  : ''
+                              }`}
                             >
-                              <span className="text-[9px] text-emerald-700 font-semibold shrink-0">
-                                Ngày:
-                              </span>
+                              {POSTING_METHOD_OPTIONS.map((opt) => (
+                                <option key={opt} value={opt} className="bg-white text-slate-800 font-bold">
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+
+                            {/* Khi chọn Đăng Tay -> hiển thị ô ngày mini */}
+                            {record.postingMethod === 'Đăng Tay' && (
                               <input
                                 type="text"
                                 value={
@@ -2242,24 +2233,83 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                   onUpdateRecord(record.id, { postingDate: e.target.value })
                                 }
                                 placeholder={`${new Date().getDate()}/${new Date().getMonth() + 1}`}
-                                className="w-9 text-center bg-white border border-emerald-300 focus:border-emerald-600 rounded px-0.5 py-0.2 text-[10px] font-bold text-emerald-900 focus:outline-hidden"
-                                title="Ngày chọn Đăng Tay (Tự động ghi nhận ngày khi chọn Đăng Tay)"
+                                className="w-9 text-center bg-white border border-emerald-300 focus:border-emerald-600 rounded px-0.5 py-0.2 text-[9.5px] font-bold text-emerald-900 focus:outline-hidden shadow-2xs"
+                                title="Ngày chọn Đăng Tay"
                               />
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const now = new Date();
-                                  onUpdateRecord(record.id, {
-                                    postingDate: `${now.getDate()}/${now.getMonth() + 1}`,
-                                  });
-                                }}
-                                className="p-0.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-100 rounded transition-colors shrink-0"
-                                title="Cập nhật ngày chọn Đăng Tay thành hôm nay"
-                              >
-                                <Clock className="w-2.5 h-2.5" />
-                              </button>
-                            </div>
-                          )}
+                            )}
+                          </div>
+
+                          {/* Hàng 2: Tiến độ đăng bài hôm nay + nút Xong/Chưa */}
+                          <div className="flex items-center justify-center space-x-0.5 w-full bg-slate-50/90 px-1 py-0.5 rounded border border-slate-200 shadow-2xs">
+                            {/* Minus 1 */}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onUpdateRecord(record.id, {
+                                  actualPosts: Math.max(0, record.actualPosts - 1),
+                                  isCompleted:
+                                    Math.max(0, record.actualPosts - 1) >= record.targetPosts,
+                                })
+                              }
+                              className="w-3.5 h-3.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                              title="Giảm 1 bài"
+                            >
+                              <Minus className="w-2 h-2" />
+                            </button>
+
+                            {/* Actual / Target posts */}
+                            <span className="font-black text-slate-900 text-[10.5px] px-1 text-center select-none" title="Số bài đăng hôm nay / Chỉ tiêu">
+                              {record.actualPosts}/{record.targetPosts}
+                            </span>
+
+                            {/* Plus 1 */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const next = record.actualPosts + 1;
+                                onUpdateRecord(record.id, {
+                                  actualPosts: next,
+                                  isCompleted: next >= record.targetPosts,
+                                });
+                              }}
+                              className="w-3.5 h-3.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                              title="Tăng 1 bài"
+                            >
+                              <Plus className="w-2 h-2" />
+                            </button>
+
+                            {/* 1-Click Status Badge */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newDone = !isDone;
+                                onUpdateRecord(record.id, {
+                                  isCompleted: newDone,
+                                  actualPosts: newDone
+                                    ? Math.max(record.targetPosts, record.actualPosts)
+                                    : record.actualPosts,
+                                });
+                              }}
+                              className={`ml-1 inline-flex items-center space-x-0.5 px-1 py-0.2 rounded text-[9.5px] font-bold border transition-colors cursor-pointer shrink-0 ${
+                                isDone
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                              }`}
+                              title="Bấm để đổi nhanh trạng thái: Đã đăng xong / Chưa đăng"
+                            >
+                              {isDone ? (
+                                <>
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                  <span>Xong</span>
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-2.5 h-2.5 text-rose-500" />
+                                  <span>Chưa</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
                         </div>
                       </td>
 
@@ -2438,80 +2488,6 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                               )}
                           </div>
                         )}
-                      </td>
-
-                      {/* Tiến độ Đăng Bài Hôm Nay */}
-                      <td className="px-1 py-1 border-r border-slate-300 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center space-x-1">
-                          {/* Minus 1 */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateRecord(record.id, {
-                                actualPosts: Math.max(0, record.actualPosts - 1),
-                                isCompleted:
-                                  Math.max(0, record.actualPosts - 1) >= record.targetPosts,
-                              })
-                            }
-                            className="w-4 h-4 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center"
-                            title="Giảm 1 bài"
-                          >
-                            <Minus className="w-2.5 h-2.5" />
-                          </button>
-
-                          {/* Actual / Target posts */}
-                          <span className="font-bold text-slate-900 text-[11px] w-10 text-center">
-                            {record.actualPosts}/{record.targetPosts}
-                          </span>
-
-                          {/* Plus 1 */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = record.actualPosts + 1;
-                              onUpdateRecord(record.id, {
-                                actualPosts: next,
-                                isCompleted: next >= record.targetPosts,
-                              });
-                            }}
-                            className="w-4 h-4 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center"
-                            title="Tăng 1 bài"
-                          >
-                            <Plus className="w-2.5 h-2.5" />
-                          </button>
-
-                          {/* 1-Click Status Badge */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newDone = !isDone;
-                              onUpdateRecord(record.id, {
-                                isCompleted: newDone,
-                                actualPosts: newDone
-                                  ? Math.max(record.targetPosts, record.actualPosts)
-                                  : record.actualPosts,
-                              });
-                            }}
-                            className={`ml-0.5 inline-flex items-center space-x-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors ${
-                              isDone
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
-                                : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                            }`}
-                            title="Bấm để đổi trạng thái hoàn thành bài đăng hôm nay"
-                          >
-                            {isDone ? (
-                              <>
-                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                                <span>Xong</span>
-                              </>
-                            ) : (
-                              <>
-                                <XCircle className="w-2.5 h-2.5 text-rose-500" />
-                                <span>Chưa</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
                       </td>
 
                       {/* Col N: GHI CHÚ ĐỔI VIA (ADMIN NOTE KHI ĐANG LÀM ĐỔI PAGE QUA VIA KHÁC KHI VIA LỖI) */}
