@@ -25,6 +25,118 @@ export type InteractionQuality =
   | 'Kém'
   | 'Mất Tương Tác';
 
+export type ViaTransferStatus =
+  | 'none'          // Chưa có ghi chú đổi
+  | 'pending'       // 🔴 Cần đổi Via (Via lỗi)
+  | 'adding'        // 🟡 Đang add Via
+  | 'invited'       // 🔵 Đã gửi lời mời
+  | 'waiting'       // 🟣 Chờ duyệt quyền
+  | 'completed'     // 🟢 Đã đổi xong
+  | 'failed';       // ⚠️ Lỗi không add được
+
+export type ViaTransferColor =
+  | 'yellow'  // Vàng
+  | 'green'   // Xanh lá
+  | 'blue'    // Xanh dương
+  | 'purple'  // Tím
+  | 'red'     // Đỏ
+  | 'orange'  // Cam
+  | 'gray';   // Xám
+
+export interface ViaTransferPreset {
+  key: ViaTransferStatus;
+  label: string;
+  shortLabel: string;
+  badgeBg: string;
+  badgeText: string;
+  badgeBorder: string;
+  dotColor: string;
+  description: string;
+}
+
+export const VIA_TRANSFER_PRESETS: Record<ViaTransferStatus, ViaTransferPreset> = {
+  none: {
+    key: 'none',
+    label: 'Bình thường',
+    shortLabel: '—',
+    badgeBg: 'bg-slate-100',
+    badgeText: 'text-slate-600',
+    badgeBorder: 'border-slate-300',
+    dotColor: 'bg-slate-400',
+    description: 'Chưa có ghi chú đổi Via',
+  },
+  pending: {
+    key: 'pending',
+    label: 'Cần đổi Via (Via lỗi)',
+    shortLabel: 'Cần đổi',
+    badgeBg: 'bg-rose-100',
+    badgeText: 'text-rose-900',
+    badgeBorder: 'border-rose-400',
+    dotColor: 'bg-rose-600',
+    description: 'Via lỗi, cần chuyển page sang Via khác',
+  },
+  adding: {
+    key: 'adding',
+    label: 'Đang add Via',
+    shortLabel: 'Đang add',
+    badgeBg: 'bg-amber-100',
+    badgeText: 'text-amber-950 font-bold',
+    badgeBorder: 'border-amber-400 ring-1 ring-amber-300/80',
+    dotColor: 'bg-amber-500 animate-pulse',
+    description: 'Đang thao tác thêm page vào Via mới',
+  },
+  invited: {
+    key: 'invited',
+    label: 'Đã gửi lời mời',
+    shortLabel: 'Đã mời',
+    badgeBg: 'bg-sky-100',
+    badgeText: 'text-sky-950',
+    badgeBorder: 'border-sky-400',
+    dotColor: 'bg-sky-600',
+    description: 'Đã gửi lời mời làm quản trị vào Via mới',
+  },
+  waiting: {
+    key: 'waiting',
+    label: 'Chờ duyệt quyền',
+    shortLabel: 'Chờ duyệt',
+    badgeBg: 'bg-purple-100',
+    badgeText: 'text-purple-950',
+    badgeBorder: 'border-purple-400',
+    dotColor: 'bg-purple-600',
+    description: 'Đang chờ Via mới xác nhận quyền truy cập',
+  },
+  completed: {
+    key: 'completed',
+    label: 'Đã đổi xong',
+    shortLabel: 'Đã xong',
+    badgeBg: 'bg-emerald-100',
+    badgeText: 'text-emerald-950 font-bold',
+    badgeBorder: 'border-emerald-500 ring-1 ring-emerald-400/80',
+    dotColor: 'bg-emerald-600',
+    description: 'Đã hoàn tất chuyển Page sang Via mới an toàn',
+  },
+  failed: {
+    key: 'failed',
+    label: 'Lỗi không add được',
+    shortLabel: 'Lỗi add',
+    badgeBg: 'bg-red-100',
+    badgeText: 'text-red-950',
+    badgeBorder: 'border-red-400',
+    dotColor: 'bg-red-600',
+    description: 'Không thêm được via (bị chặn hoặc lỗi BM)',
+  },
+};
+
+export const VIA_TRANSFER_COLORS: { key: ViaTransferColor; label: string; bgClass: string; textClass: string; borderClass: string }[] = [
+  { key: 'yellow', label: 'Vàng (Đang làm)', bgClass: 'bg-amber-50', textClass: 'text-amber-900', borderClass: 'border-amber-400' },
+  { key: 'green', label: 'Xanh lá (Đã xong)', bgClass: 'bg-emerald-50', textClass: 'text-emerald-900', borderClass: 'border-emerald-400' },
+  { key: 'blue', label: 'Xanh dương (Đã mời)', bgClass: 'bg-sky-50', textClass: 'text-sky-900', borderClass: 'border-sky-400' },
+  { key: 'purple', label: 'Tím (Chờ duyệt)', bgClass: 'bg-purple-50', textClass: 'text-purple-900', borderClass: 'border-purple-400' },
+  { key: 'red', label: 'Đỏ (Lỗi / Cần đổi)', bgClass: 'bg-rose-50', textClass: 'text-rose-900', borderClass: 'border-rose-400' },
+  { key: 'orange', label: 'Cam (Cảnh báo)', bgClass: 'bg-orange-50', textClass: 'text-orange-900', borderClass: 'border-orange-400' },
+  { key: 'gray', label: 'Xám (Ghi chú)', bgClass: 'bg-slate-50', textClass: 'text-slate-800', borderClass: 'border-slate-300' },
+];
+
 export interface PageRecord {
   id: string;
   staffName: string; // TÊN NV (Cột B)
@@ -53,12 +165,19 @@ export interface PageRecord {
   viaErrorNote?: string;
   isViaFixed?: boolean; // Admin đã sửa lỗi và thay via mới -> bôi màu xanh lá để dễ phân biệt
   viaSharedNote?: string; // Ô ghi chú chung cho 2 hay 3 page chung 1 via (chung cho cả via)
+
+  // Ghi chú màu tiến độ đổi Via / xử lý via lỗi của Admin (Yêu cầu mới)
+  viaTransferStatus?: ViaTransferStatus; // Trạng thái đổi via: 'none' | 'pending' | 'adding' | 'invited' | 'waiting' | 'completed' | 'failed'
+  viaTransferNote?: string; // Ghi chú màu admin note khi đổi page qua via này via khác (VD: 'Đang add via 1000...', 'Đã add xong')
+  viaTransferColor?: ViaTransferColor | string; // Màu sắc ghi chú nổi bật (yellow, green, blue, purple, red, orange, gray)
+  viaTransferUpdatedAt?: string; // Thời gian cập nhật ghi chú đổi via
 }
 
 export interface SheetFilter {
   search: string;
   staffName: string;
   viaUid: string;
+  bmFilter?: string; // Lọc theo Ghi chú BM
   multiPageOnly: boolean;
   errorViaOnly?: boolean; // Lọc các Page có Nick Via bị lỗi
   fixedViaOnly?: boolean; // Lọc các Page có Nick Via đã sửa/thay mới (bôi xanh)
@@ -67,6 +186,7 @@ export interface SheetFilter {
   likeCountStatus?: string;
   postingMethod: string;
   completionFilter: 'all' | 'completed' | 'in_progress';
+  viaTransferFilter?: string; // Lọc theo tiến độ đổi via ('all' | 'adding' | 'completed' | 'pending' | 'invited' | 'has_note')
 }
 
 export type UserRole = 'admin' | 'staff';

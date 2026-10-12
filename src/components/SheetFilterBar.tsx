@@ -153,11 +153,45 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     return records.filter((r) => r.isViaFixed || r.viaStatus === 'fixed').length;
   }, [filter.staffName, staffScopedRecords, propFixedViaCount, fixedViaUids, records, currentUser.role]);
 
+  // Thống kê tiến độ đổi Via
+  const addingViaCount = useMemo(() => {
+    return staffScopedRecords.filter((r) => r.viaTransferStatus === 'adding').length;
+  }, [staffScopedRecords]);
+
+  const completedViaCount = useMemo(() => {
+    return staffScopedRecords.filter((r) => r.viaTransferStatus === 'completed').length;
+  }, [staffScopedRecords]);
+
+  const pendingTransferCount = useMemo(() => {
+    return staffScopedRecords.filter((r) => r.viaTransferStatus === 'pending').length;
+  }, [staffScopedRecords]);
+
+  const hasTransferNoteCount = useMemo(() => {
+    return staffScopedRecords.filter((r) =>
+      Boolean(r.viaTransferNote || (r.viaTransferStatus && r.viaTransferStatus !== 'none') || r.viaTransferColor)
+    ).length;
+  }, [staffScopedRecords]);
+
+  // Danh sách các BM hiện có trong scope records
+  const bmOptions = useMemo(() => {
+    const map = new Map<string, number>();
+    staffScopedRecords.forEach((r) => {
+      const b = r.bmNote?.trim();
+      if (b) {
+        map.set(b, (map.get(b) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'vi'));
+  }, [staffScopedRecords]);
+
   const handleClear = () => {
     onChangeFilter({
       search: '',
       staffName: '',
       viaUid: '',
+      bmFilter: '',
       multiPageOnly: false,
       errorViaOnly: false,
       fixedViaOnly: false,
@@ -166,6 +200,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
       likeCountStatus: '',
       postingMethod: '',
       completionFilter: 'all',
+      viaTransferFilter: 'all',
     });
   };
 
@@ -173,6 +208,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     Boolean(filter.search) ||
     (currentUser.role === 'admin' && Boolean(filter.staffName)) ||
     Boolean(filter.viaUid) ||
+    Boolean(filter.bmFilter) ||
     Boolean(filter.multiPageOnly) ||
     Boolean(filter.errorViaOnly) ||
     Boolean(filter.fixedViaOnly) ||
@@ -180,6 +216,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     Boolean(filter.blockStatus) ||
     Boolean(filter.likeCountStatus) ||
     Boolean(filter.postingMethod) ||
+    (Boolean(filter.viaTransferFilter) && filter.viaTransferFilter !== 'all') ||
     filter.completionFilter !== 'all';
 
   return (
@@ -422,6 +459,74 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
               </span>
             </button>
 
+            {/* 6. Đang Add Via */}
+            <button
+              type="button"
+              id="status-stat-adding-via"
+              onClick={() =>
+                onChangeFilter({
+                  ...filter,
+                  viaTransferFilter: filter.viaTransferFilter === 'adding' ? 'all' : 'adding',
+                })
+              }
+              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+                filter.viaTransferFilter === 'adding'
+                  ? 'bg-amber-500 text-white border-amber-600 ring-1 ring-amber-400/40'
+                  : addingViaCount > 0
+                  ? 'bg-amber-100/90 text-amber-950 border-amber-300 hover:bg-amber-200'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+              title="Lọc các Page đang trong quá trình add sang Via mới"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+              <span>Đang Add Via:</span>
+              <span
+                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
+                  filter.viaTransferFilter === 'adding'
+                    ? 'bg-white text-amber-800'
+                    : addingViaCount > 0
+                    ? 'bg-amber-400 text-amber-950'
+                    : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {addingViaCount}
+              </span>
+            </button>
+
+            {/* 7. Đã Đổi Xong */}
+            <button
+              type="button"
+              id="status-stat-completed-via"
+              onClick={() =>
+                onChangeFilter({
+                  ...filter,
+                  viaTransferFilter: filter.viaTransferFilter === 'completed' ? 'all' : 'completed',
+                })
+              }
+              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+                filter.viaTransferFilter === 'completed'
+                  ? 'bg-emerald-600 text-white border-emerald-700 ring-1 ring-emerald-400/40'
+                  : completedViaCount > 0
+                  ? 'bg-emerald-100/90 text-emerald-950 border-emerald-300 hover:bg-emerald-200'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+              }`}
+              title="Lọc các Page đã đổi Via thành công"
+            >
+              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+              <span>Đã Đổi Xong:</span>
+              <span
+                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
+                  filter.viaTransferFilter === 'completed'
+                    ? 'bg-white text-emerald-800'
+                    : completedViaCount > 0
+                    ? 'bg-emerald-600 text-white'
+                    : 'bg-slate-100 text-slate-700'
+                }`}
+              >
+                {completedViaCount}
+              </span>
+            </button>
+
             {/* Tổng số trang */}
             <span className="text-[11px] text-slate-500 font-medium pl-1 border-l border-slate-200">
               Tổng: <strong className="text-slate-900 font-black">{staffScopedRecords.length}</strong>
@@ -471,6 +576,26 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   Via {v.viaUid} ({v.count})
                 </option>
               ))}
+            </select>
+
+            {/* Lọc Ghi Chú BM */}
+            <select
+              value={filter.bmFilter || ''}
+              onChange={(e) => onChangeFilter({ ...filter, bmFilter: e.target.value })}
+              className={`px-2 py-1 rounded-lg border text-xs font-medium transition-all shadow-2xs cursor-pointer max-w-[140px] truncate ${
+                filter.bmFilter
+                  ? 'bg-emerald-50 text-emerald-950 border-emerald-400 font-bold ring-1 ring-emerald-300'
+                  : 'bg-white text-slate-700 border-slate-300'
+              }`}
+              title="Lọc Fanpage theo Ghi chú BM"
+            >
+              <option value="">Tất cả BM ({bmOptions.length})</option>
+              {bmOptions.map((b) => (
+                <option key={b.name} value={b.name}>
+                  BM: {b.name} ({b.count})
+                </option>
+              ))}
+              <option value="__none__">Chưa có BM</option>
             </select>
 
             {/* Lọc Chặn */}
@@ -553,6 +678,27 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
               <CheckCircle2 className={`w-3 h-3 ${filter.fixedViaOnly ? 'text-white' : 'text-emerald-600'}`} />
               <span>Đã Sửa ({computedFixedViaCount})</span>
             </button>
+
+            {/* Lọc Tiến độ đổi Via / Admin Note */}
+            <select
+              value={filter.viaTransferFilter || 'all'}
+              onChange={(e) => onChangeFilter({ ...filter, viaTransferFilter: e.target.value })}
+              className={`px-2 py-1 rounded-lg border text-xs font-bold transition-all shadow-2xs cursor-pointer ${
+                filter.viaTransferFilter && filter.viaTransferFilter !== 'all'
+                  ? 'bg-amber-100 text-amber-950 border-amber-400 ring-1 ring-amber-300'
+                  : 'bg-white text-slate-700 border-slate-300'
+              }`}
+              title="Lọc theo ghi chú & tiến độ đổi Via của Admin"
+            >
+              <option value="all">Tiến độ Đổi Via ({staffScopedRecords.length})</option>
+              <option value="adding">🟡 Đang add Via ({addingViaCount})</option>
+              <option value="completed">🟢 Đã đổi xong ({completedViaCount})</option>
+              <option value="pending">🔴 Cần đổi Via ({pendingTransferCount})</option>
+              <option value="invited">🔵 Đã gửi lời mời</option>
+              <option value="waiting">🟣 Chờ duyệt quyền</option>
+              <option value="failed">⚠️ Lỗi add</option>
+              <option value="has_note">📝 Có ghi chú đổi ({hasTransferNoteCount})</option>
+            </select>
           </div>
 
           {/* Nhóm nút tác vụ bên phải */}

@@ -21,6 +21,10 @@ import {
   PostingMethod,
   InteractionQuality,
   AppUser,
+  ViaTransferStatus,
+  ViaTransferColor,
+  VIA_TRANSFER_PRESETS,
+  VIA_TRANSFER_COLORS,
 } from '../types';
 import {
   PAGE_STATUS_OPTIONS,
@@ -66,6 +70,9 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
   const [interaction, setInteraction] = useState<InteractionQuality>('TỐT');
   const [interactionDate, setInteractionDate] = useState('15/9');
   const [bmNote, setBmNote] = useState('');
+  const [viaTransferStatus, setViaTransferStatus] = useState<ViaTransferStatus>('none');
+  const [viaTransferNote, setViaTransferNote] = useState('');
+  const [viaTransferColor, setViaTransferColor] = useState<ViaTransferColor | string>('gray');
   const [targetPosts, setTargetPosts] = useState<number>(3);
   const [actualPosts, setActualPosts] = useState<number>(0);
   const [isCompleted, setIsCompleted] = useState<boolean>(false);
@@ -106,6 +113,29 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
     return existingVias.find((v) => v.viaUid === trimmed) || null;
   }, [viaUid, existingVias]);
 
+  // Danh sách tất cả tên BM hiện tại trong hệ thống để làm list lựa chọn
+  const existingBmList = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>();
+    const defaultBms = ['B-BM ANH QUYNH', 'E-BM BAO 2', 'BM Bao 1', 'BM 1 5K+', 'BM MY 1'];
+    defaultBms.forEach((b) => {
+      map.set(b.trim().toLowerCase(), { name: b.trim(), count: 0 });
+    });
+    allRecords.forEach((r) => {
+      const b = r.bmNote?.trim();
+      if (b) {
+        const key = b.toLowerCase();
+        if (map.has(key)) {
+          map.get(key)!.count++;
+        } else {
+          map.set(key, { name: b, count: 1 });
+        }
+      }
+    });
+    return Array.from(map.values()).sort(
+      (a, b) => b.count - a.count || a.name.localeCompare(b.name, 'vi')
+    );
+  }, [allRecords]);
+
   useEffect(() => {
     if (initialRecord) {
       setStaffName(
@@ -128,6 +158,9 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       setInteraction(initialRecord.interaction || 'TỐT');
       setInteractionDate(initialRecord.interactionDate || initialRecord.date || '15/9');
       setBmNote(initialRecord.bmNote || '');
+      setViaTransferStatus(initialRecord.viaTransferStatus || 'none');
+      setViaTransferNote(initialRecord.viaTransferNote || '');
+      setViaTransferColor(initialRecord.viaTransferColor || 'gray');
       setTargetPosts(initialRecord.targetPosts ?? 3);
       setActualPosts(initialRecord.actualPosts ?? 0);
       setIsCompleted(initialRecord.isCompleted ?? false);
@@ -156,7 +189,10 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       setPostingDate(todayStr);
       setInteraction('TỐT');
       setInteractionDate(todayStr);
-      setBmNote('');
+      const existingViaBm = allRecords.find(
+        (r) => r.viaUid.trim().toLowerCase() === presetViaData.viaUid.trim().toLowerCase() && r.bmNote?.trim()
+      );
+      setBmNote(existingViaBm?.bmNote || '');
       setTargetPosts(3);
       setActualPosts(0);
       setIsCompleted(false);
@@ -241,6 +277,9 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
         interaction,
         interactionDate: interactionDate.trim() || date.trim() || '15/9',
         bmNote: bmNote.trim(),
+        viaTransferStatus: viaTransferStatus !== 'none' ? viaTransferStatus : undefined,
+        viaTransferNote: viaTransferNote.trim() || undefined,
+        viaTransferColor: viaTransferColor !== 'gray' ? viaTransferColor : undefined,
         targetPosts: Number(targetPosts) || 1,
         actualPosts: Number(actualPosts) || 0,
         isCompleted: isCompleted || Number(actualPosts) >= (Number(targetPosts) || 1),
@@ -280,6 +319,9 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       interaction,
       interactionDate: interactionDate.trim() || date.trim() || '15/9',
       bmNote: bmNote.trim(),
+      viaTransferStatus: viaTransferStatus !== 'none' ? viaTransferStatus : undefined,
+      viaTransferNote: viaTransferNote.trim() || undefined,
+      viaTransferColor: viaTransferColor !== 'gray' ? viaTransferColor : undefined,
       targetPosts: Number(targetPosts) || 1,
       actualPosts: Number(actualPosts) || 0,
       isCompleted: isCompleted || Number(actualPosts) >= (Number(targetPosts) || 1),
@@ -725,16 +767,91 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">
-                GHI CHÚ BM (Cột L)
-              </label>
-              <input
-                type="text"
-                placeholder="VD: B-BM ANH QUYNH"
-                value={bmNote}
-                onChange={(e) => setBmNote(e.target.value)}
-                className="w-full px-2.5 py-2 border border-slate-300 rounded-lg text-slate-900 font-medium"
-              />
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-slate-700">
+                  GHI CHÚ BM (Cột L)
+                </label>
+                <span className="text-[10.5px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                  {existingBmList.length} BM hiện có
+                </span>
+              </div>
+
+              {/* Lựa chọn nhanh từ danh sách tất cả BM hiện tại hoặc tự gõ mới */}
+              <div className="space-y-1.5">
+                <div className="flex items-center space-x-1.5">
+                  <select
+                    value={
+                      existingBmList.some(
+                        (b) => b.name.toLowerCase() === bmNote.trim().toLowerCase()
+                      )
+                        ? existingBmList.find(
+                            (b) => b.name.toLowerCase() === bmNote.trim().toLowerCase()
+                          )?.name
+                        : bmNote
+                        ? '__custom__'
+                        : ''
+                    }
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === '__custom__') {
+                        // User can type custom BM into the input
+                      } else {
+                        setBmNote(val);
+                      }
+                    }}
+                    className="w-1/2 px-2.5 py-2 border border-slate-300 rounded-lg text-slate-900 font-bold bg-white text-xs focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 shadow-2xs cursor-pointer"
+                    title="Chọn BM từ danh sách các BM hiện có trong hệ thống"
+                  >
+                    <option value="">— Chọn BM từ danh sách —</option>
+                    {existingBmList.map((bm) => (
+                      <option key={bm.name} value={bm.name}>
+                        🏢 {bm.name} {bm.count > 0 ? `(${bm.count} page)` : ''}
+                      </option>
+                    ))}
+                    <option value="__custom__">✏️ Nhập BM khác...</option>
+                  </select>
+
+                  <input
+                    type="text"
+                    list="modal-bm-datalist"
+                    placeholder="Hoặc tự gõ tên BM..."
+                    value={bmNote}
+                    onChange={(e) => setBmNote(e.target.value)}
+                    className="w-1/2 px-2.5 py-2 border border-slate-300 rounded-lg text-slate-900 font-medium text-xs focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 shadow-2xs"
+                  />
+                </div>
+
+                {/* Gợi ý các BM phổ biến nhất dạng chip bấm nhanh */}
+                {existingBmList.length > 0 && (
+                  <div className="flex items-center flex-wrap gap-1 pt-0.5">
+                    <span className="text-[10px] text-slate-400 font-semibold shrink-0">
+                      Gợi ý:
+                    </span>
+                    {existingBmList.slice(0, 6).map((bm) => (
+                      <button
+                        key={bm.name}
+                        type="button"
+                        onClick={() => setBmNote(bm.name)}
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                          bmNote.trim().toLowerCase() === bm.name.toLowerCase()
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                            : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                        }`}
+                        title={`Bấm để chọn nhanh BM ${bm.name}`}
+                      >
+                        {bm.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Datalist for autocomplete */}
+              <datalist id="modal-bm-datalist">
+                {existingBmList.map((bm) => (
+                  <option key={bm.name} value={bm.name} />
+                ))}
+              </datalist>
             </div>
           </div>
 
@@ -785,6 +902,96 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
                   <span className="font-bold text-slate-800">Đã xong bài hôm nay</span>
                 </label>
               </div>
+            </div>
+          </div>
+
+          {/* Row 6: GHI CHÚ ĐỔI VIA (ADMIN NOTE KHI ĐỔI PAGE QUA VIA KHÁC) */}
+          <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold text-amber-950 flex items-center gap-1.5">
+                <span>Ghi Chú Màu Đổi Via (Admin Note)</span>
+              </span>
+              <span className="text-[10px] text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full font-bold border border-amber-300">
+                Khi via lỗi / chuyển via
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-2.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Trạng thái đổi Via
+                </label>
+                <select
+                  value={viaTransferStatus}
+                  onChange={(e) => {
+                    const st = e.target.value as ViaTransferStatus;
+                    setViaTransferStatus(st);
+                    if (st === 'adding') setViaTransferColor('yellow');
+                    if (st === 'completed') setViaTransferColor('green');
+                    if (st === 'pending') setViaTransferColor('red');
+                  }}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md font-bold text-slate-900 text-xs"
+                >
+                  <option value="none">⚪ Chưa đổi Via / Bình thường</option>
+                  <option value="adding">🟡 Đang add Via</option>
+                  <option value="completed">🟢 Đã đổi xong</option>
+                  <option value="pending">🔴 Cần đổi Via (Lỗi)</option>
+                  <option value="invited">🔵 Đã gửi lời mời</option>
+                  <option value="waiting">🟣 Chờ duyệt quyền</option>
+                  <option value="failed">⚠️ Lỗi không add được</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Tô màu ghi chú nổi bật
+                </label>
+                <div className="flex items-center space-x-1.5 pt-1">
+                  {VIA_TRANSFER_COLORS.map((col) => {
+                    const isSelected = viaTransferColor === col.key;
+                    return (
+                      <button
+                        key={col.key}
+                        type="button"
+                        onClick={() => setViaTransferColor(col.key)}
+                        className={`w-6 h-6 rounded-full cursor-pointer transition-transform ${
+                          col.key === 'yellow'
+                            ? 'bg-amber-400'
+                            : col.key === 'green'
+                            ? 'bg-emerald-500'
+                            : col.key === 'blue'
+                            ? 'bg-sky-500'
+                            : col.key === 'purple'
+                            ? 'bg-purple-500'
+                            : col.key === 'red'
+                            ? 'bg-rose-500'
+                            : col.key === 'orange'
+                            ? 'bg-orange-500'
+                            : 'bg-slate-400'
+                        } ${
+                          isSelected
+                            ? 'ring-2 ring-slate-800 scale-110 shadow-xs'
+                            : 'opacity-70 hover:opacity-100 hover:scale-105'
+                        }`}
+                        title={col.label}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Nội dung Admin Note (VD: Đang add via 1000..., Đã chuyển sang Via Nam)
+              </label>
+              <input
+                type="text"
+                placeholder="Ghi chú admin khi đổi page qua via khác..."
+                value={viaTransferNote}
+                onChange={(e) => setViaTransferNote(e.target.value)}
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md text-slate-900 text-xs font-medium"
+              />
             </div>
           </div>
 

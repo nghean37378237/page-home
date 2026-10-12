@@ -48,6 +48,10 @@ import {
   PostingMethod,
   InteractionQuality,
   AppUser,
+  ViaTransferStatus,
+  ViaTransferColor,
+  VIA_TRANSFER_PRESETS,
+  VIA_TRANSFER_COLORS,
 } from '../types';
 import {
   PAGE_STATUS_OPTIONS,
@@ -247,6 +251,52 @@ export const UNASSIGNED_THEME: ViaTheme = {
   chipText: 'text-slate-400',
 };
 
+export const getViaTransferCellStyle = (
+  status?: ViaTransferStatus,
+  color?: ViaTransferColor | string
+) => {
+  // Ưu tiên màu sắc được chọn trực tiếp
+  if (color === 'yellow') {
+    return 'bg-amber-100/95 text-amber-950 border-l-4 border-l-amber-500 ring-1 ring-amber-300';
+  }
+  if (color === 'green') {
+    return 'bg-emerald-100/95 text-emerald-950 border-l-4 border-l-emerald-600 ring-1 ring-emerald-300';
+  }
+  if (color === 'blue') {
+    return 'bg-sky-100/95 text-sky-950 border-l-4 border-l-sky-500 ring-1 ring-sky-300';
+  }
+  if (color === 'purple') {
+    return 'bg-purple-100/95 text-purple-950 border-l-4 border-l-purple-500 ring-1 ring-purple-300';
+  }
+  if (color === 'red') {
+    return 'bg-rose-100/95 text-rose-950 border-l-4 border-l-rose-500 ring-1 ring-rose-300';
+  }
+  if (color === 'orange') {
+    return 'bg-orange-100/95 text-orange-950 border-l-4 border-l-orange-500 ring-1 ring-orange-300';
+  }
+  if (color === 'gray') {
+    return 'bg-slate-100 text-slate-800 border-l-4 border-l-slate-400';
+  }
+
+  // Fallback theo trạng thái đổi via
+  switch (status) {
+    case 'adding':
+      return 'bg-amber-100/95 text-amber-950 border-l-4 border-l-amber-500 ring-1 ring-amber-400/80';
+    case 'completed':
+      return 'bg-emerald-100/95 text-emerald-950 border-l-4 border-l-emerald-600 ring-1 ring-emerald-400/80';
+    case 'pending':
+      return 'bg-rose-100/95 text-rose-950 border-l-4 border-l-rose-500 ring-1 ring-rose-400/80';
+    case 'invited':
+      return 'bg-sky-100/95 text-sky-950 border-l-4 border-l-sky-500 ring-1 ring-sky-400/80';
+    case 'waiting':
+      return 'bg-purple-100/95 text-purple-950 border-l-4 border-l-purple-500 ring-1 ring-purple-400/80';
+    case 'failed':
+      return 'bg-red-100/95 text-red-950 border-l-4 border-l-red-600 ring-1 ring-red-400/80';
+    default:
+      return 'bg-slate-50/40 hover:bg-white text-slate-700';
+  }
+};
+
 interface FanpageSheetTableProps {
   records: PageRecord[];
   currentUser: AppUser;
@@ -346,6 +396,46 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
   // Modal thống kê Đăng Tay vs Tool theo từng nhân viên
   const [isPostingStatsModalOpen, setIsPostingStatsModalOpen] = useState(false);
+
+  // State chỉnh sửa BM thủ công cho từng dòng Page
+  const [editingBmRecordId, setEditingBmRecordId] = useState<string | null>(null);
+  const [editingBmValue, setEditingBmValue] = useState<string>('');
+
+  // 1. Thu thập danh sách tất cả BM hiện tại để làm list lựa chọn
+  const existingBmList = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>();
+    const defaultBms = ['B-BM ANH QUYNH', 'E-BM BAO 2', 'BM Bao 1', 'BM 1 5K+', 'BM MY 1'];
+    defaultBms.forEach((b) => {
+      map.set(b.trim().toLowerCase(), { name: b.trim(), count: 0 });
+    });
+    records.forEach((r) => {
+      const b = r.bmNote?.trim();
+      if (b) {
+        const key = b.toLowerCase();
+        if (map.has(key)) {
+          map.get(key)!.count++;
+        } else {
+          map.set(key, { name: b, count: 1 });
+        }
+      }
+    });
+    return Array.from(map.values()).sort(
+      (a, b) => b.count - a.count || a.name.localeCompare(b.name, 'vi')
+    );
+  }, [records]);
+
+  // 2. Map tra cứu BM theo Nick Via để tự động gợi ý mặc định nếu cùng Via đã có Page gắn BM
+  const viaBmMap = useMemo(() => {
+    const map = new Map<string, string>();
+    records.forEach((r) => {
+      const uid = r.viaUid?.trim().toLowerCase();
+      const bm = r.bmNote?.trim();
+      if (uid && bm && !map.has(uid)) {
+        map.set(uid, bm);
+      }
+    });
+    return map;
+  }, [records]);
 
   // Thống kê Đăng Tay vs Tool cho từng nhân viên trên Bảng 1
   const staffPostingBreakdown = useMemo(() => {
@@ -1240,8 +1330,9 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-26 min-w-[96px] max-w-[110px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">J</th>
                 <th className="w-18 min-w-[70px] max-w-[80px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">K</th>
                 <th className="w-12 min-w-[52px] max-w-[58px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
-                <th className="w-24 min-w-[90px] max-w-[105px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">M</th>
+                <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-slate-700">M - BM</th>
                 <th className="w-28 min-w-[105px] max-w-[115px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-blue-700">TIẾN ĐỘ</th>
+                <th className="w-60 min-w-[210px] max-w-[260px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">N - GHI CHÚ ĐỔI VIA (ADMIN)</th>
                 <th className="w-16 min-w-[65px] max-w-[75px] px-0.5 py-0.5 text-center font-normal">Thao Tác</th>
               </tr>
 
@@ -1308,11 +1399,24 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                     <span className="text-[8px] font-normal opacity-85 lowercase">(tự nhảy)</span>
                   </div>
                 </th>
-                <th className="w-24 min-w-[90px] max-w-[105px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left">
-                  GHI CHÚ BM
+                <th className="w-36 min-w-[130px] max-w-[160px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left" title="Ghi chú BM: Chọn từ danh sách tất cả BM hiện tại hoặc tự nhập BM mới">
+                  <div className="flex items-center justify-between">
+                    <span>GHI CHÚ BM</span>
+                    <span className="text-[8px] font-normal opacity-90 lowercase bg-emerald-950/60 px-1 py-0.2 rounded border border-emerald-600/50 shrink-0">
+                      {existingBmList.length} BM
+                    </span>
+                  </div>
                 </th>
                 <th className="w-28 min-w-[105px] max-w-[115px] px-1 py-0.5 border-r border-emerald-800/80 text-center bg-[#255e11]">
                   TIẾN ĐỘ
+                </th>
+                <th className="w-60 min-w-[210px] max-w-[260px] px-1.5 py-0.5 border-r border-emerald-800/80 text-left bg-[#1d5212]" title="Ghi chú màu admin note khi đang làm đổi page qua via này via khác khi via lỗi (VD: Đang add via, Đã đổi xong)">
+                  <div className="flex items-center justify-between">
+                    <span className="font-extrabold tracking-tight">GHI CHÚ ĐỔI VIA (ADMIN NOTE)</span>
+                    <span className="text-[8px] font-bold text-amber-200 bg-amber-950/70 px-1 py-0.2 rounded border border-amber-600/60 shrink-0">
+                      Màu note
+                    </span>
+                  </div>
                 </th>
                 <th className="w-16 min-w-[65px] max-w-[75px] px-0.5 py-0.5 text-center">Thao Tác</th>
               </tr>
@@ -2158,17 +2262,124 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         </div>
                       </td>
 
-                      {/* Col L: GHI CHÚ BM */}
+                      {/* Col M: GHI CHÚ BM (DANH SÁCH LỰA CHỌN TẤT CẢ BM HIỆN TẠI HOẶC THÊM MỚI) */}
                       <td className="px-1.5 py-1 border-r border-slate-300 whitespace-nowrap text-xs">
-                        <input
-                          type="text"
-                          value={record.bmNote}
-                          onChange={(e) =>
-                            onUpdateRecord(record.id, { bmNote: e.target.value })
-                          }
-                          className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-emerald-600 rounded px-1 py-0.5 text-slate-700 font-medium focus:outline-hidden text-xs max-w-[100px] truncate"
-                          placeholder="Ghi chú..."
-                        />
+                        {editingBmRecordId === record.id ? (
+                          <div className="flex items-center space-x-1 min-w-[125px] max-w-[160px]">
+                            <input
+                              type="text"
+                              autoFocus
+                              list="global-bm-datalist"
+                              value={editingBmValue}
+                              onChange={(e) => setEditingBmValue(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  onUpdateRecord(record.id, { bmNote: editingBmValue.trim() });
+                                  setEditingBmRecordId(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingBmRecordId(null);
+                                }
+                              }}
+                              placeholder="Nhập tên BM..."
+                              className="w-full px-1.5 py-0.5 text-xs font-bold bg-white border border-emerald-600 rounded shadow-2xs focus:outline-hidden"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onUpdateRecord(record.id, { bmNote: editingBmValue.trim() });
+                                setEditingBmRecordId(null);
+                              }}
+                              className="px-1.5 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 shrink-0 cursor-pointer shadow-2xs"
+                              title="Lưu tên BM"
+                            >
+                              Lưu
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditingBmRecordId(null)}
+                              className="px-1 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] hover:bg-slate-300 shrink-0 cursor-pointer"
+                              title="Hủy"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex flex-col space-y-0.5 min-w-[120px] max-w-[155px]">
+                            <div className="flex items-center space-x-1">
+                              <select
+                                value={record.bmNote || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (val === '__custom_new_bm__') {
+                                    setEditingBmValue(record.bmNote || '');
+                                    setEditingBmRecordId(record.id);
+                                  } else {
+                                    onUpdateRecord(record.id, { bmNote: val });
+                                  }
+                                }}
+                                className={`w-full appearance-none px-1.5 py-0.5 rounded text-[11px] font-bold border focus:outline-hidden cursor-pointer transition-colors shadow-2xs truncate ${
+                                  record.bmNote
+                                    ? 'bg-slate-50 text-slate-900 border-slate-300 hover:bg-white'
+                                    : 'bg-amber-50/80 text-amber-900 border-amber-300/80 font-normal hover:bg-amber-100/70'
+                                }`}
+                                title={
+                                  record.bmNote
+                                    ? `BM hiện tại: ${record.bmNote}`
+                                    : 'Chưa có BM - Bấm chọn từ danh sách hoặc thêm mới'
+                                }
+                              >
+                                <option value="">— Chưa có BM —</option>
+                                {existingBmList.map((bm) => (
+                                  <option key={bm.name} value={bm.name}>
+                                    {bm.name} {bm.count > 0 ? `(${bm.count})` : ''}
+                                  </option>
+                                ))}
+                                {record.bmNote &&
+                                  !existingBmList.some(
+                                    (b) => b.name.toLowerCase() === record.bmNote.trim().toLowerCase()
+                                  ) && (
+                                    <option value={record.bmNote}>{record.bmNote}</option>
+                                  )}
+                                <option value="__custom_new_bm__">➕ Thêm BM mới...</option>
+                              </select>
+
+                              {/* Nút bút chì để gõ trực tiếp tên BM bất kỳ */}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingBmValue(record.bmNote || '');
+                                  setEditingBmRecordId(record.id);
+                                }}
+                                className="p-1 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors shrink-0 cursor-pointer"
+                                title="Nhập hoặc đổi tên BM thủ công"
+                              >
+                                <Edit2 className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+
+                            {/* Gợi ý nhanh: nếu Page này chưa có BM nhưng Nick Via này đã có Page khác gắn BM */}
+                            {!record.bmNote &&
+                              record.viaUid &&
+                              viaBmMap.has(record.viaUid.trim().toLowerCase()) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const suggested = viaBmMap.get(record.viaUid.trim().toLowerCase())!;
+                                    onUpdateRecord(record.id, { bmNote: suggested });
+                                  }}
+                                  className="text-[9.5px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded px-1 py-0.2 text-left truncate flex items-center gap-0.5 cursor-pointer shadow-2xs"
+                                  title={`Bấm để lấy theo BM của cùng Via này: ${viaBmMap.get(
+                                    record.viaUid.trim().toLowerCase()
+                                  )}`}
+                                >
+                                  <span>✨ Theo Via:</span>
+                                  <span className="truncate">
+                                    {viaBmMap.get(record.viaUid.trim().toLowerCase())}
+                                  </span>
+                                </button>
+                              )}
+                          </div>
+                        )}
                       </td>
 
                       {/* Tiến độ Đăng Bài Hôm Nay */}
@@ -2245,6 +2456,213 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         </div>
                       </td>
 
+                      {/* Col N: GHI CHÚ ĐỔI VIA (ADMIN NOTE KHI ĐANG LÀM ĐỔI PAGE QUA VIA KHÁC KHI VIA LỖI) */}
+                      <td
+                        className={`px-1.5 py-1 border-r border-slate-300 transition-all align-top ${getViaTransferCellStyle(
+                          record.viaTransferStatus,
+                          record.viaTransferColor
+                        )}`}
+                      >
+                        <div className="flex flex-col space-y-1 w-full min-w-[200px] max-w-[250px]">
+                          {/* Hàng 1: Trạng thái đổi via + Phím tắt nhanh 1-click */}
+                          <div className="flex items-center justify-between gap-1">
+                            <select
+                              value={record.viaTransferStatus || 'none'}
+                              onChange={(e) => {
+                                const newStatus = e.target.value as ViaTransferStatus;
+                                const now = new Date();
+                                const timeStr = `${now.getDate()}/${now.getMonth() + 1} ${String(
+                                  now.getHours()
+                                ).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                const defaultColors: Record<ViaTransferStatus, ViaTransferColor> = {
+                                  none: 'gray',
+                                  adding: 'yellow',
+                                  completed: 'green',
+                                  pending: 'red',
+                                  invited: 'blue',
+                                  waiting: 'purple',
+                                  failed: 'red',
+                                };
+                                onUpdateRecord(record.id, {
+                                  viaTransferStatus: newStatus,
+                                  viaTransferColor:
+                                    record.viaTransferColor && record.viaTransferColor !== 'gray'
+                                      ? record.viaTransferColor
+                                      : defaultColors[newStatus] || 'gray',
+                                  viaTransferUpdatedAt: timeStr,
+                                });
+                              }}
+                              className={`appearance-none px-1.5 py-0.5 rounded text-[10.5px] font-bold border focus:outline-hidden cursor-pointer transition-colors shadow-2xs grow ${
+                                record.viaTransferStatus === 'adding'
+                                  ? 'bg-amber-400 text-amber-950 border-amber-500 font-black'
+                                  : record.viaTransferStatus === 'completed'
+                                  ? 'bg-emerald-600 text-white border-emerald-700 font-black'
+                                  : record.viaTransferStatus === 'pending'
+                                  ? 'bg-rose-600 text-white border-rose-700 font-black'
+                                  : record.viaTransferStatus === 'invited'
+                                  ? 'bg-sky-500 text-white border-sky-600'
+                                  : record.viaTransferStatus === 'waiting'
+                                  ? 'bg-purple-600 text-white border-purple-700'
+                                  : record.viaTransferStatus === 'failed'
+                                  ? 'bg-red-700 text-white border-red-800'
+                                  : 'bg-white text-slate-700 border-slate-300'
+                              }`}
+                              title="Chọn tiến độ đổi sang Nick Via khác"
+                            >
+                              <option value="none">⚪ Chưa đổi Via</option>
+                              <option value="adding">🟡 Đang add Via</option>
+                              <option value="completed">🟢 Đã đổi xong</option>
+                              <option value="pending">🔴 Cần đổi Via (Lỗi)</option>
+                              <option value="invited">🔵 Đã gửi lời mời</option>
+                              <option value="waiting">🟣 Chờ duyệt quyền</option>
+                              <option value="failed">⚠️ Lỗi không add được</option>
+                            </select>
+
+                            {/* 1-Click Fast Buttons */}
+                            {record.viaTransferStatus !== 'adding' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const now = new Date();
+                                  const timeStr = `${now.getDate()}/${now.getMonth() + 1} ${String(
+                                    now.getHours()
+                                  ).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                  onUpdateRecord(record.id, {
+                                    viaTransferStatus: 'adding',
+                                    viaTransferColor: 'yellow',
+                                    viaTransferUpdatedAt: timeStr,
+                                  });
+                                }}
+                                className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-amber-200 hover:bg-amber-300 text-amber-950 border border-amber-400 shrink-0 cursor-pointer shadow-2xs transition-transform active:scale-95"
+                                title="1-Click: Đánh dấu đang add Via cho page này"
+                              >
+                                + Đang add
+                              </button>
+                            )}
+                            {record.viaTransferStatus !== 'completed' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const now = new Date();
+                                  const timeStr = `${now.getDate()}/${now.getMonth() + 1} ${String(
+                                    now.getHours()
+                                  ).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                  onUpdateRecord(record.id, {
+                                    viaTransferStatus: 'completed',
+                                    viaTransferColor: 'green',
+                                    viaTransferUpdatedAt: timeStr,
+                                  });
+                                }}
+                                className="px-1.5 py-0.5 rounded text-[9.5px] font-black bg-emerald-200 hover:bg-emerald-300 text-emerald-950 border border-emerald-400 shrink-0 cursor-pointer shadow-2xs transition-transform active:scale-95"
+                                title="1-Click: Đánh dấu đã đổi xong Via thành công"
+                              >
+                                ✓ Đã xong
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Hàng 2: Ô nhập ghi chú Admin Note */}
+                          <div className="flex items-center space-x-1">
+                            <input
+                              type="text"
+                              value={record.viaTransferNote || ''}
+                              onChange={(e) => {
+                                const now = new Date();
+                                const timeStr = `${now.getDate()}/${now.getMonth() + 1} ${String(
+                                  now.getHours()
+                                ).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                                onUpdateRecord(record.id, {
+                                  viaTransferNote: e.target.value,
+                                  viaTransferUpdatedAt: timeStr,
+                                  ...(!record.viaTransferStatus || record.viaTransferStatus === 'none'
+                                    ? { viaTransferStatus: 'adding', viaTransferColor: 'yellow' }
+                                    : {}),
+                                });
+                              }}
+                              placeholder={
+                                record.viaTransferStatus === 'adding'
+                                  ? 'Đang add via nào...'
+                                  : 'Ghi chú đổi via...'
+                              }
+                              className="w-full px-1.5 py-0.5 text-[11px] font-medium bg-white/90 focus:bg-white border border-slate-300 focus:border-emerald-600 rounded text-slate-800 placeholder-slate-400 focus:outline-hidden shadow-2xs"
+                              title={`Ghi chú đổi via: ${record.viaTransferNote || 'Trống'}`}
+                            />
+                            {(record.viaTransferNote ||
+                              (record.viaTransferStatus && record.viaTransferStatus !== 'none') ||
+                              record.viaTransferColor) && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  onUpdateRecord(record.id, {
+                                    viaTransferNote: '',
+                                    viaTransferStatus: 'none',
+                                    viaTransferColor: undefined,
+                                    viaTransferUpdatedAt: undefined,
+                                  })
+                                }
+                                className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors shrink-0"
+                                title="Xóa ghi chú & đưa về trạng thái bình thường"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Hàng 3: 7 Nút Chọn Màu Note + Thời gian cập nhật */}
+                          <div className="flex items-center justify-between pt-0.5 border-t border-slate-200/60">
+                            {/* Color Palette Dots */}
+                            <div className="flex items-center space-x-1" title="Chọn màu sắc ghi chú (Vàng, Xanh lá, Xanh dương, Tím, Đỏ, Cam, Xám)">
+                              {VIA_TRANSFER_COLORS.map((col) => {
+                                const isSelected =
+                                  record.viaTransferColor === col.key ||
+                                  (!record.viaTransferColor &&
+                                    ((col.key === 'yellow' && record.viaTransferStatus === 'adding') ||
+                                      (col.key === 'green' && record.viaTransferStatus === 'completed') ||
+                                      (col.key === 'red' && record.viaTransferStatus === 'pending')));
+                                return (
+                                  <button
+                                    key={col.key}
+                                    type="button"
+                                    onClick={() =>
+                                      onUpdateRecord(record.id, {
+                                        viaTransferColor: col.key,
+                                      })
+                                    }
+                                    className={`w-3 h-3 rounded-full cursor-pointer transition-transform ${
+                                      col.key === 'yellow'
+                                        ? 'bg-amber-400'
+                                        : col.key === 'green'
+                                        ? 'bg-emerald-500'
+                                        : col.key === 'blue'
+                                        ? 'bg-sky-500'
+                                        : col.key === 'purple'
+                                        ? 'bg-purple-500'
+                                        : col.key === 'red'
+                                        ? 'bg-rose-500'
+                                        : col.key === 'orange'
+                                        ? 'bg-orange-500'
+                                        : 'bg-slate-400'
+                                    } ${
+                                      isSelected
+                                        ? 'ring-2 ring-slate-800 scale-125 z-10'
+                                        : 'opacity-70 hover:opacity-100 hover:scale-110'
+                                    }`}
+                                    title={`Tô màu: ${col.label}`}
+                                  />
+                                );
+                              })}
+                            </div>
+
+                            {/* Timestamp if updated */}
+                            {record.viaTransferUpdatedAt && (
+                              <span className="text-[9px] text-slate-500 font-semibold tracking-tight">
+                                🕒 {record.viaTransferUpdatedAt}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+
                       {/* Actions */}
                       <td className="px-0.5 py-1 text-center whitespace-nowrap">
                         <div className="flex items-center justify-center space-x-0.5">
@@ -2294,6 +2712,13 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               )}
             </tbody>
           </table>
+
+          {/* Datalist gợi ý tự động cho tất cả BM hiện tại trong hệ thống */}
+          <datalist id="global-bm-datalist">
+            {existingBmList.map((bm) => (
+              <option key={bm.name} value={bm.name} />
+            ))}
+          </datalist>
         </div>
 
         {/* Footer info with Pagination Navigation, Color Palette Guide & 4 Status Breakdown */}

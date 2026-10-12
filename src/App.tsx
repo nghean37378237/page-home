@@ -217,6 +217,8 @@ export default function App() {
     likeCountStatus: '',
     postingMethod: '',
     completionFilter: 'all',
+    viaTransferFilter: 'all',
+    bmFilter: '',
   });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -822,7 +824,8 @@ export default function App() {
         const matchFull = (r.fullVia || '').toLowerCase().includes(query);
         const matchStaff = r.staffName.toLowerCase().includes(query);
         const matchNote = (r.bmNote || '').toLowerCase().includes(query);
-        if (!matchPage && !matchVia && !matchFull && !matchStaff && !matchNote) {
+        const matchTransfer = (r.viaTransferNote || '').toLowerCase().includes(query);
+        if (!matchPage && !matchVia && !matchFull && !matchStaff && !matchNote && !matchTransfer) {
           return false;
         }
       }
@@ -835,6 +838,16 @@ export default function App() {
 
       if (filter.viaUid && r.viaUid !== filter.viaUid) {
         return false;
+      }
+
+      if (filter.bmFilter && filter.bmFilter !== 'all') {
+        if (filter.bmFilter === '__none__') {
+          if (r.bmNote?.trim()) return false;
+        } else {
+          if (r.bmNote?.trim().toLowerCase() !== filter.bmFilter.trim().toLowerCase()) {
+            return false;
+          }
+        }
       }
 
       if (filter.multiPageOnly) {
@@ -882,6 +895,21 @@ export default function App() {
         const isDone = r.isCompleted || (r.targetPosts > 0 && r.actualPosts >= r.targetPosts);
         if (filter.completionFilter === 'completed' && !isDone) return false;
         if (filter.completionFilter === 'in_progress' && isDone) return false;
+      }
+
+      if (filter.viaTransferFilter && filter.viaTransferFilter !== 'all') {
+        if (filter.viaTransferFilter === 'has_note') {
+          const hasNote = Boolean(
+            r.viaTransferNote ||
+              (r.viaTransferStatus && r.viaTransferStatus !== 'none') ||
+              r.viaTransferColor
+          );
+          if (!hasNote) return false;
+        } else if (filter.viaTransferFilter === 'not_none') {
+          if (!r.viaTransferStatus || r.viaTransferStatus === 'none') return false;
+        } else {
+          if (r.viaTransferStatus !== filter.viaTransferFilter) return false;
+        }
       }
 
       return true;
@@ -1293,11 +1321,20 @@ export default function App() {
             : `[${historyNoteText}]`;
         }
 
+        const now = new Date();
+        const dateStr = `${now.getDate()}/${now.getMonth() + 1}`;
         const updated: PageRecord = {
           ...r,
           viaUid: targetCleanVia,
           staffName: targetCleanStaff,
           bmNote: newBmNote,
+          viaTransferStatus: 'completed',
+          viaTransferColor: 'green',
+          viaTransferNote: `Đã đổi sang Via ${targetCleanVia}`,
+          viaTransferUpdatedAt: dateStr,
+          isViaFixed: true,
+          isViaError: false,
+          viaStatus: 'active',
           ...(targetFullVia ? { fullVia: targetFullVia } : {}),
         };
         updatedRecords.push(updated);

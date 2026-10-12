@@ -50,7 +50,13 @@ service cloud.firestore {
              (!('likeCountStatus' in data) || (data.likeCountStatus is string && data.likeCountStatus.size() <= 50)) &&
              (!('isViaError' in data) || data.isViaError is bool) &&
              (!('viaStatus' in data) || (data.viaStatus is string && data.viaStatus.size() <= 50)) &&
-             (!('viaErrorNote' in data) || (data.viaErrorNote is string && data.viaErrorNote.size() <= 500));
+             (!('viaErrorNote' in data) || (data.viaErrorNote is string && data.viaErrorNote.size() <= 500)) &&
+             (!('isViaFixed' in data) || data.isViaFixed is bool) &&
+             (!('viaSharedNote' in data) || (data.viaSharedNote is string && data.viaSharedNote.size() <= 500)) &&
+             (!('viaTransferStatus' in data) || (data.viaTransferStatus is string && data.viaTransferStatus.size() <= 50)) &&
+             (!('viaTransferNote' in data) || (data.viaTransferNote is string && data.viaTransferNote.size() <= 500)) &&
+             (!('viaTransferColor' in data) || (data.viaTransferColor is string && data.viaTransferColor.size() <= 50)) &&
+             (!('viaTransferUpdatedAt' in data) || (data.viaTransferUpdatedAt is string && data.viaTransferUpdatedAt.size() <= 50));
     }
 
     function isValidViaItem(data) {
