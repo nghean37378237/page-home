@@ -254,12 +254,16 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       });
       await batch.commit();
     } else {
-      // If accounts collection already exists, ensure Admin account exists so admin access is never locked out
+      // If accounts collection already exists, ensure Admin account exists and has cualokhachsan@gmail.com
       const existingDocs = accountsSnapshot.docs.map((d) => d.data() as UserAccount);
-      const hasAdmin = existingDocs.some((a) => a.role === 'admin');
-      if (!hasAdmin) {
+      const adminAcc = existingDocs.find((a) => a.role === 'admin');
+      if (!adminAcc) {
         console.log('[Firestore] Bổ sung tài khoản Quản Lý (Admin)...');
         await setDoc(doc(db, ACCOUNTS_COLLECTION, DEFAULT_ADMIN_ACCOUNT.id), DEFAULT_ADMIN_ACCOUNT);
+      } else if (adminAcc.email !== 'cualokhachsan@gmail.com') {
+        await updateDoc(doc(db, ACCOUNTS_COLLECTION, adminAcc.id), {
+          email: 'cualokhachsan@gmail.com',
+        });
       }
     }
 
@@ -278,6 +282,11 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
         requireGoogleLoginOnly: DEFAULT_ADMIN_SETTINGS.requireGoogleLoginOnly ?? true,
       };
       await setDoc(settingsDocRef, initialSettings);
+    } else {
+      const currentSettings = settingsSnap.data() as CloudSettingsData;
+      if (currentSettings.adminEmail !== 'cualokhachsan@gmail.com') {
+        await updateDoc(settingsDocRef, { adminEmail: 'cualokhachsan@gmail.com' });
+      }
     }
 
     // Check if vias collection has data

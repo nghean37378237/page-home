@@ -1477,7 +1477,7 @@ export default function App() {
   const handleChangeAdminProfile = async (newPin: string, newName?: string, newEmail?: string) => {
     const cleanPin = newPin.trim();
     const cleanName = newName?.trim() || adminSettings.adminName || 'Quản Lý (Admin)';
-    const cleanEmail = newEmail?.trim() || adminSettings.adminEmail || 'myphuong2295@gmail.com';
+    const cleanEmail = newEmail?.trim() || adminSettings.adminEmail || 'cualokhachsan@gmail.com';
 
     setAdminSettings((prev) => ({
       ...prev,

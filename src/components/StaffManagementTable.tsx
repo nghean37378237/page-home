@@ -86,7 +86,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   groupRecords = [],
   adminPin,
   adminName = 'Quản Lý (Admin)',
-  adminEmail = 'myphuong2295@gmail.com',
+  adminEmail = 'cualokhachsan@gmail.com',
   requireGoogleOnly = true,
   onChangeAdminProfile,
   onToggleRequireGoogleOnly,
@@ -2421,7 +2421,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   type="email"
                   value={editAdminEmail}
                   onChange={(e) => setEditAdminEmail(e.target.value)}
-                  placeholder="Ví dụ: myphuong2295@gmail.com"
+                  placeholder="Ví dụ: cualokhachsan@gmail.com"
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:border-amber-500 font-mono text-slate-800"
                 />
                 <span className="text-[10px] text-slate-400 mt-1 block">

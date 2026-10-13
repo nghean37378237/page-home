@@ -316,7 +316,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       onLoginSuccess({
         id: 'admin',
         name: adminName || 'Quản Lý (Admin)',
-        email: adminEmail || 'myphuong2295@gmail.com',
+        email: adminEmail || 'cualokhachsan@gmail.com',
         role: 'admin',
         status: 'approved',
         isAuthenticated: true,
@@ -355,11 +355,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       const displayName = result.user.displayName || '';
 
       const freshAccounts = getFreshAccounts();
-      const currentAdminEmail = (adminEmail || 'myphuong2295@gmail.com').trim().toLowerCase();
+      const currentAdminEmail = (adminEmail || 'cualokhachsan@gmail.com').trim().toLowerCase();
 
       // 1. Check Admin Google Account
       if (
         email === currentAdminEmail ||
+        email === 'cualokhachsan@gmail.com' ||
         email === 'myphuong2295@gmail.com' ||
         email === 'admin@gmail.com' ||
         freshAccounts.some((a) => a.role === 'admin' && a.email?.toLowerCase() === email)
@@ -371,7 +372,17 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           role: 'admin',
           status: 'approved',
           isAuthenticated: true,
-          allowedTabs: ['fanpage', 'group', 'proxy', 'fullvia', 'staff_management', 'shared_accounts'],
+          allowedTabs: [
+            'fanpage',
+            'group',
+            'proxy',
+            'fullvia',
+            'staff_management',
+            'shared_accounts',
+            'revenue',
+            'staff_info',
+            'image_studio',
+          ],
         });
         return;
       }
@@ -452,11 +463,12 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       return;
     }
 
-    const currentAdminEmail = (adminEmail || 'myphuong2295@gmail.com').trim().toLowerCase();
+    const currentAdminEmail = (adminEmail || 'cualokhachsan@gmail.com').trim().toLowerCase();
 
     // Check if it's the Admin email - BẮT BUỘC NHẬP PASS ADMIN, KHÔNG CHO VÀO TỰ ĐỘNG!
     if (
       email === currentAdminEmail ||
+      email === 'cualokhachsan@gmail.com' ||
       email === 'myphuong2295@gmail.com' ||
       email === 'admin@gmail.com' ||
       freshAccounts.some((a) => a.role === 'admin' && a.email?.toLowerCase() === email)
@@ -1218,7 +1230,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                           {/* Admin Account Button */}
                           <button
                             type="button"
-                            onClick={() => handleQuickSelectAccount(adminEmail || 'myphuong2295@gmail.com')}
+                            onClick={() => handleQuickSelectAccount(adminEmail || 'cualokhachsan@gmail.com')}
                             className="p-2.5 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-600/40 hover:border-amber-500 rounded-xl text-left transition-all flex items-center space-x-2.5 cursor-pointer group shadow-sm"
                           >
                             <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
@@ -1230,7 +1242,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                                 <span className="text-[9px] px-1.5 py-0.2 bg-amber-500/30 text-amber-300 rounded font-bold uppercase tracking-wider">Quản Trị</span>
                               </div>
                               <div className="text-[10px] text-slate-400 font-mono truncate">
-                                {adminEmail || 'myphuong2295@gmail.com'}
+                                {adminEmail || 'cualokhachsan@gmail.com'}
                               </div>
                             </div>
                             <span className="text-[10px] text-amber-300/80 font-bold shrink-0">Chọn →</span>

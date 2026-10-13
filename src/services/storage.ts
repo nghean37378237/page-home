@@ -18,7 +18,7 @@ export const DEFAULT_STAFF_MEMBERS = ['Anh Quỳnh', 'Bảo', 'Phương My'];
 export const DEFAULT_ADMIN_USER: AppUser = {
   id: 'admin',
   name: 'Quản Lý (Admin)',
-  email: 'myphuong2295@gmail.com',
+  email: 'cualokhachsan@gmail.com',
   role: 'admin',
   status: 'approved',
   isAuthenticated: true,
@@ -36,7 +36,7 @@ export const GUEST_USER: AppUser = {
 export const DEFAULT_ADMIN_ACCOUNT: UserAccount = {
   id: 'account-admin',
   username: 'Quản Lý (Admin)',
-  email: 'myphuong2295@gmail.com',
+  email: 'cualokhachsan@gmail.com',
   role: 'admin',
   status: 'approved',
   pin: 'admin123',
@@ -98,7 +98,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSecuritySettings = {
   adminPin: 'admin123',
   requireApproval: true,
   adminName: 'Quản Lý (Admin)',
-  adminEmail: 'myphuong2295@gmail.com',
+  adminEmail: 'cualokhachsan@gmail.com',
   requireGoogleLoginOnly: false,
 };
 
