@@ -150,6 +150,34 @@ service cloud.firestore {
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));
     }
 
+    function isValidMonthlyFinance(data) {
+      return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             (!('monthKey' in data) || (data.monthKey is string && data.monthKey.size() <= 20)) &&
+             (!('month' in data) || data.month is number) &&
+             (!('year' in data) || data.year is number) &&
+             (!('totalRevenue' in data) || data.totalRevenue is number) &&
+             (!('officeCost' in data) || data.officeCost is number) &&
+             (!('electricityCost' in data) || data.electricityCost is number) &&
+             (!('waterCost' in data) || data.waterCost is number) &&
+             (!('totalSalary' in data) || data.totalSalary is number) &&
+             (!('totalExpenses' in data) || data.totalExpenses is number) &&
+             (!('netProfit' in data) || data.netProfit is number) &&
+             (!('salaryItems' in data) || data.salaryItems is list) &&
+             (!('revenueItems' in data) || data.revenueItems is list);
+    }
+
+    function isValidImageTask(data) {
+      return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
+             data.title is string && data.title.size() <= 300 &&
+             (!('assignedStaff' in data) || (data.assignedStaff is string && data.assignedStaff.size() <= 100)) &&
+             (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+             (!('priority' in data) || (data.priority is string && data.priority.size() <= 50)) &&
+             (!('notes' in data) || (data.notes is string && data.notes.size() <= 2000)) &&
+             (!('targetPage' in data) || (data.targetPage is string && data.targetPage.size() <= 200)) &&
+             (!('deadline' in data) || (data.deadline is string && data.deadline.size() <= 50)) &&
+             (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50));
+    }
+
     // --- Collection Match Rules ---
 
     // 1. Page Records (Fanpages & Daily Progress)
@@ -214,16 +242,20 @@ service cloud.firestore {
       allow delete: if isValidId(proxyId);
     }
 
-    // 8. Monthly Finances (Doanh thu & Thu chi từng tháng)
+    // 8. Monthly Finances (Doanh thu & Thu chi từng tháng - Xác thực nghiêm ngặt)
     match /monthlyFinances/{monthId} {
       allow read: if true;
-      allow create, update, delete: if isValidId(monthId);
+      allow create: if isValidId(monthId) && isValidMonthlyFinance(request.resource.data);
+      allow update: if isValidId(monthId) && isValidMonthlyFinance(request.resource.data);
+      allow delete: if isValidId(monthId);
     }
 
-    // 9. Image Tasks (Nhiệm vụ làm ảnh & chia việc nhân viên)
+    // 9. Image Tasks (Nhiệm vụ làm ảnh & chia việc nhân viên - Xác thực nghiêm ngặt)
     match /imageTasks/{taskId} {
       allow read: if true;
-      allow create, update, delete: if isValidId(taskId);
+      allow create: if isValidId(taskId) && isValidImageTask(request.resource.data);
+      allow update: if isValidId(taskId) && isValidImageTask(request.resource.data);
+      allow delete: if isValidId(taskId);
     }
   }
 }

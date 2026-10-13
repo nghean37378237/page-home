@@ -61,10 +61,12 @@ import {
   saveCloudSettings,
   resetCloudFirestoreToDefaults,
   clearAllCloudMonthlyFinances,
+  batchSaveCloudMonthlyFinances,
   subscribeToImageTasks,
   setCloudImageTask,
   updateCloudImageTask,
   deleteCloudImageTask,
+  batchSaveCloudImageTasks,
 } from './services/firebase';
 import {
   loadCurrentUserSession,
@@ -1511,6 +1513,57 @@ export default function App() {
     await saveCloudSettings({
       requireGoogleLoginOnly: enabled,
     });
+  };
+
+  const handleRestoreFullBackup = async (backupData: any) => {
+    if (!backupData || typeof backupData !== 'object') {
+      throw new Error('Dữ liệu file backup không hợp lệ');
+    }
+
+    // 1. Page Records
+    if (Array.isArray(backupData.pageRecords) && backupData.pageRecords.length > 0) {
+      await batchSaveCloudPageRecords(backupData.pageRecords);
+      setRecords(backupData.pageRecords);
+    }
+
+    // 2. Full Vias
+    if (Array.isArray(backupData.vias) && backupData.vias.length > 0) {
+      await batchSaveCloudVias(backupData.vias);
+      setViaList(backupData.vias);
+    }
+
+    // 3. Group Facebook
+    if (Array.isArray(backupData.groupRecords) && backupData.groupRecords.length > 0) {
+      await batchSaveCloudGroupRecords(backupData.groupRecords);
+      setGroupRecords(backupData.groupRecords);
+      saveLocalGroupBackup(backupData.groupRecords);
+    }
+
+    // 4. Proxies
+    if (Array.isArray(backupData.proxies) && backupData.proxies.length > 0) {
+      await batchSaveCloudProxies(backupData.proxies);
+      setProxies(backupData.proxies);
+    }
+
+    // 5. Web Dùng Chung
+    if (Array.isArray(backupData.sharedAccounts) && backupData.sharedAccounts.length > 0) {
+      await batchSaveCloudSharedAccounts(backupData.sharedAccounts);
+      setSharedAccounts(backupData.sharedAccounts);
+    }
+
+    // 6. Doanh Thu & Thu Chi
+    if (Array.isArray(backupData.monthlyFinances) && backupData.monthlyFinances.length > 0) {
+      await batchSaveCloudMonthlyFinances(backupData.monthlyFinances);
+      setFinances(backupData.monthlyFinances);
+      saveLocalFinanceBackup(backupData.monthlyFinances);
+    }
+
+    // 7. Nhiệm vụ làm ảnh
+    if (Array.isArray(backupData.imageTasks) && backupData.imageTasks.length > 0) {
+      await batchSaveCloudImageTasks(backupData.imageTasks);
+      setImageTasks(backupData.imageTasks);
+      saveLocalImageTasksBackup(backupData.imageTasks);
+    }
   };
 
   // Switch active user
@@ -2998,6 +3051,11 @@ export default function App() {
           adminPin={adminSettings.adminPin}
           records={records}
           viaList={viaList}
+          groupRecords={groupRecords}
+          proxies={proxies}
+          sharedAccounts={sharedAccounts}
+          finances={finances}
+          imageTasks={imageTasks}
           requireGoogleOnly={adminSettings.requireGoogleLoginOnly}
           onToggleRequireGoogleOnly={handleToggleRequireGoogleOnly}
           onApproveAccount={handleApproveAccount}
@@ -3011,6 +3069,7 @@ export default function App() {
           onChangeAdminPin={handleChangeAdminPin}
           onUpdateAccountEmail={handleUpdateAccountEmail}
           onUpdateAccountInfo={handleUpdateAccountInfo}
+          onRestoreBackup={handleRestoreFullBackup}
         />
       )}
 

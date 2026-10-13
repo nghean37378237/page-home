@@ -6,6 +6,8 @@ import {
   GroupRecord,
   ProxyItem,
   SharedAccount,
+  MonthlyFinanceRecord,
+  ImageTaskItem,
   TabKey,
   ALL_TAB_KEYS,
   STAFF_ASSIGNABLE_TABS,
@@ -60,6 +62,8 @@ interface AdminApprovalModalProps {
   groupRecords?: GroupRecord[];
   proxies?: ProxyItem[];
   sharedAccounts?: SharedAccount[];
+  finances?: MonthlyFinanceRecord[];
+  imageTasks?: ImageTaskItem[];
   initialTab?: 'staff' | 'pending' | 'blocked' | 'admin_pin' | 'security_db';
   onApproveAccount: (accountId: string) => void;
   onRejectAccount: (accountId: string) => void;
@@ -87,6 +91,8 @@ export function AdminApprovalModal({
   groupRecords = [],
   proxies = [],
   sharedAccounts = [],
+  finances = [],
+  imageTasks = [],
   initialTab = 'staff',
   requireGoogleOnly = true,
   onToggleRequireGoogleOnly,
@@ -646,6 +652,8 @@ export function AdminApprovalModal({
         totalVias: viaList.length,
         totalAccounts: accounts.length,
         totalSharedAccounts: sharedAccounts.length,
+        totalMonthlyFinances: finances.length,
+        totalImageTasks: imageTasks.length,
       },
       pageRecords: records,
       groupRecords: groupRecords,
@@ -662,6 +670,8 @@ export function AdminApprovalModal({
         approvedAt: a.approvedAt,
       })),
       sharedAccounts: sharedAccounts,
+      monthlyFinances: finances,
+      imageTasks: imageTasks,
     };
 
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
@@ -2313,8 +2323,8 @@ export function AdminApprovalModal({
                     </div>
 
                     <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
-                      <div className="font-bold text-slate-700">Dữ liệu đóng gói bao gồm 6 bảng:</div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-center">
+                      <div className="font-bold text-slate-700">Dữ liệu đóng gói an toàn bao gồm toàn bộ 8 bảng:</div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center">
                         <div className="p-2 bg-white rounded-lg border border-slate-200">
                           <div className="font-black text-indigo-700 text-base">{records.length}</div>
                           <div className="text-[10px] text-slate-500">1. Fanpage</div>
@@ -2338,6 +2348,14 @@ export function AdminApprovalModal({
                         <div className="p-2 bg-white rounded-lg border border-slate-200">
                           <div className="font-black text-blue-700 text-base">{sharedAccounts.length}</div>
                           <div className="text-[10px] text-slate-500">6. Web Dùng Chung</div>
+                        </div>
+                        <div className="p-2 bg-white rounded-lg border border-slate-200">
+                          <div className="font-black text-amber-700 text-base">{finances.length}</div>
+                          <div className="text-[10px] text-slate-500">7. Doanh Thu & Lương</div>
+                        </div>
+                        <div className="p-2 bg-white rounded-lg border border-slate-200">
+                          <div className="font-black text-pink-700 text-base">{imageTasks.length}</div>
+                          <div className="text-[10px] text-slate-500">9. Xưởng Làm Ảnh</div>
                         </div>
                       </div>
                     </div>

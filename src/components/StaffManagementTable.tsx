@@ -1835,6 +1835,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                   else if (tabDef.color === 'indigo') colorClass = 'bg-indigo-50 text-indigo-800 border-indigo-300';
                                   else if (tabDef.color === 'blue') colorClass = 'bg-blue-50 text-blue-800 border-blue-300';
                                   else if (tabDef.color === 'purple') colorClass = 'bg-purple-50 text-purple-800 border-purple-300';
+                                  else if (tabDef.color === 'rose') colorClass = 'bg-rose-50 text-rose-800 border-rose-300';
 
                                   return (
                                     <span
@@ -1851,7 +1852,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                               {isAdmin && (
                                 <div className="flex items-center justify-between pt-0.5">
                                   <span className="text-[10px] text-slate-500 font-semibold">
-                                    Được xem: {allowedTabsList.length}/5 Bảng
+                                    Được xem: {allowedTabsList.length} Bảng
                                   </span>
                                   <button
                                     type="button"

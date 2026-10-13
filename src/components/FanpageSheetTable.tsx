@@ -1437,11 +1437,11 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]" title="Đếm Like">
                   ĐẾM LIKE
                 </th>
-                <th className="w-32 min-w-[125px] max-w-[145px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Phương thức đăng bài và tiến độ bài đăng hôm nay (Đã gộp gọn)">
-                  <div className="flex flex-col items-center leading-tight">
-                    <span>ĐĂNG BÀI & TIẾN ĐỘ</span>
-                    <span className="text-[7.5px] font-normal opacity-85 lowercase">(tay/tool • tiến độ)</span>
-                  </div>
+                <th className="w-20 min-w-[75px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Phương thức đăng bài (Đăng Tay / Tool)">
+                  ĐĂNG BÀI
+                </th>
+                <th className="w-24 min-w-[85px] max-w-[105px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Tiến độ bài đăng hôm nay">
+                  TIẾN ĐỘ
                 </th>
                 <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]">
                   TƯƠNG TÁC
@@ -2186,130 +2186,129 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         </select>
                       </td>
 
-                      {/* Col J: ĐĂNG TAY, TOOL & TIẾN ĐỘ (ĐÃ GỘP GỌN) */}
+                      {/* Cột: ĐĂNG BÀI (Đăng Tay / Tool) */}
                       <td className="px-1 py-1 border-r border-slate-300 text-center whitespace-nowrap">
-                        <div className="flex flex-col items-center justify-center space-y-1 w-full min-w-[115px] max-w-[135px] mx-auto">
-                          {/* Hàng 1: Phương thức đăng (Đăng Tay / Tool) */}
-                          <div className="w-full flex items-center gap-1">
-                            <select
-                              value={record.postingMethod}
-                              onChange={(e) => {
-                                const newMethod = e.target.value as PostingMethod;
-                                const now = new Date();
-                                const todayDateStr = `${now.getDate()}/${now.getMonth() + 1}`;
-                                onUpdateRecord(record.id, {
-                                  postingMethod: newMethod,
-                                  ...(newMethod === 'Đăng Tay'
-                                    ? { postingDate: record.postingDate || todayDateStr }
-                                    : {}),
-                                });
-                              }}
-                              className={`w-full appearance-none px-1.5 py-0.5 text-center font-bold rounded text-[10.5px] border focus:outline-hidden cursor-pointer transition-colors shadow-2xs ${getPostingMethodBadgeStyle(
-                                record.postingMethod
-                              )}`}
-                              title={`Phương thức: ${record.postingMethod}${
-                                record.postingMethod === 'Đăng Tay'
-                                  ? ` (Ngày chọn: ${record.postingDate || record.date || 'Hôm nay'})`
-                                  : ''
-                              }`}
-                            >
-                              {POSTING_METHOD_OPTIONS.map((opt) => (
-                                <option key={opt} value={opt} className="bg-white text-slate-800 font-bold">
-                                  {opt}
-                                </option>
-                              ))}
-                            </select>
+                        <div className="flex flex-col items-center justify-center space-y-0.5 w-full">
+                          <select
+                            value={record.postingMethod}
+                            onChange={(e) => {
+                              const newMethod = e.target.value as PostingMethod;
+                              const now = new Date();
+                              const todayDateStr = `${now.getDate()}/${now.getMonth() + 1}`;
+                              onUpdateRecord(record.id, {
+                                postingMethod: newMethod,
+                                ...(newMethod === 'Đăng Tay'
+                                  ? { postingDate: record.postingDate || todayDateStr }
+                                  : {}),
+                              });
+                            }}
+                            className={`w-full appearance-none px-1 py-0.5 text-center font-bold rounded text-[10.5px] border focus:outline-hidden cursor-pointer transition-colors shadow-2xs ${getPostingMethodBadgeStyle(
+                              record.postingMethod
+                            )}`}
+                            title={`Phương thức: ${record.postingMethod}${
+                              record.postingMethod === 'Đăng Tay'
+                                ? ` (Ngày chọn: ${record.postingDate || record.date || 'Hôm nay'})`
+                                : ''
+                            }`}
+                          >
+                            {POSTING_METHOD_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt} className="bg-white text-slate-800 font-bold">
+                                {opt}
+                              </option>
+                            ))}
+                          </select>
 
-                            {/* Khi chọn Đăng Tay -> hiển thị ô ngày mini */}
-                            {record.postingMethod === 'Đăng Tay' && (
-                              <input
-                                type="text"
-                                value={
-                                  record.postingDate ??
-                                  record.date ??
-                                  `${new Date().getDate()}/${new Date().getMonth() + 1}`
-                                }
-                                onChange={(e) =>
-                                  onUpdateRecord(record.id, { postingDate: e.target.value })
-                                }
-                                placeholder={`${new Date().getDate()}/${new Date().getMonth() + 1}`}
-                                className="w-9 text-center bg-white border border-emerald-300 focus:border-emerald-600 rounded px-0.5 py-0.2 text-[9.5px] font-bold text-emerald-900 focus:outline-hidden shadow-2xs"
-                                title="Ngày chọn Đăng Tay"
-                              />
-                            )}
-                          </div>
-
-                          {/* Hàng 2: Tiến độ đăng bài hôm nay + nút Xong/Chưa */}
-                          <div className="flex items-center justify-center space-x-0.5 w-full bg-slate-50/90 px-1 py-0.5 rounded border border-slate-200 shadow-2xs">
-                            {/* Minus 1 */}
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onUpdateRecord(record.id, {
-                                  actualPosts: Math.max(0, record.actualPosts - 1),
-                                  isCompleted:
-                                    Math.max(0, record.actualPosts - 1) >= record.targetPosts,
-                                })
+                          {/* Khi chọn Đăng Tay -> hiển thị ô ngày mini */}
+                          {record.postingMethod === 'Đăng Tay' && (
+                            <input
+                              type="text"
+                              value={
+                                record.postingDate ??
+                                record.date ??
+                                `${new Date().getDate()}/${new Date().getMonth() + 1}`
                               }
-                              className="w-3.5 h-3.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                              title="Giảm 1 bài"
-                            >
-                              <Minus className="w-2 h-2" />
-                            </button>
+                              onChange={(e) =>
+                                onUpdateRecord(record.id, { postingDate: e.target.value })
+                              }
+                              placeholder={`${new Date().getDate()}/${new Date().getMonth() + 1}`}
+                              className="w-full text-center bg-white border border-emerald-300 focus:border-emerald-600 rounded px-0.5 py-0.2 text-[9px] font-bold text-emerald-900 focus:outline-hidden shadow-2xs"
+                              title="Ngày chọn Đăng Tay"
+                            />
+                          )}
+                        </div>
+                      </td>
 
-                            {/* Actual / Target posts */}
-                            <span className="font-black text-slate-900 text-[10.5px] px-1 text-center select-none" title="Số bài đăng hôm nay / Chỉ tiêu">
-                              {record.actualPosts}/{record.targetPosts}
-                            </span>
+                      {/* Cột: TIẾN ĐỘ (Số bài & Nút Xong/Chưa) */}
+                      <td className="px-1 py-1 border-r border-slate-300 text-center whitespace-nowrap">
+                        <div className="flex items-center justify-center space-x-0.5 w-full bg-slate-50/90 px-1 py-0.5 rounded border border-slate-200 shadow-2xs">
+                          {/* Minus 1 */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onUpdateRecord(record.id, {
+                                actualPosts: Math.max(0, record.actualPosts - 1),
+                                isCompleted:
+                                  Math.max(0, record.actualPosts - 1) >= record.targetPosts,
+                              })
+                            }
+                            className="w-3.5 h-3.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                            title="Giảm 1 bài"
+                          >
+                            <Minus className="w-2 h-2" />
+                          </button>
 
-                            {/* Plus 1 */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const next = record.actualPosts + 1;
-                                onUpdateRecord(record.id, {
-                                  actualPosts: next,
-                                  isCompleted: next >= record.targetPosts,
-                                });
-                              }}
-                              className="w-3.5 h-3.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                              title="Tăng 1 bài"
-                            >
-                              <Plus className="w-2 h-2" />
-                            </button>
+                          {/* Actual / Target posts */}
+                          <span className="font-black text-slate-900 text-[10.5px] px-1 text-center select-none" title="Số bài đăng hôm nay / Chỉ tiêu">
+                            {record.actualPosts}/{record.targetPosts}
+                          </span>
 
-                            {/* 1-Click Status Badge */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newDone = !isDone;
-                                onUpdateRecord(record.id, {
-                                  isCompleted: newDone,
-                                  actualPosts: newDone
-                                    ? Math.max(record.targetPosts, record.actualPosts)
-                                    : record.actualPosts,
-                                });
-                              }}
-                              className={`ml-1 inline-flex items-center space-x-0.5 px-1 py-0.2 rounded text-[9.5px] font-bold border transition-colors cursor-pointer shrink-0 ${
-                                isDone
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
-                                  : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                              }`}
-                              title="Bấm để đổi nhanh trạng thái: Đã đăng xong / Chưa đăng"
-                            >
-                              {isDone ? (
-                                <>
-                                  <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                                  <span>Xong</span>
-                                </>
-                              ) : (
-                                <>
-                                  <XCircle className="w-2.5 h-2.5 text-rose-500" />
-                                  <span>Chưa</span>
-                                </>
-                              )}
-                            </button>
-                          </div>
+                          {/* Plus 1 */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = record.actualPosts + 1;
+                              onUpdateRecord(record.id, {
+                                actualPosts: next,
+                                isCompleted: next >= record.targetPosts,
+                              });
+                            }}
+                            className="w-3.5 h-3.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center cursor-pointer transition-colors shrink-0"
+                            title="Tăng 1 bài"
+                          >
+                            <Plus className="w-2 h-2" />
+                          </button>
+
+                          {/* 1-Click Status Badge */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const newDone = !isDone;
+                              onUpdateRecord(record.id, {
+                                isCompleted: newDone,
+                                actualPosts: newDone
+                                  ? Math.max(record.targetPosts, record.actualPosts)
+                                  : record.actualPosts,
+                              });
+                            }}
+                            className={`ml-1 inline-flex items-center space-x-0.5 px-1 py-0.2 rounded text-[9.5px] font-bold border transition-colors cursor-pointer shrink-0 ${
+                              isDone
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                            }`}
+                            title="Bấm để đổi nhanh trạng thái: Đã đăng xong / Chưa đăng"
+                          >
+                            {isDone ? (
+                              <>
+                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+                                <span>Xong</span>
+                              </>
+                            ) : (
+                              <>
+                                <XCircle className="w-2.5 h-2.5 text-rose-500" />
+                                <span>Chưa</span>
+                              </>
+                            )}
+                          </button>
                         </div>
                       </td>
 

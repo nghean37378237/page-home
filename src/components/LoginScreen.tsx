@@ -263,7 +263,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     if (expectedPin !== staffPinInput.trim()) {
       const nextFails = staffFailedAttempts + 1;
       setStaffFailedAttempts(nextFails);
-      if (nextFails >= 5) {
+      if (nextFails >= 10) {
+        setStaffLockoutSeconds(300);
+        setStaffError('Hệ thống phát hiện nhập sai mã PIN quá 10 lần liên tiếp! Khóa bảo mật 5 phút (300 giây) để ngăn chặn tấn công dò quét.');
+      } else if (nextFails >= 5) {
         setStaffLockoutSeconds(60);
         setStaffError('Hệ thống phát hiện nhập sai mã PIN quá 5 lần. Tạm khóa bảo vệ 60 giây để phòng chống dò mật khẩu!');
       } else {
@@ -321,7 +324,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     } else {
       const nextFails = adminFailedAttempts + 1;
       setAdminFailedAttempts(nextFails);
-      if (nextFails >= 5) {
+      if (nextFails >= 10) {
+        setAdminLockoutSeconds(300);
+        setAdminError('Hệ thống phát hiện nhập sai mật khẩu Quản Lý quá 10 lần liên tiếp! Khóa bảo mật 5 phút (300 giây) để phòng chống tấn công dò quét.');
+      } else if (nextFails >= 5) {
         setAdminLockoutSeconds(60);
         setAdminError('Hệ thống phát hiện nhập sai mật khẩu Quản Lý quá 5 lần. Tạm khóa bảo vệ 60 giây để phòng chống dò mật khẩu!');
       } else {
