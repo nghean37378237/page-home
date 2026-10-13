@@ -1,4 +1,4 @@
-import { PageRecord, AppUser, UserAccount, FullViaItem, GroupRecord, MonthlyFinanceRecord, ALL_TAB_KEYS } from '../types';
+import { PageRecord, AppUser, UserAccount, FullViaItem, GroupRecord, MonthlyFinanceRecord, ImageTaskItem, ALL_TAB_KEYS } from '../types';
 import { INITIAL_PAGE_RECORDS, INITIAL_MONTHLY_FINANCES } from '../data/initialData';
 import { getCleanBmName } from '../utils/helpers';
 
@@ -11,6 +11,7 @@ export const FULL_VIA_STORAGE_KEY = 'fanpage_full_vias_list_v2';
 export const CUSTOM_STAFF_KEY = 'fanpage_custom_staff_v1';
 export const GROUP_RECORDS_BACKUP_KEY = 'fanpage_group_records_safe_backup_v3';
 export const MONTHLY_FINANCES_BACKUP_KEY = 'fanpage_monthly_finances_safe_backup_v1';
+export const IMAGE_TASKS_BACKUP_KEY = 'fanpage_image_tasks_safe_backup_v1';
 
 export const DEFAULT_STAFF_MEMBERS = ['Anh Quỳnh', 'Bảo', 'Phương My'];
 
@@ -341,4 +342,78 @@ export function getLocalFinanceBackup(): MonthlyFinanceRecord[] {
     return [];
   }
 }
+
+export const INITIAL_IMAGE_TASKS: ImageTaskItem[] = [
+  {
+    id: 'task-1',
+    title: 'Ghép ảnh Story FB: Before & After Phim Mới',
+    pageName: 'Action Overload Zone',
+    assignedStaff: 'Anh Quỳnh',
+    deadline: '15/10',
+    presetId: 'story-fb-before-after-classic',
+    aspectRatio: '9:16',
+    referenceNote: 'Ghép ảnh 2 phân cảnh trước - sau kèm chữ SWIPE UP, màu sắc nổi bật tăng tương tác Story.',
+    sampleImages: [
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800&auto=format&fit=crop&q=80',
+    ],
+    status: 'in_progress',
+    createdBy: 'Admin',
+    createdAt: '14/10/2026',
+  },
+  {
+    id: 'task-2',
+    title: 'Lưới 4 ảnh meme 2x2 Classic biểu cảm diễn viên',
+    pageName: 'Movie Guild Hub',
+    assignedStaff: 'Bảo',
+    deadline: '16/10',
+    presetId: '4-grid-2x2',
+    aspectRatio: '1:1',
+    referenceNote: 'Ghép 4 khung đều nhau, viền trắng 4px, bo góc nhẹ 12px, đóng dấu watermark tên Page.',
+    sampleImages: [
+      'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800&auto=format&fit=crop&q=80',
+      'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&auto=format&fit=crop&q=80',
+    ],
+    status: 'pending',
+    createdBy: 'Admin',
+    createdAt: '14/10/2026',
+  },
+  {
+    id: 'task-3',
+    title: 'Ảnh tin tức Headline: 2 Hàng Ngang + Ảnh Tròn Điểm Nhấn',
+    pageName: 'Cinema Lovers World',
+    assignedStaff: 'Phương My',
+    deadline: '15/10',
+    presetId: '3-circle-split-h-right',
+    aspectRatio: '3:4',
+    referenceNote: 'Mẫu báo chí viral, nền trên dưới và ảnh tròn tâm nhân vật nổi bật góc phải.',
+    sampleImages: [
+      'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80',
+    ],
+    status: 'completed',
+    createdBy: 'Admin',
+    createdAt: '13/10/2026',
+  },
+];
+
+export function saveLocalImageTasksBackup(tasks: ImageTaskItem[]): void {
+  try {
+    localStorage.setItem(IMAGE_TASKS_BACKUP_KEY, JSON.stringify(tasks));
+  } catch (err) {
+    console.warn('[Storage] Không thể sao lưu dự phòng nhiệm vụ làm ảnh:', err);
+  }
+}
+
+export function getLocalImageTasksBackup(): ImageTaskItem[] {
+  try {
+    const raw = localStorage.getItem(IMAGE_TASKS_BACKUP_KEY);
+    if (!raw) return INITIAL_IMAGE_TASKS;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return INITIAL_IMAGE_TASKS;
+    return parsed;
+  } catch {
+    return INITIAL_IMAGE_TASKS;
+  }
+}
+
 

@@ -9,6 +9,7 @@ import {
   GroupRecord,
   ProxyItem,
   MonthlyFinanceRecord,
+  ImageTaskItem,
   TabKey,
   ALL_TAB_KEYS,
   TAB_DEFINITIONS,
@@ -60,6 +61,10 @@ import {
   saveCloudSettings,
   resetCloudFirestoreToDefaults,
   clearAllCloudMonthlyFinances,
+  subscribeToImageTasks,
+  setCloudImageTask,
+  updateCloudImageTask,
+  deleteCloudImageTask,
 } from './services/firebase';
 import {
   loadCurrentUserSession,
@@ -72,6 +77,8 @@ import {
   saveLocalFinanceBackup,
   getLocalFinanceBackup,
   clearLocalFinanceBackup,
+  saveLocalImageTasksBackup,
+  getLocalImageTasksBackup,
   DEFAULT_STAFF_MEMBERS,
   INITIAL_ACCOUNTS,
   DEFAULT_ADMIN_USER,
@@ -105,8 +112,9 @@ import { AddEditProxyModal } from './components/AddEditProxyModal';
 import { BulkImportProxyModal } from './components/BulkImportProxyModal';
 import { RevenueManagementTable } from './components/RevenueManagementTable';
 import { StaffInfoTable } from './components/StaffInfoTable';
+import { ImageStudioTab } from './components/ImageStudioTab';
 import { getCleanBmName } from './utils/helpers';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact } from 'lucide-react';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon } from 'lucide-react';
 
 export default function App() {
   // Application data stored purely in Cloud Firestore
@@ -117,6 +125,7 @@ export default function App() {
   const [groupRecords, setGroupRecords] = useState<GroupRecord[]>([]);
   const [proxies, setProxies] = useState<ProxyItem[]>(INITIAL_PROXIES);
   const [finances, setFinances] = useState<MonthlyFinanceRecord[]>(() => getLocalFinanceBackup());
+  const [imageTasks, setImageTasks] = useState<ImageTaskItem[]>(() => getLocalImageTasksBackup());
   const [customStaffList, setCustomStaffList] = useState<string[]>([]);
   const [adminSettings, setAdminSettings] = useState<AdminSecuritySettings>(DEFAULT_ADMIN_SETTINGS);
   
@@ -197,6 +206,10 @@ export default function App() {
     // Tab Thông Tin Nhân Viên luôn hiện cho nhân viên để xem hồ sơ và lương cá nhân (lấy từ Bảng 7)
     if (!filteredTabs.includes('staff_info')) {
       filteredTabs.push('staff_info');
+    }
+    // Tab Làm Ảnh cho phép nhân viên truy cập để làm ảnh & nhận việc ghép ảnh
+    if (!filteredTabs.includes('image_studio')) {
+      filteredTabs.push('image_studio');
     }
     return filteredTabs;
   }, [currentUser, accounts]);
@@ -326,6 +339,7 @@ export default function App() {
     let unsubGroups: (() => void) | undefined;
     let unsubProxies: (() => void) | undefined;
     let unsubFinances: (() => void) | undefined;
+    let unsubImageTasks: (() => void) | undefined;
 
     async function initAuthenticatedSubscriptions() {
       try {
@@ -427,6 +441,14 @@ export default function App() {
             }
           })
           .catch((err) => console.warn('[App] Direct finance fetch warning:', err));
+
+        // 7. Listen to live image tasks in Cloud Firestore
+        unsubImageTasks = subscribeToImageTasks((cloudTasks) => {
+          if (cloudTasks && cloudTasks.length > 0) {
+            setImageTasks(cloudTasks);
+            saveLocalImageTasksBackup(cloudTasks);
+          }
+        });
       } catch (err) {
         console.error('[App] Lỗi kết nối cơ sở dữ liệu đã xác thực:', err);
       }
@@ -442,6 +464,7 @@ export default function App() {
       unsubGroups?.();
       unsubProxies?.();
       unsubFinances?.();
+      unsubImageTasks?.();
     };
   }, [currentUser.isAuthenticated]);
 
@@ -827,7 +850,22 @@ export default function App() {
       description: 'Hiện họ và tên, ngày tháng năm sinh, lương, doanh thu và tổng lương lấy từ Bảng 7',
       visible: userAllowedTabs.includes('staff_info') || currentUser.role === 'staff' || currentUser.role === 'admin',
     },
-  ].filter((t) => t.visible), [userAllowedTabs, currentUser, userScopedRecords, groupRecords, proxies, viaList, accounts, sharedAccounts, finances]);
+    {
+      id: 'image_studio' as TabKey,
+      num: currentUser.role === 'admin' ? 9 : (userAllowedTabs.indexOf('image_studio') !== -1 ? userAllowedTabs.indexOf('image_studio') + 1 : 6),
+      title: 'Làm Ảnh',
+      fullTitle: 'Bảng 9: Xưởng Ghép Ảnh & Chia Việc Nhân Viên (lamanh.vercel.app)',
+      icon: ImageIcon,
+      count: imageTasks.length,
+      unit: 'Bài',
+      activeClass: 'bg-rose-700 text-white shadow-xs ring-2 ring-rose-500/25',
+      activeNumClass: 'bg-white/20 text-white',
+      dotColor: 'bg-rose-500',
+      accentColor: 'text-rose-700',
+      description: 'Xưởng ghép ảnh đa bố cục, Story FB, viral, và phân chia việc cho nhân viên làm ảnh',
+      visible: userAllowedTabs.includes('image_studio'),
+    },
+  ].filter((t) => t.visible), [userAllowedTabs, currentUser, userScopedRecords, groupRecords, proxies, viaList, accounts, sharedAccounts, finances, imageTasks]);
 
   const currentActiveNavTab = useMemo(() => {
     return navTabs.find((t) => t.id === activeTab) || navTabs[0];
@@ -1808,6 +1846,34 @@ export default function App() {
   const handleDeleteSharedAccount = async (id: string) => {
     setSharedAccounts((prev) => prev.filter((a) => a.id !== id));
     await deleteCloudSharedAccount(id);
+  };
+
+  // Image Task handlers (Bảng 9: Làm Ảnh & Ghép Ảnh)
+  const handleAddImageTask = async (task: ImageTaskItem) => {
+    setImageTasks((prev) => {
+      const next = [task, ...prev.filter((t) => t.id !== task.id)];
+      saveLocalImageTasksBackup(next);
+      return next;
+    });
+    await setCloudImageTask(task);
+  };
+
+  const handleUpdateImageTask = async (id: string, updates: Partial<ImageTaskItem>) => {
+    setImageTasks((prev) => {
+      const next = prev.map((t) => (t.id === id ? { ...t, ...updates } : t));
+      saveLocalImageTasksBackup(next);
+      return next;
+    });
+    await updateCloudImageTask(id, updates);
+  };
+
+  const handleDeleteImageTask = async (id: string) => {
+    setImageTasks((prev) => {
+      const next = prev.filter((t) => t.id !== id);
+      saveLocalImageTasksBackup(next);
+      return next;
+    });
+    await deleteCloudImageTask(id);
   };
 
   // Group Records handlers (Add, Update, Delete, Batch)
@@ -2798,6 +2864,16 @@ export default function App() {
             records={records}
             availableStaffNames={allStaffNames}
             onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
+          />
+        ) : activeTab === 'image_studio' ? (
+          <ImageStudioTab
+            currentUser={currentUser}
+            availableStaffNames={allStaffNames}
+            tasks={imageTasks}
+            onAddTask={handleAddImageTask}
+            onUpdateTask={handleUpdateImageTask}
+            onDeleteTask={handleDeleteImageTask}
+            allPageNames={Array.from(new Set(records.map((r) => r.pageName).filter(Boolean)))}
           />
         ) : (
           <SharedAccountsTable

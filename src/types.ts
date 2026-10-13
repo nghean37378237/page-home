@@ -201,7 +201,8 @@ export type TabKey =
   | 'staff_management'
   | 'shared_accounts'
   | 'revenue'
-  | 'staff_info';
+  | 'staff_info'
+  | 'image_studio';
 
 export interface TabPermissionConfig {
   id: TabKey;
@@ -222,6 +223,7 @@ export const ALL_TAB_KEYS: TabKey[] = [
   'shared_accounts',
   'revenue',
   'staff_info',
+  'image_studio',
 ];
 
 // Các bảng phân quyền cho nhân viên (Bảng 5 Quản Trị NV & Bảng 7 Quản Lý Doanh Thu chỉ dành riêng cho Admin quản lý)
@@ -232,6 +234,7 @@ export const STAFF_ASSIGNABLE_TABS: TabKey[] = [
   'fullvia',
   'shared_accounts',
   'staff_info',
+  'image_studio',
 ];
 
 export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
@@ -307,7 +310,65 @@ export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
     color: 'blue',
     description: 'Xem thông tin cá nhân, ngày sinh, lương theo ngày công, doanh thu và tổng thu nhập từ Bảng 7',
   },
+  image_studio: {
+    id: 'image_studio',
+    tabNumber: 9,
+    label: 'Bảng 9: Làm Ảnh & Ghép Ảnh',
+    shortLabel: 'B9 Làm Ảnh',
+    badgeName: 'Làm Ảnh',
+    color: 'rose',
+    description: 'Xưởng ghép ảnh chuyên nghiệp đa bố cục (lamanh.vercel.app), chia việc cho nhân viên làm ảnh và xuất ảnh HD.',
+  },
 };
+
+// --- Các kiểu dữ liệu phục vụ Bảng 9: Làm Ảnh & Ghép Ảnh ---
+export interface CollageSlot {
+  id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  shape?: 'rect' | 'circle';
+  zIndex?: number;
+  borderWidth?: number;
+  borderColor?: string;
+}
+
+export interface CollagePreset {
+  id: string;
+  name: string;
+  photoCount: number;
+  category: string;
+  recommendedRatio?: string;
+  hasCircleAccent?: boolean;
+  slots: CollageSlot[];
+}
+
+export interface SlotTransform {
+  scale: number;
+  panX: number;
+  panY: number;
+  rotate: number;
+}
+
+export type TaskStatus = 'pending' | 'in_progress' | 'review' | 'completed';
+
+export interface ImageTaskItem {
+  id: string;
+  title: string; // Tên bài / chủ đề làm ảnh
+  pageName?: string; // Thuộc Page nào (nếu có)
+  assignedStaff: string; // Tên nhân viên làm ảnh được giao phụ trách
+  deadline?: string; // Hạn chót (ngày)
+  presetId?: string; // Gợi ý mẫu ghép (id preset)
+  aspectRatio?: string; // Tỷ lệ yêu cầu ('1:1', '4:5', '9:16', '3:4', '16:9')
+  referenceNote?: string; // Yêu cầu nội dung làm ảnh
+  sampleImages?: string[]; // Ảnh nguồn / link tham khảo
+  resultImageUrl?: string; // Ảnh thành phẩm đã ghép xong
+  status: TaskStatus; // Trạng thái bài
+  createdBy: string;
+  createdAt: string;
+  updatedAt?: string;
+}
 
 export interface UserAccount {
   id: string;

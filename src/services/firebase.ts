@@ -17,7 +17,7 @@ import {
   DocumentData,
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem, GroupInteractionStatus, MonthlyFinanceRecord } from '../types';
+import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem, GroupInteractionStatus, MonthlyFinanceRecord, ImageTaskItem } from '../types';
 import {
   INITIAL_PAGE_RECORDS,
   INITIAL_GROUP_RECORDS,
@@ -31,6 +31,7 @@ import {
   DEFAULT_ADMIN_SETTINGS,
   AdminSecuritySettings,
   getInitialFullViaItems,
+  INITIAL_IMAGE_TASKS,
 } from './storage';
 import { getCleanBmName } from '../utils/helpers';
 
@@ -1168,3 +1169,79 @@ export async function resetCloudFirestoreToDefaults(): Promise<void> {
     handleFirestoreError(error, OperationType.WRITE, 'reset_all');
   }
 }
+
+// ==========================================
+// 10. IMAGE TASKS MANAGEMENT (BẢNG 9: LÀM ẢNH & GHÉP ẢNH)
+// ==========================================
+export const IMAGE_TASKS_COLLECTION = 'imageTasks';
+
+export function subscribeToImageTasks(callback: (tasks: ImageTaskItem[]) => void): Unsubscribe {
+  const colRef = collection(db, IMAGE_TASKS_COLLECTION);
+  return onSnapshot(
+    colRef,
+    (snapshot) => {
+      if (snapshot.empty) {
+        // Tự động seed initial tasks nếu rỗng
+        callback(INITIAL_IMAGE_TASKS);
+        return;
+      }
+      const list: ImageTaskItem[] = [];
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data() as ImageTaskItem;
+        list.push({ ...data, id: docSnap.id });
+      });
+      // Sắp xếp theo ngày tạo mới nhất
+      list.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      callback(list);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, IMAGE_TASKS_COLLECTION);
+    }
+  );
+}
+
+export async function setCloudImageTask(task: ImageTaskItem): Promise<void> {
+  try {
+    const docRef = doc(db, IMAGE_TASKS_COLLECTION, task.id);
+    await setDoc(docRef, sanitizeForFirestore(task));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${IMAGE_TASKS_COLLECTION}/${task.id}`);
+    throw error;
+  }
+}
+
+export async function updateCloudImageTask(taskId: string, partial: Partial<ImageTaskItem>): Promise<void> {
+  try {
+    const docRef = doc(db, IMAGE_TASKS_COLLECTION, taskId);
+    await updateDoc(docRef, sanitizeForFirestore(partial) as DocumentData);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${IMAGE_TASKS_COLLECTION}/${taskId}`);
+    throw error;
+  }
+}
+
+export async function deleteCloudImageTask(taskId: string): Promise<void> {
+  try {
+    const docRef = doc(db, IMAGE_TASKS_COLLECTION, taskId);
+    await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${IMAGE_TASKS_COLLECTION}/${taskId}`);
+    throw error;
+  }
+}
+
+export async function batchSaveCloudImageTasks(tasks: ImageTaskItem[]): Promise<void> {
+  if (!tasks || tasks.length === 0) return;
+  try {
+    const batch = writeBatch(db);
+    tasks.forEach((task) => {
+      const docRef = doc(db, IMAGE_TASKS_COLLECTION, task.id);
+      batch.set(docRef, sanitizeForFirestore(task));
+    });
+    await batch.commit();
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, `${IMAGE_TASKS_COLLECTION}/batch`);
+    throw error;
+  }
+}
+

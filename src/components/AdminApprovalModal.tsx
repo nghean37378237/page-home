@@ -8,6 +8,7 @@ import {
   SharedAccount,
   TabKey,
   ALL_TAB_KEYS,
+  STAFF_ASSIGNABLE_TABS,
   TAB_DEFINITIONS,
 } from '../types';
 import {
@@ -2962,10 +2963,10 @@ export function AdminApprovalModal({
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="block text-xs font-bold text-slate-700">
-                    Phân Quyền Bảng Hiển Thị (1..6)
+                    Phân Quyền Bảng Hiển Thị
                   </label>
                   <span className="text-[11px] text-indigo-600 font-semibold">
-                    Đã chọn {(editStaffModalData.allowedTabs || ['fanpage', 'fullvia']).filter((t) => t !== 'staff_management').length}/5 bảng
+                    Đã chọn {(editStaffModalData.allowedTabs || ['fanpage', 'fullvia']).filter((t) => t !== 'staff_management').length}/{STAFF_ASSIGNABLE_TABS.length} bảng
                   </span>
                 </div>
 
@@ -2975,12 +2976,24 @@ export function AdminApprovalModal({
                     onClick={() =>
                       setEditStaffModalData({
                         ...editStaffModalData,
-                        allowedTabs: ['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'],
+                        allowedTabs: [...STAFF_ASSIGNABLE_TABS],
                       })
                     }
                     className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                   >
-                    Tất cả (5 bảng)
+                    Tất cả ({STAFF_ASSIGNABLE_TABS.length} bảng)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStaffModalData({
+                        ...editStaffModalData,
+                        allowedTabs: ['fanpage', 'image_studio'],
+                      })
+                    }
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer"
+                  >
+                    🎨 Nhân Viên Làm Ảnh
                   </button>
                   <button
                     type="button"
@@ -3021,7 +3034,7 @@ export function AdminApprovalModal({
                 </div>
 
                 <div className="grid grid-cols-2 gap-1.5">
-                  {(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'] as TabKey[]).map((tabKey) => {
+                  {STAFF_ASSIGNABLE_TABS.map((tabKey) => {
                     const tabDef = TAB_DEFINITIONS[tabKey];
                     const currentTabs = editStaffModalData.allowedTabs || ['fanpage', 'fullvia'];
                     const isChecked = currentTabs.includes(tabKey);

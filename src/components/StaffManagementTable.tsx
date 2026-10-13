@@ -495,10 +495,13 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     });
   };
 
-  const handleQuickPresetTabs = (preset: 'all' | 'fanpage_only' | 'fanpage_via' | 'fanpage_group' | 'minimal') => {
+  const handleQuickPresetTabs = (preset: 'all' | 'fanpage_only' | 'fanpage_via' | 'fanpage_group' | 'photo_editor' | 'minimal') => {
     switch (preset) {
       case 'all':
-        setSelectedAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts', 'staff_info']);
+        setSelectedAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts', 'staff_info', 'image_studio']);
+        break;
+      case 'photo_editor':
+        setSelectedAllowedTabs(['fanpage', 'image_studio']);
         break;
       case 'fanpage_only':
         setSelectedAllowedTabs(['fanpage']);
@@ -2554,6 +2557,13 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                     className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-all cursor-pointer"
                   >
                     📄 Chỉ Fanpage (B1)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickPresetTabs('photo_editor')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer"
+                  >
+                    🎨 Nhân Viên Làm Ảnh (B1 & B9)
                   </button>
                   <button
                     type="button"

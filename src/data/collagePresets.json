@@ -1,0 +1,1522 @@
+[
+  {
+    "id": "2-circle-bottom-right",
+    "name": "1 Nền Toàn Cảnh + 1 Ảnh Tròn Góc Dưới (Giống ảnh mẫu)",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "3:4",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 42,
+        "y": 48,
+        "width": 54,
+        "height": 40.5,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 6,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "2-circle-pip",
+    "name": "1 Nền Toàn Cảnh + 1 Ảnh Tròn Tâm (PiP)",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "1:1",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 28,
+        "y": 28,
+        "width": 44,
+        "height": 44,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "2-split-v",
+    "name": "2 Cột Đôi (Song song)",
+    "photoCount": 2,
+    "category": "classic",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 50,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 50,
+        "y": 0,
+        "width": 50,
+        "height": 100
+      }
+    ]
+  },
+  {
+    "id": "2-split-h",
+    "name": "2 Hàng Ngang (Trên - Dưới)",
+    "photoCount": 2,
+    "category": "classic",
+    "recommendedRatio": "3:4",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 50
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 50
+      }
+    ]
+  },
+  {
+    "id": "2-asym-left",
+    "name": "1 Lớn Trái (65%) + 1 Nhỏ Phải",
+    "photoCount": 2,
+    "category": "modern",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 66.66,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 66.66,
+        "y": 0,
+        "width": 33.34,
+        "height": 100
+      }
+    ]
+  },
+  {
+    "id": "2-asym-right",
+    "name": "1 Nhỏ Trái + 1 Lớn Phải (65%)",
+    "photoCount": 2,
+    "category": "modern",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 33.34,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 33.34,
+        "y": 0,
+        "width": 66.66,
+        "height": 100
+      }
+    ]
+  },
+  {
+    "id": "2-top-large",
+    "name": "1 Lớn Trên (65%) + 1 Băng Dưới",
+    "photoCount": 2,
+    "category": "modern",
+    "recommendedRatio": "3:4",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 65
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 65,
+        "width": 100,
+        "height": 35
+      }
+    ]
+  },
+  {
+    "id": "3-circle-split-h-right",
+    "name": "2 Hàng Ngang + Ảnh Tròn Lệch Phải (Giống ảnh mẫu)",
+    "photoCount": 3,
+    "category": "creative",
+    "recommendedRatio": "3:4",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 50
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 50
+      },
+      {
+        "id": 2,
+        "x": 48,
+        "y": 22,
+        "width": 48,
+        "height": 36,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 6,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "3-circle-split-v",
+    "name": "2 Cột Đôi + Ảnh Tròn Tâm",
+    "photoCount": 3,
+    "category": "creative",
+    "recommendedRatio": "1:1",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 50,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 50,
+        "y": 0,
+        "width": 50,
+        "height": 100
+      },
+      {
+        "id": 2,
+        "x": 28,
+        "y": 28,
+        "width": 44,
+        "height": 44,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "3-circle-split-h",
+    "name": "2 Hàng Ngang + Ảnh Tròn Giao Điểm",
+    "photoCount": 3,
+    "category": "creative",
+    "recommendedRatio": "3:4",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 50
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 50
+      },
+      {
+        "id": 2,
+        "x": 30,
+        "y": 30,
+        "width": 40,
+        "height": 40,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "3-circle-story-duo",
+    "name": "2 Khung Story 9:16 + Ảnh Tròn Tâm",
+    "photoCount": 3,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 50
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 50
+      },
+      {
+        "id": 2,
+        "x": 26,
+        "y": 36,
+        "width": 48,
+        "height": 48,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "3-circle-asym",
+    "name": "2 Ảnh Lệch + Ảnh Tròn Giao Điểm",
+    "photoCount": 3,
+    "category": "creative",
+    "recommendedRatio": "1:1",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 66.66,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 66.66,
+        "y": 0,
+        "width": 33.34,
+        "height": 100
+      },
+      {
+        "id": 2,
+        "x": 45,
+        "y": 30,
+        "width": 42,
+        "height": 42,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "3-left-big",
+    "name": "1 Lớn Trái + 2 Xếp Phải",
+    "photoCount": 3,
+    "category": "classic",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 50,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 50,
+        "y": 0,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": 2,
+        "x": 50,
+        "y": 50,
+        "width": 50,
+        "height": 50
+      }
+    ]
+  },
+  {
+    "id": "3-right-big",
+    "name": "2 Xếp Trái + 1 Lớn Phải",
+    "photoCount": 3,
+    "category": "classic",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 50,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": 2,
+        "x": 50,
+        "y": 0,
+        "width": 50,
+        "height": 100
+      }
+    ]
+  },
+  {
+    "id": "3-top-big",
+    "name": "1 Banner Trên + 2 Ô Dưới",
+    "photoCount": 3,
+    "category": "modern",
+    "recommendedRatio": "3:4",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 55
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 55,
+        "width": 50,
+        "height": 45
+      },
+      {
+        "id": 2,
+        "x": 50,
+        "y": 55,
+        "width": 50,
+        "height": 45
+      }
+    ]
+  },
+  {
+    "id": "3-bottom-big",
+    "name": "2 Ô Trên + 1 Banner Dưới",
+    "photoCount": 3,
+    "category": "modern",
+    "recommendedRatio": "3:4",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 50,
+        "height": 45
+      },
+      {
+        "id": 1,
+        "x": 50,
+        "y": 0,
+        "width": 50,
+        "height": 45
+      },
+      {
+        "id": 2,
+        "x": 0,
+        "y": 45,
+        "width": 100,
+        "height": 55
+      }
+    ]
+  },
+  {
+    "id": "3-columns",
+    "name": "3 Cột Dọc Đều Nhau",
+    "photoCount": 3,
+    "category": "classic",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 33.333,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 33.333,
+        "y": 0,
+        "width": 33.334,
+        "height": 100
+      },
+      {
+        "id": 2,
+        "x": 66.667,
+        "y": 0,
+        "width": 33.333,
+        "height": 100
+      }
+    ]
+  },
+  {
+    "id": "3-rows",
+    "name": "3 Tầng Ngang Đều Nhau",
+    "photoCount": 3,
+    "category": "classic",
+    "recommendedRatio": "9:16",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 33.333
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 33.333,
+        "width": 100,
+        "height": 33.334
+      },
+      {
+        "id": 2,
+        "x": 0,
+        "y": 66.667,
+        "width": 100,
+        "height": 33.333
+      }
+    ]
+  },
+  {
+    "id": "3-center-spotlight",
+    "name": "Spotlight: Giữa Lớn + 2 Cánh",
+    "photoCount": 3,
+    "category": "creative",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 25,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 25,
+        "y": 0,
+        "width": 50,
+        "height": 100
+      },
+      {
+        "id": 2,
+        "x": 75,
+        "y": 0,
+        "width": 25,
+        "height": 100
+      }
+    ]
+  },
+  {
+    "id": "4-circle-trio-classic",
+    "name": "1 Lớn + 2 Nhỏ + Ảnh Tròn Tâm",
+    "photoCount": 4,
+    "category": "creative",
+    "recommendedRatio": "1:1",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 50,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 50,
+        "y": 0,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": 2,
+        "x": 50,
+        "y": 50,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": 3,
+        "x": 30,
+        "y": 30,
+        "width": 40,
+        "height": 40,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "4-circle-banner-trio",
+    "name": "Banner Trên + 2 Ô Dưới + Ảnh Tròn Tâm",
+    "photoCount": 4,
+    "category": "creative",
+    "recommendedRatio": "3:4",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 52
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 52,
+        "width": 50,
+        "height": 48
+      },
+      {
+        "id": 2,
+        "x": 50,
+        "y": 52,
+        "width": 50,
+        "height": 48
+      },
+      {
+        "id": 3,
+        "x": 31,
+        "y": 33,
+        "width": 38,
+        "height": 38,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "4-circle-3columns",
+    "name": "3 Cột Dọc Đều + Ảnh Tròn Tâm Giữa",
+    "photoCount": 4,
+    "category": "creative",
+    "recommendedRatio": "1:1",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 33.333,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 33.333,
+        "y": 0,
+        "width": 33.334,
+        "height": 100
+      },
+      {
+        "id": 2,
+        "x": 66.667,
+        "y": 0,
+        "width": 33.333,
+        "height": 100
+      },
+      {
+        "id": 3,
+        "x": 29,
+        "y": 29,
+        "width": 42,
+        "height": 42,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "4-circle-3rows-story",
+    "name": "3 Tầng Story 9:16 + Ảnh Tròn Điểm Nhấn",
+    "photoCount": 4,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 33.333
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 33.333,
+        "width": 100,
+        "height": 33.334
+      },
+      {
+        "id": 2,
+        "x": 0,
+        "y": 66.667,
+        "width": 100,
+        "height": 33.333
+      },
+      {
+        "id": 3,
+        "x": 26,
+        "y": 35,
+        "width": 48,
+        "height": 48,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "4-circle-corner-badge",
+    "name": "1 Lớn Trên + 2 Nhỏ Dưới + Huy Hiệu Tròn",
+    "photoCount": 4,
+    "category": "creative",
+    "recommendedRatio": "3:4",
+    "hasCircleAccent": true,
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 58
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 58,
+        "width": 50,
+        "height": 42
+      },
+      {
+        "id": 2,
+        "x": 50,
+        "y": 58,
+        "width": 50,
+        "height": 42
+      },
+      {
+        "id": 3,
+        "x": 55,
+        "y": 38,
+        "width": 38,
+        "height": 38,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 5,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "4-grid-2x2",
+    "name": "Lưới 4 Ô Vuông (2x2 Classic)",
+    "photoCount": 4,
+    "category": "classic",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": 1,
+        "x": 50,
+        "y": 0,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": 2,
+        "x": 0,
+        "y": 50,
+        "width": 50,
+        "height": 50
+      },
+      {
+        "id": 3,
+        "x": 50,
+        "y": 50,
+        "width": 50,
+        "height": 50
+      }
+    ]
+  },
+  {
+    "id": "4-photobooth",
+    "name": "Dải Photobooth Hàn Quốc (4 Cut)",
+    "photoCount": 4,
+    "category": "photobooth",
+    "recommendedRatio": "9:16",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 25
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 25,
+        "width": 100,
+        "height": 25
+      },
+      {
+        "id": 2,
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 25
+      },
+      {
+        "id": 3,
+        "x": 0,
+        "y": 75,
+        "width": 100,
+        "height": 25
+      }
+    ]
+  },
+  {
+    "id": "4-top-hero",
+    "name": "1 Lớn Trên + 3 Ảnh Nhỏ Dưới",
+    "photoCount": 4,
+    "category": "modern",
+    "recommendedRatio": "3:4",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 60
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 60,
+        "width": 33.333,
+        "height": 40
+      },
+      {
+        "id": 2,
+        "x": 33.333,
+        "y": 60,
+        "width": 33.334,
+        "height": 40
+      },
+      {
+        "id": 3,
+        "x": 66.667,
+        "y": 60,
+        "width": 33.333,
+        "height": 40
+      }
+    ]
+  },
+  {
+    "id": "4-left-hero",
+    "name": "1 Cột Trái Cao + 3 Tầng Phải",
+    "photoCount": 4,
+    "category": "modern",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 60,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 60,
+        "y": 0,
+        "width": 40,
+        "height": 33.333
+      },
+      {
+        "id": 2,
+        "x": 60,
+        "y": 33.333,
+        "width": 40,
+        "height": 33.334
+      },
+      {
+        "id": 3,
+        "x": 60,
+        "y": 66.667,
+        "width": 40,
+        "height": 33.333
+      }
+    ]
+  },
+  {
+    "id": "4-pinwheel",
+    "name": "Chong Chóng Bất Đối Xứng",
+    "photoCount": 4,
+    "category": "creative",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 66.66,
+        "height": 33.33
+      },
+      {
+        "id": 1,
+        "x": 66.66,
+        "y": 0,
+        "width": 33.34,
+        "height": 66.66
+      },
+      {
+        "id": 2,
+        "x": 33.34,
+        "y": 66.66,
+        "width": 66.66,
+        "height": 33.34
+      },
+      {
+        "id": 3,
+        "x": 0,
+        "y": 33.33,
+        "width": 33.34,
+        "height": 66.67
+      }
+    ]
+  },
+  {
+    "id": "4-columns",
+    "name": "4 Dải Dọc Song Song",
+    "photoCount": 4,
+    "category": "classic",
+    "recommendedRatio": "1:1",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 25,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 25,
+        "y": 0,
+        "width": 25,
+        "height": 100
+      },
+      {
+        "id": 2,
+        "x": 50,
+        "y": 0,
+        "width": 25,
+        "height": 100
+      },
+      {
+        "id": 3,
+        "x": 75,
+        "y": 0,
+        "width": 25,
+        "height": 100
+      }
+    ]
+  },
+  {
+    "id": "4-horizontal-strips",
+    "name": "4 Băng Ngang Xếp Lớp",
+    "photoCount": 4,
+    "category": "classic",
+    "recommendedRatio": "9:16",
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 25
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 25,
+        "width": 100,
+        "height": 25
+      },
+      {
+        "id": 2,
+        "x": 0,
+        "y": 50,
+        "width": 100,
+        "height": 25
+      },
+      {
+        "id": 3,
+        "x": 0,
+        "y": 75,
+        "width": 100,
+        "height": 25
+      }
+    ]
+  },
+  {
+    "id": "story-fb-swipe-up-divider",
+    "name": "Story FB: SWIPE UP Nét Chia 2 Ảnh (Viral Báo & Meme)",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "swipe-up",
+      "facebook",
+      "viral",
+      "meme"
+    ],
+    "storyHeader": {
+      "enabled": true,
+      "heightPercent": 15,
+      "title": "15 BRAIN-CONFUSING PHOTOS THAT NEED TO BE ANALYZED",
+      "subtitle": "",
+      "bgColor": "#000000",
+      "titleColor": "#FFFFFF",
+      "subtitleColor": "#FFE500"
+    },
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 78,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 15,
+        "width": 100,
+        "height": 63
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 78,
+        "width": 100,
+        "height": 22
+      }
+    ]
+  },
+  {
+    "id": "story-fb-before-after-classic",
+    "name": "Story FB: Before & After (78:22 Classic)",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "before-after",
+      "facebook",
+      "swipe-up"
+    ],
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 77.5,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 77.5,
+        "badge": {
+          "text": "BEFORE",
+          "bg": "#ef4444",
+          "textColor": "#FFFFFF",
+          "style": "rect",
+          "position": "top-left"
+        }
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 77.5,
+        "width": 100,
+        "height": 22.5,
+        "badge": {
+          "text": "AFTER",
+          "bg": "#22c55e",
+          "textColor": "#FFFFFF",
+          "style": "rect",
+          "position": "top-left"
+        }
+      }
+    ]
+  },
+  {
+    "id": "story-fb-headline-now-then",
+    "name": "Story FB: Báo Chí Viral (Tiêu Đề + Now/Then)",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "headline",
+      "facebook",
+      "now-then",
+      "swipe-up"
+    ],
+    "storyHeader": {
+      "enabled": true,
+      "heightPercent": 20,
+      "title": "# A Woman With The Largest Cheekbones: What Did She Look Like Before The Transformation?",
+      "subtitle": "Watch The Video!",
+      "bgColor": "#FFFFFF",
+      "titleColor": "#000000",
+      "subtitleColor": "#dc2626"
+    },
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 84,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 20,
+        "width": 100,
+        "height": 64,
+        "badge": {
+          "text": "Now",
+          "bg": "rgba(0, 0, 0, 0.75)",
+          "textColor": "#FFFFFF",
+          "style": "pill",
+          "position": "top-left"
+        }
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 84,
+        "width": 100,
+        "height": 16,
+        "badge": {
+          "text": "Then",
+          "bg": "rgba(0, 0, 0, 0.75)",
+          "textColor": "#FFFFFF",
+          "style": "pill",
+          "position": "top-left"
+        }
+      }
+    ]
+  },
+  {
+    "id": "story-fb-before-after-teaser",
+    "name": "Story FB: Before & After Teaser (84:16 Cận Cảnh)",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "before-after",
+      "teaser",
+      "swipe-up"
+    ],
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 83.5,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 83.5,
+        "badge": {
+          "text": "BEFORE",
+          "bg": "#dc2626",
+          "textColor": "#FFFFFF",
+          "style": "rect",
+          "position": "top-left"
+        }
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 83.5,
+        "width": 100,
+        "height": 16.5,
+        "badge": {
+          "text": "AFTER",
+          "bg": "#16a34a",
+          "textColor": "#FFFFFF",
+          "style": "rect",
+          "position": "top-left"
+        }
+      }
+    ]
+  },
+  {
+    "id": "story-fb-news-headline-duo",
+    "name": "Story FB: Headline Tin Tức (Tiêu Đề Báo + 2 Ảnh)",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "news",
+      "headline",
+      "facebook",
+      "swipe-up"
+    ],
+    "storyHeader": {
+      "enabled": true,
+      "heightPercent": 22,
+      "title": "Reclusive '80s TV Icon, 82, Spotted Running Errands in LA!",
+      "subtitle": "First Public Sighting in Over 3 Years!",
+      "bgColor": "#FFFFFF",
+      "titleColor": "#000000",
+      "subtitleColor": "#dc2626"
+    },
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 82,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 22,
+        "width": 100,
+        "height": 60
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 82,
+        "width": 100,
+        "height": 18
+      }
+    ]
+  },
+  {
+    "id": "story-fb-hero-center",
+    "name": "Story FB: Ảnh Giữa Nổi Bật + 2 Ô Phụ",
+    "photoCount": 3,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "swipe-up"
+    ],
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 73,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 5,
+        "y": 8,
+        "width": 90,
+        "height": 24
+      },
+      {
+        "id": 1,
+        "x": 5,
+        "y": 34,
+        "width": 90,
+        "height": 38
+      },
+      {
+        "id": 2,
+        "x": 5,
+        "y": 74,
+        "width": 90,
+        "height": 20
+      }
+    ]
+  },
+  {
+    "id": "story-fb-polaroid-stack",
+    "name": "Story FB: Khung Dọc Điện Thoại Đôi",
+    "photoCount": 2,
+    "category": "modern",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "swipe-up"
+    ],
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 50,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 6,
+        "y": 6,
+        "width": 88,
+        "height": 43
+      },
+      {
+        "id": 1,
+        "x": 6,
+        "y": 51,
+        "width": 88,
+        "height": 43
+      }
+    ]
+  },
+  {
+    "id": "story-fb-grid-compact",
+    "name": "Story FB: Lưới 4 Ô Cân Đối 9:16",
+    "photoCount": 4,
+    "category": "modern",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "swipe-up"
+    ],
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 50,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 5,
+        "y": 10,
+        "width": 43.5,
+        "height": 38
+      },
+      {
+        "id": 1,
+        "x": 51.5,
+        "y": 10,
+        "width": 43.5,
+        "height": 38
+      },
+      {
+        "id": 2,
+        "x": 5,
+        "y": 51,
+        "width": 43.5,
+        "height": 38
+      },
+      {
+        "id": 3,
+        "x": 51.5,
+        "y": 51,
+        "width": 43.5,
+        "height": 38
+      }
+    ]
+  },
+  {
+    "id": "story-fb-circle-signature",
+    "name": "Story FB: Khung Dọc + Ảnh Tròn Signature",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "hasCircleAccent": true,
+    "tags": [
+      "story",
+      "swipe-up"
+    ],
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 78,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 100
+      },
+      {
+        "id": 1,
+        "x": 25,
+        "y": 35,
+        "width": 50,
+        "height": 28.125,
+        "shape": "circle",
+        "zIndex": 10,
+        "borderWidth": 6,
+        "borderColor": "#FFFFFF"
+      }
+    ]
+  },
+  {
+    "id": "story-fb-trio-portrait",
+    "name": "Story FB: 3 Tầng Ảnh Đều Khung 9:16",
+    "photoCount": 3,
+    "category": "classic",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "swipe-up"
+    ],
+    "dividerBadge": {
+      "enabled": true,
+      "text": "SWIPE UP",
+      "positionYPercent": 66.667,
+      "textColor": "#FFE500",
+      "strokeColor": "#000000",
+      "strokeWidth": 6,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 4
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 33.333
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 33.333,
+        "width": 100,
+        "height": 33.334
+      },
+      {
+        "id": 2,
+        "x": 0,
+        "y": 66.667,
+        "width": 100,
+        "height": 33.333
+      }
+    ]
+  }
+]

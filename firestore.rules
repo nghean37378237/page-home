@@ -219,5 +219,12 @@ service cloud.firestore {
       allow read: if true;
       allow create, update, delete: if isValidId(monthId);
     }
+
+    // 9. Image Tasks (Nhiệm vụ làm ảnh & chia việc nhân viên)
+    match /imageTasks/{taskId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(taskId);
+    }
   }
 }
+
