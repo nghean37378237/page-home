@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { Search, Filter, X, Lock, Layers, Plus, AlertTriangle, Trash2, ArrowRightLeft, CheckCircle2, Zap, Users } from 'lucide-react';
-import { SheetFilter, PageRecord, AppUser } from '../types';
+import { Search, Filter, X, Lock, Layers, Plus, AlertTriangle, Trash2, ArrowRightLeft, CheckCircle2, Zap, Users, Archive } from 'lucide-react';
+import { SheetFilter, PageRecord, AppUser, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
 import { getCleanBmName } from '../utils/helpers';
 
 interface SheetFilterBarProps {
@@ -35,21 +35,29 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
   onOpenFetchPagesModal,
 }) => {
   const staffList = useMemo(() => {
-    const list = availableStaffNames && availableStaffNames.length > 0 ? [...availableStaffNames] : [];
+    const base = availableStaffNames && availableStaffNames.length > 0 ? [...availableStaffNames] : [];
+    const list = base.filter((s) => !isAdminWaitingPool(s));
     records.forEach((r) => {
       const name = r.staffName?.trim();
-      if (name && !list.some((s) => s.toLowerCase() === name.toLowerCase())) {
+      if (name && !isAdminWaitingPool(name) && !list.some((s) => s.toLowerCase() === name.toLowerCase())) {
         list.push(name);
       }
     });
     return list.sort((a, b) => a.localeCompare(b, 'vi'));
   }, [records, availableStaffNames]);
 
-  // Phân phạm vi dữ liệu: Khi chọn 1 nhân viên bất kỳ (hoặc nhân viên đang đăng nhập),
+  const waitingPoolRecordsCount = useMemo(() => {
+    return records.filter((r) => isAdminWaitingPool(r.staffName) || !r.staffName?.trim()).length;
+  }, [records]);
+
+  // Phân phạm vi dữ liệu: Khi chọn 1 nhân viên bất kỳ (hoặc Kho Chờ Admin),
   // toàn bộ thống kê trạng thái (Đề Xuất, Mất Đề Xuất, Đình Chỉ, Bị Back, Via Lỗi...)
-  // sẽ CHỈ tính trên các Fanpage của nhân viên đó!
+  // sẽ CHỈ tính trên các Fanpage của nhân viên / kho chờ đó!
   const staffScopedRecords = useMemo(() => {
     if (filter.staffName && filter.staffName.trim() && filter.staffName !== 'all') {
+      if (isAdminWaitingPool(filter.staffName)) {
+        return records.filter((r) => isAdminWaitingPool(r.staffName) || !r.staffName?.trim());
+      }
       const selectedStaffLower = filter.staffName.trim().toLowerCase();
       return records.filter(
         (r) => r.staffName && r.staffName.trim().toLowerCase() === selectedStaffLower
@@ -253,6 +261,37 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                 {records.length}
               </span>
             </button>
+
+            {/* 📦 Tab Kho Chờ Admin (Chỉ Admin thấy) */}
+            {currentUser.role === 'admin' && (
+              <button
+                type="button"
+                onClick={() =>
+                  onChangeFilter({
+                    ...filter,
+                    staffName: isAdminWaitingPool(filter.staffName) ? '' : ADMIN_WAITING_POOL,
+                  })
+                }
+                title={`Kho Chờ Admin (Chưa nhân viên nào dùng): ${waitingPoolRecordsCount} Fanpage đang lưu kho`}
+                className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-extrabold border transition-all cursor-pointer shrink-0 ${
+                  isAdminWaitingPool(filter.staffName)
+                    ? 'bg-amber-600 text-white border-amber-700 shadow-2xs ring-1 ring-amber-300'
+                    : 'bg-amber-50 text-amber-950 border-amber-300 hover:bg-amber-100'
+                }`}
+              >
+                <Archive className={`w-3 h-3 ${isAdminWaitingPool(filter.staffName) ? 'text-white' : 'text-amber-700'}`} />
+                <span>📦 Kho Chờ Admin</span>
+                <span
+                  className={`px-1 py-0.2 rounded-full text-[10px] font-black ${
+                    isAdminWaitingPool(filter.staffName)
+                      ? 'bg-white/25 text-white'
+                      : 'bg-white text-amber-950 border border-amber-300'
+                  }`}
+                >
+                  {waitingPoolRecordsCount}
+                </span>
+              </button>
+            )}
 
             {/* Từng nhân viên */}
             {staffList.map((name) => {

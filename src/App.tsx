@@ -13,6 +13,8 @@ import {
   TabKey,
   ALL_TAB_KEYS,
   TAB_DEFINITIONS,
+  ADMIN_WAITING_POOL,
+  isAdminWaitingPool,
 } from './types';
 import {
   testFirestoreConnection,
@@ -890,7 +892,11 @@ export default function App() {
       }
 
       if (currentUser.role === 'admin' && filter.staffName) {
-        if (r.staffName.toLowerCase() !== filter.staffName.toLowerCase()) {
+        if (isAdminWaitingPool(filter.staffName)) {
+          if (!isAdminWaitingPool(r.staffName) && Boolean(r.staffName?.trim())) {
+            return false;
+          }
+        } else if (r.staffName.toLowerCase() !== filter.staffName.toLowerCase()) {
           return false;
         }
       }

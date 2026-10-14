@@ -25,6 +25,7 @@ import {
   ViaTransferColor,
   VIA_TRANSFER_PRESETS,
   VIA_TRANSFER_COLORS,
+  ADMIN_WAITING_POOL,
 } from '../types';
 import {
   PAGE_STATUS_OPTIONS,
@@ -406,6 +407,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 font-medium"
                   />
                   <datalist id="staff-list-options">
+                    <option value={ADMIN_WAITING_POOL} label="📦 Kho Chờ Admin (Chưa NV nào dùng)" />
                     {availableStaffNames.map((name) => (
                       <option key={name} value={name} />
                     ))}

@@ -33,8 +33,9 @@ import {
   Bell,
   FileText,
   CheckSquare,
+  Archive,
 } from 'lucide-react';
-import { FullViaItem, AppUser, PageRecord, ViaPageUpdateStatus, ViaAdminReportStatus, VIA_ADMIN_REPORT_OPTIONS } from '../types';
+import { FullViaItem, AppUser, PageRecord, ViaPageUpdateStatus, ViaAdminReportStatus, VIA_ADMIN_REPORT_OPTIONS, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
 import { generateTOTPCode } from '../utils/totp';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
 import { batchDeleteCloudVias } from '../services/firebase';
@@ -204,7 +205,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     return map;
   }, [allRecords]);
 
-  // List of all distinct staff names from both availableStaffNames and current strictlyGuardedVias
+  // List of all distinct staff names (excluding Admin Waiting Pool which gets its own prominent tab)
   const distinctStaffNames = useMemo(() => {
     if (currentUser.role === 'staff') {
       return [currentUser.name];
@@ -214,7 +215,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
     availableStaffNames.forEach((n) => {
       const trimmed = n.trim();
-      if (trimmed && !seen.has(trimmed.toLowerCase())) {
+      if (trimmed && !isAdminWaitingPool(trimmed) && !seen.has(trimmed.toLowerCase())) {
         seen.add(trimmed.toLowerCase());
         list.push(trimmed);
       }
@@ -222,7 +223,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
     strictlyGuardedVias.forEach((v) => {
       const trimmed = v.staffName?.trim();
-      if (trimmed && !seen.has(trimmed.toLowerCase())) {
+      if (trimmed && !isAdminWaitingPool(trimmed) && !seen.has(trimmed.toLowerCase())) {
         seen.add(trimmed.toLowerCase());
         list.push(trimmed);
       }
@@ -230,6 +231,30 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
     return list;
   }, [availableStaffNames, strictlyGuardedVias, currentUser]);
+
+  // Statistics for Admin Waiting Pool (Kho Chờ Admin: bao gồm Via trống & Via + Page cầm)
+  const waitingPoolStats = useMemo(() => {
+    let total = 0;
+    let emptyVias = 0;
+    let viasWithPages = 0;
+    let totalPages = 0;
+
+    strictlyGuardedVias.forEach((v) => {
+      if (isAdminWaitingPool(v.staffName) || !v.staffName?.trim()) {
+        total++;
+        const uidClean = v.uid?.trim().toLowerCase() || '';
+        const pages = uidClean ? pagesPerViaUid.get(uidClean) || [] : [];
+        if (pages.length > 0) {
+          viasWithPages++;
+          totalPages += pages.length;
+        } else {
+          emptyVias++;
+        }
+      }
+    });
+
+    return { total, emptyVias, viasWithPages, totalPages };
+  }, [strictlyGuardedVias, pagesPerViaUid]);
 
   // Statistics per staff for quick badges (including how many Vias hold pages and total Pages held)
   const staffStats = useMemo(() => {
@@ -242,7 +267,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     });
 
     strictlyGuardedVias.forEach((v) => {
-      const name = v.staffName?.trim() || 'Chưa gán';
+      const rawName = v.staffName?.trim() || '';
+      const name = isAdminWaitingPool(rawName) || !rawName ? ADMIN_WAITING_POOL : rawName;
       if (!stats[name]) {
         stats[name] = { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
       }
@@ -373,6 +399,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       return strictlyGuardedVias.filter((v) => v.staffName.trim().toLowerCase() === staffNameLower);
     }
     if (selectedStaffFilter !== 'all') {
+      if (isAdminWaitingPool(selectedStaffFilter)) {
+        return strictlyGuardedVias.filter((v) => isAdminWaitingPool(v.staffName) || !v.staffName?.trim());
+      }
       return strictlyGuardedVias.filter((v) => v.staffName.trim().toLowerCase() === selectedStaffFilter.trim().toLowerCase());
     }
     return strictlyGuardedVias;
@@ -466,9 +495,13 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       list = list.filter((v) => v.staffName.trim().toLowerCase() === staffNameLower);
     } else {
       if (selectedStaffFilter !== 'all') {
-        list = list.filter(
-          (v) => v.staffName.trim().toLowerCase() === selectedStaffFilter.trim().toLowerCase()
-        );
+        if (isAdminWaitingPool(selectedStaffFilter)) {
+          list = list.filter((v) => isAdminWaitingPool(v.staffName) || !v.staffName?.trim());
+        } else {
+          list = list.filter(
+            (v) => v.staffName.trim().toLowerCase() === selectedStaffFilter.trim().toLowerCase()
+          );
+        }
       }
     }
 
@@ -1457,15 +1490,20 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           </div>
         </td>
 
-        {/* 5. CỘT NHÂN VIÊN (CHUYỂN VIA + TOÀN BỘ PAGE CẦM SANG NHÂN VIÊN KHÁC) */}
+        {/* 5. CỘT NHÂN VIÊN / KHO CHỜ ADMIN (CHUYỂN VIA + TOÀN BỘ PAGE CẦM) */}
         <td className={`py-2 px-2 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
           <div className="flex flex-col space-y-1">
             {currentUser.role === 'admin' ? (
               <select
-                value={via.staffName}
+                value={
+                  isAdminWaitingPool(via.staffName) || !via.staffName?.trim()
+                    ? ADMIN_WAITING_POOL
+                    : via.staffName
+                }
                 onChange={(e) => {
                   const newStaff = e.target.value;
                   if (!newStaff) return;
+                  const movingToPool = isAdminWaitingPool(newStaff);
                   onUpdateVia({
                     ...via,
                     staffName: newStaff,
@@ -1474,16 +1512,26 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       : {}),
                   });
                   setCopyToastMessage(
-                    assignedPages.length > 0
-                      ? `✅ Đã chuyển Via ${via.uid} + toàn bộ ${assignedPages.length} Page đang cầm sang cho NV: ${newStaff}!`
-                      : `✅ Đã chuyển quyền quản lý nick Via ${via.uid} sang cho: ${newStaff}`
+                    movingToPool
+                      ? assignedPages.length > 0
+                        ? `📦 Đã chuyển Via ${via.uid} + ${assignedPages.length} Page vào Kho Chờ Admin (Chưa NV nào dùng)!`
+                        : `📦 Đã chuyển Via ${via.uid} vào Kho Chờ Admin (Chưa NV nào dùng)!`
+                      : assignedPages.length > 0
+                      ? `✅ Đã giao Via ${via.uid} + toàn bộ ${assignedPages.length} Page đang cầm sang cho NV: ${newStaff}!`
+                      : `✅ Đã giao quyền quản lý nick Via ${via.uid} sang cho NV: ${newStaff}`
                   );
-                  setTimeout(() => setCopyToastMessage(null), 3000);
+                  setTimeout(() => setCopyToastMessage(null), 3200);
                 }}
-                className="bg-white border border-slate-300 hover:border-indigo-400 text-xs font-bold text-slate-800 rounded px-1.5 py-1 shadow-2xs focus:ring-1 focus:ring-indigo-500 focus:outline-hidden cursor-pointer w-full"
-                title={`Đổi nhân viên phụ trách (Tự động chuyển cả Via ${via.uid} + toàn bộ ${assignedPages.length} Page sang nhân viên mới)`}
+                className={`border text-xs font-bold rounded px-1.5 py-1 shadow-2xs focus:ring-1 focus:outline-hidden cursor-pointer w-full ${
+                  isAdminWaitingPool(via.staffName) || !via.staffName?.trim()
+                    ? 'bg-amber-50 border-amber-400 text-amber-950 focus:ring-amber-500'
+                    : 'bg-white border-slate-300 hover:border-indigo-400 text-slate-800 focus:ring-indigo-500'
+                }`}
+                title={`Đổi nơi quản lý (Tự động chuyển cả Via ${via.uid} + toàn bộ ${assignedPages.length} Page vào Kho Chờ Admin hoặc sang Nhân viên mới)`}
               >
-                <option value="">-- Chọn nhân viên --</option>
+                <option value={ADMIN_WAITING_POOL}>
+                  📦 {ADMIN_WAITING_POOL} (Chưa NV dùng)
+                </option>
                 {distinctStaffNames.map((name) => (
                   <option key={name} value={name}>
                     👤 {name}
@@ -1497,29 +1545,62 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               </div>
             )}
 
-            <div className="flex items-center justify-between gap-1">
+            <div className="flex items-center justify-between gap-1 flex-wrap">
               {assignedPages.length > 0 ? (
                 <span
                   className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded truncate"
-                  title={`Via của ${via.staffName} đang cầm ${assignedPages.length} Fanpage`}
+                  title={`Via đang cầm ${assignedPages.length} Fanpage`}
                 >
                   📗 Cầm {assignedPages.length} Page
                 </span>
               ) : (
-                <span className="text-[10px] text-slate-400 italic">0 Page</span>
+                <span className="text-[10px] text-slate-400 italic">⚪ 0 Page</span>
               )}
 
-              {onTransferViaPages && (
-                <button
-                  type="button"
-                  onClick={() => onTransferViaPages(via.uid)}
-                  className="inline-flex items-center space-x-0.5 px-1.5 py-0.2 text-[9.5px] font-bold text-indigo-700 hover:text-indigo-950 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded cursor-pointer shrink-0 transition-colors"
-                  title={`Mở bảng Chuyển Via "${via.uid}" kèm toàn bộ ${assignedPages.length} Page sang nhân viên khác`}
-                >
-                  <ArrowRightLeft className="w-2.5 h-2.5 text-indigo-600" />
-                  <span>Chuyển NV</span>
-                </button>
-              )}
+              <div className="flex items-center space-x-1">
+                {currentUser.role === 'admin' &&
+                  !isAdminWaitingPool(via.staffName) &&
+                  Boolean(via.staffName?.trim()) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onUpdateVia({
+                          ...via,
+                          staffName: ADMIN_WAITING_POOL,
+                          ...(assignedPages.length > 0
+                            ? { pageUpdateStatus: 'updated', hasAdminAssignedPage: true }
+                            : {}),
+                        });
+                        setCopyToastMessage(
+                          `📦 Đã đưa Via ${via.uid}${
+                            assignedPages.length > 0 ? ` + ${assignedPages.length} Page` : ''
+                          } vào Kho Chờ Admin!`
+                        );
+                        setTimeout(() => setCopyToastMessage(null), 3000);
+                      }}
+                      className="inline-flex items-center space-x-0.5 px-1.5 py-0.2 text-[9.5px] font-bold text-amber-900 hover:text-amber-950 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded cursor-pointer shrink-0 transition-colors"
+                      title={`Cất nhanh Via "${via.uid}" kèm ${assignedPages.length} Page vào Kho Chờ Admin (Chưa NV nào dùng)`}
+                    >
+                      <span>📦 Cất Kho</span>
+                    </button>
+                  )}
+
+                {onTransferViaPages && (
+                  <button
+                    type="button"
+                    onClick={() => onTransferViaPages(via.uid)}
+                    className="inline-flex items-center space-x-0.5 px-1.5 py-0.2 text-[9.5px] font-bold text-indigo-700 hover:text-indigo-950 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded cursor-pointer shrink-0 transition-colors"
+                    title={`Mở bảng Chuyển Via "${via.uid}" kèm toàn bộ ${assignedPages.length} Page sang nhân viên khác hoặc Kho Chờ`}
+                  >
+                    <ArrowRightLeft className="w-2.5 h-2.5 text-indigo-600" />
+                    <span>
+                      {isAdminWaitingPool(via.staffName) || !via.staffName?.trim()
+                        ? 'Giao NV'
+                        : 'Chuyển NV'}
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </td>
@@ -2279,108 +2360,219 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         </div>
       </div>
 
-      {/* 🌟 THANH TAB LỌC THEO TỪNG NHÂN VIÊN (DÀNH CHO ADMIN) */}
+      {/* 🌟 THANH TAB LỌC THEO TỪNG NHÂN VIÊN & KHO CHỜ ADMIN (DÀNH CHO ADMIN) */}
       {currentUser.role === 'admin' ? (
-        <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center space-x-1.5 overflow-x-auto py-1 scrollbar-thin">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Nhân viên:</span>
-            </span>
-
-            {/* Tab Tất Cả */}
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedStaffFilter('all');
-                onSyncStaffFilter?.('all');
-              }}
-              className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
-                selectedStaffFilter === 'all'
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-              }`}
-            >
-              <span>Tất Cả</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                selectedStaffFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-              }`}>
-                {viaList.length} Via
+        <>
+          <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex items-center space-x-1.5 overflow-x-auto py-1 scrollbar-thin">
+              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                <span>Phân loại:</span>
               </span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                selectedStaffFilter === 'all' ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-              }`}>
-                📗 {allRecords.filter((r) => Boolean(r.viaUid?.trim())).length} Page
-              </span>
-            </button>
 
-            {/* Individual Staff Tabs */}
-            {distinctStaffNames.map((name) => {
-              const theme = getStaffTheme(name);
-              const stats = staffStats[name] || { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
-              const isSelected = selectedStaffFilter.trim().toLowerCase() === name.trim().toLowerCase();
-
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => {
-                    setSelectedStaffFilter(name);
-                    onSyncStaffFilter?.(name);
-                  }}
-                  className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
-                    isSelected ? theme.activeTab : theme.inactiveTab
-                  }`}
-                  title={`Nhân viên ${name}: ${stats.total} Nick Via (${stats.viasWithPages} Via có Page - Tổng cộng đang cầm ${stats.totalPages} Fanpage)`}
-                >
-                  <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : theme.dot}`} />
-                  <span>{name}</span>
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                    isSelected ? 'bg-black/25 text-white' : 'bg-white text-slate-800'
-                  }`}>
-                    {stats.total} Via
-                  </span>
-                  {stats.totalPages > 0 && (
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                      isSelected ? 'bg-emerald-400 text-slate-950' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                    }`}>
-                      📗 {stats.totalPages} Page
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="flex items-center space-x-2 shrink-0">
-            {onTransferViaPages && (
+              {/* Tab Tất Cả */}
               <button
                 type="button"
-                onClick={() => onTransferViaPages('')}
-                className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-2xs transition-colors cursor-pointer"
-                title="Chuyển Nick Via kèm toàn bộ Page (2, 3, 4... Page) sang cho nhân viên khác"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5" />
-                <span>Chuyển Via + Page Sang NV Khác</span>
-              </button>
-            )}
-            {selectedStaffFilter === 'all' && (
-              <button
-                type="button"
-                onClick={() => setIsGroupedByStaff(!isGroupedByStaff)}
-                className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
-                  isGroupedByStaff
-                    ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs font-bold'
+                onClick={() => {
+                  setSelectedStaffFilter('all');
+                  onSyncStaffFilter?.('all');
+                }}
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                  selectedStaffFilter === 'all'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                     : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                 }`}
-                title="Nhóm các dòng theo từng nhân viên có tiêu đề phân đoạn"
               >
-                <Layers className="w-3.5 h-3.5" />
-                <span>{isGroupedByStaff ? 'Đang phân nhóm NV' : 'Phân nhóm theo NV'}</span>
+                <span>Tất Cả</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  selectedStaffFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                }`}>
+                  {viaList.length} Via
+                </span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  selectedStaffFilter === 'all' ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                }`}>
+                  📗 {allRecords.filter((r) => Boolean(r.viaUid?.trim())).length} Page
+                </span>
               </button>
-            )}
+
+              {/* 📦 TAB KHO CHỜ CỦA ADMIN (CHƯA NHÂN VIÊN NÀO DÙNG - BAO GỒM VIA & VIA + PAGE CẦM) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedStaffFilter(ADMIN_WAITING_POOL);
+                  onSyncStaffFilter?.(ADMIN_WAITING_POOL);
+                }}
+                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold border-2 transition-all cursor-pointer shrink-0 ${
+                  isAdminWaitingPool(selectedStaffFilter)
+                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white border-amber-700 shadow-sm ring-2 ring-amber-300/60'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-400 shadow-2xs'
+                }`}
+                title={`Kho Chờ Của Admin (Chưa nhân viên nào dùng): ${waitingPoolStats.total} Nick Via (${waitingPoolStats.emptyVias} Via trống + ${waitingPoolStats.viasWithPages} Via đang cầm ${waitingPoolStats.totalPages} Page)`}
+              >
+                <Archive className={`w-3.5 h-3.5 ${isAdminWaitingPool(selectedStaffFilter) ? 'text-white' : 'text-amber-700'}`} />
+                <span>📦 Kho Chờ Admin</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  isAdminWaitingPool(selectedStaffFilter)
+                    ? 'bg-black/25 text-white'
+                    : 'bg-white text-amber-950 border border-amber-300'
+                }`}>
+                  {waitingPoolStats.total} Via
+                </span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                  isAdminWaitingPool(selectedStaffFilter)
+                    ? 'bg-emerald-400 text-slate-950'
+                    : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                }`}>
+                  📗 {waitingPoolStats.totalPages} Page
+                </span>
+              </button>
+
+              {/* Individual Staff Tabs */}
+              {distinctStaffNames.map((name) => {
+                const theme = getStaffTheme(name);
+                const stats = staffStats[name] || { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
+                const isSelected = selectedStaffFilter.trim().toLowerCase() === name.trim().toLowerCase();
+
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => {
+                      setSelectedStaffFilter(name);
+                      onSyncStaffFilter?.(name);
+                    }}
+                    className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                      isSelected ? theme.activeTab : theme.inactiveTab
+                    }`}
+                    title={`Nhân viên ${name}: ${stats.total} Nick Via (${stats.viasWithPages} Via có Page - Tổng cộng đang cầm ${stats.totalPages} Fanpage)`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : theme.dot}`} />
+                    <span>{name}</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                      isSelected ? 'bg-black/25 text-white' : 'bg-white text-slate-800'
+                    }`}>
+                      {stats.total} Via
+                    </span>
+                    {stats.totalPages > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                        isSelected ? 'bg-emerald-400 text-slate-950' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                      }`}>
+                        📗 {stats.totalPages} Page
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center space-x-2 shrink-0">
+              {onTransferViaPages && (
+                <button
+                  type="button"
+                  onClick={() => onTransferViaPages('')}
+                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-2xs transition-colors cursor-pointer"
+                  title="Chuyển Via / Via + Page vào Kho Chờ Admin hoặc cấp từ Kho Chờ sang cho Nhân viên dùng"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  <span>Chuyển Kho Chờ ⇄ Nhân Viên</span>
+                </button>
+              )}
+              {selectedStaffFilter === 'all' && (
+                <button
+                  type="button"
+                  onClick={() => setIsGroupedByStaff(!isGroupedByStaff)}
+                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                    isGroupedByStaff
+                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs font-bold'
+                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                  }`}
+                  title="Nhóm các dòng theo Kho Chờ Admin và từng Nhân viên"
+                >
+                  <Layers className="w-3.5 h-3.5" />
+                  <span>{isGroupedByStaff ? 'Đang phân nhóm NV' : 'Phân nhóm theo NV'}</span>
+                </button>
+              )}
+            </div>
           </div>
-        </div>
+
+          {/* 📦 BANNER CHI TIẾT KHI ADMIN ĐANG MỞ KHO CHỜ ADMIN */}
+          {isAdminWaitingPool(selectedStaffFilter) && (
+            <div className="bg-gradient-to-r from-amber-50 via-orange-50/80 to-amber-50 border-b-2 border-amber-300 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-start space-x-3">
+                <div className="p-2 bg-amber-500 text-white rounded-xl shadow-xs shrink-0 mt-0.5">
+                  <Archive className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center flex-wrap gap-2">
+                    <h3 className="font-black text-amber-950 text-sm uppercase tracking-tight">
+                      📦 KHO CHỜ CỦA ADMIN (CHƯA NHÂN VIÊN NÀO DÙNG)
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-200/80 text-amber-950 border border-amber-400">
+                      Tổng: {waitingPoolStats.total} Nick Via
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(statusFilter === 'no_page' ? 'all' : 'no_page')}
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold border cursor-pointer transition-all ${
+                        statusFilter === 'no_page'
+                          ? 'bg-slate-800 text-white border-slate-900 ring-2 ring-slate-400'
+                          : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-100'
+                      }`}
+                      title="Bấm để lọc xem các Via trống (chưa cầm Page) trong Kho Chờ"
+                    >
+                      ⚪ Via trống: {waitingPoolStats.emptyVias} Via
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(statusFilter === 'has_page' ? 'all' : 'has_page')}
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold border cursor-pointer transition-all ${
+                        statusFilter === 'has_page'
+                          ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-300'
+                          : 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
+                      }`}
+                      title="Bấm để lọc xem các Via + Page đang cầm trong Kho Chờ"
+                    >
+                      📗 Via + Page cầm: {waitingPoolStats.viasWithPages} Via (Đang cầm {waitingPoolStats.totalPages} Page)
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-amber-900 mt-1">
+                    Nơi lưu trữ dự phòng các <strong>Nick Via trống</strong> và <strong>Via + Toàn bộ Page cầm</strong> chưa giao cho nhân viên nào. Khi cần giao cho ai, chọn nhân viên ở cột <strong>NHÂN VIÊN</strong> hoặc bấm <strong>Giao Via + Page Cho NV</strong>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center flex-wrap gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddModalForStaff(ADMIN_WAITING_POOL)}
+                  className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-amber-100 text-amber-950 border border-amber-400 shadow-2xs cursor-pointer transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5 text-amber-700" />
+                  <span>+ Thêm 1 Via Vào Kho Chờ</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenBulkImport(ADMIN_WAITING_POOL)}
+                  className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs cursor-pointer transition-colors"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>📥 Nhập Hàng Loạt Vào Kho Chờ</span>
+                </button>
+                {onTransferViaPages && (
+                  <button
+                    type="button"
+                    onClick={() => onTransferViaPages('')}
+                    className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition-colors"
+                  >
+                    <ArrowRightLeft className="w-3.5 h-3.5" />
+                    <span>👤 Giao Via / Via + Page Cho Nhân Viên Dùng</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         /* Staff Banner: Dedicated to current logged-in staff */
         <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-900">
@@ -2608,25 +2800,42 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           {selectedCount > 0 && (
             <>
               {currentUser.role === 'admin' && (
-                <select
-                  onChange={(e) => {
-                    if (!e.target.value) return;
-                    handleBatchTransferViasToStaff(e.target.value);
-                    e.target.value = '';
-                  }}
-                  defaultValue=""
-                  className="px-2.5 py-1.5 rounded-lg border border-emerald-400 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold cursor-pointer shadow-2xs"
-                  title="Chuyển toàn bộ các Via đã chọn kèm tất cả Fanpage của các Via đó sang nhân viên khác"
-                >
-                  <option value="" disabled>
-                    👤 Chuyển {selectedCount} Via + Page sang NV...
-                  </option>
-                  {distinctStaffNames.map((name) => (
-                    <option key={name} value={name} className="bg-white text-slate-900 font-bold">
-                      → Chuyển sang: {name}
+                <>
+                  {!isAdminWaitingPool(selectedStaffFilter) && (
+                    <button
+                      type="button"
+                      onClick={() => handleBatchTransferViasToStaff(ADMIN_WAITING_POOL)}
+                      className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-amber-500 bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold cursor-pointer shadow-2xs"
+                      title="Chuyển toàn bộ các Via đã chọn kèm tất cả Fanpage đang cầm vào Kho Chờ Admin (Chưa nhân viên nào dùng)"
+                    >
+                      <Archive className="w-3.5 h-3.5" />
+                      <span>📦 Cất {selectedCount} Via + Page Vào Kho Chờ</span>
+                    </button>
+                  )}
+
+                  <select
+                    onChange={(e) => {
+                      if (!e.target.value) return;
+                      handleBatchTransferViasToStaff(e.target.value);
+                      e.target.value = '';
+                    }}
+                    defaultValue=""
+                    className="px-2.5 py-1.5 rounded-lg border border-emerald-400 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold cursor-pointer shadow-2xs"
+                    title="Chuyển toàn bộ các Via đã chọn kèm tất cả Fanpage của các Via đó sang nhân viên khác hoặc vào Kho Chờ Admin"
+                  >
+                    <option value="" disabled>
+                      👤 Giao {selectedCount} Via + Page cho NV...
                     </option>
-                  ))}
-                </select>
+                    <option value={ADMIN_WAITING_POOL} className="bg-amber-50 text-amber-950 font-black">
+                      📦 Đưa vào: {ADMIN_WAITING_POOL} (Chưa NV dùng)
+                    </option>
+                    {distinctStaffNames.map((name) => (
+                      <option key={name} value={name} className="bg-white text-slate-900 font-bold">
+                        → Giao cho NV: {name}
+                      </option>
+                    ))}
+                  </select>
+                </>
               )}
 
               <button
@@ -2748,10 +2957,13 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 </td>
               </tr>
             ) : isGroupedByStaff && selectedStaffFilter === 'all' && currentUser.role === 'admin' ? (
-              /* Grouped by Staff View */
-              distinctStaffNames.map((staffName) => {
-                const staffVias = scopedVias.filter(
-                  (v) => v.staffName.trim().toLowerCase() === staffName.trim().toLowerCase()
+              /* Grouped by Staff View (Including Admin Waiting Pool first) */
+              [ADMIN_WAITING_POOL, ...distinctStaffNames].map((staffName) => {
+                const isPoolGroup = isAdminWaitingPool(staffName);
+                const staffVias = scopedVias.filter((v) =>
+                  isPoolGroup
+                    ? isAdminWaitingPool(v.staffName) || !v.staffName?.trim()
+                    : v.staffName.trim().toLowerCase() === staffName.trim().toLowerCase()
                 );
                 if (staffVias.length === 0) return null;
 
@@ -2765,13 +2977,13 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 return (
                   <React.Fragment key={staffName}>
                     {/* Staff Group Header Row */}
-                    <tr className="bg-slate-100 border-y-2 border-slate-300">
+                    <tr className={isPoolGroup ? 'bg-amber-100/90 border-y-2 border-amber-400' : 'bg-slate-100 border-y-2 border-slate-300'}>
                       <td colSpan={10} className="py-2.5 px-4">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                            <span className="text-xs font-black text-indigo-950 uppercase tracking-wide flex items-center gap-1.5">
-                              <Users className="w-4 h-4 text-indigo-600" />
-                              <span>Nhân Viên: {staffName}</span>
+                            <span className={`text-xs font-black uppercase tracking-wide flex items-center gap-1.5 ${isPoolGroup ? 'text-amber-950' : 'text-indigo-950'}`}>
+                              {isPoolGroup ? <Archive className="w-4 h-4 text-amber-700" /> : <Users className="w-4 h-4 text-indigo-600" />}
+                              <span>{isPoolGroup ? `📦 ${ADMIN_WAITING_POOL} (Chưa nhân viên nào dùng)` : `Nhân Viên: ${staffName}`}</span>
                             </span>
                             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-200">
                               {staffVias.length} Nick Via
@@ -2989,9 +3201,12 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       onChange={(e) => setModalForm({ ...modalForm, staffName: e.target.value })}
                       className="w-full px-3 py-2 border border-slate-300 rounded-lg bg-white font-semibold"
                     >
-                      {availableStaffNames.map((name) => (
+                      <option value={ADMIN_WAITING_POOL}>
+                        📦 {ADMIN_WAITING_POOL} (Chưa nhân viên nào dùng)
+                      </option>
+                      {distinctStaffNames.map((name) => (
                         <option key={name} value={name}>
-                          {name}
+                          👤 {name}
                         </option>
                       ))}
                     </select>
@@ -3286,9 +3501,20 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             <span>Copy Full</span>
           </button>
 
-          {/* Quick Chuyển Via + Page sang NV khác batch in floating pill */}
+          {/* Quick Chuyển Via + Page sang NV khác hoặc Kho Chờ Admin batch in floating pill */}
           {currentUser.role === 'admin' && (
-            <div className="flex items-center space-x-1 pl-1 border-l border-slate-700 shrink-0">
+            <div className="flex items-center space-x-1.5 pl-1 border-l border-slate-700 shrink-0">
+              {!isAdminWaitingPool(selectedStaffFilter) && (
+                <button
+                  type="button"
+                  onClick={() => handleBatchTransferViasToStaff(ADMIN_WAITING_POOL)}
+                  className="inline-flex items-center space-x-1 px-2.5 py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white rounded-xl font-extrabold shadow-md transition-all cursor-pointer shrink-0"
+                  title="Đưa toàn bộ các Via đang chọn kèm Page vào Kho Chờ Admin (Chưa nhân viên nào dùng)"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>📦 Cất Vào Kho Chờ</span>
+                </button>
+              )}
               <select
                 onChange={(e) => {
                   if (!e.target.value) return;
@@ -3297,14 +3523,17 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 }}
                 defaultValue=""
                 className="bg-emerald-700 hover:bg-emerald-600 border border-emerald-400 text-white text-xs font-extrabold rounded-xl px-2.5 py-1.5 focus:outline-hidden cursor-pointer shadow-md"
-                title="Chuyển các Via đang chọn kèm toàn bộ Fanpage của Via đó sang nhân viên khác"
+                title="Chuyển các Via đang chọn kèm toàn bộ Fanpage của Via đó sang nhân viên khác hoặc vào Kho Chờ Admin"
               >
                 <option value="" disabled>
-                  👤 Chuyển {selectedCount} Via + Page sang NV...
+                  👤 Giao {selectedCount} Via + Page cho NV...
+                </option>
+                <option value={ADMIN_WAITING_POOL} className="bg-slate-900 text-amber-300 font-bold">
+                  📦 Đưa vào: {ADMIN_WAITING_POOL}
                 </option>
                 {distinctStaffNames.map((name) => (
                   <option key={name} value={name} className="bg-slate-900 text-white font-bold">
-                    → Chuyển sang: {name}
+                    → Giao cho NV: {name}
                   </option>
                 ))}
               </select>

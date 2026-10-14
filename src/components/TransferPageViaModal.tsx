@@ -12,8 +12,9 @@ import {
   RefreshCw,
   Check,
   Users,
+  Archive,
 } from 'lucide-react';
-import { PageRecord, FullViaItem, AppUser } from '../types';
+import { PageRecord, FullViaItem, AppUser, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
 import { getCleanBmName } from '../utils/helpers';
 
 export interface TransferPageViaParams {
@@ -23,7 +24,7 @@ export interface TransferPageViaParams {
   targetFullVia?: string;
   appendHistoryNote: boolean;
   historyNoteText: string;
-  /** Nếu chuyển nguyên cả Nick Via (1 hoặc nhiều Via) kèm toàn bộ Page sang nhân viên khác */
+  /** Nếu chuyển nguyên cả Nick Via (1 hoặc nhiều Via) kèm toàn bộ Page sang nhân viên khác hoặc vào Kho Chờ Admin */
   transferViaUidsToStaff?: string[];
 }
 
@@ -32,6 +33,7 @@ interface TransferPageViaModalProps {
   onClose: () => void;
   presetRecord?: PageRecord | null;
   presetViaUid?: string | null;
+  presetTargetStaff?: string | null;
   initialMode?: 'single' | 'batch' | 'via_to_staff';
   records: PageRecord[];
   viaList: FullViaItem[];
@@ -45,6 +47,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
   onClose,
   presetRecord,
   presetViaUid,
+  presetTargetStaff,
   initialMode,
   records,
   viaList,
@@ -53,7 +56,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
   onConfirmTransfer,
 }) => {
   // Transfer Mode:
-  // 'via_to_staff': Chuyển Via + Toàn bộ Page Via đó cầm sang cho 1 nhân viên khác
+  // 'via_to_staff': Chuyển Via + Toàn bộ Page Via đó cầm sang cho 1 nhân viên khác hoặc vào Kho Chờ Admin
   // 'single': Chuyển 1 Page sang Via khác
   // 'batch': Chuyển nhiều Page sang Via khác
   const [transferMode, setTransferMode] = useState<'via_to_staff' | 'single' | 'batch'>('via_to_staff');
@@ -61,6 +64,9 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
   // Selected Vias for 'via_to_staff' mode
   const [selectedViaUidsForStaffTransfer, setSelectedViaUidsForStaffTransfer] = useState<string[]>([]);
   const [viaSourceSearchQuery, setViaSourceSearchQuery] = useState<string>('');
+  const [viaSourceQuickFilter, setViaSourceQuickFilter] = useState<
+    'all' | 'waiting_pool' | 'staff' | 'has_pages' | 'no_pages'
+  >('all');
   const [targetStaffForViaTransfer, setTargetStaffForViaTransfer] = useState<string>('');
 
   // Selected single page ID
@@ -166,18 +172,58 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
     return list.filter((v) => v.staffName.trim().toLowerCase() === myNameLower);
   }, [viaList, records, currentUser]);
 
+  // Quick counts for source Vias filter bar
+  const sourceViaCounts = useMemo(() => {
+    let waitingPool = 0;
+    let staffAssigned = 0;
+    let hasPages = 0;
+    let noPages = 0;
+
+    knownVias.forEach((v) => {
+      if (isAdminWaitingPool(v.staffName) || !v.staffName.trim()) {
+        waitingPool++;
+      } else {
+        staffAssigned++;
+      }
+      if (v.pageCount > 0) {
+        hasPages++;
+      } else {
+        noPages++;
+      }
+    });
+
+    return {
+      all: knownVias.length,
+      waitingPool,
+      staffAssigned,
+      hasPages,
+      noPages,
+    };
+  }, [knownVias]);
+
   // Filtered source vias for 'via_to_staff' mode
   const filteredSourceVias = useMemo(() => {
+    let list = knownVias;
+    if (viaSourceQuickFilter === 'waiting_pool') {
+      list = list.filter((v) => isAdminWaitingPool(v.staffName) || !v.staffName.trim());
+    } else if (viaSourceQuickFilter === 'staff') {
+      list = list.filter((v) => !isAdminWaitingPool(v.staffName) && Boolean(v.staffName.trim()));
+    } else if (viaSourceQuickFilter === 'has_pages') {
+      list = list.filter((v) => v.pageCount > 0);
+    } else if (viaSourceQuickFilter === 'no_pages') {
+      list = list.filter((v) => v.pageCount === 0);
+    }
+
     const q = viaSourceSearchQuery.trim().toLowerCase();
-    if (!q) return knownVias;
-    return knownVias.filter(
+    if (!q) return list;
+    return list.filter(
       (v) =>
         v.uid.toLowerCase().includes(q) ||
         v.staffName.toLowerCase().includes(q) ||
         v.pages.some((p) => p.pageName.toLowerCase().includes(q)) ||
         (v.fullViaItem?.note && v.fullViaItem.note.toLowerCase().includes(q))
     );
-  }, [knownVias, viaSourceSearchQuery]);
+  }, [knownVias, viaSourceQuickFilter, viaSourceSearchQuery]);
 
   // Filtered target vias
   const filteredTargetVias = useMemo(() => {
@@ -198,6 +244,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
       setErrorMessage(null);
       setTargetViaSearchQuery('');
       setViaSourceSearchQuery('');
+      setViaSourceQuickFilter('all');
       setPageSearchQuery('');
       setCustomTargetViaUid('');
 
@@ -250,17 +297,21 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
       }
 
       // Default target staff for 'via_to_staff'
-      const currentViaOwner = presetViaUid
-        ? knownVias.find((v) => v.uid.toLowerCase() === presetViaUid.trim().toLowerCase())?.staffName
-        : presetRecord?.staffName || knownVias[0]?.staffName;
+      if (presetTargetStaff) {
+        setTargetStaffForViaTransfer(presetTargetStaff);
+      } else {
+        const currentViaOwner = presetViaUid
+          ? knownVias.find((v) => v.uid.toLowerCase() === presetViaUid.trim().toLowerCase())?.staffName
+          : presetRecord?.staffName || knownVias[0]?.staffName;
 
-      const defaultNewStaff =
-        allStaffNames.find(
-          (name) => name.trim().toLowerCase() !== (currentViaOwner || '').trim().toLowerCase()
-        ) ||
-        allStaffNames[0] ||
-        '';
-      setTargetStaffForViaTransfer(defaultNewStaff);
+        const defaultNewStaff =
+          allStaffNames.find(
+            (name) => name.trim().toLowerCase() !== (currentViaOwner || '').trim().toLowerCase()
+          ) ||
+          allStaffNames[0] ||
+          ADMIN_WAITING_POOL;
+        setTargetStaffForViaTransfer(defaultNewStaff);
+      }
 
       // Default target Via (first known via that is different from source)
       const firstTarget = knownVias.find(
@@ -275,7 +326,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
       setStaffAssignmentMode('target_via_owner');
       setAppendHistoryNote(true);
     }
-  }, [isOpen, presetRecord, presetViaUid, initialMode, accessibleRecords, knownVias, allStaffNames]);
+  }, [isOpen, presetRecord, presetViaUid, presetTargetStaff, initialMode, accessibleRecords, knownVias, allStaffNames]);
 
   // Selected Via objects in 'via_to_staff' mode
   const selectedViaObjectsForStaffTransfer = useMemo(() => {
@@ -289,19 +340,27 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
     return records.filter((r) => r.viaUid && lowerSet.has(r.viaUid.trim().toLowerCase()));
   }, [records, selectedViaUidsForStaffTransfer]);
 
+  const isTargetWaitingPool = useMemo(
+    () => isAdminWaitingPool(targetStaffForViaTransfer),
+    [targetStaffForViaTransfer]
+  );
+
   // Update history note automatically in 'via_to_staff' mode
   useEffect(() => {
     if (transferMode === 'via_to_staff' && selectedViaUidsForStaffTransfer.length > 0 && targetStaffForViaTransfer) {
       const todayStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
+      const destLabel = isAdminWaitingPool(targetStaffForViaTransfer)
+        ? 'Kho Chờ Admin'
+        : `NV ${targetStaffForViaTransfer}`;
       if (selectedViaUidsForStaffTransfer.length === 1) {
         const uid = selectedViaUidsForStaffTransfer[0];
         const pCount = pagesOfSelectedViasForStaffTransfer.length;
         setHistoryNoteText(
-          `Chuyển Via ${uid} + ${pCount} Page sang NV ${targetStaffForViaTransfer} (${todayStr})`
+          `Chuyển Via ${uid}${pCount > 0 ? ` + ${pCount} Page` : ''} sang ${destLabel} (${todayStr})`
         );
       } else {
         setHistoryNoteText(
-          `Chuyển ${selectedViaUidsForStaffTransfer.length} Via + ${pagesOfSelectedViasForStaffTransfer.length} Page sang NV ${targetStaffForViaTransfer} (${todayStr})`
+          `Chuyển ${selectedViaUidsForStaffTransfer.length} Via + ${pagesOfSelectedViasForStaffTransfer.length} Page sang ${destLabel} (${todayStr})`
         );
       }
     }
@@ -443,11 +502,11 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
   const handleExecuteTransfer = async () => {
     if (transferMode === 'via_to_staff') {
       if (selectedViaUidsForStaffTransfer.length === 0) {
-        setErrorMessage('Vui lòng chọn ít nhất 1 Nick Via để chuyển sang nhân viên khác.');
+        setErrorMessage('Vui lòng chọn ít nhất 1 Nick Via để chuyển.');
         return;
       }
       if (!targetStaffForViaTransfer.trim()) {
-        setErrorMessage('Vui lòng chọn nhân viên nhận bàn giao Via & Page.');
+        setErrorMessage('Vui lòng chọn Kho Chờ Admin hoặc Nhân viên nhận bàn giao.');
         return;
       }
 
@@ -464,7 +523,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
         });
         onClose();
       } catch (err: any) {
-        console.error('Lỗi khi chuyển Via + Page sang nhân viên khác:', err);
+        console.error('Lỗi khi chuyển Via + Page:', err);
         setErrorMessage(err.message || 'Đã xảy ra lỗi trong quá trình chuyển Via & Page.');
       } finally {
         setIsSubmitting(false);
@@ -525,13 +584,13 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 flex items-center space-x-2">
-                <span>Chuyển Via & Toàn Bộ Page / Đổi Via</span>
+                <span>Chuyển Via & Page (Kho Chờ Admin ⇄ Nhân Viên)</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Đồng bộ Quản Lý Full Via
+                  Đồng bộ 100%
                 </span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Chuyển cả Nick Via kèm toàn bộ Page (2, 3, 4... Page) sang nhân viên khác hoặc đổi Page qua Via mới
+                Đưa Via hoặc Via + Page vào Kho Chờ Admin (chưa NV nào dùng) hoặc cấp từ Kho Chờ sang cho Nhân Viên
               </p>
             </div>
           </div>
@@ -558,7 +617,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5 shrink-0" />
-              <span>Chuyển Via + Toàn Bộ Page Sang NV Khác</span>
+              <span>Chuyển Via + Page (Kho Chờ / NV)</span>
             </button>
             <button
               type="button"
@@ -585,16 +644,16 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
           </div>
 
           {transferMode === 'via_to_staff' ? (
-            /* ================= MODE 1: CHUYỂN VIA + TOÀN BỘ PAGE VIA ĐÓ CẦM SANG NHÂN VIÊN KHÁC ================= */
+            /* ================= MODE 1: CHUYỂN VIA + TOÀN BỘ PAGE VIA ĐÓ CẦM (KHO CHỜ ADMIN ⇄ NHÂN VIÊN) ================= */
             <>
               {/* STEP 1: CHỌN NICK VIA (KÈM TOÀN BỘ PAGE ĐANG CẦM) */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-1">
                   <label className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center space-x-1.5">
                     <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] flex items-center justify-center font-bold">
                       1
                     </span>
-                    <span>Chọn Nick Via Cần Chuyển (Kèm Toàn Bộ Page Via Đó Cầm)</span>
+                    <span>Chọn Nick Via (Via Trống Hoặc Via + Toàn Bộ Page Cầm)</span>
                   </label>
                   <div className="flex items-center space-x-2 text-[11px]">
                     <button
@@ -615,6 +674,65 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                   </div>
                 </div>
 
+                {/* Bộ lọc nhanh nguồn Via: Tất cả / Trong Kho Chờ Admin / Đang ở NV / Có Page / Via trống */}
+                <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setViaSourceQuickFilter('all')}
+                    className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                      viaSourceQuickFilter === 'all'
+                        ? 'bg-slate-900 text-white shadow-2xs'
+                        : 'text-slate-600 hover:bg-white'
+                    }`}
+                  >
+                    Tất cả ({sourceViaCounts.all})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViaSourceQuickFilter('waiting_pool')}
+                    className={`px-2 py-1 rounded-md transition-all cursor-pointer flex items-center space-x-1 ${
+                      viaSourceQuickFilter === 'waiting_pool'
+                        ? 'bg-amber-600 text-white shadow-2xs'
+                        : 'text-amber-900 bg-amber-50/80 hover:bg-amber-100 border border-amber-200'
+                    }`}
+                  >
+                    <span>📦 Trong Kho Chờ Admin ({sourceViaCounts.waitingPool})</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViaSourceQuickFilter('staff')}
+                    className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                      viaSourceQuickFilter === 'staff'
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'text-slate-700 hover:bg-white'
+                    }`}
+                  >
+                    👤 Đang ở NV ({sourceViaCounts.staffAssigned})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViaSourceQuickFilter('has_pages')}
+                    className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                      viaSourceQuickFilter === 'has_pages'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'text-emerald-800 hover:bg-white'
+                    }`}
+                  >
+                    📗 Via + Page ({sourceViaCounts.hasPages})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViaSourceQuickFilter('no_pages')}
+                    className={`px-2 py-1 rounded-md transition-all cursor-pointer ${
+                      viaSourceQuickFilter === 'no_pages'
+                        ? 'bg-slate-700 text-white shadow-2xs'
+                        : 'text-slate-600 hover:bg-white'
+                    }`}
+                  >
+                    ⚪ Via trống 0 Page ({sourceViaCounts.noPages})
+                  </button>
+                </div>
+
                 {/* Search Via */}
                 <div className="relative">
                   <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
@@ -622,22 +740,23 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                     type="text"
                     value={viaSourceSearchQuery}
                     onChange={(e) => setViaSourceSearchQuery(e.target.value)}
-                    placeholder="Tìm theo UID Via, tên nhân viên hiện tại, hoặc tên Fanpage..."
+                    placeholder="Tìm theo UID Via, Kho Chờ Admin, tên nhân viên, hoặc tên Fanpage..."
                     className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 focus:bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-emerald-500"
                   />
                 </div>
 
                 {/* List of Vias with their Page counts & Page names */}
-                <div className="max-h-56 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
+                <div className="max-h-52 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
                   {filteredSourceVias.length === 0 ? (
                     <div className="p-4 text-center text-xs text-slate-400">
-                      Không tìm thấy Nick Via nào phù hợp
+                      Không tìm thấy Nick Via nào phù hợp trong bộ lọc này
                     </div>
                   ) : (
                     filteredSourceVias.map((v) => {
                       const isChecked = selectedViaUidsForStaffTransfer.some(
                         (u) => u.trim().toLowerCase() === v.uid.trim().toLowerCase()
                       );
+                      const inWaitingPool = isAdminWaitingPool(v.staffName) || !v.staffName.trim();
                       const doingPagesCount = v.pages.filter((p) => p.status !== 'Không làm').length;
                       const notDoingPagesCount = v.pages.filter((p) => p.status === 'Không làm').length;
 
@@ -661,9 +780,15 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                                   <span className="font-mono font-black text-xs text-indigo-950">
                                     {v.uid}
                                   </span>
-                                  <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-bold text-[10px] border border-slate-200">
-                                    👤 NV đang cầm: {v.staffName || 'Chưa gán'}
-                                  </span>
+                                  {inWaitingPool ? (
+                                    <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-extrabold text-[10px] border border-amber-300">
+                                      📦 Kho Chờ Admin (Chưa NV dùng)
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 font-bold text-[10px] border border-slate-200">
+                                      👤 NV đang cầm: {v.staffName}
+                                    </span>
+                                  )}
                                   {v.isError && (
                                     <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 rounded text-[9px] font-bold">
                                       Đang báo lỗi
@@ -683,7 +808,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                                     : 'bg-slate-100 text-slate-500 border-slate-200'
                                 }`}
                               >
-                                📗 Đang cầm {v.pageCount} Page
+                                {v.pageCount > 0 ? `📗 Đang cầm ${v.pageCount} Page` : '⚪ Via trống (0 Page)'}
                               </span>
                             </div>
                           </div>
@@ -716,38 +841,83 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                 </div>
               </div>
 
-              {/* STEP 2: CHỌN NHÂN VIÊN MỚI NHẬN VIA + TOÀN BỘ PAGE */}
-              <div className="space-y-2 pt-2 border-t border-slate-200">
+              {/* STEP 2: CHỌN KHO CHỜ ADMIN HOẶC NHÂN VIÊN NHẬN VIA + TOÀN BỘ PAGE */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-200">
                 <label className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center space-x-1.5">
                   <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] flex items-center justify-center font-bold">
                     2
                   </span>
-                  <span>Chọn Nhân Viên Mới Nhận Bàn Giao (Nhận Cả Via + Toàn Bộ Page)</span>
+                  <span>Chọn Nơi Chuyển Đến: Kho Chờ Admin Hoặc Nhân Viên Nhận Dùng</span>
                 </label>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {allStaffNames.map((name) => {
-                    const isSelected =
-                      targetStaffForViaTransfer.trim().toLowerCase() === name.trim().toLowerCase();
-                    return (
-                      <button
-                        key={name}
-                        type="button"
-                        onClick={() => setTargetStaffForViaTransfer(name)}
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
-                          isSelected
-                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs font-extrabold ring-2 ring-emerald-300'
-                            : 'bg-white hover:bg-emerald-50/60 text-slate-800 border-slate-200 font-bold'
+                {/* LỰA CHỌN ĐẶC BIỆT: ĐƯA VÀO KHO CHỜ CỦA ADMIN (CHƯA NHÂN VIÊN NÀO DÙNG) */}
+                {currentUser.role === 'admin' && (
+                  <button
+                    type="button"
+                    onClick={() => setTargetStaffForViaTransfer(ADMIN_WAITING_POOL)}
+                    className={`w-full p-3 rounded-xl border-2 text-left transition-all cursor-pointer flex items-center justify-between ${
+                      isTargetWaitingPool
+                        ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white border-amber-700 shadow-md ring-2 ring-amber-300'
+                        : 'bg-amber-50/80 hover:bg-amber-100/80 text-amber-950 border-amber-300'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-2.5 min-w-0">
+                      <div
+                        className={`p-2 rounded-lg shrink-0 ${
+                          isTargetWaitingPool ? 'bg-white/20 text-white' : 'bg-amber-200/80 text-amber-900'
                         }`}
                       >
-                        <div className="flex items-center space-x-2 min-w-0">
-                          <UserCheck className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
-                          <span className="text-xs truncate">{name}</span>
+                        <Archive className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-black flex items-center space-x-1.5">
+                          <span>📦 CHUYỂN VÀO KHO CHỜ CỦA ADMIN ({ADMIN_WAITING_POOL})</span>
                         </div>
-                        {isSelected && <Check className="w-4 h-4 text-white shrink-0" />}
-                      </button>
-                    );
-                  })}
+                        <p
+                          className={`text-[11px] mt-0.5 ${
+                            isTargetWaitingPool ? 'text-amber-100' : 'text-amber-800'
+                          }`}
+                        >
+                          Lưu trữ Via & Via + Page vào Kho Chờ (Chưa nhân viên nào dùng — Khi nào cần sẽ chuyển qua cho nhân viên dùng)
+                        </p>
+                      </div>
+                    </div>
+                    {isTargetWaitingPool && <Check className="w-5 h-5 text-white shrink-0" />}
+                  </button>
+                )}
+
+                {/* DANH SÁCH NHÂN VIÊN NHẬN VIA + PAGE ĐỂ DÙNG */}
+                <div>
+                  <span className="text-[11px] font-bold text-slate-500 block mb-1.5">
+                    Hoặc chọn Nhân Viên để giao Via + Page sử dụng ngay:
+                  </span>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {allStaffNames
+                      .filter((n) => !isAdminWaitingPool(n))
+                      .map((name) => {
+                        const isSelected =
+                          !isTargetWaitingPool &&
+                          targetStaffForViaTransfer.trim().toLowerCase() === name.trim().toLowerCase();
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => setTargetStaffForViaTransfer(name)}
+                            className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs font-extrabold ring-2 ring-emerald-300'
+                                : 'bg-white hover:bg-emerald-50/60 text-slate-800 border-slate-200 font-bold'
+                            }`}
+                          >
+                            <div className="flex items-center space-x-2 min-w-0">
+                              <UserCheck className={`w-4 h-4 shrink-0 ${isSelected ? 'text-white' : 'text-emerald-600'}`} />
+                              <span className="text-xs truncate">{name}</span>
+                            </div>
+                            {isSelected && <Check className="w-4 h-4 text-white shrink-0" />}
+                          </button>
+                        );
+                      })}
+                  </div>
                 </div>
               </div>
 
@@ -778,13 +948,27 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
 
               {/* STEP 4: XEM TRƯỚC KẾT QUẢ BÀN GIAO */}
               {selectedViaObjectsForStaffTransfer.length > 0 && targetStaffForViaTransfer && (
-                <div className="p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-xl text-xs space-y-2.5">
-                  <div className="flex items-center space-x-2 text-indigo-950 font-extrabold text-xs">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>Tổng kết bàn giao Via + Toàn bộ Page sang nhân viên mới:</span>
+                <div
+                  className={`p-3.5 border rounded-xl text-xs space-y-2.5 ${
+                    isTargetWaitingPool
+                      ? 'bg-amber-50/90 border-amber-300'
+                      : 'bg-indigo-50/80 border-indigo-200'
+                  }`}
+                >
+                  <div className="flex items-center space-x-2 text-slate-900 font-extrabold text-xs">
+                    <CheckCircle2
+                      className={`w-4 h-4 shrink-0 ${
+                        isTargetWaitingPool ? 'text-amber-600' : 'text-emerald-600'
+                      }`}
+                    />
+                    <span>
+                      {isTargetWaitingPool
+                        ? 'Tổng kết chuyển Via & Page vào Kho Chờ Của Admin:'
+                        : 'Tổng kết bàn giao Via + Toàn bộ Page sang Nhân Viên:'}
+                    </span>
                   </div>
 
-                  <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-indigo-200 shadow-2xs">
+                  <div className="flex items-center justify-between bg-white p-3 rounded-lg border border-slate-200 shadow-2xs">
                     <div className="text-left">
                       <span className="text-[10px] text-slate-400 block font-bold uppercase">
                         NICK VIA & PAGE CHUYỂN ĐI
@@ -795,36 +979,79 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                           : `${selectedViaObjectsForStaffTransfer.length} Nick Via đã chọn`}
                       </span>
                       <span className="text-[11px] text-slate-600 font-semibold block">
-                        NV cũ:{' '}
+                        Đang ở:{' '}
                         {Array.from(
-                          new Set(selectedViaObjectsForStaffTransfer.map((v) => v.staffName || 'Chưa gán'))
+                          new Set(
+                            selectedViaObjectsForStaffTransfer.map((v) =>
+                              isAdminWaitingPool(v.staffName) || !v.staffName.trim()
+                                ? ADMIN_WAITING_POOL
+                                : v.staffName
+                            )
+                          )
                         ).join(', ')}
                       </span>
                     </div>
 
                     <div className="flex flex-col items-center px-3">
-                      <span className="text-[11px] font-extrabold text-white bg-emerald-600 px-2.5 py-0.5 rounded-full mb-1 shadow-2xs">
+                      <span
+                        className={`text-[11px] font-extrabold text-white px-2.5 py-0.5 rounded-full mb-1 shadow-2xs ${
+                          isTargetWaitingPool ? 'bg-amber-600' : 'bg-emerald-600'
+                        }`}
+                      >
                         {selectedViaObjectsForStaffTransfer.length} Via + {pagesOfSelectedViasForStaffTransfer.length} Page
                       </span>
-                      <ArrowRightLeft className="w-4 h-4 text-emerald-700" />
+                      <ArrowRightLeft
+                        className={`w-4 h-4 ${
+                          isTargetWaitingPool ? 'text-amber-700' : 'text-emerald-700'
+                        }`}
+                      />
                     </div>
 
                     <div className="text-right">
-                      <span className="text-[10px] text-emerald-700 block font-bold uppercase">
-                        NHÂN VIÊN NHẬN BÀN GIAO
+                      <span
+                        className={`text-[10px] block font-bold uppercase ${
+                          isTargetWaitingPool ? 'text-amber-700' : 'text-emerald-700'
+                        }`}
+                      >
+                        {isTargetWaitingPool ? 'KHO LƯU TRỮ ADMIN' : 'NHÂN VIÊN NHẬN DÙNG'}
                       </span>
-                      <span className="font-black text-emerald-900 text-sm block">
-                        👤 {targetStaffForViaTransfer}
+                      <span
+                        className={`font-black text-sm block ${
+                          isTargetWaitingPool ? 'text-amber-900' : 'text-emerald-900'
+                        }`}
+                      >
+                        {isTargetWaitingPool
+                          ? `📦 ${ADMIN_WAITING_POOL}`
+                          : `👤 ${targetStaffForViaTransfer}`}
                       </span>
-                      <span className="text-[11px] text-emerald-700 font-bold block">
-                        Báo cầm {pagesOfSelectedViasForStaffTransfer.length} Page trong Quản Lý Full Via
+                      <span
+                        className={`text-[11px] font-bold block ${
+                          isTargetWaitingPool ? 'text-amber-800' : 'text-emerald-700'
+                        }`}
+                      >
+                        {isTargetWaitingPool
+                          ? 'Chưa nhân viên nào dùng'
+                          : `Báo cầm ${pagesOfSelectedViasForStaffTransfer.length} Page trong Full Via`}
                       </span>
                     </div>
                   </div>
 
-                  <p className="text-[11px] text-indigo-900 leading-relaxed">
-                    ✓ <strong>Đồng bộ tự động 100%:</strong> Khi chuyển sang cho <strong>{targetStaffForViaTransfer}</strong>, toàn bộ <strong>{pagesOfSelectedViasForStaffTransfer.length} Fanpage</strong> của Via này sẽ chuyển sang tên <strong>{targetStaffForViaTransfer}</strong>, đồng thời trong <strong>Quản Lý Full Via</strong> của <strong>{targetStaffForViaTransfer}</strong> sẽ hiển thị rõ số lượng <strong>📗 Đang cầm {pagesOfSelectedViasForStaffTransfer.length} Page</strong>.
-                  </p>
+                  {isTargetWaitingPool ? (
+                    <p className="text-[11px] text-amber-950 leading-relaxed">
+                      ✓ <strong>Cất vào Kho Chờ Của Admin:</strong> Toàn bộ{' '}
+                      <strong>{selectedViaObjectsForStaffTransfer.length} Nick Via</strong> và{' '}
+                      <strong>{pagesOfSelectedViasForStaffTransfer.length} Fanpage</strong> đi kèm sẽ được đưa vào{' '}
+                      <strong>📦 {ADMIN_WAITING_POOL}</strong> (ẩn khỏi tài khoản nhân viên, chưa nhân viên nào dùng). Khi nào cần, Admin chỉ cần chọn và bấm chuyển sang cho nhân viên đó dùng!
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-indigo-900 leading-relaxed">
+                      ✓ <strong>Đồng bộ tự động 100%:</strong> Khi chuyển sang cho{' '}
+                      <strong>{targetStaffForViaTransfer}</strong>, cả{' '}
+                      <strong>{selectedViaObjectsForStaffTransfer.length} Nick Via</strong> và toàn bộ{' '}
+                      <strong>{pagesOfSelectedViasForStaffTransfer.length} Fanpage</strong> của Via đó sẽ chuyển sang tên{' '}
+                      <strong>{targetStaffForViaTransfer}</strong> để nhân viên dùng ngay.
+                    </p>
+                  )}
                 </div>
               )}
             </>
@@ -1084,7 +1311,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                         type="text"
                         value={targetViaSearchQuery}
                         onChange={(e) => setTargetViaSearchQuery(e.target.value)}
-                        placeholder="Tìm theo UID Via, tên nhân viên phụ trách, ghi chú nick..."
+                        placeholder="Tìm theo UID Via, Kho Chờ Admin, tên nhân viên phụ trách..."
                         className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 focus:bg-white border border-slate-200 rounded-lg focus:outline-hidden focus:border-indigo-500"
                       />
                     </div>
@@ -1098,6 +1325,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                       ) : (
                         filteredTargetVias.map((v) => {
                           const isSelected = selectedTargetViaUid === v.uid;
+                          const inPool = isAdminWaitingPool(v.staffName) || !v.staffName.trim();
                           return (
                             <div
                               key={v.uid}
@@ -1120,6 +1348,11 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                                 <div>
                                   <div className="font-mono font-bold text-slate-900 flex items-center space-x-1.5">
                                     <span>{v.uid}</span>
+                                    {inPool && (
+                                      <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-bold">
+                                        📦 Kho Chờ Admin
+                                      </span>
+                                    )}
                                     {v.isError && (
                                       <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 rounded text-[9px] font-bold">
                                         Lỗi / Checkpoint
@@ -1127,7 +1360,9 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                                     )}
                                   </div>
                                   <div className="text-[11px] text-slate-500 flex items-center space-x-2">
-                                    <span>Chủ sở hữu: <strong>{v.staffName || 'Chưa gán'}</strong></span>
+                                    <span>
+                                      Chủ sở hữu: <strong>{inPool ? ADMIN_WAITING_POOL : v.staffName}</strong>
+                                    </span>
                                     {v.fullViaItem?.note && (
                                       <>
                                         <span>•</span>
@@ -1233,7 +1468,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                           Chỉ định người khác
                         </span>
                         <span className="text-[10px] text-slate-500 block">
-                          Chọn tùy ý
+                          Kho Chờ / NV khác
                         </span>
                       </div>
                     </label>
@@ -1246,12 +1481,19 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                         onChange={(e) => setCustomStaffName(e.target.value)}
                         className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800"
                       >
-                        <option value="">-- Chọn nhân viên mới --</option>
-                        {allStaffNames.map((name) => (
-                          <option key={name} value={name}>
-                            {name}
+                        <option value="">-- Chọn nơi nhận --</option>
+                        {currentUser.role === 'admin' && (
+                          <option value={ADMIN_WAITING_POOL}>
+                            📦 {ADMIN_WAITING_POOL} (Chưa nhân viên nào dùng)
                           </option>
-                        ))}
+                        )}
+                        {allStaffNames
+                          .filter((n) => !isAdminWaitingPool(n))
+                          .map((name) => (
+                            <option key={name} value={name}>
+                              👤 {name}
+                            </option>
+                          ))}
                       </select>
                     </div>
                   )}
@@ -1352,12 +1594,24 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                 isSubmitting
               }
               onClick={handleExecuteTransfer}
-              className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                isTargetWaitingPool
+                  ? 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800'
+                  : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800'
+              }`}
             >
               {isSubmitting ? (
                 <>
                   <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  <span>Đang Bàn Giao Via & Page...</span>
+                  <span>Đang Chuyển Via & Page...</span>
+                </>
+              ) : isTargetWaitingPool ? (
+                <>
+                  <Archive className="w-3.5 h-3.5" />
+                  <span>
+                    📦 Đưa {selectedViaUidsForStaffTransfer.length} Via +{' '}
+                    {pagesOfSelectedViasForStaffTransfer.length} Page Vào {ADMIN_WAITING_POOL}
+                  </span>
                 </>
               ) : (
                 <>

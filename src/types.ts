@@ -659,5 +659,19 @@ export interface MonthlyFinanceRecord {
   updatedBy?: string;
 }
 
+// ==========================================
+// 8. KHO CHỜ CỦA ADMIN (CHƯA NHÂN VIÊN NÀO DÙNG - BAO GỒM VIA & VIA + PAGE CẦM)
+// ==========================================
+export const ADMIN_WAITING_POOL = 'Kho Chờ Admin';
 
-
+export const isAdminWaitingPool = (staffName?: string): boolean => {
+  const s = (staffName || '').trim().toLowerCase();
+  return (
+    s === 'kho chờ admin' ||
+    s === 'kho cho admin' ||
+    s === 'kho chờ' ||
+    s === 'kho cho' ||
+    s === 'chưa gán' ||
+    s === 'chua gan'
+  );
+};

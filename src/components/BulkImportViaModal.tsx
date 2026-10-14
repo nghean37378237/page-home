@@ -17,7 +17,7 @@ import {
   FileText,
   Layers,
 } from 'lucide-react';
-import { FullViaItem, AppUser } from '../types';
+import { FullViaItem, AppUser, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
 
 interface BulkImportViaModalProps {
@@ -75,8 +75,13 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
     if (currentUser?.role === 'staff') {
       setSelectedStaff(currentUser.name);
       setAssignmentMode('single');
-    } else if (presetStaff && availableStaffNames.includes(presetStaff)) {
-      setSelectedStaff(presetStaff);
+    } else if (presetStaff) {
+      if (isAdminWaitingPool(presetStaff)) {
+        setSelectedStaff(ADMIN_WAITING_POOL);
+        setAssignmentMode('single');
+      } else if (availableStaffNames.includes(presetStaff)) {
+        setSelectedStaff(presetStaff);
+      }
     }
   }, [presetStaff, availableStaffNames, currentUser, isOpen]);
 
@@ -607,15 +612,23 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
 
                   <select
                     value={selectedStaff}
-                    onChange={(e) => setSelectedStaff(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedStaff(e.target.value);
+                      setAssignmentMode('single');
+                    }}
                     disabled={assignmentMode === 'round_robin'}
                     className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-indigo-900 focus:ring-1 focus:ring-emerald-500 disabled:opacity-50 mt-1"
                   >
-                    {availableStaffNames.map((name) => (
-                      <option key={name} value={name}>
-                        👤 {name}
-                      </option>
-                    ))}
+                    <option value={ADMIN_WAITING_POOL}>
+                      📦 {ADMIN_WAITING_POOL} (Chưa nhân viên nào dùng)
+                    </option>
+                    {availableStaffNames
+                      .filter((n) => !isAdminWaitingPool(n))
+                      .map((name) => (
+                        <option key={name} value={name}>
+                          👤 {name}
+                        </option>
+                      ))}
                   </select>
 
                   <label className="flex items-center space-x-1.5 cursor-pointer pt-0.5">
