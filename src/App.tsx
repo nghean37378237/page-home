@@ -3762,20 +3762,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-slate-900 flex flex-col font-['Plus_Jakarta_Sans',sans-serif]">
-      {/* Cloud Firestore Status Notice Bar */}
-      <div className="bg-emerald-800 text-emerald-50 text-[11px] font-semibold py-1 px-4 flex items-center justify-between border-b border-emerald-900/30">
-        <div className="max-w-[1700px] mx-auto w-full flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Hệ thống cơ sở dữ liệu: Cloud Firestore (Đồng bộ thời gian thực cho mọi thiết bị)</span>
-          </div>
-          <div className="flex items-center space-x-2 text-[10px] text-emerald-200">
-            <span>Dữ liệu lưu 100% trên Cloud Firestore</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Google Sheets Header with Stats & Actions & Permission Switcher */}
+      {/* HÀNG 1: HEADER HỆ THỐNG + 7 BẢNG ĐIỀU HƯỚNG + TÀI KHOẢN & BẢO MẬT (GỘP TRÊN 1 DÒNG DUY NHẤT) */}
       <SheetHeader
         records={userScopedRecords}
         allRecordsCount={records.length}
@@ -3783,6 +3770,8 @@ export default function App() {
         availableUsers={availableUsers}
         pendingRequestsCount={pendingRequestsCount}
         activeTab={activeTab}
+        navTabs={navTabs}
+        onSelectTab={setActiveTab}
         activeStaffFilter={filter.staffName}
         viaList={viaList}
         errorViaUids={errorViaUids}
@@ -3823,233 +3812,37 @@ export default function App() {
         }}
       />
 
-      {/* ======================================================== */}
-      {/* THANH ĐIỀU HƯỚNG 7 BẢNG THÔNG MINH, KHOA HỌC & TIỆN LỢI */}
-      {/* ======================================================== */}
-      <div className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
-        {/* HÀNG 1: 7 BẢNG ĐIỀU HƯỚNG TOÀN DIỆN (ĐỘ RỘNG TỐI ĐA, KHÔNG BỊ CHÈN ÉP) */}
-        <div className="border-b border-slate-100 bg-slate-50/70">
-          <div className="max-w-[1700px] mx-auto px-2 sm:px-6">
-            <div className="flex items-center justify-between py-1.5 gap-1.5 sm:gap-2">
-              {/* Nút Cuộn Trái khi màn hình hẹp */}
+      {/* Thanh liên kết nhanh chỉ hiện riêng khi mở Bảng 7 (Proxy) */}
+      {activeTab === 'proxy' && (
+        <div className="bg-slate-900 text-white px-4 py-1.5 border-b border-slate-800">
+          <div className="max-w-[1700px] mx-auto flex items-center justify-between text-xs">
+            <span className="font-bold text-cyan-300 flex items-center gap-1.5">
+              <Globe className="w-3.5 h-3.5" />
+              <span>Hệ Thống Proxy — Quản lý & tạo cấu hình Proxy</span>
+            </span>
+            <div className="flex items-center space-x-2">
               <button
                 type="button"
-                onClick={() => handleScrollTabs('left')}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-200/70 transition-colors shrink-0 cursor-pointer"
-                title="Cuộn sang trái xem các bảng trước"
-                aria-label="Cuộn sang trái"
+                onClick={() => window.open('/proxy-app/index.html', '_blank')}
+                className="inline-flex items-center space-x-1 px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-cyan-300 rounded-md text-[11px] font-bold border border-slate-700 cursor-pointer"
               >
-                <ChevronLeft className="w-4 h-4" />
+                <Globe className="w-3 h-3" />
+                <span>Mở Tab Riêng</span>
               </button>
-
-              {/* Danh sách 7 Bảng cuộn mượt mà */}
-              <div
-                ref={tabListRef}
-                className="flex items-center space-x-1.5 sm:space-x-2 overflow-x-auto scrollbar-none scroll-smooth flex-1 py-0.5 px-0.5"
-              >
-                {navTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    id={`tab-btn-${tab.id}-table`}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`inline-flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 group ${
-                      activeTab === tab.id
-                        ? tab.activeClass
-                        : 'bg-white text-slate-700 hover:bg-slate-100/90 hover:text-slate-900 border border-slate-200/90 shadow-2xs'
-                    }`}
-                    title={tab.description}
-                  >
-                    {/* Số thứ tự bảng 1..7 rõ ràng */}
-                    <span
-                      className={`w-4.5 h-4.5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0 transition-colors ${
-                        activeTab === tab.id
-                          ? tab.activeNumClass
-                          : 'bg-slate-100 text-slate-700 group-hover:bg-slate-200'
-                      }`}
-                    >
-                      {tab.num}
-                    </span>
-
-                    <tab.icon className="w-3.5 h-3.5 shrink-0" />
-                    <span>{tab.title}</span>
-
-                    {/* Số lượng badge */}
-                    <span
-                      className={`px-1.5 py-0.5 rounded-full text-[10px] font-black ${
-                        activeTab === tab.id
-                          ? 'bg-white/25 text-white'
-                          : 'bg-slate-100 text-slate-800 border border-slate-200'
-                      }`}
-                    >
-                      {tab.count} {tab.unit}
-                    </span>
-
-                    {/* Đánh dấu đỏ báo có Via / Page mới chuyển giao */}
-                    {tab.newCount > 0 && (
-                      <span
-                        className="px-1.5 py-0.5 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-2 ring-rose-300 animate-pulse"
-                        title={`Có ${tab.newCount} ${tab.unit} mới được chuyển giao!`}
-                      >
-                        🔴 +{tab.newCount} mới
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              {/* Nút Cuộn Phải khi màn hình hẹp */}
               <button
                 type="button"
-                onClick={() => handleScrollTabs('right')}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-200/70 transition-colors shrink-0 cursor-pointer"
-                title="Cuộn sang phải xem các bảng sau"
-                aria-label="Cuộn sang phải"
+                onClick={() => window.open('https://nghean37378237-proxy-37-ce87.vercel.app/', '_blank')}
+                className="inline-flex items-center space-x-1 px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-md text-[11px] font-bold cursor-pointer"
               >
-                <ChevronRight className="w-4 h-4" />
+                <span>Link Vercel App</span>
               </button>
-
-              {/* Bộ Chọn Bảng Nhanh (Quick Selector Dropdown) - Dễ dàng chuyển bảng chỉ 1 chạm trên mọi thiết bị */}
-              <div className="relative shrink-0 flex items-center pl-1 sm:pl-2 border-l border-slate-200">
-                <select
-                  value={activeTab}
-                  onChange={(e) => setActiveTab(e.target.value as TabKey)}
-                  className="text-xs font-bold bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg py-1.5 pl-2.5 pr-7 cursor-pointer focus:ring-2 focus:ring-emerald-500 focus:outline-none appearance-none shadow-2xs"
-                  title="Chuyển nhanh bảng 1 đến 7"
-                >
-                  {navTabs.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      Bảng {t.num}: {t.title} ({t.count} {t.unit})
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-500 pointer-events-none absolute right-2" />
-              </div>
             </div>
           </div>
         </div>
-
-        {/* HÀNG 2: THANH THÔNG TIN BẢNG ĐANG CHỌN & CÁC NÚT THAO TÁC RIÊNG BIỆT (TÁCH BIỆT KHỎI TAB) */}
-        <div className="bg-white">
-          <div className="max-w-[1700px] mx-auto px-3 sm:px-6 py-2">
-            <div className="flex flex-wrap items-center justify-between gap-2.5">
-              {/* Tiêu đề & diễn giải bảng đang mở */}
-              <div className="flex items-center space-x-2 shrink-0">
-                {currentActiveNavTab && (
-                  <>
-                    <span className={`w-2 h-2 rounded-full ${currentActiveNavTab.dotColor} animate-pulse`}></span>
-                    <span className="text-xs font-extrabold text-slate-800 flex items-center gap-1.5">
-                      <currentActiveNavTab.icon className={`w-4 h-4 ${currentActiveNavTab.accentColor}`} />
-                      <span>{currentActiveNavTab.fullTitle}</span>
-                    </span>
-                    <span className="hidden md:inline-block text-[11px] text-slate-500 font-medium">
-                      — {currentActiveNavTab.description}
-                    </span>
-                  </>
-                )}
-              </div>
-
-              {/* Các nút thao tác nghiệp vụ cho từng bảng tương ứng */}
-              <div className="flex items-center space-x-2 shrink-0 ml-auto">
-                {activeTab === 'proxy' ? (
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      onClick={() => window.open('/proxy-app/index.html', '_blank')}
-                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-cyan-300 rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <Globe className="w-3.5 h-3.5" />
-                      <span>Mở Tab Riêng</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => window.open('https://nghean37378237-proxy-37-ce87.vercel.app/', '_blank')}
-                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <span>Link Vercel App</span>
-                    </button>
-                  </div>
-                ) : activeTab === 'group' ? (
-                  <div className="flex items-center space-x-2">
-                    <button
-                      type="button"
-                      id="btn-trigger-bulk-group"
-                      onClick={() => setIsBulkImportGroupOpen(true)}
-                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <Upload className="w-3.5 h-3.5" />
-                      <span>Import Excel Group</span>
-                    </button>
-                    <button
-                      type="button"
-                      id="btn-trigger-add-group"
-                      onClick={() => {
-                        setEditingGroupRecord(null);
-                        setPresetGroupData(null);
-                        setIsGroupModalOpen(true);
-                      }}
-                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>+ Thêm Dòng Group</span>
-                    </button>
-                  </div>
-                ) : activeTab === 'fullvia' ? (
-                  <button
-                    type="button"
-                    id="btn-trigger-bulk-via"
-                    onClick={() => {
-                      setBulkImportPresetStaff(currentUser.role === 'staff' ? currentUser.name : undefined);
-                      setIsBulkImportOpen(true);
-                    }}
-                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                  >
-                    <KeyRound className="w-3.5 h-3.5" />
-                    <span>Import Excel / Hàng Loạt Nick Via</span>
-                  </button>
-                ) : activeTab === 'fanpage' ? (
-                  <div className="text-[11px] font-semibold text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 flex items-center space-x-1.5 shadow-2xs">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span>Đồng bộ Realtime Firestore</span>
-                  </div>
-                ) : activeTab === 'staff_management' ? (
-                  currentUser.role === 'admin' ? (
-                    <button
-                      type="button"
-                      id="btn-trigger-add-staff"
-                      onClick={() => {
-                        setAdminApprovalModalTab('staff');
-                        setIsAdminApprovalModalOpen(true);
-                      }}
-                      className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-2xs transition-colors cursor-pointer"
-                    >
-                      <Users className="w-3.5 h-3.5" />
-                      <span>+ Thêm Nhân Viên Mới</span>
-                    </button>
-                  ) : (
-                    <div className="text-xs font-bold text-blue-700 bg-blue-50 px-3 py-1.5 rounded-lg border border-blue-200 flex items-center space-x-1.5 shadow-2xs">
-                      <UserCheck className="w-3.5 h-3.5 text-blue-600" />
-                      <span>Nhân Viên: {currentUser.name}</span>
-                    </div>
-                  )
-                ) : activeTab === 'revenue' ? (
-                  <div className="text-xs font-bold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center space-x-1.5 shadow-2xs">
-                    <DollarSign className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Chỉ Admin Quản Lý Doanh Thu</span>
-                  </div>
-                ) : (
-                  <div className="text-xs font-semibold text-slate-500 hidden sm:block">
-                    Đồng bộ Realtime Firestore
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* Main Content Body */}
-      <main className="flex-1 max-w-[1700px] w-full mx-auto p-3 sm:p-6 space-y-4">
+      <main className="flex-1 max-w-[1700px] w-full mx-auto px-2.5 sm:px-5 py-2 space-y-2">
         {activeTab === 'fanpage' ? (
           <>
             <SheetFilterBar
@@ -4062,6 +3855,13 @@ export default function App() {
               fixedViaUids={fixedViaUids}
               fixedViaCount={fixedViaCountInScope}
               availableStaffNames={allStaffNames}
+              onOpenAddModal={() => {
+                setEditingRecord(null);
+                setPresetViaData(null);
+                setIsModalOpen(true);
+              }}
+              onOpenImportModal={() => setIsBulkImportFanpageOpen(true)}
+              onMarkAllDoneToday={handleMarkAllDoneToday}
               onOpenDeleteStaffModal={handleOpenDeleteStaffModal}
               onOpenTransferModal={() => handleOpenTransferModal()}
               onOpenFetchPagesModal={() => handleOpenFetchPagesModal()}

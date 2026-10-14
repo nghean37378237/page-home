@@ -1,36 +1,37 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   FileSpreadsheet,
-  Plus,
   Download,
-  Upload,
-  RotateCcw,
-  Sparkles,
-  TrendingUp,
-  AlertTriangle,
   CheckCircle2,
-  Share2,
   UserCheck,
   Shield,
   ShieldCheck,
-  ShieldAlert,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   User,
   Users,
-  Lock,
   LogOut,
-  Clock,
   KeyRound,
   Database,
 } from 'lucide-react';
 import { PageRecord, AppUser, FullViaItem, TabKey } from '../types';
-import { exportSheetToCSV } from '../utils/helpers';
-import {
-  downloadFanpageExcelTemplate,
-  downloadViaExcelTemplate,
-  exportFanpageToXLSX,
-  exportViaToXLSX,
-} from '../utils/excelTemplates';
+
+export interface NavTabItem {
+  id: TabKey;
+  num: number;
+  title: string;
+  fullTitle: string;
+  description: string;
+  count: string | number;
+  unit: string;
+  newCount: number;
+  icon: React.ComponentType<{ className?: string }>;
+  activeClass: string;
+  activeNumClass: string;
+  dotColor: string;
+  accentColor: string;
+}
 
 interface SheetHeaderProps {
   records: PageRecord[];
@@ -39,6 +40,8 @@ interface SheetHeaderProps {
   availableUsers: AppUser[];
   pendingRequestsCount: number;
   activeTab?: TabKey;
+  navTabs?: NavTabItem[];
+  onSelectTab?: (tab: TabKey) => void;
   activeStaffFilter?: string;
   viaList?: FullViaItem[];
   errorViaUids?: Set<string>;
@@ -69,162 +72,154 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
   availableUsers,
   pendingRequestsCount,
   activeTab = 'fanpage',
-  activeStaffFilter,
+  navTabs = [],
+  onSelectTab,
   viaList = [],
-  errorViaUids,
-  errorViaCount: propErrorViaCount,
-  isFilteringErrorVia = false,
-  onFilterErrorVia,
   onNavigateToStaffTab,
   onOpenAdminApprovalModal,
   onOpenAuthModal,
   onLogout,
   onSelectUser,
-  onAddCustomStaff,
-  onOpenAddModal,
-  onOpenImportModal,
-  onResetData,
-  onMarkAllDoneToday,
-  onOpenAddViaModal,
-  onOpenBulkImportViaModal,
-  onFilterViaErrorInFullVia,
-  isFilteringViaErrorInFullVia = false,
   onOpenChangeMyPin,
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [newStaffInput, setNewStaffInput] = useState('');
-  const [showAddStaffInput, setShowAddStaffInput] = useState(false);
-  const [isFanpageAlertDismissed, setIsFanpageAlertDismissed] = useState(false);
-  const [isFullViaAlertDismissed, setIsFullViaAlertDismissed] = useState(false);
+  const tabListRef = useRef<HTMLDivElement | null>(null);
 
-  // === THỐNG KÊ CHO TAB 1: BẢNG FANPAGE ===
-  // Nếu có bộ lọc theo 1 nhân viên cụ thể thì chỉ thống kê các Fanpage của nhân viên đó
-  const effectiveRecordsForStats = React.useMemo(() => {
-    if (activeStaffFilter && activeStaffFilter.trim() && activeStaffFilter !== 'all') {
-      const target = activeStaffFilter.trim().toLowerCase();
-      return records.filter((r) => r.staffName && r.staffName.trim().toLowerCase() === target);
-    }
-    return records;
-  }, [records, activeStaffFilter]);
-
-  const totalPages = effectiveRecordsForStats.length;
-  const uniqueVias = new Set(effectiveRecordsForStats.map((r) => r.viaUid.trim().toLowerCase()).filter(Boolean)).size;
-
-  const deXuatCount = effectiveRecordsForStats.filter((r) => r.status === 'Đề Xuất').length;
-  const matDeXuatCount = effectiveRecordsForStats.filter((r) => r.status === 'Mất Đề Xuất').length;
-  const dinhChiCount = effectiveRecordsForStats.filter((r) => r.status === 'Đình Chỉ').length;
-  const biBackCount = effectiveRecordsForStats.filter((r) => r.status === 'Bị Back').length;
-
-  const totalTargetPosts = effectiveRecordsForStats.reduce((acc, r) => acc + (r.targetPosts || 0), 0);
-  const totalActualPosts = effectiveRecordsForStats.reduce((acc, r) => acc + (r.actualPosts || 0), 0);
-
-  // Thống kê Nick Via Lỗi đang cầm Fanpage trong Tab 1
-  const computedErrorViaCount = React.useMemo(() => {
-    if (typeof propErrorViaCount === 'number') return propErrorViaCount;
-    if (errorViaUids && errorViaUids.size > 0) {
-      const uidsInScope = new Set(effectiveRecordsForStats.map((r) => r.viaUid.trim().toLowerCase()).filter(Boolean));
-      let count = 0;
-      errorViaUids.forEach((uid) => {
-        if ((currentUser.role === 'admin' && (!activeStaffFilter || activeStaffFilter === 'all')) || uidsInScope.has(uid)) {
-          count++;
-        }
-      });
-      return count;
-    }
-    return effectiveRecordsForStats.filter((r) => r.isViaError).length;
-  }, [propErrorViaCount, errorViaUids, effectiveRecordsForStats, currentUser.role, activeStaffFilter]);
-
-  const pagesImpactedByErrorVia = React.useMemo(() => {
-    return effectiveRecordsForStats.filter(
-      (r) =>
-        r.isViaError ||
-        r.viaStatus === 'checkpoint' ||
-        r.viaStatus === 'dead' ||
-        r.viaStatus === 'error' ||
-        (errorViaUids && r.viaUid && errorViaUids.has(r.viaUid.trim().toLowerCase()))
-    ).length;
-  }, [effectiveRecordsForStats, errorViaUids]);
-
-  // === THỐNG KÊ CHO TAB 2: BẢNG FULL VIA ===
-  const scopedViaList = React.useMemo(() => {
-    if (currentUser.role === 'staff') {
-      const staffNameLower = currentUser.name.trim().toLowerCase();
-      return viaList.filter((v) => v.staffName.trim().toLowerCase() === staffNameLower);
-    }
-    return viaList;
-  }, [viaList, currentUser]);
-
-  const fullViaTotalCount = scopedViaList.length;
-  const fullViaLiveCount = scopedViaList.filter(
-    (v) => !v.isError && v.status === 'active'
-  ).length;
-  const fullViaCheckpointCount = scopedViaList.filter((v) => v.status === 'checkpoint').length;
-  const fullViaErrorCount = scopedViaList.filter(
-    (v) => v.isError || v.status === 'error' || v.status === 'dead'
-  ).length;
-  const totalViaIssuesCount = fullViaCheckpointCount + fullViaErrorCount;
+  const handleScrollTabs = (direction: 'left' | 'right') => {
+    if (!tabListRef.current) return;
+    const scrollAmount = 260;
+    tabListRef.current.scrollBy({
+      left: direction === 'left' ? -scrollAmount : scrollAmount,
+      behavior: 'smooth',
+    });
+  };
 
   return (
-    <header className="bg-white border-b border-slate-200 shadow-2xs">
-      {/* HÀNG 1: THÔNG TIN HỆ THỐNG & TÀI KHOẢN (GỌN GÀNG, KHÔNG RỐI MẮT) */}
-      <div className="max-w-[1700px] mx-auto px-3 sm:px-6 py-2">
-        <div className="flex items-center justify-between gap-3">
-          {/* 1.1 Bên trái: Logo, Tiêu đề & Quyền hạn */}
-          <div className="flex items-center space-x-2.5 shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-[#2e7d32] text-white flex items-center justify-center shadow-2xs shrink-0">
-              <FileSpreadsheet className="w-5 h-5" />
+    <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+      {/* HÀNG 1 DUY NHẤT: LOGO + 7 BẢNG ĐIỀU HƯỚNG + TÀI KHOẢN & BẢO MẬT */}
+      <div className="max-w-[1700px] mx-auto px-2.5 sm:px-5 py-1.5">
+        <div className="flex items-center justify-between gap-2">
+          {/* 1. Bên trái: Logo, Tên Hệ Thống & Nút Bảo Mật / Cloud */}
+          <div className="flex items-center space-x-2 shrink-0">
+            <div className="w-7 h-7 rounded-lg bg-[#2e7d32] text-white flex items-center justify-center shadow-2xs shrink-0">
+              <FileSpreadsheet className="w-4 h-4" />
             </div>
-            <div className="flex items-center space-x-2">
-              <h1 className="text-sm sm:text-base font-black text-slate-900 tracking-tight whitespace-nowrap">
-                Quản Lý Fanpage & Via
+            <div className="flex items-center space-x-1.5">
+              <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight whitespace-nowrap hidden xl:block">
+                QL Fanpage & Via
               </h1>
-              <span
-                className={`hidden sm:inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold border ${
-                  currentUser.role === 'admin'
-                    ? 'bg-amber-50 text-amber-900 border-amber-300'
-                    : 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                }`}
-              >
-                {currentUser.role === 'admin' ? (
-                  <>
-                    <Shield className="w-3 h-3 text-amber-600" />
-                    <span>Admin</span>
-                  </>
-                ) : (
-                  <>
-                    <User className="w-3 h-3 text-emerald-600" />
-                    <span>{currentUser.name}</span>
-                  </>
-                )}
-              </span>
-              <span
-                className="hidden md:inline-flex items-center space-x-1 text-[10px] font-semibold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200"
-                title="Dữ liệu và mã nguồn đã được mã hóa bảo mật chống lộ"
-              >
-                <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                <span>Đã Mã Hóa</span>
-              </span>
-
-              {/* Thông số CSDL & Trung Tâm Bảo Mật Chống Hack - Bấm vào mở thẳng tab Sec */}
               <button
                 type="button"
                 id="btn-security-center-header"
                 onClick={() => onOpenAdminApprovalModal('security_db')}
-                className="inline-flex items-center space-x-1.5 text-[10px] font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-300 cursor-pointer shadow-2xs transition-colors"
-                title="Bảo vệ tài khoản, chống hack app & CSDL Cloud Firestore. Bấm để xem chi tiết an ninh và đổi mã PIN"
+                className="inline-flex items-center space-x-1 text-[10px] font-bold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-1.5 py-0.5 rounded-md border border-emerald-300 cursor-pointer shadow-2xs transition-colors"
+                title="Hệ thống CSDL Cloud Firestore (Đồng bộ thời gian thực) & Trung tâm Bảo mật. Bấm để xem chi tiết"
               >
                 <ShieldCheck className="w-3 h-3 text-emerald-600" />
-                <span>Bảo Mật: Bật</span>
+                <span className="hidden md:inline">Cloud</span>
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span className="text-[9px] bg-emerald-200/80 text-emerald-800 font-extrabold px-1 rounded">Sec</span>
+                <span className="text-[9px] bg-emerald-200/80 text-emerald-800 font-extrabold px-1 rounded">
+                  Sec
+                </span>
               </button>
             </div>
           </div>
 
-          {/* 1.2 Bên phải: Tài khoản, Phê duyệt, Đăng xuất, Reset */}
-          <div className="flex items-center space-x-2 shrink-0">
-            {/* Admin Approval Button */}
-            {currentUser.role === 'admin' && (
+          {/* 2. Ở giữa: 7 Bảng Điều Hướng Thông Minh (Gộp chung trên cùng 1 hàng) */}
+          {navTabs.length > 0 && onSelectTab && (
+            <div className="flex items-center gap-1 flex-1 min-w-0 mx-1">
+              <button
+                type="button"
+                onClick={() => handleScrollTabs('left')}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer hidden sm:flex"
+                title="Cuộn sang trái"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+
+              <div
+                ref={tabListRef}
+                className="flex items-center space-x-1 overflow-x-auto scrollbar-none scroll-smooth flex-1 py-0.5"
+              >
+                {navTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    id={`tab-btn-${tab.id}-table`}
+                    onClick={() => onSelectTab(tab.id)}
+                    className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 group ${
+                      activeTab === tab.id
+                        ? tab.activeClass
+                        : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/90'
+                    }`}
+                    title={`${tab.fullTitle} — ${tab.description}`}
+                  >
+                    <span
+                      className={`w-4 h-4 rounded flex items-center justify-center text-[10px] font-black shrink-0 transition-colors ${
+                        activeTab === tab.id
+                          ? tab.activeNumClass
+                          : 'bg-white text-slate-700 border border-slate-200/80 group-hover:bg-slate-200'
+                      }`}
+                    >
+                      {tab.num}
+                    </span>
+
+                    <tab.icon className="w-3 h-3 shrink-0" />
+                    <span>{tab.title}</span>
+
+                    <span
+                      className={`px-1.5 py-0.1 rounded-full text-[10px] font-black ${
+                        activeTab === tab.id
+                          ? 'bg-white/25 text-white'
+                          : 'bg-white text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {tab.count}
+                    </span>
+
+                    {tab.newCount > 0 && (
+                      <span
+                        className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-1 ring-rose-300 animate-pulse"
+                        title={`Có ${tab.newCount} ${tab.unit} mới được chuyển giao!`}
+                      >
+                        🔴+{tab.newCount}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handleScrollTabs('right')}
+                className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer hidden sm:flex"
+                title="Cuộn sang phải"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+
+              {/* Chọn nhanh Bảng trên màn hình nhỏ */}
+              <div className="relative shrink-0 lg:hidden">
+                <select
+                  value={activeTab}
+                  onChange={(e) => onSelectTab(e.target.value as TabKey)}
+                  className="text-[11px] font-bold bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-lg py-1 pl-2 pr-6 cursor-pointer focus:outline-none appearance-none"
+                  title="Chuyển nhanh bảng 1 đến 7"
+                >
+                  {navTabs.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.num}. {t.title} ({t.count})
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown className="w-3 h-3 text-slate-500 pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2" />
+              </div>
+            </div>
+          )}
+
+          {/* 3. Bên phải: QL Nhân Sự, Chuyển đổi Tài khoản, Sao lưu, Đăng xuất */}
+          <div className="flex items-center space-x-1.5 shrink-0">
+            {currentUser.role === 'admin' && pendingRequestsCount > 0 && (
               <button
                 type="button"
                 id="btn-admin-approvals"
@@ -235,22 +230,14 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                     onOpenAdminApprovalModal('staff');
                   }
                 }}
-                className={`relative inline-flex items-center space-x-1.5 px-2.5 sm:px-3 py-1 text-xs font-bold rounded-lg border shadow-2xs transition-all cursor-pointer ${
-                  pendingRequestsCount > 0
-                    ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-md animate-pulse'
-                    : activeTab === 'staff_management'
-                    ? 'bg-blue-600 text-white border-blue-700 shadow-sm'
-                    : 'bg-indigo-50 text-indigo-900 border-indigo-200 hover:bg-indigo-100'
-                }`}
-                title="Bấm để mở trực tiếp Bảng 5: Quản lý danh sách nhân viên, tài khoản và mật khẩu"
+                className="relative inline-flex items-center space-x-1 px-2 py-1 text-[11px] font-bold rounded-lg border bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-xs animate-pulse cursor-pointer"
+                title="Có yêu cầu tài khoản nhân viên chờ duyệt"
               >
-                <UserCheck className="w-3.5 h-3.5" />
-                <span className="font-bold">QL Nhân Sự</span>
-                {pendingRequestsCount > 0 && (
-                  <span className="bg-red-600 text-white text-[10px] font-extrabold px-1.5 py-0.2 rounded-full">
-                    {pendingRequestsCount}
-                  </span>
-                )}
+                <UserCheck className="w-3 h-3" />
+                <span className="hidden sm:inline">Duyệt NV</span>
+                <span className="bg-red-600 text-white text-[10px] font-extrabold px-1 rounded-full">
+                  {pendingRequestsCount}
+                </span>
               </button>
             )}
 
@@ -260,23 +247,24 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                 type="button"
                 id="btn-role-switcher"
                 onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                className={`inline-flex items-center space-x-1.5 px-2.5 py-1 text-xs font-bold rounded-lg border transition-all shadow-2xs cursor-pointer ${
+                className={`inline-flex items-center space-x-1 px-2 py-1 text-[11px] font-bold rounded-lg border transition-all shadow-2xs cursor-pointer ${
                   currentUser.role === 'admin'
                     ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
                     : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
                 }`}
-                title="Tài khoản đang thao tác"
+                title="Tài khoản đang thao tác (Bấm để đổi góc nhìn Nhân viên / Admin)"
               >
                 {currentUser.role === 'admin' ? (
-                  <Shield className="w-3.5 h-3.5 text-amber-600" />
+                  <Shield className="w-3 h-3 text-amber-600" />
                 ) : (
-                  <User className="w-3.5 h-3.5 text-emerald-600" />
+                  <User className="w-3 h-3 text-emerald-600" />
                 )}
-                <span className="max-w-[90px] sm:max-w-[120px] truncate">{currentUser.name}</span>
+                <span className="max-w-[85px] sm:max-w-[110px] truncate">
+                  {currentUser.role === 'admin' ? 'Admin' : currentUser.name}
+                </span>
                 <ChevronDown className="w-3 h-3 text-slate-500" />
               </button>
 
-              {/* Dropdown Menu */}
               {isUserMenuOpen && (
                 <>
                   <div
@@ -299,7 +287,13 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                           <button
                             type="button"
                             onClick={() => {
-                              onSelectUser({ id: 'admin', name: 'Quản Lý (Admin)', role: 'admin', status: 'approved', isAuthenticated: true });
+                              onSelectUser({
+                                id: 'admin',
+                                name: 'Quản Lý (Admin)',
+                                role: 'admin',
+                                status: 'approved',
+                                isAuthenticated: true,
+                              });
                               setIsUserMenuOpen(false);
                             }}
                             className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-left transition-colors ${
@@ -408,7 +402,6 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                       )}
                     </div>
 
-                    {/* Footer options in dropdown */}
                     <div className="pt-2 border-t border-slate-100 px-2 space-y-1">
                       {currentUser.role === 'admin' && (
                         <>
@@ -442,7 +435,6 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                               onOpenAdminApprovalModal('security_db');
                             }}
                             className="w-full text-left py-2 px-2.5 text-xs text-slate-800 hover:bg-slate-100 font-bold rounded-lg transition-colors flex items-center justify-between cursor-pointer"
-                            title="Xem chi tiết các thông số kỹ thuật kết nối CSDL Cloud Firestore, Ping test và Bảo mật"
                           >
                             <div className="flex items-center space-x-2">
                               <Database className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -475,16 +467,6 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
 
             <button
               type="button"
-              id="btn-logout-header"
-              onClick={onLogout}
-              className="p-1.5 text-slate-500 hover:text-red-700 hover:bg-red-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
-              title="Đăng xuất khỏi hệ thống"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-
-            <button
-              type="button"
               id="btn-backup-json"
               onClick={() => {
                 const backupPayload = {
@@ -504,356 +486,24 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                 a.click();
                 URL.revokeObjectURL(url);
               }}
-              className="p-1.5 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
+              className="p-1 text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50 border border-emerald-200 rounded-lg transition-colors cursor-pointer"
               title="Tải bản sao lưu an toàn toàn bộ dữ liệu (JSON)"
             >
               <Download className="w-3.5 h-3.5" />
             </button>
+
+            <button
+              type="button"
+              id="btn-logout-header"
+              onClick={onLogout}
+              className="p-1 text-slate-500 hover:text-red-700 hover:bg-red-50 border border-slate-200 rounded-lg transition-colors cursor-pointer"
+              title="Đăng xuất khỏi hệ thống"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </div>
-
-      {/* HÀNG 2: THANH THAO TÁC & THỐNG KÊ (TAB NÀO HIỂN THỊ ĐÚNG CỦA TAB ĐÓ) */}
-      <div className="bg-slate-50/95 border-t border-slate-200/80 px-3 sm:px-6 py-2">
-        <div className="max-w-[1700px] mx-auto flex flex-wrap items-center justify-between gap-2.5">
-          {/* ============================================================ */}
-          {/* 2.1 NHÓM HÀNH ĐỘNG DÀNH RIÊNG THEO TAB ĐANG CHỌN */}
-          {/* ============================================================ */}
-          <div className="flex items-center flex-wrap gap-1.5">
-            {activeTab === 'fanpage' ? (
-              <>
-                {/* TAB 1: Nút thêm Page */}
-                <button
-                  type="button"
-                  id="btn-add-page-row"
-                  onClick={onOpenAddModal}
-                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-white bg-[#2e7d32] hover:bg-[#256629] active:bg-[#1b5e20] rounded-lg shadow-2xs transition-all cursor-pointer shrink-0"
-                  title="Thêm Fanpage mới vào bảng"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>+ Thêm Page</span>
-                </button>
-
-                {/* TAB 1: Nhập Excel */}
-                {onOpenImportModal && (
-                  <button
-                    type="button"
-                    id="btn-import-excel"
-                    onClick={onOpenImportModal}
-                    className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                    title="Nhập dữ liệu Fanpage từ file Excel (.xlsx) hoặc Copy-Paste"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Nhập Excel</span>
-                  </button>
-                )}
-
-                {/* TAB 1: Xuất Excel Fanpage */}
-                <button
-                  type="button"
-                  id="btn-export-sheet"
-                  onClick={() => exportFanpageToXLSX(records)}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  title="Tải về toàn bộ danh sách Fanpage dạng file Excel .xlsx"
-                >
-                  <Download className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Xuất Excel</span>
-                </button>
-
-                {/* TAB 1: Tải Mẫu Excel Fanpage */}
-                <button
-                  type="button"
-                  id="btn-download-excel-template"
-                  onClick={() => downloadFanpageExcelTemplate('xlsx')}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-emerald-900 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  title="Tải file Excel mẫu chuẩn (.xlsx) có sẵn 4 trạng thái để import Fanpage"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-700" />
-                  <span>Tải Mẫu Excel</span>
-                </button>
-
-                {/* TAB 1: Duyệt Bài Xong */}
-                <button
-                  type="button"
-                  id="btn-mark-all-done-today"
-                  onClick={onMarkAllDoneToday}
-                  className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold text-emerald-800 bg-emerald-50/80 hover:bg-emerald-100 border border-emerald-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  title="Đánh dấu các page đang hiển thị hôm nay đã hoàn thành đủ số bài đăng"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="hidden md:inline">Duyệt Bài Xong</span>
-                </button>
-              </>
-            ) : (
-              <>
-                {/* TAB 2: Nút thêm 1 Nick Via */}
-                {onOpenAddViaModal && (
-                  <button
-                    type="button"
-                    id="btn-add-single-via"
-                    onClick={onOpenAddViaModal}
-                    className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-lg shadow-2xs transition-all cursor-pointer shrink-0"
-                    title="Thêm 1 Nick Via mới vào bảng"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>+ Thêm 1 Nick</span>
-                  </button>
-                )}
-
-                {/* TAB 2: Nút thêm nhiều nick (Dán Excel) */}
-                {onOpenBulkImportViaModal && (
-                  <button
-                    type="button"
-                    id="btn-add-bulk-via"
-                    onClick={onOpenBulkImportViaModal}
-                    className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-slate-800 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                    title="Dán nhanh nhiều nick Via dạng UID|Pass|2FA từ Excel hoặc text"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Dán Excel Nick</span>
-                  </button>
-                )}
-
-                {/* TAB 2: Tải Mẫu Excel Via */}
-                <button
-                  type="button"
-                  id="btn-download-via-template"
-                  onClick={() => downloadViaExcelTemplate('xlsx')}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-bold text-indigo-900 bg-indigo-100 hover:bg-indigo-200 border border-indigo-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  title="Tải file Excel mẫu chuẩn (.xlsx) để import nick Via"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-700" />
-                  <span>Tải Mẫu Excel</span>
-                </button>
-
-                {/* TAB 2: Xuất Excel Nick Via */}
-                <button
-                  type="button"
-                  id="btn-export-via-excel"
-                  onClick={() => exportViaToXLSX(scopedViaList)}
-                  className="inline-flex items-center space-x-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
-                  title="Tải về danh sách Full Via dạng file Excel .xlsx"
-                >
-                  <Download className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Xuất Excel</span>
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* ============================================================ */}
-          {/* 2.2 NHÓM THỐNG KÊ DÀNH RIÊNG THEO TAB ĐANG CHỌN */}
-          {/* ============================================================ */}
-          <div className="flex items-center flex-wrap gap-1.5 text-xs">
-            {activeTab === 'fanpage' ? (
-              <>
-                {/* TAB 1 STATS: Tổng số Page */}
-                <span className="inline-flex items-center px-2.5 py-1 bg-white rounded-lg border border-slate-200 text-slate-700 font-bold shadow-2xs">
-                  <span>📄</span>
-                  <span className="ml-1"><strong>{totalPages}</strong> Page</span>
-                </span>
-
-                {/* TAB 1 STATS: Tổng Nick Via */}
-                <span className="inline-flex items-center px-2.5 py-1 bg-white rounded-lg border border-slate-200 text-indigo-700 font-bold shadow-2xs">
-                  <span>🔑</span>
-                  <span className="ml-1"><strong>{uniqueVias}</strong> Nick Via</span>
-                </span>
-
-                {/* TAB 1 STATS: Tiến độ bài đăng hôm nay */}
-                <span
-                  className="hidden sm:inline-flex items-center space-x-1 px-2.5 py-1 bg-blue-50 text-blue-900 border border-blue-200 rounded-lg font-semibold shadow-2xs"
-                  title="Tiến độ bài đăng hôm nay"
-                >
-                  <span>📝 <strong>{totalActualPosts}/{totalTargetPosts}</strong> bài</span>
-                </span>
-
-                {/* TAB 1 STATS: THỐNG KÊ VIA LỖI NẾU CÓ (BẤM VÀO ĐỂ LỌC NHANH) */}
-                {computedErrorViaCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={onFilterErrorVia}
-                    className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border shadow-2xs ${
-                      isFilteringErrorVia
-                        ? 'bg-rose-600 text-white border-rose-700 ring-2 ring-rose-500/30 shadow-xs'
-                        : 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200'
-                    }`}
-                    title={`Có ${computedErrorViaCount} Nick Via bị lỗi (ảnh hưởng ${pagesImpactedByErrorVia} Page). Bấm để ${
-                      isFilteringErrorVia ? 'bỏ lọc' : 'lọc nhanh'
-                    }`}
-                  >
-                    <AlertTriangle
-                      className={`w-3.5 h-3.5 ${isFilteringErrorVia ? 'text-white' : 'text-rose-600'}`}
-                    />
-                    <span>VIA LỖI:</span>
-                    <span
-                      className={`px-1.5 py-0.2 rounded-full text-[11px] font-black ${
-                        isFilteringErrorVia ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'
-                      }`}
-                    >
-                      {computedErrorViaCount}
-                    </span>
-                  </button>
-                )}
-              </>
-            ) : (
-              <>
-                {/* TAB 2 STATS: Tổng số Nick Via */}
-                <span className="inline-flex items-center px-2 py-1 bg-white rounded-lg border border-slate-200 text-slate-700 font-semibold shadow-2xs">
-                  <strong>{fullViaTotalCount}</strong>&nbsp;Nick Via
-                </span>
-
-                {/* TAB 2 STATS: Live (Hoạt Động) */}
-                <span
-                  className="inline-flex items-center space-x-1 px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-lg font-bold shadow-2xs"
-                  title="Số Nick Via đang hoạt động bình thường"
-                >
-                  <span>🟢</span>
-                  <span><strong>{fullViaLiveCount}</strong> Live</span>
-                </span>
-
-                {/* TAB 2 STATS: Checkpoint */}
-                <span
-                  className="inline-flex items-center space-x-1 px-2 py-1 bg-amber-50 text-amber-900 border border-amber-300 rounded-lg font-bold shadow-2xs"
-                  title="Số Nick Via đang bị Checkpoint"
-                >
-                  <span>🟠</span>
-                  <span><strong>{fullViaCheckpointCount}</strong> CP</span>
-                </span>
-
-                {/* TAB 2 STATS: Báo Lỗi / Die */}
-                <span
-                  className="inline-flex items-center space-x-1 px-2 py-1 bg-rose-50 text-rose-800 border border-rose-200 rounded-lg font-bold shadow-2xs"
-                  title="Số Nick Via bị báo lỗi hoặc Die"
-                >
-                  <span>🔴</span>
-                  <span><strong>{fullViaErrorCount}</strong> Lỗi/Die</span>
-                </span>
-
-                {/* TAB 2 STATS: THỐNG KÊ LỖI NICK VIA (BẤM VÀO ĐỂ LỌC NICK LỖI) */}
-                <button
-                  type="button"
-                  onClick={onFilterViaErrorInFullVia}
-                  className={`inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border shadow-2xs ${
-                    isFilteringViaErrorInFullVia
-                      ? 'bg-red-600 text-white border-red-700 ring-2 ring-red-500/30 shadow-xs'
-                      : totalViaIssuesCount > 0
-                      ? 'bg-red-100/90 text-red-900 border-red-300 hover:bg-red-200/90'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
-                  }`}
-                  title={
-                    totalViaIssuesCount > 0
-                      ? `Có ${totalViaIssuesCount} nick cần xử lý (${fullViaCheckpointCount} CP, ${fullViaErrorCount} Lỗi). Bấm để ${
-                          isFilteringViaErrorInFullVia ? 'xem tất cả' : 'lọc nhanh'
-                        }`
-                      : 'Tất cả nick Via đang hoạt động tốt'
-                  }
-                >
-                  <AlertTriangle
-                    className={`w-3.5 h-3.5 ${
-                      isFilteringViaErrorInFullVia ? 'text-white' : 'text-red-600'
-                    }`}
-                  />
-                  <span>VIA LỖI:</span>
-                  <span
-                    className={`px-1.5 py-0.2 rounded-full text-[11px] font-black ${
-                      isFilteringViaErrorInFullVia
-                        ? 'bg-white text-red-700'
-                        : totalViaIssuesCount > 0
-                        ? 'bg-red-600 text-white'
-                        : 'bg-slate-100 text-slate-700'
-                    }`}
-                  >
-                    {totalViaIssuesCount}
-                  </span>
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ============================================================ */}
-      {/* 2.3 THANH THÔNG BÁO CẢNH BÁO LỖI (CHỈ TAB NÀO HIỆN CỦA TAB ĐÓ) */}
-      {/* ============================================================ */}
-      {activeTab === 'fanpage' &&
-        !isFanpageAlertDismissed &&
-        computedErrorViaCount > 0 && (
-          <div className="bg-rose-50/90 border-t border-b border-rose-200 px-4 py-2 text-xs text-rose-900">
-            <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-3">
-              <div className="flex items-center space-x-2 flex-wrap">
-                <span className="p-1 bg-rose-600 text-white rounded-md shrink-0">
-                  <AlertTriangle className="w-3.5 h-3.5" />
-                </span>
-                <span className="font-extrabold uppercase tracking-wide text-rose-800">
-                  Cảnh báo Nick Via Lỗi:
-                </span>
-                <span>
-                  Đang có{' '}
-                  <strong className="text-rose-700 font-black">
-                    {computedErrorViaCount} Nick Via bị lỗi (ảnh hưởng {pagesImpactedByErrorVia} Page).
-                  </strong>{' '}
-                  Cần kiểm tra mở lại hoặc thay Via mới để tránh gián đoạn đăng bài!
-                </span>
-              </div>
-              <div className="flex items-center space-x-2 shrink-0">
-                {computedErrorViaCount > 0 && onFilterErrorVia && (
-                  <button
-                    type="button"
-                    onClick={onFilterErrorVia}
-                    className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-[11px] transition-colors cursor-pointer"
-                  >
-                    {isFilteringErrorVia ? 'Bỏ lọc lỗi' : 'Lọc Nick Via lỗi'}
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setIsFanpageAlertDismissed(true)}
-                  className="p-1 text-rose-600 hover:text-rose-900 rounded hover:bg-rose-100 transition-colors cursor-pointer"
-                  title="Đóng thông báo này"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-      {activeTab === 'fullvia' && !isFullViaAlertDismissed && totalViaIssuesCount > 0 && (
-        <div className="bg-red-50/95 border-t border-b border-red-200 px-4 py-2 text-xs text-red-950">
-          <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-3">
-            <div className="flex items-center space-x-2 flex-wrap">
-              <span className="p-1 bg-red-600 text-white rounded-md shrink-0">
-                <AlertTriangle className="w-3.5 h-3.5" />
-              </span>
-              <span className="font-extrabold uppercase tracking-wide text-red-900">
-                Thông báo Bảng Full Via:
-              </span>
-              <span>
-                Đang có <strong className="text-red-700 font-black">{totalViaIssuesCount} Nick Via</strong> gặp sự cố ({fullViaErrorCount > 0 ? `${fullViaErrorCount} nick Báo Lỗi/Die` : ''}{fullViaErrorCount > 0 && fullViaCheckpointCount > 0 ? ' • ' : ''}{fullViaCheckpointCount > 0 ? `${fullViaCheckpointCount} nick Checkpoint` : ''}). Cần xử lý mở lại hoặc thay thế!
-              </span>
-            </div>
-            <div className="flex items-center space-x-2 shrink-0">
-              {onFilterViaErrorInFullVia && (
-                <button
-                  type="button"
-                  onClick={onFilterViaErrorInFullVia}
-                  className="px-2 py-0.5 bg-red-600 hover:bg-red-700 text-white rounded font-bold text-[11px] transition-colors cursor-pointer"
-                >
-                  {isFilteringViaErrorInFullVia ? 'Xem tất cả' : 'Lọc nick lỗi'}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setIsFullViaAlertDismissed(true)}
-                className="p-1 text-red-600 hover:text-red-900 rounded hover:bg-red-100 transition-colors cursor-pointer"
-                title="Đóng thông báo này"
-              >
-                ✕
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </header>
   );
 };

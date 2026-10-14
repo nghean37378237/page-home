@@ -1,7 +1,21 @@
 import React, { useMemo } from 'react';
-import { Search, Filter, X, Lock, Layers, Plus, AlertTriangle, Trash2, ArrowRightLeft, CheckCircle2, Zap, Users, Archive } from 'lucide-react';
+import {
+  Search,
+  X,
+  Plus,
+  AlertTriangle,
+  ArrowRightLeft,
+  CheckCircle2,
+  Zap,
+  Users,
+  Archive,
+  Upload,
+  Download,
+  FileSpreadsheet,
+} from 'lucide-react';
 import { SheetFilter, PageRecord, AppUser, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
 import { getCleanBmName } from '../utils/helpers';
+import { downloadFanpageExcelTemplate, exportFanpageToXLSX } from '../utils/excelTemplates';
 
 interface SheetFilterBarProps {
   filter: SheetFilter;
@@ -13,6 +27,8 @@ interface SheetFilterBarProps {
   fixedViaUids?: Set<string>;
   fixedViaCount?: number;
   onOpenAddModal?: () => void;
+  onOpenImportModal?: () => void;
+  onMarkAllDoneToday?: () => void;
   availableStaffNames?: string[];
   onOpenDeleteStaffModal?: (staffName?: string) => void;
   onOpenTransferModal?: () => void;
@@ -29,8 +45,9 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
   fixedViaUids,
   fixedViaCount: propFixedViaCount,
   onOpenAddModal,
+  onOpenImportModal,
+  onMarkAllDoneToday,
   availableStaffNames,
-  onOpenDeleteStaffModal,
   onOpenTransferModal,
   onOpenFetchPagesModal,
 }) => {
@@ -50,9 +67,6 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     return records.filter((r) => isAdminWaitingPool(r.staffName) || !r.staffName?.trim()).length;
   }, [records]);
 
-  // Phân phạm vi dữ liệu: Khi chọn 1 nhân viên bất kỳ (hoặc Kho Chờ Admin),
-  // toàn bộ thống kê trạng thái (Đề Xuất, Mất Đề Xuất, Đình Chỉ, Bị Back, Via Lỗi...)
-  // sẽ CHỈ tính trên các Fanpage của nhân viên / kho chờ đó!
   const staffScopedRecords = useMemo(() => {
     if (filter.staffName && filter.staffName.trim() && filter.staffName !== 'all') {
       if (isAdminWaitingPool(filter.staffName)) {
@@ -66,7 +80,6 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     return records;
   }, [records, filter.staffName]);
 
-  // Compute distinct Vias with count of pages for the dropdown (chỉ trong phạm vi nhân viên đang chọn)
   const viaOptions = useMemo(() => {
     const map = new Map<string, number>();
     staffScopedRecords.forEach((r) => {
@@ -80,7 +93,6 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
       .sort((a, b) => b.count - a.count);
   }, [staffScopedRecords]);
 
-  // Thống kê báo cáo 4 trạng thái của các Fanpage (CHỈ THEO NHÂN VIÊN ĐANG CHỌN)
   const deXuatCount = useMemo(
     () => staffScopedRecords.filter((r) => r.status === 'Đề Xuất').length,
     [staffScopedRecords]
@@ -98,7 +110,15 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     [staffScopedRecords]
   );
 
-  // Thống kê Via Lỗi trong records đang xét (CHỈ THEO NHÂN VIÊN ĐANG CHỌN)
+  const totalTargetPosts = useMemo(
+    () => staffScopedRecords.reduce((acc, r) => acc + (r.targetPosts || 0), 0),
+    [staffScopedRecords]
+  );
+  const totalActualPosts = useMemo(
+    () => staffScopedRecords.reduce((acc, r) => acc + (r.actualPosts || 0), 0),
+    [staffScopedRecords]
+  );
+
   const computedErrorViaCount = useMemo(() => {
     if (filter.staffName && filter.staffName.trim() && filter.staffName !== 'all') {
       const errorUidsForStaff = new Set<string>();
@@ -131,7 +151,6 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     return records.filter((r) => r.isViaError).length;
   }, [filter.staffName, staffScopedRecords, propErrorViaCount, errorViaUids, records, currentUser.role]);
 
-  // Thống kê Via Đã Sửa / Thay Mới (Bôi xanh) trong records đang xét (CHỈ THEO NHÂN VIÊN ĐANG CHỌN)
   const computedFixedViaCount = useMemo(() => {
     if (filter.staffName && filter.staffName.trim() && filter.staffName !== 'all') {
       const fixedUidsForStaff = new Set<string>();
@@ -162,7 +181,6 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     return records.filter((r) => r.isViaFixed || r.viaStatus === 'fixed').length;
   }, [filter.staffName, staffScopedRecords, propFixedViaCount, fixedViaUids, records, currentUser.role]);
 
-  // Thống kê tiến độ đổi Via
   const addingViaCount = useMemo(() => {
     return staffScopedRecords.filter((r) => r.viaTransferStatus === 'adding').length;
   }, [staffScopedRecords]);
@@ -181,7 +199,6 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     ).length;
   }, [staffScopedRecords]);
 
-  // Danh sách các BM hiện có trong scope records (luôn bỏ phần sau dấu |)
   const bmOptions = useMemo(() => {
     const map = new Map<string, number>();
     staffScopedRecords.forEach((r) => {
@@ -192,7 +209,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     });
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'vi'));
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b, 'vi' as any));
   }, [staffScopedRecords]);
 
   const handleClear = () => {
@@ -229,22 +246,21 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     filter.completionFilter !== 'all';
 
   return (
-    <div className="bg-slate-50 border-b border-slate-200 py-1.5 px-3 sm:px-6">
-      <div className="max-w-[1700px] mx-auto flex flex-col gap-1.5 text-xs">
-        {/* HÀNG 1: NHÂN VIÊN (BÊN TRÁI) + BÁO CÁO TRẠNG THÁI (BÊN PHẢI) - GỘP CHUNG 1 DÒNG GỌN GÀNG */}
+    <div className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 shadow-2xs">
+      <div className="flex flex-col gap-1.5 text-xs">
+        {/* HÀNG 2: NHÂN VIÊN (TRÁI) + TRẠNG THÁI (GIỮA) + THAO TÁC CHÍNH (PHẢI) */}
         <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-200/80">
-          {/* Bên trái: Danh sách nhân viên */}
-          <div className="flex items-center space-x-1 overflow-x-auto scrollbar-thin py-0.5 max-w-full md:max-w-[55%]">
-            <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
+          {/* Trái: Danh sách nhân viên */}
+          <div className="flex items-center space-x-1 overflow-x-auto scrollbar-none py-0.5 max-w-full">
+            <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider shrink-0 mr-0.5 flex items-center gap-0.5">
+              <Users className="w-3 h-3 text-indigo-600" />
               <span>NV:</span>
             </span>
 
-            {/* Tab Tất Cả */}
             <button
               type="button"
               onClick={() => onChangeFilter({ ...filter, staffName: '' })}
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
                 !filter.staffName || filter.staffName === 'all'
                   ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
                   : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
@@ -252,7 +268,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             >
               <span>Tất Cả</span>
               <span
-                className={`px-1 py-0.2 rounded-full text-[10px] font-extrabold ${
+                className={`px-1 rounded-full text-[10px] font-extrabold ${
                   !filter.staffName || filter.staffName === 'all'
                     ? 'bg-white/20 text-white'
                     : 'bg-slate-100 text-slate-700'
@@ -262,7 +278,6 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
               </span>
             </button>
 
-            {/* 📦 Tab Kho Chờ Admin (Chỉ Admin thấy) */}
             {currentUser.role === 'admin' && (
               <button
                 type="button"
@@ -273,16 +288,16 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   })
                 }
                 title={`Kho Chờ Admin (Chưa nhân viên nào dùng): ${waitingPoolRecordsCount} Fanpage đang lưu kho`}
-                className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-extrabold border transition-all cursor-pointer shrink-0 ${
+                className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold border transition-all cursor-pointer shrink-0 ${
                   isAdminWaitingPool(filter.staffName)
-                    ? 'bg-amber-600 text-white border-amber-700 shadow-2xs ring-1 ring-amber-300'
+                    ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
                     : 'bg-amber-50 text-amber-950 border-amber-300 hover:bg-amber-100'
                 }`}
               >
                 <Archive className={`w-3 h-3 ${isAdminWaitingPool(filter.staffName) ? 'text-white' : 'text-amber-700'}`} />
-                <span>📦 Kho Chờ Admin</span>
+                <span>Kho Chờ</span>
                 <span
-                  className={`px-1 py-0.2 rounded-full text-[10px] font-black ${
+                  className={`px-1 rounded-full text-[10px] font-black ${
                     isAdminWaitingPool(filter.staffName)
                       ? 'bg-white/25 text-white'
                       : 'bg-white text-amber-950 border border-amber-300'
@@ -293,7 +308,6 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
               </button>
             )}
 
-            {/* Từng nhân viên */}
             {staffList.map((name) => {
               const nameLower = name.trim().toLowerCase();
               const isSelected = filter.staffName?.trim().toLowerCase() === nameLower;
@@ -310,7 +324,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   type="button"
                   onClick={() => onChangeFilter({ ...filter, staffName: isSelected ? '' : name })}
                   title={`${name}: ${staffPagesCount} Fanpage (✍️ ${manualCount} Đăng Tay • 🤖 ${toolCount} Đăng Tool)`}
-                  className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                  className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
                     isSelected
                       ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
                       : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
@@ -319,37 +333,19 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-500'}`} />
                   <span>{name}</span>
                   <span
-                    className={`px-1 py-0.2 rounded-full text-[10px] font-extrabold ${
+                    className={`px-1 rounded-full text-[10px] font-extrabold ${
                       isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
                     }`}
                   >
                     {staffPagesCount}
                   </span>
-                  {isSelected && (manualCount > 0 || toolCount > 0) && (
-                    <span className="text-[9px] font-mono opacity-90 pl-0.5">
-                      (✍️{manualCount} • 🤖{toolCount})
-                    </span>
-                  )}
                 </button>
               );
             })}
-
-            {filter.staffName && filter.staffName !== 'all' && (
-              <button
-                type="button"
-                onClick={() => onChangeFilter({ ...filter, staffName: '' })}
-                className="inline-flex items-center space-x-0.5 px-1.5 py-0.5 rounded text-[11px] text-slate-500 hover:text-slate-800 hover:bg-slate-200 transition-colors cursor-pointer shrink-0 font-medium"
-                title="Bỏ chọn nhân viên, xem tất cả"
-              >
-                <X className="w-3 h-3" />
-                <span>Bỏ lọc</span>
-              </button>
-            )}
           </div>
 
-          {/* Bên phải: Báo cáo trạng thái tương tác nhanh (Click để lọc ngay) */}
-          <div className="flex items-center flex-wrap gap-1 ml-auto shrink-0">
-            {/* 1. Đề Xuất */}
+          {/* Giữa: Báo cáo trạng thái tương tác nhanh (1-click lọc) */}
+          <div className="flex items-center flex-wrap gap-1">
             <button
               type="button"
               id="status-stat-de-xuat"
@@ -359,26 +355,17 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   status: filter.status === 'Đề Xuất' ? '' : 'Đề Xuất',
                 })
               }
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+              className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer border ${
                 filter.status === 'Đề Xuất'
-                  ? 'bg-[#009b3a] text-white border-[#009b3a] ring-1 ring-[#009b3a]/30'
+                  ? 'bg-[#009b3a] text-white border-[#009b3a]'
                   : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
               }`}
               title="Nhấn để lọc các Page Đang Đề Xuất"
             >
-              <span>🚀 Đề Xuất:</span>
-              <span
-                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
-                  filter.status === 'Đề Xuất'
-                    ? 'bg-white text-[#009b3a]'
-                    : 'bg-emerald-200/80 text-emerald-900'
-                }`}
-              >
-                {deXuatCount}
-              </span>
+              <span>🚀 ĐX:</span>
+              <span className="font-black">{deXuatCount}</span>
             </button>
 
-            {/* 2. Mất Đề Xuất */}
             <button
               type="button"
               id="status-stat-mat-de-xuat"
@@ -388,26 +375,17 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   status: filter.status === 'Mất Đề Xuất' ? '' : 'Mất Đề Xuất',
                 })
               }
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+              className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer border ${
                 filter.status === 'Mất Đề Xuất'
-                  ? 'bg-[#b31412] text-white border-[#b31412] ring-1 ring-[#b31412]/30'
+                  ? 'bg-[#b31412] text-white border-[#b31412]'
                   : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
               }`}
               title="Nhấn để lọc các Page Mất Đề Xuất"
             >
               <span>🔴 Mất ĐX:</span>
-              <span
-                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
-                  filter.status === 'Mất Đề Xuất'
-                    ? 'bg-white text-[#b31412]'
-                    : 'bg-rose-200/80 text-rose-900'
-                }`}
-              >
-                {matDeXuatCount}
-              </span>
+              <span className="font-black">{matDeXuatCount}</span>
             </button>
 
-            {/* 3. Đình Chỉ */}
             <button
               type="button"
               id="status-stat-dinh-chi"
@@ -417,26 +395,17 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   status: filter.status === 'Đình Chỉ' ? '' : 'Đình Chỉ',
                 })
               }
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+              className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer border ${
                 filter.status === 'Đình Chỉ'
-                  ? 'bg-[#d97706] text-white border-[#b45309] ring-1 ring-[#d97706]/30'
+                  ? 'bg-[#d97706] text-white border-[#b45309]'
                   : 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100'
               }`}
               title="Nhấn để lọc các Page Bị Đình Chỉ"
             >
-              <span>⚠️ Đình Chỉ:</span>
-              <span
-                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
-                  filter.status === 'Đình Chỉ'
-                    ? 'bg-white text-[#b45309]'
-                    : 'bg-amber-200/80 text-amber-950'
-                }`}
-              >
-                {dinhChiCount}
-              </span>
+              <span>⚠️ Đ.Chỉ:</span>
+              <span className="font-black">{dinhChiCount}</span>
             </button>
 
-            {/* 4. Bị Back */}
             <button
               type="button"
               id="status-stat-bi-back"
@@ -446,26 +415,17 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   status: filter.status === 'Bị Back' ? '' : 'Bị Back',
                 })
               }
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+              className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer border ${
                 filter.status === 'Bị Back'
-                  ? 'bg-[#673ab7] text-white border-[#673ab7] ring-1 ring-[#673ab7]/30'
+                  ? 'bg-[#673ab7] text-white border-[#673ab7]'
                   : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
               }`}
               title="Nhấn để lọc các Page Bị Back"
             >
-              <span>🟣 Bị Back:</span>
-              <span
-                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
-                  filter.status === 'Bị Back'
-                    ? 'bg-white text-[#673ab7]'
-                    : 'bg-purple-200/80 text-purple-900'
-                }`}
-              >
-                {biBackCount}
-              </span>
+              <span>🟣 Back:</span>
+              <span className="font-black">{biBackCount}</span>
             </button>
 
-            {/* 5. THỐNG KÊ VIA LỖI */}
             <button
               type="button"
               id="status-stat-via-loi"
@@ -475,31 +435,20 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   errorViaOnly: !filter.errorViaOnly,
                 })
               }
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+              className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer border ${
                 filter.errorViaOnly
-                  ? 'bg-[#b31412] text-white border-[#b31412] ring-1 ring-[#b31412]/30'
+                  ? 'bg-[#b31412] text-white border-[#b31412]'
                   : computedErrorViaCount > 0
-                  ? 'bg-rose-100/90 text-rose-900 border-rose-300 hover:bg-rose-200/90'
+                  ? 'bg-rose-100 text-rose-900 border-rose-300 hover:bg-rose-200'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
               }`}
               title="Nhấn để lọc các Fanpage có Nick Via đang bị lỗi"
             >
               <AlertTriangle className={`w-3 h-3 ${filter.errorViaOnly ? 'text-white' : 'text-rose-600'}`} />
               <span>Via Lỗi:</span>
-              <span
-                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
-                  filter.errorViaOnly
-                    ? 'bg-white text-[#b31412]'
-                    : computedErrorViaCount > 0
-                    ? 'bg-rose-600 text-white'
-                    : 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                {computedErrorViaCount}
-              </span>
+              <span className="font-black">{computedErrorViaCount}</span>
             </button>
 
-            {/* 6. Đang Add Via */}
             <button
               type="button"
               id="status-stat-adding-via"
@@ -509,31 +458,20 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   viaTransferFilter: filter.viaTransferFilter === 'adding' ? 'all' : 'adding',
                 })
               }
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+              className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer border ${
                 filter.viaTransferFilter === 'adding'
-                  ? 'bg-amber-500 text-white border-amber-600 ring-1 ring-amber-400/40'
+                  ? 'bg-amber-500 text-white border-amber-600'
                   : addingViaCount > 0
-                  ? 'bg-amber-100/90 text-amber-950 border-amber-300 hover:bg-amber-200'
+                  ? 'bg-amber-100 text-amber-950 border-amber-300 hover:bg-amber-200'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
               }`}
               title="Lọc các Page đang trong quá trình add sang Via mới"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-              <span>Đang Add Via:</span>
-              <span
-                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
-                  filter.viaTransferFilter === 'adding'
-                    ? 'bg-white text-amber-800'
-                    : addingViaCount > 0
-                    ? 'bg-amber-400 text-amber-950'
-                    : 'bg-slate-100 text-slate-700'
-                }`}
-              >
-                {addingViaCount}
-              </span>
+              <span>Đang Add:</span>
+              <span className="font-black">{addingViaCount}</span>
             </button>
 
-            {/* 7. Đã Đổi Xong */}
             <button
               type="button"
               id="status-stat-completed-via"
@@ -543,42 +481,117 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   viaTransferFilter: filter.viaTransferFilter === 'completed' ? 'all' : 'completed',
                 })
               }
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all cursor-pointer border shadow-2xs ${
+              className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md text-[11px] font-bold transition-all cursor-pointer border ${
                 filter.viaTransferFilter === 'completed'
-                  ? 'bg-emerald-600 text-white border-emerald-700 ring-1 ring-emerald-400/40'
+                  ? 'bg-emerald-600 text-white border-emerald-700'
                   : completedViaCount > 0
-                  ? 'bg-emerald-100/90 text-emerald-950 border-emerald-300 hover:bg-emerald-200'
+                  ? 'bg-emerald-100 text-emerald-950 border-emerald-300 hover:bg-emerald-200'
                   : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
               }`}
               title="Lọc các Page đã đổi Via thành công"
             >
               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-              <span>Đã Đổi Xong:</span>
-              <span
-                className={`px-1 py-0.1 rounded-full text-[10px] font-black ${
-                  filter.viaTransferFilter === 'completed'
-                    ? 'bg-white text-emerald-800'
-                    : completedViaCount > 0
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-slate-100 text-slate-700'
-                }`}
+              <span>Đã Đổi:</span>
+              <span className="font-black">{completedViaCount}</span>
+            </button>
+          </div>
+
+          {/* Phải: Các nút thao tác chính (Thêm Page, Lấy Page, Chuyển Via, Nhập/Xuất/Mẫu Excel, Duyệt Bài) */}
+          <div className="flex items-center flex-wrap gap-1 ml-auto shrink-0">
+            {onOpenAddModal && (
+              <button
+                type="button"
+                id="btn-add-page-row"
+                onClick={onOpenAddModal}
+                className="inline-flex items-center space-x-1 px-2.5 py-0.5 text-[11px] font-bold text-white bg-[#2e7d32] hover:bg-[#256629] rounded-md shadow-2xs transition-all cursor-pointer"
+                title="Thêm Fanpage mới vào bảng"
               >
-                {completedViaCount}
-              </span>
+                <Plus className="w-3 h-3" />
+                <span>+ Thêm Page</span>
+              </button>
+            )}
+
+            {onOpenFetchPagesModal && (
+              <button
+                type="button"
+                id="btn-fetch-pages-table-top"
+                onClick={onOpenFetchPagesModal}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md border text-[11px] font-bold transition-all shadow-2xs cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-300"
+                title="Lấy Tên & Link Page từ Nick Via tự động điền lên bảng"
+              >
+                <Zap className="w-3 h-3 text-blue-600 fill-blue-600" />
+                <span>Lấy Page</span>
+              </button>
+            )}
+
+            {onOpenTransferModal && (
+              <button
+                type="button"
+                id="btn-transfer-page-in-filter-bar"
+                onClick={onOpenTransferModal}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md shadow-2xs transition-all cursor-pointer"
+                title="Chuyển Fanpage / Nick Via sang Nhân viên khác hoặc Kho Chờ Admin"
+              >
+                <ArrowRightLeft className="w-3 h-3" />
+                <span>Chuyển Via/Page</span>
+              </button>
+            )}
+
+            {onOpenImportModal && (
+              <button
+                type="button"
+                id="btn-import-excel"
+                onClick={onOpenImportModal}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer"
+                title="Nhập dữ liệu Fanpage từ file Excel (.xlsx) hoặc Copy-Paste"
+              >
+                <Upload className="w-3 h-3 text-slate-600" />
+                <span>Nhập Excel</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              id="btn-export-sheet"
+              onClick={() => exportFanpageToXLSX(records)}
+              className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-md shadow-2xs transition-colors cursor-pointer"
+              title="Xuất danh sách Fanpage ra file Excel (.xlsx)"
+            >
+              <Download className="w-3 h-3 text-slate-600" />
+              <span>Xuất</span>
             </button>
 
-            {/* Tổng số trang */}
-            <span className="text-[11px] text-slate-500 font-medium pl-1 border-l border-slate-200">
-              Tổng: <strong className="text-slate-900 font-black">{staffScopedRecords.length}</strong>
-            </span>
+            <button
+              type="button"
+              id="btn-download-excel-template"
+              onClick={() => downloadFanpageExcelTemplate('xlsx')}
+              className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold text-emerald-900 bg-emerald-100/80 hover:bg-emerald-200 border border-emerald-300 rounded-md shadow-2xs transition-colors cursor-pointer"
+              title="Tải file Excel mẫu chuẩn (.xlsx)"
+            >
+              <FileSpreadsheet className="w-3 h-3 text-emerald-700" />
+              <span>Mẫu</span>
+            </button>
+
+            {onMarkAllDoneToday && (
+              <button
+                type="button"
+                id="btn-mark-all-done-today"
+                onClick={onMarkAllDoneToday}
+                className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-md shadow-2xs transition-colors cursor-pointer"
+                title={`Đánh dấu các page đã hoàn thành đủ số bài đăng hôm nay (${totalActualPosts}/${totalTargetPosts} bài)`}
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>Duyệt Bài ({totalActualPosts}/{totalTargetPosts})</span>
+              </button>
+            )}
           </div>
         </div>
 
-        {/* HÀNG 2: TÌM KIẾM & BỘ LỌC TINH GỌN & THAO TÁC - TOÀN BỘ TRÊN 1 DÒNG DUY NHẤT */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 py-0.5">
-          <div className="flex flex-wrap items-center gap-1.5">
+        {/* HÀNG 3: TÌM KIẾM & BỘ LỌC CHI TIẾT TRÊN 1 DÒNG GỌN GÀNG */}
+        <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5 flex-1">
             {/* Search input */}
-            <div className="relative w-44 sm:w-56">
+            <div className="relative w-44 sm:w-52">
               <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
@@ -590,13 +603,13 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                 }
                 value={filter.search}
                 onChange={(e) => onChangeFilter({ ...filter, search: e.target.value })}
-                className="w-full pl-8 pr-7 py-1 bg-white border border-slate-300 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 text-xs shadow-2xs"
+                className="w-full pl-7 pr-6 py-0.5 bg-white border border-slate-300 rounded-md text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 text-[11px] shadow-2xs"
               />
               {filter.search && (
                 <button
                   type="button"
                   onClick={() => onChangeFilter({ ...filter, search: '' })}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                   title="Xóa tìm kiếm"
                 >
                   <X className="w-3 h-3" />
@@ -608,7 +621,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             <select
               value={filter.viaUid}
               onChange={(e) => onChangeFilter({ ...filter, viaUid: e.target.value })}
-              className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-slate-700 font-medium font-mono text-xs shadow-2xs cursor-pointer max-w-[150px] truncate"
+              className="px-2 py-0.5 bg-white border border-slate-300 rounded-md text-slate-700 font-medium font-mono text-[11px] shadow-2xs cursor-pointer max-w-[140px] truncate"
             >
               <option value="">Tất cả Via ({viaOptions.length})</option>
               {viaOptions.map((v) => (
@@ -622,9 +635,9 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             <select
               value={filter.bmFilter || ''}
               onChange={(e) => onChangeFilter({ ...filter, bmFilter: e.target.value })}
-              className={`px-2 py-1 rounded-lg border text-xs font-medium transition-all shadow-2xs cursor-pointer max-w-[140px] truncate ${
+              className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-all shadow-2xs cursor-pointer max-w-[130px] truncate ${
                 filter.bmFilter
-                  ? 'bg-emerald-50 text-emerald-950 border-emerald-400 font-bold ring-1 ring-emerald-300'
+                  ? 'bg-emerald-50 text-emerald-950 border-emerald-400 font-bold'
                   : 'bg-white text-slate-700 border-slate-300'
               }`}
               title="Lọc Fanpage theo Ghi chú BM"
@@ -642,7 +655,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             <select
               value={filter.blockStatus}
               onChange={(e) => onChangeFilter({ ...filter, blockStatus: e.target.value })}
-              className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-slate-700 font-medium text-xs shadow-2xs cursor-pointer"
+              className="px-2 py-0.5 bg-white border border-slate-300 rounded-md text-slate-700 font-medium text-[11px] shadow-2xs cursor-pointer"
             >
               <option value="">Tất cả Chặn</option>
               <option value="Chặn VN">🚫 Chặn VN</option>
@@ -654,7 +667,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             <select
               value={filter.likeCountStatus || ''}
               onChange={(e) => onChangeFilter({ ...filter, likeCountStatus: e.target.value })}
-              className={`px-2 py-1 border rounded-lg font-medium transition-colors text-xs shadow-2xs cursor-pointer ${
+              className={`px-2 py-0.5 border rounded-md font-medium transition-colors text-[11px] shadow-2xs cursor-pointer ${
                 filter.likeCountStatus === 'Bỏ Đếm Like'
                   ? 'bg-rose-600 text-white border-rose-700 font-bold'
                   : 'bg-white border-slate-300 text-slate-700'
@@ -666,11 +679,11 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             </select>
 
             {/* Tiến độ: Segmented control (Đang làm / Không làm) */}
-            <div className="flex items-center space-x-0.5 bg-slate-200/80 p-0.5 rounded-lg border border-slate-300">
+            <div className="flex items-center space-x-0.5 bg-slate-200/80 p-0.5 rounded-md border border-slate-300">
               <button
                 type="button"
                 onClick={() => onChangeFilter({ ...filter, completionFilter: 'all' })}
-                className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[10px] font-medium transition-colors cursor-pointer ${
                   filter.completionFilter === 'all'
                     ? 'bg-white text-slate-900 font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -681,7 +694,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
               <button
                 type="button"
                 onClick={() => onChangeFilter({ ...filter, completionFilter: 'completed' })}
-                className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[10px] font-medium transition-colors cursor-pointer ${
                   filter.completionFilter === 'completed'
                     ? 'bg-emerald-600 text-white font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -692,7 +705,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
               <button
                 type="button"
                 onClick={() => onChangeFilter({ ...filter, completionFilter: 'in_progress' })}
-                className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
+                className={`px-1.5 py-0.2 rounded text-[10px] font-medium transition-colors cursor-pointer ${
                   filter.completionFilter === 'in_progress'
                     ? 'bg-rose-600 text-white font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -706,7 +719,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             <button
               type="button"
               onClick={() => onChangeFilter({ ...filter, fixedViaOnly: !filter.fixedViaOnly })}
-              className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg border text-xs font-bold transition-all cursor-pointer shadow-2xs ${
+              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md border text-[11px] font-bold transition-all cursor-pointer shadow-2xs ${
                 filter.fixedViaOnly
                   ? 'bg-emerald-600 text-white border-emerald-700'
                   : computedFixedViaCount > 0
@@ -723,9 +736,9 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
             <select
               value={filter.viaTransferFilter || 'all'}
               onChange={(e) => onChangeFilter({ ...filter, viaTransferFilter: e.target.value })}
-              className={`px-2 py-1 rounded-lg border text-xs font-bold transition-all shadow-2xs cursor-pointer ${
+              className={`px-2 py-0.5 rounded-md border text-[11px] font-bold transition-all shadow-2xs cursor-pointer ${
                 filter.viaTransferFilter && filter.viaTransferFilter !== 'all'
-                  ? 'bg-amber-100 text-amber-950 border-amber-400 ring-1 ring-amber-300'
+                  ? 'bg-amber-100 text-amber-950 border-amber-400'
                   : 'bg-white text-slate-700 border-slate-300'
               }`}
               title="Lọc theo ghi chú & tiến độ đổi Via của Admin"
@@ -739,32 +752,16 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
               <option value="failed">⚠️ Lỗi add</option>
               <option value="has_note">📝 Có ghi chú đổi ({hasTransferNoteCount})</option>
             </select>
-          </div>
 
-          {/* Nhóm nút tác vụ bên phải */}
-          <div className="flex items-center space-x-1.5 ml-auto shrink-0">
             {hasActiveFilters && (
               <button
                 type="button"
                 onClick={handleClear}
-                className="inline-flex items-center space-x-1 px-2 py-1 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition-colors cursor-pointer shadow-2xs"
+                className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-md transition-colors cursor-pointer"
                 title="Xóa tất cả các bộ lọc đang chọn"
               >
                 <X className="w-3 h-3" />
                 <span>Đặt lại lọc</span>
-              </button>
-            )}
-
-            {onOpenTransferModal && (
-              <button
-                type="button"
-                id="btn-transfer-page-in-filter-bar"
-                onClick={onOpenTransferModal}
-                className="inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-lg shadow-2xs transition-all cursor-pointer shrink-0"
-                title="Chuyển Fanpage sang Nick Via khác"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5" />
-                <span>Chuyển Page Qua Via</span>
               </button>
             )}
           </div>
@@ -773,4 +770,3 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     </div>
   );
 };
-
