@@ -250,35 +250,35 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
       <div className="flex flex-col gap-1.5 text-xs">
         {/* HÀNG 2: NHÂN VIÊN (TRÁI) + TRẠNG THÁI (GIỮA) + THAO TÁC CHÍNH (PHẢI) */}
         <div className="flex flex-wrap items-center justify-between gap-1.5 pb-1 border-b border-slate-200/80">
-          {/* Trái: Danh sách nhân viên */}
-          <div className="flex items-center space-x-1 overflow-x-auto scrollbar-none py-0.5 max-w-full">
-            <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider shrink-0 mr-0.5 flex items-center gap-0.5">
-              <Users className="w-3 h-3 text-indigo-600" />
-              <span>NV:</span>
-            </span>
+          {/* Trái: Danh sách nhân viên (Chỉ hiển thị cho Admin; ẩn ở góc nhìn Nhân viên vì đã lọc riêng theo NV đó) */}
+          {currentUser.role === 'admin' && (
+            <div className="flex items-center space-x-1 overflow-x-auto scrollbar-none py-0.5 max-w-full">
+              <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider shrink-0 mr-0.5 flex items-center gap-0.5">
+                <Users className="w-3 h-3 text-indigo-600" />
+                <span>NV:</span>
+              </span>
 
-            <button
-              type="button"
-              onClick={() => onChangeFilter({ ...filter, staffName: '' })}
-              className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
-                !filter.staffName || filter.staffName === 'all'
-                  ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
-                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-              }`}
-            >
-              <span>Tất Cả</span>
-              <span
-                className={`px-1 rounded-full text-[10px] font-extrabold ${
+              <button
+                type="button"
+                onClick={() => onChangeFilter({ ...filter, staffName: '' })}
+                className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
                   !filter.staffName || filter.staffName === 'all'
-                    ? 'bg-white/20 text-white'
-                    : 'bg-slate-100 text-slate-700'
+                    ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                    : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                 }`}
               >
-                {records.length}
-              </span>
-            </button>
+                <span>Tất Cả</span>
+                <span
+                  className={`px-1 rounded-full text-[10px] font-extrabold ${
+                    !filter.staffName || filter.staffName === 'all'
+                      ? 'bg-white/20 text-white'
+                      : 'bg-slate-100 text-slate-700'
+                  }`}
+                >
+                  {records.length}
+                </span>
+              </button>
 
-            {currentUser.role === 'admin' && (
               <button
                 type="button"
                 onClick={() =>
@@ -306,43 +306,43 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   {waitingPoolRecordsCount}
                 </span>
               </button>
-            )}
 
-            {staffList.map((name) => {
-              const nameLower = name.trim().toLowerCase();
-              const isSelected = filter.staffName?.trim().toLowerCase() === nameLower;
-              const staffRecords = records.filter(
-                (r) => (r.staffName || '').trim().toLowerCase() === nameLower
-              );
-              const staffPagesCount = staffRecords.length;
-              const manualCount = staffRecords.filter((r) => r.postingMethod === 'Đăng Tay').length;
-              const toolCount = staffRecords.filter((r) => r.postingMethod === 'Tool').length;
+              {staffList.map((name) => {
+                const nameLower = name.trim().toLowerCase();
+                const isSelected = filter.staffName?.trim().toLowerCase() === nameLower;
+                const staffRecords = records.filter(
+                  (r) => (r.staffName || '').trim().toLowerCase() === nameLower
+                );
+                const staffPagesCount = staffRecords.length;
+                const manualCount = staffRecords.filter((r) => r.postingMethod === 'Đăng Tay').length;
+                const toolCount = staffRecords.filter((r) => r.postingMethod === 'Tool').length;
 
-              return (
-                <button
-                  key={name}
-                  type="button"
-                  onClick={() => onChangeFilter({ ...filter, staffName: isSelected ? '' : name })}
-                  title={`${name}: ${staffPagesCount} Fanpage (✍️ ${manualCount} Đăng Tay • 🤖 ${toolCount} Đăng Tool)`}
-                  className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
-                    isSelected
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-                  }`}
-                >
-                  <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-500'}`} />
-                  <span>{name}</span>
-                  <span
-                    className={`px-1 rounded-full text-[10px] font-extrabold ${
-                      isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                return (
+                  <button
+                    key={name}
+                    type="button"
+                    onClick={() => onChangeFilter({ ...filter, staffName: isSelected ? '' : name })}
+                    title={`${name}: ${staffPagesCount} Fanpage (✍️ ${manualCount} Đăng Tay • 🤖 ${toolCount} Đăng Tool)`}
+                    className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
+                      isSelected
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                     }`}
                   >
-                    {staffPagesCount}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-500'}`} />
+                    <span>{name}</span>
+                    <span
+                      className={`px-1 rounded-full text-[10px] font-extrabold ${
+                        isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {staffPagesCount}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Giữa: Báo cáo trạng thái tương tác nhanh (1-click lọc) */}
           <div className="flex items-center flex-wrap gap-1">
