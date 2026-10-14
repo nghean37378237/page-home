@@ -300,10 +300,18 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
       const totalActual = staffRecords.reduce((s, r) => s + (r.actualPosts || 0), 0);
       const totalTarget = staffRecords.reduce((s, r) => s + (r.targetPosts || 0), 0);
 
+      const doingPages = staffRecords.filter((r) =>
+        r.progressStatus
+          ? r.progressStatus === 'Đang làm'
+          : Boolean(r.isCompleted || (r.targetPosts > 0 && r.actualPosts >= r.targetPosts))
+      ).length;
+      const notDoingPages = totalPages - doingPages;
+      const doingRatio = totalPages > 0 ? Math.round((doingPages / totalPages) * 100) : 0;
+
       const manualRatio = totalPages > 0 ? Math.round((manualPages / totalPages) * 100) : 0;
       const toolRatio = totalPages > 0 ? Math.round((toolPages / totalPages) * 100) : 0;
 
-      const completionRate = totalTarget > 0 ? Math.round((totalActual / totalTarget) * 100) : (totalPages > 0 ? 100 : 0);
+      const completionRate = doingRatio;
 
       return {
         id: account?.id || `staff-${staffNameLower}`,
@@ -313,6 +321,9 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
         status: account?.status || 'approved',
         totalPages,
         viasCount: staffVias.length,
+        doingPages,
+        notDoingPages,
+        doingRatio,
         manualPages,
         manualActual,
         manualTarget,
@@ -348,9 +359,9 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     } else if (postingStatsFilter === 'has_tool') {
       list = list.filter((s) => s.toolPages > 0);
     } else if (postingStatsFilter === 'completed') {
-      list = list.filter((s) => s.totalTarget > 0 && s.totalActual >= s.totalTarget);
+      list = list.filter((s) => s.doingPages > 0);
     } else if (postingStatsFilter === 'incomplete') {
-      list = list.filter((s) => s.totalTarget > 0 && s.totalActual < s.totalTarget);
+      list = list.filter((s) => s.notDoingPages > 0);
     }
 
     // Sắp xếp linh hoạt
@@ -360,7 +371,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
       if (postingStatsSort === 'tool_desc') return b.toolPages - a.toolPages;
       if (postingStatsSort === 'manual_ratio_desc') return b.manualRatio - a.manualRatio;
       if (postingStatsSort === 'tool_ratio_desc') return b.toolRatio - a.toolRatio;
-      if (postingStatsSort === 'completion_desc') return b.completionRate - a.completionRate;
+      if (postingStatsSort === 'completion_desc') return b.doingPages - a.doingPages;
       if (postingStatsSort === 'name_asc') return a.username.localeCompare(b.username, 'vi');
       return b.totalPages - a.totalPages;
     });
@@ -368,11 +379,13 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     return list;
   }, [rawStaffPostingStats, postingStatsSearch, postingStatsFilter, postingStatsSort]);
 
-  // Tổng hợp Đăng Tay vs Tool toàn đội (tính trên toàn bộ rawStaffPostingStats)
+  // Tổng hợp Đăng Tay vs Tool & Đang làm vs Không làm toàn đội
   const teamPostingSummary = useMemo(() => {
     let totalManualPages = 0;
     let totalToolPages = 0;
     let totalTimerPages = 0;
+    let totalDoingPages = 0;
+    let totalNotDoingPages = 0;
     let totalManualActual = 0;
     let totalManualTarget = 0;
     let totalToolActual = 0;
@@ -385,6 +398,8 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
       totalManualPages += s.manualPages;
       totalToolPages += s.toolPages;
       totalTimerPages += s.timerPages;
+      totalDoingPages += s.doingPages;
+      totalNotDoingPages += s.notDoingPages;
       totalManualActual += s.manualActual;
       totalManualTarget += s.manualTarget;
       totalToolActual += s.toolActual;
@@ -396,12 +411,16 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
 
     const manualRatio = totalPagesAll > 0 ? Math.round((totalManualPages / totalPagesAll) * 100) : 0;
     const toolRatio = totalPagesAll > 0 ? Math.round((totalToolPages / totalPagesAll) * 100) : 0;
-    const completionRate = totalTargetAll > 0 ? Math.round((totalActualAll / totalTargetAll) * 100) : (totalPagesAll > 0 ? 100 : 0);
+    const doingRatio = totalPagesAll > 0 ? Math.round((totalDoingPages / totalPagesAll) * 100) : 0;
+    const completionRate = doingRatio;
 
     return {
       totalManualPages,
       totalToolPages,
       totalTimerPages,
+      totalDoingPages,
+      totalNotDoingPages,
+      doingRatio,
       totalManualActual,
       totalManualTarget,
       totalToolActual,
@@ -1325,23 +1344,26 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 </div>
               </div>
 
-              {/* Card 4: Tổng Tiến Độ Bài Đăng Toàn Đội */}
-              <div className="p-3.5 bg-gradient-to-br from-blue-50 to-sky-50 border-2 border-blue-200 rounded-xl shadow-2xs space-y-1">
-                <div className="text-xs font-black text-blue-950 uppercase tracking-wide flex items-center justify-between">
-                  <span>Tiến Độ Đăng Bài Hôm Nay</span>
-                  <span className="text-[10px] font-mono bg-blue-200 text-blue-900 px-1.5 py-0.2 rounded font-bold">
-                    {teamPostingSummary.completionRate}%
+              {/* Card 4: Tổng Tiến Độ Page Đang Làm / Không Làm Toàn Đội */}
+              <div className="p-3.5 bg-gradient-to-br from-emerald-50 via-white to-rose-50 border-2 border-emerald-200 rounded-xl shadow-2xs space-y-1.5">
+                <div className="text-xs font-black text-slate-900 uppercase tracking-wide flex items-center justify-between">
+                  <span>Tiến Độ Page (Đang Làm / Không Làm)</span>
+                  <span className="text-[10px] font-mono bg-emerald-100 text-emerald-900 px-1.5 py-0.2 rounded font-bold border border-emerald-300">
+                    {teamPostingSummary.doingRatio}% Đang làm
                   </span>
                 </div>
-                <div className="text-2xl font-black text-blue-900 font-mono">
-                  {teamPostingSummary.totalActualAll} <span className="text-xs font-sans font-bold text-blue-600">/ {teamPostingSummary.totalTargetAll} bài</span>
+                <div className="flex items-center justify-between gap-2 pt-0.5">
+                  <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 font-black text-xs border border-emerald-300">
+                    <span>🟢 {teamPostingSummary.totalDoingPages} Đang làm</span>
+                  </span>
+                  <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-lg bg-rose-100 text-rose-900 font-black text-xs border border-rose-300">
+                    <span>🔴 {teamPostingSummary.totalNotDoingPages} Không làm</span>
+                  </span>
                 </div>
-                <div className="w-full h-2 bg-blue-100 rounded-full overflow-hidden mt-1 shadow-inner">
+                <div className="w-full h-2.5 bg-rose-200 rounded-full overflow-hidden shadow-inner flex">
                   <div
-                    style={{ width: `${Math.min(100, teamPostingSummary.completionRate)}%` }}
-                    className={`h-full rounded-full transition-all ${
-                      teamPostingSummary.completionRate >= 100 ? 'bg-emerald-500' : 'bg-blue-600'
-                    }`}
+                    style={{ width: `${Math.min(100, teamPostingSummary.doingRatio)}%` }}
+                    className="h-full bg-emerald-500 transition-all"
                   />
                 </div>
               </div>
@@ -1477,7 +1499,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                       🤖 ĐĂNG TOOL (Bấm xem Page)
                     </th>
                     <th className="py-2.5 px-3 text-center min-w-[140px]">Tỷ Lệ Tay / Tool</th>
-                    <th className="py-2.5 px-3 text-center min-w-[130px]">Tiến Độ Hôm Nay</th>
+                    <th className="py-2.5 px-3 text-center min-w-[165px]">🟢 Đang Làm / 🔴 Không Làm</th>
                     <th className="py-2.5 px-3 text-center min-w-[90px]">Nick Via</th>
                     <th className="py-2.5 px-3 text-center min-w-[140px]">Thao Tác</th>
                   </tr>
@@ -1491,8 +1513,6 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                     </tr>
                   ) : (
                     staffPostingStats.map((stat, idx) => {
-                      const isDone = stat.totalTarget > 0 && stat.totalActual >= stat.totalTarget;
-
                       return (
                         <tr key={stat.id} className="hover:bg-slate-50/90 transition-colors">
                           {/* STT */}
@@ -1546,10 +1566,6 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                   {stat.manualRatio}%
                                 </span>
                               </div>
-                              <div className="text-[11px] text-slate-600 font-mono">
-                                Đã đăng: <strong className="text-emerald-700 font-black">{stat.manualActual}</strong>
-                                <span className="text-slate-400"> / {stat.manualTarget} bài</span>
-                              </div>
                             </div>
                           </td>
 
@@ -1567,10 +1583,6 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                 <span className="text-[10px] font-black font-mono text-purple-800 bg-purple-100 px-1.5 py-0.2 rounded">
                                   {stat.toolRatio}%
                                 </span>
-                              </div>
-                              <div className="text-[11px] text-slate-600 font-mono">
-                                Đã đăng: <strong className="text-purple-700 font-black">{stat.toolActual}</strong>
-                                <span className="text-slate-400"> / {stat.toolTarget} bài</span>
                               </div>
                             </div>
                           </td>
@@ -1601,29 +1613,28 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                             )}
                           </td>
 
-                          {/* Tiến độ hôm nay */}
+                          {/* Thống kê Page Đang làm vs Không làm */}
                           <td className="py-3 px-3 text-center">
-                            <div className="space-y-0.5">
-                              <span className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-full text-[10px] font-black ${
-                                isDone
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : stat.totalActual > 0
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-slate-100 text-slate-500'
-                              }`}>
-                                {isDone ? (
-                                  <>
-                                    <Check className="w-3 h-3 text-emerald-600" />
-                                    <span>Đạt Chỉ Tiêu</span>
-                                  </>
-                                ) : (
-                                  <span>{stat.completionRate}%</span>
-                                )}
-                              </span>
-                              <div className="text-[10px] text-slate-500 font-mono">
-                                {stat.totalActual}/{stat.totalTarget} bài
+                            {stat.totalPages > 0 ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 font-black text-[10.5px] border border-emerald-300">
+                                    🟢 {stat.doingPages} Đang làm
+                                  </span>
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-rose-100 text-rose-900 font-black text-[10.5px] border border-rose-300">
+                                    🔴 {stat.notDoingPages} K.làm
+                                  </span>
+                                </div>
+                                <div className="w-full h-2 bg-rose-200 rounded-full overflow-hidden flex shadow-inner">
+                                  <div
+                                    style={{ width: `${stat.doingRatio}%` }}
+                                    className="bg-emerald-500 h-full"
+                                  />
+                                </div>
                               </div>
-                            </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 italic">0 Page</span>
+                            )}
                           </td>
 
                           {/* Nick Via */}
@@ -1917,14 +1928,41 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                             <span>{staffGroupsCount} Grp</span>
                           </span>
                         </div>
-                        {/* Chi tiết Đăng Tay vs Tool của nhân viên */}
+                        {/* Chi tiết Đang Làm / Không Làm & Đăng Tay / Tool của nhân viên */}
                         {staffPagesCount > 0 && (
                           <div className="mt-1.5 flex flex-col items-center justify-center gap-1 text-[10px]">
+                            {(() => {
+                              const staffRecs = records.filter(
+                                (r) => r.staffName?.trim().toLowerCase() === staffNameLower
+                              );
+                              const doingCnt = staffRecs.filter((r) =>
+                                r.progressStatus
+                                  ? r.progressStatus === 'Đang làm'
+                                  : Boolean(r.isCompleted || (r.targetPosts > 0 && r.actualPosts >= r.targetPosts))
+                              ).length;
+                              const notDoingCnt = staffRecs.length - doingCnt;
+                              return (
+                                <div className="flex items-center justify-center gap-1">
+                                  <span
+                                    className="inline-flex items-center space-x-0.5 bg-emerald-100 text-emerald-900 font-black px-2 py-0.5 rounded border border-emerald-300 shadow-2xs"
+                                    title={`${doingCnt} Fanpage đang làm`}
+                                  >
+                                    <span>🟢 {doingCnt} Đang làm</span>
+                                  </span>
+                                  <span
+                                    className="inline-flex items-center space-x-0.5 bg-rose-100 text-rose-900 font-black px-2 py-0.5 rounded border border-rose-300 shadow-2xs"
+                                    title={`${notDoingCnt} Fanpage không làm`}
+                                  >
+                                    <span>🔴 {notDoingCnt} Không làm</span>
+                                  </span>
+                                </div>
+                              );
+                            })()}
                             <div className="flex items-center justify-center gap-1">
                               <button
                                 type="button"
                                 onClick={() => setInspectStaffModal({ staffName: acc.username, tab: 'manual' })}
-                                className="inline-flex items-center space-x-0.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-black px-2 py-0.5 rounded border border-emerald-300 shadow-2xs cursor-pointer transition-colors"
+                                className="inline-flex items-center space-x-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 font-bold px-2 py-0.5 rounded border border-emerald-200 shadow-2xs cursor-pointer transition-colors"
                                 title={`Bấm xem danh sách ${records.filter((r) => r.staffName?.trim().toLowerCase() === staffNameLower && r.postingMethod === 'Đăng Tay').length} Fanpage đăng tay`}
                               >
                                 <PenTool className="w-2.5 h-2.5 text-emerald-700" />
@@ -1933,7 +1971,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                               <button
                                 type="button"
                                 onClick={() => setInspectStaffModal({ staffName: acc.username, tab: 'tool' })}
-                                className="inline-flex items-center space-x-0.5 bg-purple-100 hover:bg-purple-200 text-purple-900 font-black px-2 py-0.5 rounded border border-purple-300 shadow-2xs cursor-pointer transition-colors"
+                                className="inline-flex items-center space-x-0.5 bg-purple-50 hover:bg-purple-100 text-purple-900 font-bold px-2 py-0.5 rounded border border-purple-200 shadow-2xs cursor-pointer transition-colors"
                                 title={`Bấm xem danh sách ${records.filter((r) => r.staffName?.trim().toLowerCase() === staffNameLower && r.postingMethod === 'Tool').length} Fanpage đăng tool`}
                               >
                                 <Bot className="w-2.5 h-2.5 text-purple-700" />
