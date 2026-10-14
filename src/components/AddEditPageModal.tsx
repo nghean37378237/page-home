@@ -167,7 +167,11 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       setViaTransferColor(initialRecord.viaTransferColor || 'gray');
       setTargetPosts(initialRecord.targetPosts ?? 3);
       setActualPosts(initialRecord.actualPosts ?? 0);
-      setIsCompleted(initialRecord.isCompleted ?? false);
+      setIsCompleted(
+        initialRecord.progressStatus
+          ? initialRecord.progressStatus === 'Đang làm'
+          : (initialRecord.isCompleted ?? true)
+      );
       setIsMultiPageMode(false);
       setBatchPageNamesText('');
     } else if (presetViaData) {
@@ -286,7 +290,8 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
         viaTransferColor: viaTransferColor !== 'gray' ? viaTransferColor : undefined,
         targetPosts: Number(targetPosts) || 1,
         actualPosts: Number(actualPosts) || 0,
-        isCompleted: isCompleted || Number(actualPosts) >= (Number(targetPosts) || 1),
+        progressStatus: isCompleted ? 'Đang làm' : 'Không làm',
+        isCompleted,
       }));
 
       if (onSaveBatch) {
@@ -328,7 +333,8 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       viaTransferColor: viaTransferColor !== 'gray' ? viaTransferColor : undefined,
       targetPosts: Number(targetPosts) || 1,
       actualPosts: Number(actualPosts) || 0,
-      isCompleted: isCompleted || Number(actualPosts) >= (Number(targetPosts) || 1),
+      progressStatus: isCompleted ? 'Đang làm' : 'Không làm',
+      isCompleted,
     });
 
     onClose();
@@ -860,53 +866,34 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
             </div>
           </div>
 
-          {/* Row 5: TIẾN ĐỘ BÀI ĐĂNG */}
+          {/* Row 5: TIẾN ĐỘ (ĐANG LÀM / KHÔNG LÀM) */}
           <div className="bg-emerald-50/50 border border-emerald-200 rounded-lg p-3">
             <span className="font-bold text-emerald-950 block mb-2">
-              Tiến Độ Đăng Bài Hôm Nay
+              Tiến Độ (Đang làm / Không làm)
             </span>
-            <div className="grid grid-cols-3 gap-3">
-              <div>
-                <label className="block text-slate-600 mb-1">Chỉ tiêu (bài/ngày)</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={targetPosts}
-                  onChange={(e) => setTargetPosts(Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md font-bold text-slate-900 text-center"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-600 mb-1">Đã đăng hôm nay</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="50"
-                  value={actualPosts}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setActualPosts(val);
-                    if (val >= targetPosts) {
-                      setIsCompleted(true);
-                    }
-                  }}
-                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-md font-bold text-slate-900 text-center"
-                />
-              </div>
-
-              <div className="flex items-center pt-4">
-                <label className="flex items-center space-x-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={isCompleted}
-                    onChange={(e) => setIsCompleted(e.target.checked)}
-                    className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
-                  />
-                  <span className="font-bold text-slate-800">Đã xong bài hôm nay</span>
-                </label>
-              </div>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setIsCompleted(true)}
+                className={`py-2 px-3 rounded-lg font-bold text-xs border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                  isCompleted
+                    ? 'bg-[#009b3a] text-white border-emerald-700 shadow-xs'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-emerald-50'
+                }`}
+              >
+                <span>🟢 Đang làm</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsCompleted(false)}
+                className={`py-2 px-3 rounded-lg font-bold text-xs border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                  !isCompleted
+                    ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                    : 'bg-white text-slate-600 border-slate-300 hover:bg-rose-50'
+                }`}
+              >
+                <span>🔴 Không làm</span>
+              </button>
             </div>
           </div>
 

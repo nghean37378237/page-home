@@ -626,7 +626,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
               <option value="Bỏ Đếm Like" className="bg-white text-rose-600 font-bold">🚫 Bỏ Đếm Like</option>
             </select>
 
-            {/* Tiến độ bài: Segmented control */}
+            {/* Tiến độ: Segmented control (Đang làm / Không làm) */}
             <div className="flex items-center space-x-0.5 bg-slate-200/80 p-0.5 rounded-lg border border-slate-300">
               <button
                 type="button"
@@ -637,7 +637,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Tất cả bài
+                Tất cả
               </button>
               <button
                 type="button"
@@ -648,18 +648,18 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Xong bài
+                Đang làm
               </button>
               <button
                 type="button"
                 onClick={() => onChangeFilter({ ...filter, completionFilter: 'in_progress' })}
                 className={`px-1.5 py-0.5 rounded text-[11px] font-medium transition-colors cursor-pointer ${
                   filter.completionFilter === 'in_progress'
-                    ? 'bg-amber-600 text-white font-bold shadow-2xs'
+                    ? 'bg-rose-600 text-white font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Chưa đủ
+                Không làm
               </button>
             </div>
 

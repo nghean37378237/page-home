@@ -14,6 +14,10 @@ export type LikeCountStatus =
   | 'Đếm Like'
   | 'Bỏ Đếm Like';
 
+export type ProgressStatus =
+  | 'Đang làm'
+  | 'Không làm';
+
 export type PostingMethod =
   | 'Đăng Tay'
   | 'Tool'
@@ -150,6 +154,7 @@ export interface PageRecord {
   likeCountStatus?: LikeCountStatus; // ĐẾM LIKE (Có 2 trạng thái: 'Đếm Like' | 'Bỏ Đếm Like', Mặc định: 'Đếm Like')
   postingMethod: PostingMethod; // ĐĂNG TAY, TOOL (Cột I)
   postingDate?: string; // Ngày chọn Đăng Tay (tự động ghi nhận khi chọn Đăng Tay)
+  progressStatus?: ProgressStatus; // TIẾN ĐỘ (Có 2 trạng thái: 'Đang làm' | 'Không làm')
   interaction: InteractionQuality; // TƯƠNG TÁC (Cột J)
   interactionDate?: string; // Ngày Tương Tác (Cột K, tự động nhảy theo ngày hiện tại khi chọn trạng thái cột tương tác)
   bmNote: string; // GHI CHÚ BM (VD: 'B-BM ANH QUYNH')

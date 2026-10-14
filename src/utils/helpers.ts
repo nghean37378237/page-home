@@ -1,4 +1,4 @@
-import { PageRecord, PageStatus, BlockStatus, LikeCountStatus, PostingMethod, InteractionQuality } from '../types';
+import { PageRecord, PageStatus, BlockStatus, LikeCountStatus, ProgressStatus, PostingMethod, InteractionQuality } from '../types';
 
 export const PAGE_STATUS_OPTIONS: PageStatus[] = [
   'Đề Xuất',
@@ -17,6 +17,11 @@ export const BLOCK_STATUS_OPTIONS: BlockStatus[] = [
 export const LIKE_COUNT_OPTIONS: LikeCountStatus[] = [
   'Đếm Like',
   'Bỏ Đếm Like',
+];
+
+export const PROGRESS_STATUS_OPTIONS: ProgressStatus[] = [
+  'Đang làm',
+  'Không làm',
 ];
 
 export const POSTING_METHOD_OPTIONS: PostingMethod[] = [
@@ -68,6 +73,16 @@ export function getLikeCountBadgeStyle(status?: LikeCountStatus): string {
     case 'Đếm Like':
     default:
       return 'bg-blue-50 text-blue-700 border border-blue-200 font-bold';
+  }
+}
+
+export function getProgressBadgeStyle(status?: ProgressStatus): string {
+  switch (status) {
+    case 'Không làm':
+      return 'bg-rose-600 text-white font-bold border border-rose-700 shadow-2xs';
+    case 'Đang làm':
+    default:
+      return 'bg-[#009b3a] text-white font-bold border border-emerald-700 shadow-2xs';
   }
 }
 

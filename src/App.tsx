@@ -952,9 +952,11 @@ export default function App() {
       }
 
       if (filter.completionFilter !== 'all') {
-        const isDone = r.isCompleted || (r.targetPosts > 0 && r.actualPosts >= r.targetPosts);
-        if (filter.completionFilter === 'completed' && !isDone) return false;
-        if (filter.completionFilter === 'in_progress' && isDone) return false;
+        const isDoing = r.progressStatus
+          ? r.progressStatus === 'Đang làm'
+          : r.isCompleted || (r.targetPosts > 0 && r.actualPosts >= r.targetPosts);
+        if (filter.completionFilter === 'completed' && !isDoing) return false;
+        if (filter.completionFilter === 'in_progress' && isDoing) return false;
       }
 
       if (filter.viaTransferFilter && filter.viaTransferFilter !== 'all') {

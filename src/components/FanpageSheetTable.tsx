@@ -45,6 +45,7 @@ import {
   PageStatus,
   BlockStatus,
   LikeCountStatus,
+  ProgressStatus,
   PostingMethod,
   InteractionQuality,
   AppUser,
@@ -57,11 +58,13 @@ import {
   PAGE_STATUS_OPTIONS,
   BLOCK_STATUS_OPTIONS,
   LIKE_COUNT_OPTIONS,
+  PROGRESS_STATUS_OPTIONS,
   POSTING_METHOD_OPTIONS,
   INTERACTION_OPTIONS,
   getStatusBadgeStyle,
   getBlockBadgeStyle,
   getLikeCountBadgeStyle,
+  getProgressBadgeStyle,
   getPostingMethodBadgeStyle,
   getInteractionBadgeStyle,
   getCleanBmName,
@@ -1369,7 +1372,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
           }`}
         >
           <table className="w-full min-w-[1360px] border-collapse text-left text-xs font-sans">
-            {/* Sheet row labels (A, B, C, D, E, F, G, H, I, J, K, L, M, N) */}
+            {/* Sheet row labels (A..O + Thao Tác = 16 columns) */}
             <thead className="sticky top-0 z-20 shadow-xs">
               <tr className="bg-[#f3f4f6] text-slate-500 text-[10px] font-mono border-b border-slate-300 h-5">
                 <th className="w-8 min-w-[32px] px-0.5 py-0.5 text-center border-r border-slate-300 font-normal">#</th>
@@ -1378,14 +1381,15 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-32 min-w-[115px] max-w-[140px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">D</th>
                 <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">E</th>
                 <th className="w-24 min-w-[82px] max-w-[95px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">F</th>
-                <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">G</th>
+                <th className="w-11 min-w-[40px] max-w-[46px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">G</th>
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">H</th>
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">I</th>
-                <th className="w-32 min-w-[125px] max-w-[145px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-emerald-800">J - ĐĂNG BÀI & TIẾN ĐỘ</th>
-                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">K</th>
-                <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
-                <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-slate-700">M - BM</th>
-                <th className="w-48 min-w-[190px] max-w-[225px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">N - ĐỔI VIA</th>
+                <th className="w-14 min-w-[54px] max-w-[62px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-emerald-800">J</th>
+                <th className="w-18 min-w-[66px] max-w-[76px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-emerald-800">K</th>
+                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
+                <th className="w-11 min-w-[38px] max-w-[44px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">M</th>
+                <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-slate-700">N - BM</th>
+                <th className="w-48 min-w-[190px] max-w-[225px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">O - ĐỔI VIA</th>
                 <th className="w-20 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center font-normal border-l border-slate-300">Thao Tác</th>
               </tr>
 
@@ -1428,7 +1432,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-24 min-w-[82px] max-w-[95px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]">
                   TRẠNG THÁI
                 </th>
-                <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]">
+                <th className="w-11 min-w-[40px] max-w-[46px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[9.5px]">
                   NGÀY
                 </th>
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]">
@@ -1437,19 +1441,18 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]" title="Đếm Like">
                   ĐẾM LIKE
                 </th>
-                <th className="w-20 min-w-[75px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Phương thức đăng bài (Đăng Tay / Tool)">
+                <th className="w-14 min-w-[54px] max-w-[62px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[9.5px] leading-tight" title="Phương thức đăng bài (Đăng Tay / Tool)">
                   ĐĂNG BÀI
                 </th>
-                <th className="w-24 min-w-[85px] max-w-[105px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Tiến độ bài đăng hôm nay">
+                <th className="w-18 min-w-[66px] max-w-[76px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[9.5px]" title="Tiến độ (Đang làm / Không làm)">
                   TIẾN ĐỘ
                 </th>
                 <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10.5px]">
                   TƯƠNG TÁC
                 </th>
-                <th className="w-12 min-w-[42px] max-w-[50px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[10px]" title="Ngày nhảy tự động theo ngày hiện tại khi chọn trạng thái cột tương tác">
-                  <div className="flex flex-col items-center leading-tight">
+                <th className="w-11 min-w-[38px] max-w-[44px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center text-[9px]" title="Ngày nhảy tự động theo ngày hiện tại khi chọn trạng thái cột tương tác">
+                  <div className="flex flex-col items-center leading-none">
                     <span>NGÀY TT</span>
-                    <span className="text-[7.5px] font-normal opacity-85 lowercase">(tự nhảy)</span>
                   </div>
                 </th>
                 <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 border-r border-emerald-800/80 text-left text-[10.5px]" title="Ghi chú BM">
@@ -1478,7 +1481,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             <tbody className="divide-y divide-slate-300 text-slate-800">
               {paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={15} className="py-8 text-center text-slate-400 bg-white">
+                  <td colSpan={16} className="py-8 text-center text-slate-400 bg-white">
                     Không tìm thấy dòng nào phù hợp. Hãy đặt lại bộ lọc hoặc tạo thêm Page mới.
                   </td>
                 </tr>
@@ -1493,7 +1496,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         <td className="px-1 py-1 text-center border-r border-emerald-300 font-mono text-emerald-800 text-[10px] bg-emerald-100/50 select-none">
                           {startIndex + index + 1}
                         </td>
-                        <td colSpan={14} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
+                        <td colSpan={15} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center space-x-2">
                               <button
@@ -2186,8 +2189,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         </select>
                       </td>
 
-                      {/* Cột: ĐĂNG BÀI (Đăng Tay / Tool) */}
-                      <td className="px-1 py-1 border-r border-slate-300 text-center whitespace-nowrap">
+                      {/* Cột: ĐĂNG BÀI (Đăng Tay / Tool) - Nhỏ gọn */}
+                      <td className="w-14 min-w-[54px] max-w-[62px] px-0.5 py-0.5 border-r border-slate-300 text-center whitespace-nowrap">
                         <div className="flex flex-col items-center justify-center space-y-0.5 w-full">
                           <select
                             value={record.postingMethod}
@@ -2202,7 +2205,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                   : {}),
                               });
                             }}
-                            className={`w-full appearance-none px-1 py-0.5 text-center font-bold rounded text-[10.5px] border focus:outline-hidden cursor-pointer transition-colors shadow-2xs ${getPostingMethodBadgeStyle(
+                            className={`w-full appearance-none px-0.5 py-0.5 text-center font-bold rounded text-[10px] border focus:outline-hidden cursor-pointer transition-colors shadow-2xs ${getPostingMethodBadgeStyle(
                               record.postingMethod
                             )}`}
                             title={`Phương thức: ${record.postingMethod}${
@@ -2231,88 +2234,52 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                 onUpdateRecord(record.id, { postingDate: e.target.value })
                               }
                               placeholder={`${new Date().getDate()}/${new Date().getMonth() + 1}`}
-                              className="w-full text-center bg-white border border-emerald-300 focus:border-emerald-600 rounded px-0.5 py-0.2 text-[9px] font-bold text-emerald-900 focus:outline-hidden shadow-2xs"
+                              className="w-full text-center bg-white border border-emerald-300 focus:border-emerald-600 rounded px-0.5 py-0 text-[8.5px] font-bold text-emerald-900 focus:outline-hidden shadow-2xs"
                               title="Ngày chọn Đăng Tay"
                             />
                           )}
                         </div>
                       </td>
 
-                      {/* Cột: TIẾN ĐỘ (Số bài & Nút Xong/Chưa) */}
-                      <td className="px-1 py-1 border-r border-slate-300 text-center whitespace-nowrap">
-                        <div className="flex items-center justify-center space-x-0.5 w-full bg-slate-50/90 px-1 py-0.5 rounded border border-slate-200 shadow-2xs">
-                          {/* Minus 1 */}
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onUpdateRecord(record.id, {
-                                actualPosts: Math.max(0, record.actualPosts - 1),
-                                isCompleted:
-                                  Math.max(0, record.actualPosts - 1) >= record.targetPosts,
-                              })
-                            }
-                            className="w-3.5 h-3.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                            title="Giảm 1 bài"
-                          >
-                            <Minus className="w-2 h-2" />
-                          </button>
-
-                          {/* Actual / Target posts */}
-                          <span className="font-black text-slate-900 text-[10.5px] px-1 text-center select-none" title="Số bài đăng hôm nay / Chỉ tiêu">
-                            {record.actualPosts}/{record.targetPosts}
-                          </span>
-
-                          {/* Plus 1 */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const next = record.actualPosts + 1;
-                              onUpdateRecord(record.id, {
-                                actualPosts: next,
-                                isCompleted: next >= record.targetPosts,
-                              });
-                            }}
-                            className="w-3.5 h-3.5 rounded bg-slate-200 hover:bg-slate-300 text-slate-700 flex items-center justify-center cursor-pointer transition-colors shrink-0"
-                            title="Tăng 1 bài"
-                          >
-                            <Plus className="w-2 h-2" />
-                          </button>
-
-                          {/* 1-Click Status Badge */}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newDone = !isDone;
-                              onUpdateRecord(record.id, {
-                                isCompleted: newDone,
-                                actualPosts: newDone
-                                  ? Math.max(record.targetPosts, record.actualPosts)
-                                  : record.actualPosts,
-                              });
-                            }}
-                            className={`ml-1 inline-flex items-center space-x-0.5 px-1 py-0.2 rounded text-[9.5px] font-bold border transition-colors cursor-pointer shrink-0 ${
-                              isDone
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
-                                : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                            }`}
-                            title="Bấm để đổi nhanh trạng thái: Đã đăng xong / Chưa đăng"
-                          >
-                            {isDone ? (
-                              <>
-                                <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-                                <span>Xong</span>
-                              </>
-                            ) : (
-                              <>
-                                <XCircle className="w-2.5 h-2.5 text-rose-500" />
-                                <span>Chưa</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
+                      {/* Cột: TIẾN ĐỘ (2 trạng thái: Đang làm / Không làm) */}
+                      <td className="w-18 min-w-[66px] max-w-[76px] px-0.5 py-0.5 border-r border-slate-300 text-center whitespace-nowrap">
+                        {(() => {
+                          const currentProgress: ProgressStatus =
+                            record.progressStatus || (isDone ? 'Đang làm' : 'Không làm');
+                          return (
+                            <select
+                              value={currentProgress}
+                              onChange={(e) => {
+                                const newProg = e.target.value as ProgressStatus;
+                                onUpdateRecord(record.id, {
+                                  progressStatus: newProg,
+                                  isCompleted: newProg === 'Đang làm',
+                                });
+                              }}
+                              className={`w-full appearance-none px-1 py-0.5 text-center font-bold rounded text-[10px] border focus:outline-hidden cursor-pointer transition-colors shadow-2xs ${getProgressBadgeStyle(
+                                currentProgress
+                              )}`}
+                              title={`Tiến độ: ${currentProgress} (Bấm để chuyển đổi Đang làm / Không làm)`}
+                            >
+                              {PROGRESS_STATUS_OPTIONS.map((opt) => (
+                                <option
+                                  key={opt}
+                                  value={opt}
+                                  className={
+                                    opt === 'Không làm'
+                                      ? 'bg-rose-600 text-white font-bold'
+                                      : 'bg-white text-slate-800 font-bold'
+                                  }
+                                >
+                                  {opt}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
                       </td>
 
-                      {/* Col J: TƯƠNG TÁC */}
+                      {/* Col L: TƯƠNG TÁC */}
                       <td className="px-1 py-1 border-r border-slate-300 text-center whitespace-nowrap">
                         <select
                           value={record.interaction}
@@ -2338,33 +2305,24 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         </select>
                       </td>
 
-                      {/* Col K: NGÀY TƯƠNG TÁC (Tự động nhảy theo ngày hiện tại khi chọn trạng thái tương tác) */}
-                      <td className="px-0.5 py-1 border-r border-slate-300 text-center whitespace-nowrap font-medium text-slate-700">
-                        <div className="flex items-center justify-center space-x-0.5">
-                          <input
-                            type="text"
-                            value={record.interactionDate ?? record.date ?? ''}
-                            onChange={(e) =>
-                              onUpdateRecord(record.id, { interactionDate: e.target.value })
-                            }
-                            placeholder="16/9"
-                            className="w-10 text-center bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-emerald-600 rounded px-0.5 py-0.5 focus:outline-hidden text-[11px] font-semibold"
-                            title="Ngày cập nhật tương tác (Tự động nhảy theo ngày hiện tại khi chọn trạng thái tương tác)"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const now = new Date();
-                              onUpdateRecord(record.id, {
-                                interactionDate: `${now.getDate()}/${now.getMonth() + 1}`,
-                              });
-                            }}
-                            className="p-0.5 text-slate-400 hover:text-emerald-700 rounded hover:bg-emerald-50 transition-colors"
-                            title="Ghi nhận ngày tương tác hôm nay"
-                          >
-                            <Clock className="w-2.5 h-2.5" />
-                          </button>
-                        </div>
+                      {/* Col M: NGÀY TT (Nhỏ gọn, tự động nhảy theo ngày hiện tại khi chọn trạng thái tương tác) */}
+                      <td className="w-11 min-w-[38px] max-w-[44px] px-0.5 py-0.5 border-r border-slate-300 text-center whitespace-nowrap font-medium text-slate-700">
+                        <input
+                          type="text"
+                          value={record.interactionDate ?? record.date ?? ''}
+                          onChange={(e) =>
+                            onUpdateRecord(record.id, { interactionDate: e.target.value })
+                          }
+                          onDoubleClick={() => {
+                            const now = new Date();
+                            onUpdateRecord(record.id, {
+                              interactionDate: `${now.getDate()}/${now.getMonth() + 1}`,
+                            });
+                          }}
+                          placeholder="16/9"
+                          className="w-9 text-center bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-emerald-600 rounded px-0.5 py-0.5 focus:outline-hidden text-[10px] font-semibold"
+                          title="Ngày TT (Tự động nhảy khi đổi tương tác, hoặc nhấp đúp để lấy ngày hôm nay)"
+                        />
                       </td>
 
                       {/* Col M: GHI CHÚ BM (DANH SÁCH LỰA CHỌN TẤT CẢ BM HIỆN TẠI HOẶC THÊM MỚI, BỎ HẾT TỪ DẤU | PHÍA SAU) */}
