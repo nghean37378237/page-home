@@ -279,6 +279,28 @@ export interface CloudSettingsData {
 // 4. Seeding Cloud Firestore with bundled backup data (backup_toan_bo_csdl_2026-10-14.json) if empty
 export async function seedCloudFirestoreIfEmpty(): Promise<void> {
   try {
+    // 0. Kiểm tra Cầu Nối Chuyển Hướng CSDL (settings/db_bridge):
+    // Nếu code app vẫn để tạm trên AI Studio hiện tại nhưng Admin đã chuyển CSDL sang Firebase Project riêng của cualokhachsan@gmail.com,
+    // tự động đồng bộ cấu hình sang trình duyệt này và KHÔNG nạp lại dữ liệu vào CSDL cũ!
+    if (!hasCustomFirebaseConfig() && typeof window !== 'undefined') {
+      try {
+        const bridgeSnap = await getDoc(doc(db, SETTINGS_COLLECTION, 'db_bridge'));
+        if (bridgeSnap.exists()) {
+          const bridgeData = bridgeSnap.data() as { redirectConfigJson?: string; targetProjectId?: string };
+          if (bridgeData?.redirectConfigJson) {
+            const parsedBridge = JSON.parse(bridgeData.redirectConfigJson);
+            if (parsedBridge?.apiKey && parsedBridge?.projectId && parsedBridge.projectId !== firebaseConfigDefault.projectId) {
+              window.localStorage.setItem(CUSTOM_FIREBASE_CONFIG_STORAGE_KEY, bridgeData.redirectConfigJson);
+              window.location.reload();
+              return;
+            }
+          }
+        }
+      } catch (bridgeErr) {
+        console.warn('[Firestore] Kiểm tra db_bridge:', bridgeErr);
+      }
+    }
+
     const writeBundledCollection = async (colName: string, items: any[]) => {
       if (!Array.isArray(items) || items.length === 0) return;
       const chunkSize = 350;
@@ -1422,23 +1444,45 @@ export async function pushBackupToExternalFirebase(
 
 /**
  * Lưu cấu hình Firebase mới của mail cualokhachsan@gmail.com làm CSDL chính thức của ứng dụng
+ * Đồng thời lưu Cầu Nối (settings/db_bridge) để mọi thiết bị mở link app đều tự động đẩy dữ liệu về CSDL của cualokhachsan@gmail.com
  */
-export function saveActiveFirebaseConfig(rawConfigInput: string, targetDatabaseId?: string): void {
+export async function saveActiveFirebaseConfig(rawConfigInput: string, targetDatabaseId?: string): Promise<void> {
   const parsed = parseFirebaseConfigInput(rawConfigInput);
   const dbId = (targetDatabaseId || parsed.firestoreDatabaseId || '(default)').trim();
+  const configPayload = JSON.stringify({
+    ...parsed,
+    firestoreDatabaseId: dbId,
+  });
+
   if (typeof window !== 'undefined') {
-    window.localStorage.setItem(
-      CUSTOM_FIREBASE_CONFIG_STORAGE_KEY,
-      JSON.stringify({
-        ...parsed,
-        firestoreDatabaseId: dbId,
-      })
-    );
+    window.localStorage.setItem(CUSTOM_FIREBASE_CONFIG_STORAGE_KEY, configPayload);
+  }
+
+  // Ghi Cầu Nối (db_bridge) lên host mặc định để mọi máy tính/nhân viên truy cập app đều tự động trỏ sang CSDL của cualokhachsan@gmail.com
+  try {
+    const bridgeAppName = `bridge_save_${Date.now()}`;
+    const bridgeApp = initializeApp(firebaseConfigDefault, bridgeAppName);
+    const bridgeDb =
+      !firebaseConfigDefault.firestoreDatabaseId || firebaseConfigDefault.firestoreDatabaseId === '(default)'
+        ? initializeFirestore(bridgeApp, { ignoreUndefinedProperties: true })
+        : initializeFirestore(bridgeApp, { ignoreUndefinedProperties: true }, firebaseConfigDefault.firestoreDatabaseId);
+
+    await setDoc(doc(bridgeDb, SETTINGS_COLLECTION, 'db_bridge'), {
+      id: 'db_bridge',
+      redirectConfigJson: configPayload,
+      targetProjectId: parsed.projectId,
+      targetDatabaseId: dbId,
+      ownerEmail: 'cualokhachsan@gmail.com',
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('[Firestore] Không thể lưu cầu nối db_bridge (không ảnh hưởng kết nối chính):', err);
   }
 }
 
 /**
  * Xóa sạch toàn bộ dữ liệu trên CSDL mặc định cũ (gen-lang-client-0516107785) sau khi đã chuyển sang Project riêng của cualokhachsan@gmail.com
+ * Giữ lại duy nhất con trỏ điều hướng db_bridge (không chứa bất kỳ dữ liệu nghiệp vụ nào) để các thiết bị mở app tự động trỏ sang CSDL của cualokhachsan@gmail.com
  */
 export async function wipeLegacyDefaultFirebaseDatabase(
   onProgress?: (msg: string) => void
@@ -1467,7 +1511,7 @@ export async function wipeLegacyDefaultFirebaseDatabase(
     onProgress?.(`Đang xóa sạch bảng ${colName} trên CSDL cũ (${firebaseConfigDefault.projectId})...`);
     const snap = await getDocs(collection(oldDb, colName));
     if (!snap.empty) {
-      const docs = snap.docs;
+      const docs = snap.docs.filter((d) => !(colName === SETTINGS_COLLECTION && d.id === 'db_bridge'));
       const chunkSize = 350;
       for (let i = 0; i < docs.length; i += chunkSize) {
         const chunk = docs.slice(i, i + chunkSize);

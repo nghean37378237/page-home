@@ -92,7 +92,12 @@ service cloud.firestore {
              (!('adminName' in data) || (data.adminName is string && data.adminName.size() <= 100)) &&
              (!('requireApproval' in data) || data.requireApproval is bool) &&
              (!('requireGoogleLoginOnly' in data) || data.requireGoogleLoginOnly is bool) &&
-             (!('customStaffList' in data) || (data.customStaffList is list && data.customStaffList.size() <= 200));
+             (!('customStaffList' in data) || (data.customStaffList is list && data.customStaffList.size() <= 200)) &&
+             (!('redirectConfigJson' in data) || (data.redirectConfigJson is string && data.redirectConfigJson.size() <= 5000)) &&
+             (!('targetProjectId' in data) || (data.targetProjectId is string && data.targetProjectId.size() <= 200)) &&
+             (!('targetDatabaseId' in data) || (data.targetDatabaseId is string && data.targetDatabaseId.size() <= 200)) &&
+             (!('ownerEmail' in data) || (data.ownerEmail is string && data.ownerEmail.size() <= 200)) &&
+             (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 100));
     }
 
     function isValidSharedAccount(data) {

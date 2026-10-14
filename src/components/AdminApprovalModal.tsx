@@ -813,10 +813,10 @@ export function AdminApprovalModal({
         wipedInfo = ` & Đã xóa vĩnh viễn ${wipeRes.totalDeleted} bản ghi trên CSDL cũ (${wipeRes.oldProjectId})`;
       }
       if (switchActiveConnection) {
-        saveActiveFirebaseConfig(targetFirebaseConfigInput, targetDatabaseIdInput);
+        await saveActiveFirebaseConfig(targetFirebaseConfigInput, targetDatabaseIdInput);
         setExternalPushStatus({
           type: 'success',
-          message: `✅ Đã đẩy ${res.totalDocsWritten} bản ghi, chuyển sang Project "${res.targetProjectId}"${wipedInfo}! Đang tải lại...`,
+          message: `✅ Đã đẩy ${res.totalDocsWritten} bản ghi, kích hoạt Cầu Nối đa thiết bị sang Project "${res.targetProjectId}"${wipedInfo}! Đang tải lại...`,
         });
         setTimeout(() => window.location.reload(), 1600);
         return;
@@ -2141,7 +2141,7 @@ export function AdminApprovalModal({
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-600">
-                            Hệ thống đã khóa cố định <strong>cualokhachsan@gmail.com</strong> làm tài khoản Chủ Sở Hữu duy nhất trong ứng dụng, bản sao lưu lõi (438 bản ghi) và <strong>Firestore Security Rules</strong>. Mọi liên kết tài khoản Admin/cấu hình của mail cũ đã được xóa bỏ hoàn toàn khỏi hệ thống.
+                            Bạn có thể giữ code giao diện Web App trên trình soạn thảo hiện tại để tiện nâng cấp, còn <strong>toàn bộ 100% dữ liệu (8 bảng + phân quyền nhân sự)</strong> được đẩy thẳng và đồng bộ độc quyền về CSDL của <strong>cualokhachsan@gmail.com</strong> trên mọi thiết bị thông qua Cầu Nối Tự Động (<code>db_bridge</code>).
                           </p>
                         </div>
                         <div className="flex items-center flex-wrap gap-1.5 shrink-0">
