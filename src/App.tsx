@@ -1008,32 +1008,34 @@ export default function App() {
     email?: string
   ): { success: boolean; message: string } => {
     const trimmed = username.trim();
+    const cleanEmail = email?.trim() ? email.trim().toLowerCase() : undefined;
     const existing = accounts.find(
-      (a) => a.username.trim().toLowerCase() === trimmed.toLowerCase()
+      (a) =>
+        (cleanEmail && a.email && a.email.trim().toLowerCase() === cleanEmail) ||
+        a.username.trim().toLowerCase() === trimmed.toLowerCase()
     );
 
     if (existing) {
       if (existing.status === 'pending') {
         return {
           success: false,
-          message: `Tài khoản "${trimmed}" đã gửi yêu cầu trước đó và đang chờ Admin duyệt.`,
+          message: `Email "${existing.email || trimmed}" đã gửi yêu cầu trước đó và đang chờ Admin duyệt.`,
         };
       }
       if (existing.status === 'approved') {
         return {
           success: false,
-          message: `Tài khoản "${trimmed}" đã được duyệt trước đó. Vui lòng chuyển sang tab Đăng Nhập!`,
+          message: `Email "${existing.email || trimmed}" đã được Admin duyệt! Vui lòng đăng nhập bằng Google.`,
         };
       }
       if (existing.status === 'blocked') {
         return {
           success: false,
-          message: `Tài khoản "${trimmed}" đang bị tạm khóa. Vui lòng liên hệ Admin để mở lại!`,
+          message: `Email "${existing.email || trimmed}" đang bị Quản Lý tạm khóa. Vui lòng liên hệ Admin!`,
         };
       }
     }
 
-    const cleanEmail = email?.trim() || undefined;
     const cleanNote = requestNote?.trim() || undefined;
 
     const newRequest: UserAccount = {
@@ -1057,7 +1059,7 @@ export default function App() {
 
     return {
       success: true,
-      message: `Đã gửi yêu cầu cấp quyền cho nhân viên "${trimmed}" lên Cloud Firestore thành công! Vui lòng chờ Admin duyệt vào hệ thống.`,
+      message: `Đã gửi yêu cầu cấp quyền cho nhân viên "${trimmed}" (${cleanEmail || ''}) tới Admin (${adminSettings.adminEmail || 'cualokhachsan@gmail.com'}) thành công! Vui lòng chờ Admin duyệt.`,
     };
   };
 
@@ -1066,10 +1068,14 @@ export default function App() {
     if (!acc) return;
 
     const approvedAt = new Date().toLocaleDateString('vi-VN');
+    const defaultTabs: TabKey[] = ['fanpage', 'fullvia', 'image_studio'];
+    const allowedTabs = (acc.allowedTabs && acc.allowedTabs.length > 0) ? acc.allowedTabs : defaultTabs;
+
     const updatedAcc: UserAccount = {
       ...acc,
       status: 'approved',
       approvedAt,
+      allowedTabs,
     };
 
     // Optimistically update React state immediately
@@ -1083,6 +1089,7 @@ export default function App() {
     await updateCloudAccount(accountId, {
       status: 'approved',
       approvedAt,
+      allowedTabs,
     });
     await saveCloudSettings({ customStaffList: nextStaff });
   };

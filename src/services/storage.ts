@@ -99,7 +99,7 @@ export const DEFAULT_ADMIN_SETTINGS: AdminSecuritySettings = {
   requireApproval: true,
   adminName: 'Quản Lý (Admin)',
   adminEmail: 'cualokhachsan@gmail.com',
-  requireGoogleLoginOnly: false,
+  requireGoogleLoginOnly: true,
 };
 
 // Bảo toàn và tự động khôi phục dữ liệu từ localStorage cũ (Vercel / các phiên bản trước)

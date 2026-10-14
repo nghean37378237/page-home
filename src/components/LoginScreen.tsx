@@ -19,6 +19,9 @@ import {
   UserPlus,
   Globe,
   Copy,
+  RefreshCw,
+  Send,
+  RotateCcw,
 } from 'lucide-react';
 import { findMatchingAccount, normalizeVietnamese } from '../utils/helpers';
 import { getCloudAccounts, subscribeToAccounts, auth } from '../services/firebase';
@@ -91,10 +94,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       });
   }, []);
 
-  // Mode: 'staff' (Tên + PIN) | 'google' (Google Sign In) | 'admin' (Admin PIN) | 'request' (Xin cấp quyền)
-  const [activeTab, setActiveTab] = useState<'staff' | 'google' | 'admin' | 'request'>(
-    requireGoogleOnly ? 'google' : 'staff'
-  );
+  // Mode: 'google' (Google Sign In - MẶC ĐỊNH) | 'admin' (Admin PIN) | 'request' (Xin cấp quyền) | 'staff' (Tên + PIN)
+  const [activeTab, setActiveTab] = useState<'google' | 'admin' | 'request' | 'staff'>('google');
+
+  // Dedicated Pending Approval State (User logged in with Gmail but needs Admin approval)
+  const [pendingApprovalState, setPendingApprovalState] = useState<{
+    email: string;
+    username: string;
+    createdAt?: string;
+    isExistingRequest?: boolean;
+  } | null>(null);
+
+  // Prompt for new Gmail users to request approval from cualokhachsan@gmail.com
+  const [newGoogleUserPrompt, setNewGoogleUserPrompt] = useState<{
+    email: string;
+    displayName: string;
+  } | null>(null);
+
+  const [isRecheckingStatus, setIsRecheckingStatus] = useState<boolean>(false);
+  const [newGoogleStaffName, setNewGoogleStaffName] = useState<string>('');
 
   // Staff Login State
   const [selectedStaffName, setSelectedStaffName] = useState<string>('');
@@ -189,6 +207,68 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   // Refresh accounts freshly before validating login
   const getFreshAccounts = (): UserAccount[] => {
     return liveAccounts.length > 0 ? liveAccounts : (propAccounts && propAccounts.length > 0 ? propAccounts : []);
+  };
+
+  // Check approval status directly from Cloud Firestore
+  const handleCheckApprovalStatusAgain = async () => {
+    if (!pendingApprovalState?.email) return;
+    setIsRecheckingStatus(true);
+    try {
+      const cloudAccounts = await getCloudAccounts();
+      if (cloudAccounts.length > 0) {
+        setLiveAccounts(cloudAccounts);
+      }
+      const targetEmail = pendingApprovalState.email.toLowerCase().trim();
+      const updated = cloudAccounts.find((a) => a.email?.toLowerCase().trim() === targetEmail);
+      if (updated && updated.status === 'approved') {
+        onLoginSuccess({
+          id: updated.id,
+          name: updated.username,
+          email: targetEmail,
+          role: 'staff',
+          status: 'approved',
+          isAuthenticated: true,
+          allowedTabs: updated.allowedTabs,
+        });
+        return;
+      }
+      if (updated && updated.status === 'blocked') {
+        setGoogleError(`Tài khoản Gmail (${targetEmail}) đã bị Quản Lý (${adminEmail || 'cualokhachsan@gmail.com'}) tạm khóa.`);
+        setPendingApprovalState(null);
+        return;
+      }
+      setGoogleError(null);
+    } catch (err) {
+      console.error('[LoginScreen] Lỗi kiểm tra trạng thái phê duyệt:', err);
+    } finally {
+      setIsRecheckingStatus(false);
+    }
+  };
+
+  // Quick submit approval request from Google Sign-In prompt
+  const handleQuickSubmitGoogleRequest = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!newGoogleUserPrompt) return;
+    const name = newGoogleStaffName.trim() || newGoogleUserPrompt.displayName.trim() || newGoogleUserPrompt.email.split('@')[0];
+    const email = newGoogleUserPrompt.email.trim().toLowerCase();
+
+    if (onRequestAccess) {
+      const result = onRequestAccess(name, '123456', 'Nhân viên đăng nhập bằng Gmail', email);
+      if (result.success) {
+        setNewGoogleUserPrompt(null);
+        setPendingApprovalState({
+          email,
+          username: name,
+          createdAt: new Date().toLocaleDateString('vi-VN'),
+          isExistingRequest: true,
+        });
+        getCloudAccounts().then((accs) => {
+          if (accs.length > 0) setLiveAccounts(accs);
+        });
+      } else {
+        setGoogleError(result.message);
+      }
+    }
   };
 
   // 1. Handle Staff Login Submit
@@ -357,12 +437,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       const freshAccounts = getFreshAccounts();
       const currentAdminEmail = (adminEmail || 'cualokhachsan@gmail.com').trim().toLowerCase();
 
-      // 1. Check Admin Google Account
+      // 1. Check Admin Google Account (Chỉ cualokhachsan@gmail.com)
       if (
         email === currentAdminEmail ||
         email === 'cualokhachsan@gmail.com' ||
-        email === 'myphuong2295@gmail.com' ||
-        email === 'admin@gmail.com' ||
         freshAccounts.some((a) => a.role === 'admin' && a.email?.toLowerCase() === email)
       ) {
         onLoginSuccess({
@@ -387,18 +465,24 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      // 2. Check Approved Staff Google Account with intelligent matching (exact email, prefix, or Vietnamese name)
+      // 2. Check Approved / Pending Staff Google Account
       const matched =
         findMatchingAccount(email, freshAccounts) ||
         (displayName ? findMatchingAccount(displayName, freshAccounts) : undefined);
 
       if (matched) {
         if (matched.status === 'blocked') {
-          setGoogleError(`Tài khoản nhân viên "${matched.username}" (${email}) đang bị Quản Lý tạm khóa.`);
+          setGoogleError(`Tài khoản Gmail "${email}" (${matched.username}) đang bị Quản Lý (${currentAdminEmail || 'cualokhachsan@gmail.com'}) tạm khóa.`);
           return;
         }
         if (matched.status === 'pending') {
-          setGoogleError(`Tài khoản nhân viên "${matched.username}" (${email}) đang chờ Quản Lý phê duyệt.`);
+          setPendingApprovalState({
+            email,
+            username: matched.username,
+            createdAt: matched.createdAt,
+            isExistingRequest: true,
+          });
+          setGoogleError(null);
           return;
         }
 
@@ -420,28 +504,29 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      // 3. Email is unlinked or not recognized
-      setCustomGoogleEmail(email);
-      setGoogleError(
-        `Email Google "${email}" chưa được Quản Lý cấp phép trong danh sách nhân viên. Nếu bạn là nhân viên cũ, hãy chọn tên và nhập mã PIN một lần duy nhất bên dưới để liên kết.`
-      );
-      setIsGoogleChooserOpen(true);
-      setShowLinkingBox(true);
+      // 3. Email is unlinked or not recognized - Prompt user to send request for approval to cualokhachsan@gmail.com
+      const suggestedName = displayName || email.split('@')[0];
+      setNewGoogleStaffName(suggestedName);
+      setNewGoogleUserPrompt({
+        email,
+        displayName: suggestedName,
+      });
+      setGoogleError(null);
     } catch (err: any) {
       console.warn('[LoginScreen] Lỗi Google OAuth popup:', err);
       if (err.code === 'auth/popup-closed-by-user') {
-        setGoogleError('Bạn đã đóng cửa sổ đăng nhập Google trước khi hoàn tất. Bạn có thể thử lại hoặc bấm đăng nhập bằng Tên / Mã PIN bên dưới.');
+        setGoogleError('Bạn đã đóng cửa sổ đăng nhập Google trước khi hoàn tất. Bạn có thể thử lại hoặc nhập Gmail bên dưới.');
       } else if (err.code === 'auth/popup-blocked') {
-        setGoogleError('Trình duyệt hoặc khung hiển thị (iFrame) đang chặn cửa sổ đăng nhập Google (Pop-up). Bạn có thể bấm chọn tài khoản hoặc chuyển sang đăng nhập bằng Tên & Mã PIN bên dưới.');
+        setGoogleError('Trình duyệt hoặc khung hiển thị (iFrame) đang chặn cửa sổ đăng nhập Google (Pop-up). Bạn có thể bấm chọn tài khoản hoặc nhập Gmail bên dưới.');
         setIsGoogleChooserOpen(true);
       } else if (err.code === 'auth/unauthorized-domain') {
         setIsUnauthorizedDomain(true);
         setGoogleError(
-          `Tên miền (${window.location.hostname}) chưa được thêm vào mục Authorized Domains trong Firebase Console. Bạn có thể đăng nhập ngay bằng Tên & Mã PIN bên dưới mà không cần chờ cấu hình domain!`
+          `Tên miền (${window.location.hostname}) chưa được thêm vào mục Authorized Domains trong Firebase Console. Bạn có thể nhập Gmail bên dưới để vào hệ thống ngay!`
         );
         setIsGoogleChooserOpen(true);
       } else {
-        setGoogleError(`Không thể mở cửa sổ Google (${err.message || err.code}). Bạn có thể chuyển sang đăng nhập bằng Tên / Mã PIN bên dưới để vào hệ thống ngay.`);
+        setGoogleError(`Không thể mở cửa sổ Google (${err.message || err.code}). Bạn có thể chuyển sang nhập Gmail bên dưới để tiếp tục.`);
         setIsGoogleChooserOpen(true);
       }
     } finally {
@@ -454,23 +539,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setGoogleError(null);
     setShowLinkingBox(false);
     setPendingGoogleAuth(null);
+    setPendingApprovalState(null);
+    setNewGoogleUserPrompt(null);
 
     const freshAccounts = getFreshAccounts();
     const email = targetEmail.trim().toLowerCase();
 
     if (!email) {
-      setGoogleError('Vui lòng nhập địa chỉ Email Google');
+      setGoogleError('Vui lòng nhập địa chỉ Email Gmail của bạn');
       return;
     }
 
     const currentAdminEmail = (adminEmail || 'cualokhachsan@gmail.com').trim().toLowerCase();
 
-    // Check if it's the Admin email - BẮT BUỘC NHẬP PASS ADMIN, KHÔNG CHO VÀO TỰ ĐỘNG!
+    // Check if it's the Admin email (cualokhachsan@gmail.com) - Yêu cầu nhập Pass Admin để bảo mật
     if (
       email === currentAdminEmail ||
       email === 'cualokhachsan@gmail.com' ||
-      email === 'myphuong2295@gmail.com' ||
-      email === 'admin@gmail.com' ||
       freshAccounts.some((a) => a.role === 'admin' && a.email?.toLowerCase() === email)
     ) {
       setPendingGoogleAuth({
@@ -482,20 +567,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       return;
     }
 
-    // Match approved accounts by email, or by normalized username/email prefix
+    // Match accounts by email, or by normalized username/email prefix
     const matched = findMatchingAccount(email, freshAccounts);
 
     if (matched) {
       if (matched.status === 'blocked') {
-        setGoogleError(`Tài khoản liên kết với Email "${email}" đang bị tạm khóa bởi Admin.`);
+        setGoogleError(`Tài khoản liên kết với Gmail "${email}" đang bị tạm khóa bởi Quản Lý (${currentAdminEmail || 'cualokhachsan@gmail.com'}).`);
         return;
       }
       if (matched.status === 'pending') {
-        setGoogleError(`Tài khoản "${matched.username}" đang chờ Quản Lý phê duyệt.`);
+        setPendingApprovalState({
+          email,
+          username: matched.username,
+          createdAt: matched.createdAt,
+          isExistingRequest: true,
+        });
         return;
       }
 
-      // BẮT BUỘC NHẬP MÃ PIN NHÂN VIÊN, KHÔNG CHO VÀO TỰ ĐỘNG!
+      // Approved Staff Account -> Verify PIN or Allow In
       setPendingGoogleAuth({
         role: 'staff',
         account: matched,
@@ -505,9 +595,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       return;
     }
 
-    // If not matched, suggest linking or show error
-    setGoogleError(`Email "${email}" chưa được liên kết với nhân viên nào. Nếu bạn là nhân viên đã được duyệt, bạn có thể liên kết tài khoản bằng mã PIN bên dưới.`);
-    setShowLinkingBox(true);
+    // If not matched, prompt employee to request approval from cualokhachsan@gmail.com
+    const suggested = email.split('@')[0];
+    setNewGoogleStaffName(suggested);
+    setNewGoogleUserPrompt({
+      email,
+      displayName: suggested,
+    });
   };
 
   const handleCustomGoogleSubmit = (e: React.FormEvent) => {
@@ -730,35 +824,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           </div>
 
           {/* TOP TABS NAVIGATION */}
-          {requireGoogleOnly && (
-            <div className="mb-3 p-2 bg-sky-950/60 rounded-xl border border-sky-500/30 text-xs flex items-center justify-between shadow-xs">
-              <div className="flex items-center space-x-2 min-w-0">
-                <Shield className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                <span className="text-[11px] text-sky-200 truncate">
-                  Ưu tiên: Đăng nhập bằng Google nội bộ (hoặc dùng mã PIN nếu trình duyệt chặn Popup)
-                </span>
-              </div>
+          <div className="mb-3 p-2.5 bg-sky-950/70 rounded-xl border border-sky-500/40 text-xs flex items-center justify-between shadow-xs">
+            <div className="flex items-center space-x-2 min-w-0">
+              <Shield className="w-4 h-4 text-sky-400 shrink-0" />
+              <span className="text-[11px] text-sky-200 truncate">
+                Nhân viên đăng nhập bằng Gmail • Quản lý phê duyệt: <strong className="text-amber-300 font-bold">{adminEmail || 'cualokhachsan@gmail.com'}</strong>
+              </span>
             </div>
-          )}
+          </div>
 
           <div className="grid grid-cols-4 gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-[11px] font-bold mb-4">
-            <button
-              type="button"
-              id="tab-staff-login"
-              onClick={() => {
-                setActiveTab('staff');
-                setStaffError(null);
-              }}
-              className={`py-2 px-1.5 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
-                activeTab === 'staff'
-                  ? 'bg-blue-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
-              }`}
-            >
-              <User className="w-3.5 h-3.5 mb-0.5" />
-              <span className="truncate">Nhân Viên</span>
-            </button>
-
             <button
               type="button"
               id="tab-google-login"
@@ -766,14 +841,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 setActiveTab('google');
                 setGoogleError(null);
               }}
-              className={`py-2 px-1.5 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
+              className={`py-2 px-1 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
                 activeTab === 'google'
-                  ? 'bg-red-600 text-white shadow-md'
+                  ? 'bg-sky-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
               }`}
             >
               <Mail className="w-3.5 h-3.5 mb-0.5" />
-              <span className="truncate">Google</span>
+              <span className="truncate">Gmail NV</span>
             </button>
 
             <button
@@ -783,7 +858,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 setActiveTab('admin');
                 setAdminError(null);
               }}
-              className={`py-2 px-1.5 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
+              className={`py-2 px-1 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
                 activeTab === 'admin'
                   ? 'bg-amber-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
@@ -800,14 +875,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 setActiveTab('request');
                 setReqResult(null);
               }}
-              className={`py-2 px-1.5 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
+              className={`py-2 px-1 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
                 activeTab === 'request'
                   ? 'bg-emerald-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
               }`}
             >
               <UserPlus className="w-3.5 h-3.5 mb-0.5" />
-              <span className="truncate">Xin Vào</span>
+              <span className="truncate">Xin Duyệt</span>
+            </button>
+
+            <button
+              type="button"
+              id="tab-staff-login"
+              onClick={() => {
+                setActiveTab('staff');
+                setStaffError(null);
+              }}
+              className={`py-2 px-1 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
+                activeTab === 'staff'
+                  ? 'bg-slate-700 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
+              }`}
+            >
+              <KeyRound className="w-3.5 h-3.5 mb-0.5" />
+              <span className="truncate">Mã PIN</span>
             </button>
           </div>
 
@@ -977,9 +1069,137 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </form>
           )}
 
-          {/* TAB 2: GOOGLE SIGN-IN */}
+          {/* TAB 1: GOOGLE / GMAIL SIGN-IN */}
           {activeTab === 'google' && (
             <div className="space-y-4 animate-fadeIn">
+              {/* 1. THÔNG BÁO: TÀI KHOẢN GMAIL ĐANG CHỜ QUẢN LÝ (cualokhachsan@gmail.com) PHÊ DUYỆT */}
+              {pendingApprovalState && (
+                <div className="p-4 bg-amber-950/80 border-2 border-amber-500/80 rounded-2xl text-amber-200 text-xs space-y-3.5 shadow-2xl animate-fadeIn">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0">
+                      <Clock className="w-5 h-5 text-amber-400 animate-spin" style={{ animationDuration: '6s' }} />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-amber-300">
+                        Tài Khoản Đang Chờ Quản Lý Phê Duyệt
+                      </h4>
+                      <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                        Tất cả nhân viên đăng nhập bằng Gmail bắt buộc phải được Quản Lý phê duyệt trước khi vào bảng làm việc.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 space-y-2 text-[11px]">
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Gmail nhân viên:</span>
+                      <span className="text-amber-300 font-mono font-bold truncate max-w-[200px]">
+                        {pendingApprovalState.email}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Họ & Tên:</span>
+                      <span className="text-white font-bold">{pendingApprovalState.username}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Quản lý phê duyệt:</span>
+                      <span className="text-emerald-400 font-mono font-bold">
+                        {adminEmail || 'cualokhachsan@gmail.com'}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
+                      <span className="text-slate-400">Trạng thái:</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-extrabold uppercase text-[10px] flex items-center space-x-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
+                        <span>Đang Chờ Admin Duyệt</span>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleCheckApprovalStatusAgain}
+                      disabled={isRecheckingStatus}
+                      className="flex-1 py-3 px-3.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 disabled:opacity-60 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isRecheckingStatus ? 'animate-spin' : ''}`} />
+                      <span>{isRecheckingStatus ? 'Đang kiểm tra dữ liệu...' : 'Kiểm Tra Lại Trạng Thái Duyệt'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPendingApprovalState(null);
+                        setGoogleError(null);
+                      }}
+                      className="py-3 px-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                    >
+                      Đổi Gmail Khác
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* 2. PROMPT ĐĂNG KÝ GMAIL MỚI GỬI TỚI ADMIN cualokhachsan@gmail.com */}
+              {newGoogleUserPrompt && !pendingApprovalState && (
+                <div className="p-4 bg-sky-950/80 border-2 border-sky-500/80 rounded-2xl text-slate-200 text-xs space-y-3.5 shadow-2xl animate-fadeIn">
+                  <div className="flex items-start space-x-3">
+                    <div className="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center shrink-0">
+                      <UserPlus className="w-5 h-5 text-sky-400" />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-sky-300">
+                        Đăng Ký Phê Duyệt Gmail Nhân Viên Mới
+                      </h4>
+                      <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                        Email này chưa có trong danh sách. Gửi yêu cầu ngay để Quản Lý (<strong className="text-amber-300 font-bold">{adminEmail || 'cualokhachsan@gmail.com'}</strong>) duyệt cấp quyền!
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 font-mono text-[11px] flex items-center justify-between">
+                    <span className="text-slate-400">Gmail:</span>
+                    <span className="text-sky-300 font-bold truncate max-w-[220px]">
+                      {newGoogleUserPrompt.email}
+                    </span>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                      Họ & Tên Nhân Viên Của Bạn: <span className="text-red-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={newGoogleStaffName}
+                      onChange={(e) => setNewGoogleStaffName(e.target.value)}
+                      placeholder="Ví dụ: Hoàng Long, Bảo, Phương My..."
+                      className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-sky-500"
+                    />
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={handleQuickSubmitGoogleRequest}
+                      disabled={!newGoogleStaffName.trim()}
+                      className="flex-1 py-3 px-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg"
+                    >
+                      <Send className="w-4 h-4" />
+                      <span>Gửi Yêu Cầu Phê Duyệt Tới Admin</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewGoogleUserPrompt(null);
+                        setGoogleError(null);
+                      }}
+                      className="py-3 px-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                    >
+                      Hủy
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Domain Warning Banner for Firebase OAuth */}
               {isUnauthorizedDomain && (
                 <div className="p-3.5 bg-amber-950/60 border border-amber-500/50 rounded-xl text-xs text-amber-200 space-y-2.5 animate-fadeIn">
@@ -1446,7 +1666,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <form onSubmit={handleRequestSubmit} className="space-y-3 animate-fadeIn">
               <div className="text-xs text-slate-300 font-bold border-b border-slate-800 pb-2 flex items-center justify-between">
                 <span>Đăng Ký Cấp Quyền Cho Nhân Viên Mới</span>
-                <span className="text-[10px] text-emerald-400">Duyệt tự động bởi Admin</span>
+                <span className="text-[10px] text-emerald-400 font-bold">Phê duyệt bởi: {adminEmail || 'cualokhachsan@gmail.com'}</span>
               </div>
 
               {reqResult && (
@@ -1543,7 +1763,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-1.5"
               >
                 <UserPlus className="w-4 h-4" />
-                <span>Gửi Yêu Cầu Cho Admin Phê Duyệt</span>
+                <span>Gửi Yêu Cầu Cho Admin ({adminEmail || 'cualokhachsan@gmail.com'}) Phê Duyệt</span>
               </button>
 
               <div className="pt-1 text-center text-xs text-slate-400">
