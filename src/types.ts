@@ -176,6 +176,10 @@ export interface PageRecord {
   viaTransferNote?: string; // Ghi chú màu admin note khi đổi page qua via này via khác (VD: 'Đang add via 1000...', 'Đã add xong')
   viaTransferColor?: ViaTransferColor | string; // Màu sắc ghi chú nổi bật (yellow, green, blue, purple, red, orange, gray)
   viaTransferUpdatedAt?: string; // Thời gian cập nhật ghi chú đổi via
+
+  // Đánh dấu đỏ báo cho nhân viên biết vừa có Via & Page mới được chuyển giao sang
+  isNewlyTransferred?: boolean;
+  newlyTransferredAt?: string;
 }
 
 export interface SheetFilter {
@@ -447,10 +451,11 @@ export interface FullViaItem {
   rawFullVia?: string; // UID|PASS|2FA gốc
 
   // Admin cập nhật "Admin đã thêm Page" (Màu đỏ để NV biết) | "Có page từ đầu" (Màu xanh) | "Chưa có page" (Trắng)
-  pageUpdateStatus?: ViaPageUpdateStatus; // 'pending' (Đỏ - Admin đã thêm page để NV biết), 'updated' (Xanh - Có page từ đầu / Đã update page), 'none' (Trắng - Chưa có page)
+  pageUpdateStatus?: ViaPageUpdateStatus; // 'pending' (Đỏ - Admin đã thêm page / mới bàn giao để NV biết), 'updated' (Xanh - Có page từ đầu / Đã update page), 'none' (Trắng - Chưa có page)
   hasAdminAssignedPage?: boolean; // Cờ đánh dấu Admin đã thêm page
-  pageAssignedAt?: string; // Thời điểm Admin thêm page
+  pageAssignedAt?: string; // Thời điểm Admin thêm page / bàn giao
   pageUpdatedAt?: string; // Thời điểm hoàn tất update page
+  isNewlyTransferred?: boolean; // Đánh dấu đỏ báo nhân viên mới nhận Via & Page mới chuyển giao
 }
 
 export interface SharedAccount {

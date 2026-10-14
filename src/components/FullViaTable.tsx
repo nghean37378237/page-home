@@ -59,6 +59,7 @@ interface FullViaTableProps {
   onSyncStaffFilter?: (staffName: string) => void;
   onTransferViaPages?: (viaUid: string) => void;
   onFetchPagesForVia?: (viaUid: string, staffName: string) => void;
+  onAcknowledgeNewTransfer?: (options?: { viaUid?: string; recordId?: string; staffName?: string }) => void;
 }
 
 export const FullViaTable: React.FC<FullViaTableProps> = ({
@@ -80,6 +81,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   onSyncStaffFilter,
   onTransferViaPages,
   onFetchPagesForVia,
+  onAcknowledgeNewTransfer,
 }) => {
   // LAYER 1: STRICT SCOPING GATE
   // Ensures that regardless of any code bugs upstream, Staff can NEVER access other users' data
@@ -256,21 +258,45 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     return { total, emptyVias, viasWithPages, totalPages };
   }, [strictlyGuardedVias, pagesPerViaUid]);
 
-  // Statistics per staff for quick badges (including how many Vias hold pages and total Pages held)
+  // Statistics per staff for quick badges (including how many Vias hold pages, total Pages held, and newly transferred Vias)
   const staffStats = useMemo(() => {
     const stats: Record<
       string,
-      { total: number; active: number; checkpoint: number; dead: number; viasWithPages: number; totalPages: number }
+      {
+        total: number;
+        active: number;
+        checkpoint: number;
+        dead: number;
+        viasWithPages: number;
+        totalPages: number;
+        pendingNew: number;
+      }
     > = {};
     distinctStaffNames.forEach((name) => {
-      stats[name] = { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
+      stats[name] = {
+        total: 0,
+        active: 0,
+        checkpoint: 0,
+        dead: 0,
+        viasWithPages: 0,
+        totalPages: 0,
+        pendingNew: 0,
+      };
     });
 
     strictlyGuardedVias.forEach((v) => {
       const rawName = v.staffName?.trim() || '';
       const name = isAdminWaitingPool(rawName) || !rawName ? ADMIN_WAITING_POOL : rawName;
       if (!stats[name]) {
-        stats[name] = { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
+        stats[name] = {
+          total: 0,
+          active: 0,
+          checkpoint: 0,
+          dead: 0,
+          viasWithPages: 0,
+          totalPages: 0,
+          pendingNew: 0,
+        };
       }
       stats[name].total++;
       if (v.status === 'checkpoint') stats[name].checkpoint++;
@@ -282,6 +308,15 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       if (pages.length > 0) {
         stats[name].viasWithPages++;
         stats[name].totalPages += pages.length;
+      }
+      const isPending = Boolean(
+        v.isNewlyTransferred ||
+          v.pageUpdateStatus === 'pending' ||
+          (v.hasAdminAssignedPage && v.pageUpdateStatus !== 'updated') ||
+          pages.some((p) => p.isNewlyTransferred)
+      );
+      if (isPending && !isAdminWaitingPool(name)) {
+        stats[name].pendingNew++;
       }
     });
 
@@ -338,11 +373,16 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     );
   };
 
-  // Helper: Admin đã tự cập nhật báo "Đã có Page" (Màu Đỏ) -> Chờ nhân viên update page lên
+  // Helper: Admin đã chuyển Via / thêm Page mới cho nhân viên (Màu Đỏ để báo nhân viên có Via & Page mới)
   const isViaPendingPageUpdate = (via: FullViaItem): boolean => {
+    if (isAdminWaitingPool(via.staffName)) return false;
+    const uidLower = via.uid?.trim().toLowerCase() || '';
+    const heldPages = uidLower ? pagesPerViaUid.get(uidLower) || [] : [];
     return Boolean(
+      via.isNewlyTransferred ||
       via.pageUpdateStatus === 'pending' ||
-      (via.hasAdminAssignedPage && via.pageUpdateStatus !== 'updated')
+      (via.hasAdminAssignedPage && via.pageUpdateStatus !== 'updated') ||
+      heldPages.some((p) => p.isNewlyTransferred)
     );
   };
 
@@ -352,22 +392,26 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     return Boolean(via.pageUpdateStatus === 'updated' || pagesCount > 0);
   };
 
-  // Quick action: Cập nhật trạng thái Page của Via (Admin tự cập nhật màu đỏ hoặc nhân viên update lên màu xanh)
+  // Quick action: Cập nhật trạng thái Page của Via (Admin tự cập nhật màu đỏ hoặc nhân viên bấm Đã nhận chuyển sang màu xanh)
   const handleSetViaPageStatus = (via: FullViaItem, newStatus: ViaPageUpdateStatus) => {
     const isPending = newStatus === 'pending';
     const isUpdated = newStatus === 'updated';
     const updated: FullViaItem = {
       ...via,
       pageUpdateStatus: newStatus,
+      isNewlyTransferred: isPending,
       hasAdminAssignedPage: isPending || isUpdated ? true : false,
       ...(isPending ? { pageAssignedAt: new Date().toLocaleDateString('vi-VN') } : {}),
       ...(isUpdated ? { pageUpdatedAt: new Date().toLocaleDateString('vi-VN') } : {}),
     };
     onUpdateVia(updated);
+    if (!isPending && onAcknowledgeNewTransfer && via.uid) {
+      onAcknowledgeNewTransfer({ viaUid: via.uid });
+    }
     if (isPending) {
-      setCopyToastMessage(`🔴 Đã chuyển nick ${via.uid} sang: Admin đã thêm Page (Màu đỏ để NV biết)!`);
+      setCopyToastMessage(`🔴 Đã đánh dấu đỏ nick ${via.uid}: Báo nhân viên có Via & Page mới!`);
     } else if (isUpdated) {
-      setCopyToastMessage(`🟢 Đã chuyển nick ${via.uid} sang: Có page từ đầu (Màu xanh)!`);
+      setCopyToastMessage(`🟢 Đã xác nhận nhận Via ${via.uid} & Page (Chuyển sang màu xanh)!`);
     } else {
       setCopyToastMessage(`⚪ Đã chuyển nick ${via.uid} về: Chưa có page (Màu trắng).`);
     }
@@ -922,6 +966,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     if (selectedVias.length === 0) return;
 
     let totalTransferredPages = 0;
+    const movingToPool = isAdminWaitingPool(cleanStaff);
     selectedVias.forEach((v) => {
       const uidLower = v.uid?.trim().toLowerCase() || '';
       const heldPages = uidLower ? pagesPerViaUid.get(uidLower) || [] : [];
@@ -929,13 +974,25 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       onUpdateVia({
         ...v,
         staffName: cleanStaff,
-        ...(heldPages.length > 0 ? { pageUpdateStatus: 'updated', hasAdminAssignedPage: true } : {}),
+        ...(movingToPool
+          ? {
+              isNewlyTransferred: false,
+              pageUpdateStatus: heldPages.length > 0 ? 'updated' : 'none',
+            }
+          : {
+              isNewlyTransferred: true,
+              pageUpdateStatus: 'pending',
+              hasAdminAssignedPage: true,
+              pageAssignedAt: new Date().toLocaleDateString('vi-VN'),
+            }),
       });
     });
 
     setSelectedViaIds(new Set());
     setCopyToastMessage(
-      `✅ Đã chuyển ${selectedVias.length} Via kèm toàn bộ ${totalTransferredPages} Page sang cho nhân viên: ${cleanStaff}!`
+      movingToPool
+        ? `📦 Đã cất ${selectedVias.length} Via kèm ${totalTransferredPages} Page vào Kho Chờ Admin!`
+        : `🔴 Đã chuyển ${selectedVias.length} Via kèm toàn bộ ${totalTransferredPages} Page sang cho NV: ${cleanStaff} (Đã đánh dấu đỏ báo Via & Page mới)!`
     );
     setTimeout(() => setCopyToastMessage(null), 3500);
   };
@@ -1302,10 +1359,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               )}
               {isPendingPage && !isRowError && !isRowFixed && (
                 <span
-                  className="bg-rose-600 text-white font-black text-[9px] px-1 py-0.2 rounded shadow-2xs shrink-0 flex items-center space-x-0.5 animate-pulse"
-                  title="Admin đã thêm page cho nick này để nhân viên biết!"
+                  className="bg-rose-600 text-white font-black text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 flex items-center space-x-0.5 animate-pulse"
+                  title="Via & Page mới được chuyển giao cho nhân viên!"
                 >
-                  <span>ADMIN THÊM PAGE</span>
+                  <span>🔴 VIA & PAGE MỚI</span>
                 </span>
               )}
               <a
@@ -1507,9 +1564,17 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   onUpdateVia({
                     ...via,
                     staffName: newStaff,
-                    ...(assignedPages.length > 0
-                      ? { pageUpdateStatus: 'updated', hasAdminAssignedPage: true }
-                      : {}),
+                    ...(movingToPool
+                      ? {
+                          isNewlyTransferred: false,
+                          pageUpdateStatus: assignedPages.length > 0 ? 'updated' : 'none',
+                        }
+                      : {
+                          isNewlyTransferred: true,
+                          pageUpdateStatus: 'pending',
+                          hasAdminAssignedPage: true,
+                          pageAssignedAt: new Date().toLocaleDateString('vi-VN'),
+                        }),
                   });
                   setCopyToastMessage(
                     movingToPool
@@ -1517,8 +1582,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                         ? `📦 Đã chuyển Via ${via.uid} + ${assignedPages.length} Page vào Kho Chờ Admin (Chưa NV nào dùng)!`
                         : `📦 Đã chuyển Via ${via.uid} vào Kho Chờ Admin (Chưa NV nào dùng)!`
                       : assignedPages.length > 0
-                      ? `✅ Đã giao Via ${via.uid} + toàn bộ ${assignedPages.length} Page đang cầm sang cho NV: ${newStaff}!`
-                      : `✅ Đã giao quyền quản lý nick Via ${via.uid} sang cho NV: ${newStaff}`
+                      ? `🔴 Đã giao Via ${via.uid} + toàn bộ ${assignedPages.length} Page sang cho NV: ${newStaff} (Đã đánh dấu đỏ báo Via & Page mới)!`
+                      : `🔴 Đã giao nick Via ${via.uid} sang cho NV: ${newStaff} (Đã đánh dấu đỏ báo Via mới)!`
                   );
                   setTimeout(() => setCopyToastMessage(null), 3200);
                 }}
@@ -1622,28 +1687,28 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           <div className="flex flex-col items-center space-y-1 w-full min-w-[175px] max-w-[235px] mx-auto">
             {isPendingPage ? (
               <>
-                {/* 🔴 Admin đã thêm Page (Màu đỏ để nhân viên biết) */}
+                {/* 🔴 Via & Page mới bàn giao / Admin đã thêm Page (Màu đỏ để nhân viên biết) */}
                 <div className="flex items-center justify-between gap-1 w-full">
                   {currentUser.role === 'admin' ? (
                     <button
                       type="button"
                       onClick={() => handleSetViaPageStatus(via, 'none')}
                       className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10.5px] font-bold shadow-2xs cursor-pointer flex items-center space-x-1"
-                      title="Admin đã thêm page để nhân viên biết. Bấm để chuyển lại về Chưa có page."
+                      title="Via & Page mới bàn giao (Đang đánh dấu đỏ để nhân viên biết). Bấm để xóa đánh dấu."
                     >
                       <AlertCircle className="w-3 h-3" />
                       <span>
-                        🔴 Admin thêm {assignedPages.length > 0 ? `(${assignedPages.length} Page)` : 'Page'}
+                        🔴 Mới giao {assignedPages.length > 0 ? `(${assignedPages.length} Page)` : 'Via'}
                       </span>
                     </button>
                   ) : (
                     <span
                       className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10.5px] font-bold shadow-2xs flex items-center space-x-1 animate-pulse"
-                      title="Admin đã thêm page cho nick này để bạn biết và làm việc!"
+                      title="Admin vừa chuyển giao Via & Page mới này cho bạn!"
                     >
                       <AlertCircle className="w-3 h-3" />
                       <span>
-                        🔴 Admin thêm {assignedPages.length > 0 ? `(${assignedPages.length} Page)` : 'Page'}
+                        🔴 Mới giao {assignedPages.length > 0 ? `(${assignedPages.length} Page)` : 'Via'}
                       </span>
                     </span>
                   )}
@@ -1652,9 +1717,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     type="button"
                     onClick={() => handleSetViaPageStatus(via, 'updated')}
                     className="px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold shadow-2xs cursor-pointer"
-                    title="Xác nhận đã có page / hoàn tất (chuyển sang màu xanh)"
+                    title="Xác nhận đã nhận Via & Page mới (Chuyển sang màu xanh)"
                   >
-                    ✓ Đã có
+                    ✓ Đã nhận
                   </button>
                 </div>
 
@@ -2461,6 +2526,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                         📗 {stats.totalPages} Page
                       </span>
                     )}
+                    {stats.pendingNew > 0 && (
+                      <span
+                        className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-600 text-white shadow-2xs animate-pulse"
+                        title={`Nhân viên ${name} có ${stats.pendingNew} Via & Page mới được chuyển giao (Đánh dấu đỏ)`}
+                      >
+                        🔴 {stats.pendingNew} mới
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -2591,6 +2664,76 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         </div>
       )}
 
+      {/* 🔴 BANNER ĐỎ BÁO NHÂN VIÊN CÓ VIA VÀ PAGE MỚI BÀN GIAO */}
+      {pendingPageCountInScope > 0 && (
+        <div className="bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white px-4 py-2.5 border-b border-rose-800 shadow-sm flex flex-wrap items-center justify-between gap-2.5 text-xs">
+          <div className="flex items-center flex-wrap gap-2">
+            <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-white text-rose-700 font-black text-[11px] shadow-2xs animate-pulse">
+              <AlertCircle className="w-3.5 h-3.5 text-rose-600 fill-rose-100" />
+              <span>🔴 CÓ {pendingPageCountInScope} VIA & PAGE MỚI NHẬN!</span>
+            </span>
+            <span className="font-semibold text-rose-50">
+              {currentUser.role === 'staff'
+                ? `Bạn vừa được chuyển giao ${pendingPageCountInScope} Nick Via & Page mới (được tô đỏ trong bảng để dễ nhận biết).`
+                : `Đang có ${pendingPageCountInScope} Nick Via & Page mới chuyển giao cho nhân viên (đang đánh dấu đỏ chờ nhân viên nhận).`}
+            </span>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'pending_page' ? 'all' : 'pending_page')}
+              className={`px-2.5 py-1 rounded-lg font-extrabold text-[11px] border transition-all cursor-pointer ${
+                statusFilter === 'pending_page'
+                  ? 'bg-amber-300 text-slate-950 border-amber-400 shadow-2xs'
+                  : 'bg-rose-800/80 hover:bg-rose-900 text-white border-rose-400/60'
+              }`}
+            >
+              {statusFilter === 'pending_page'
+                ? '✕ Bỏ lọc Via & Page mới'
+                : `🔍 Lọc riêng ${pendingPageCountInScope} Via mới`}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const pendingVias = currentBaseVias.filter((v) => isViaPendingPageUpdate(v));
+                pendingVias.forEach((v) => {
+                  onUpdateVia({
+                    ...v,
+                    pageUpdateStatus: 'updated',
+                    isNewlyTransferred: false,
+                    hasAdminAssignedPage: true,
+                    pageUpdatedAt: new Date().toLocaleDateString('vi-VN'),
+                  });
+                });
+                if (onAcknowledgeNewTransfer) {
+                  onAcknowledgeNewTransfer(
+                    currentUser.role === 'staff'
+                      ? { staffName: currentUser.name }
+                      : selectedStaffFilter !== 'all' && !isAdminWaitingPool(selectedStaffFilter)
+                      ? { staffName: selectedStaffFilter }
+                      : {}
+                  );
+                }
+                if (statusFilter === 'pending_page') {
+                  setStatusFilter('all');
+                }
+                setCopyToastMessage(
+                  `✅ Đã xác nhận nhận tất cả ${pendingVias.length} Via & Page mới (Đã xóa đánh dấu đỏ)!`
+                );
+                setTimeout(() => setCopyToastMessage(null), 3000);
+              }}
+              className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[11px] border border-emerald-400 shadow-2xs transition-colors cursor-pointer flex items-center space-x-1"
+              title="Xác nhận đã nhận tất cả các Via & Page mới (Chuyển từ màu đỏ sang màu xanh)"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>✓ Đã nhận tất cả ({pendingPageCountInScope} Via)</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Unified Filter Toolbar */}
       <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs">
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
@@ -2704,9 +2847,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   ? 'text-rose-700 font-black hover:bg-rose-50'
                   : 'text-slate-500 hover:bg-slate-100'
               }`}
-              title="Lọc các nick Admin đã thêm page (Màu đỏ để NV biết)"
+              title="Lọc các nick Via & Page mới chuyển giao cho nhân viên (Màu đỏ để NV biết)"
             >
-              🔴 Admin thêm Page ({pendingPageCountInScope})
+              🔴 Via & Page mới ({pendingPageCountInScope})
             </button>
             <button
               type="button"

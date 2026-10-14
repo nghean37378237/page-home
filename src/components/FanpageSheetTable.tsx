@@ -329,6 +329,11 @@ interface FanpageSheetTableProps {
   onQuickTransferViaToStaff?: (viaUid: string, targetStaffName: string) => void;
   availableStaffNames?: string[];
   onFetchPagesForVia?: (viaUid: string, staffName: string) => void;
+  onAcknowledgeNewTransfer?: (options?: {
+    viaUid?: string;
+    recordId?: string;
+    staffName?: string;
+  }) => void;
 }
 
 export type SheetRowItem =
@@ -378,6 +383,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   onQuickTransferViaToStaff,
   availableStaffNames = [],
   onFetchPagesForVia,
+  onAcknowledgeNewTransfer,
 }) => {
   const [copiedViaId, setCopiedViaId] = useState<string | null>(null);
   const [copyToast, setCopyToast] = useState<string | null>(null);
@@ -395,8 +401,10 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   // 'natural' (Giữ nguyên thứ tự danh sách)
   const [sortMode, setSortMode] = useState<'multi-first' | 'natural'>('multi-first');
 
-  // Lọc nhanh theo loại Via: 'all' | 'multi' (chỉ via cầm chung) | 'single' (via 1 page) | 'unassigned' (chưa gán via)
-  const [filterViaType, setFilterViaType] = useState<'all' | 'multi' | 'single' | 'unassigned'>('all');
+  // Lọc nhanh theo loại Via: 'all' | 'multi' (chỉ via cầm chung) | 'single' (via 1 page) | 'unassigned' (chưa gán via) | 'new_transfer' (Via & Page mới bàn giao đánh dấu đỏ)
+  const [filterViaType, setFilterViaType] = useState<
+    'all' | 'multi' | 'single' | 'unassigned' | 'new_transfer'
+  >('all');
 
   // Lọc nhanh theo nhân viên (Staff Scope Pill)
   const [selectedStaff, setSelectedStaff] = useState<string>('all');
@@ -710,6 +718,18 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
         const filteredStaffRecs = staffOrderedRecs.filter((r) => {
           if (filterViaType === 'all') return true;
+          if (filterViaType === 'new_transfer') {
+            if (isAdminWaitingPool(r.staffName)) return false;
+            const uLower = (r.viaUid || '').split('|')[0].trim().toLowerCase();
+            const matchedV = existingVias?.find(
+              (v) => (v.uid || '').split('|')[0].trim().toLowerCase() === uLower
+            );
+            return Boolean(
+              r.isNewlyTransferred ||
+                matchedV?.isNewlyTransferred ||
+                matchedV?.pageUpdateStatus === 'pending'
+            );
+          }
           const v = r.viaUid.trim();
           if (filterViaType === 'unassigned') return !v;
           if (!v) return false;
@@ -727,7 +747,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     });
 
     return { displayItems: items, totalRecordCount: countTotal };
-  }, [records, selectedStaff, collapsedStaffSet, sortMode, filterViaType, errorViaUids]);
+  }, [records, selectedStaff, collapsedStaffSet, sortMode, filterViaType, errorViaUids, existingVias]);
 
   // Phân trang
   const totalItems = displayItems.length;
@@ -767,10 +787,37 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     const map = new Map<string, FullViaItem>();
     if (!existingVias) return map;
     existingVias.forEach((v) => {
-      if (v.uid) map.set(v.uid.trim().toLowerCase(), v);
+      const cleanKey = (v.uid || v.rawFullVia || '').split('|')[0].trim().toLowerCase();
+      if (cleanKey) map.set(cleanKey, v);
     });
     return map;
   }, [existingVias]);
+
+  // Helper kiểm tra Page / Via có đang được đánh dấu đỏ "Mới bàn giao cho nhân viên" hay không
+  const isRecordNewlyTransferred = (r: PageRecord): boolean => {
+    if (isAdminWaitingPool(r.staffName)) return false;
+    if (r.isNewlyTransferred) return true;
+    const uKey = (r.viaUid || '').split('|')[0].trim().toLowerCase();
+    if (!uKey) return false;
+    const matchedVia = viaMapByUid.get(uKey);
+    return Boolean(matchedVia && (matchedVia.isNewlyTransferred || matchedVia.pageUpdateStatus === 'pending'));
+  };
+
+  // Thống kê danh sách Via & Page mới được chuyển giao (đánh dấu đỏ)
+  const newlyTransferredStats = useMemo(() => {
+    const newRecs = records.filter((r) => isRecordNewlyTransferred(r));
+    const uniqueVias = Array.from(
+      new Set(newRecs.map((r) => (r.viaUid || '').split('|')[0].trim()).filter(Boolean))
+    );
+    const staffSet = Array.from(new Set(newRecs.map((r) => r.staffName.trim()).filter(Boolean)));
+    return {
+      records: newRecs,
+      pageCount: newRecs.length,
+      viaCount: uniqueVias.length,
+      viaUids: uniqueVias,
+      staffNames: staffSet,
+    };
+  }, [records, viaMapByUid]);
 
   // Map UID -> viaErrorNote across records in Fanpage table
   const viaReportNoteMap = useMemo(() => {
@@ -1175,6 +1222,23 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   Chưa Via ({viaStats.unassignedPages})
                 </button>
               )}
+
+              {newlyTransferredStats.pageCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setFilterViaType(filterViaType === 'new_transfer' ? 'all' : 'new_transfer')
+                  }
+                  className={`px-2 py-0.5 rounded text-[11px] font-black transition-all cursor-pointer inline-flex items-center space-x-1 ${
+                    filterViaType === 'new_transfer'
+                      ? 'bg-rose-600 text-white shadow-xs ring-2 ring-rose-300'
+                      : 'bg-rose-100 text-rose-800 hover:bg-rose-200 border border-rose-300 animate-pulse'
+                  }`}
+                  title="Lọc nhanh các Via & Fanpage vừa mới chuyển giao (Đánh dấu đỏ)"
+                >
+                  <span>🔴 Via & Page Mới ({newlyTransferredStats.viaCount} Via / {newlyTransferredStats.pageCount} Page)</span>
+                </button>
+              )}
             </div>
 
             {/* Thu gọn / Mở rộng tất cả nhân viên */}
@@ -1514,6 +1578,76 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
         </div>
       </div>
 
+      {/* 🔴 BANNER ĐÁNH DẤU ĐỎ BÁO NHÂN VIÊN CÓ VIA & PAGE MỚI CHUYỂN GIAO */}
+      {newlyTransferredStats.pageCount > 0 && (
+        <div className="mb-2.5 bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white rounded-xl px-3.5 py-2.5 shadow-md border-2 border-rose-400 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex items-center space-x-2.5 min-w-0">
+            <span className="px-2 py-0.5 rounded-full bg-white text-rose-700 font-black text-[11px] uppercase tracking-wide shrink-0 shadow-2xs animate-bounce">
+              🔴 MỚI BÀN GIAO
+            </span>
+            <div className="text-xs font-bold leading-snug">
+              <span>
+                {currentUser.role === 'staff'
+                  ? `Bạn (${currentUser.name}) vừa nhận mới `
+                  : `Nhân viên (${newlyTransferredStats.staffNames.join(', ')}) vừa nhận mới `}
+                <strong className="underline decoration-rose-200 font-black">
+                  {newlyTransferredStats.viaCount} Nick Via
+                </strong>{' '}
+                kèm{' '}
+                <strong className="underline decoration-rose-200 font-black">
+                  {newlyTransferredStats.pageCount} Fanpage
+                </strong>
+                !
+              </span>
+              <span className="hidden md:inline text-rose-100 font-medium ml-2">
+                (UID: {newlyTransferredStats.viaUids.slice(0, 4).join(', ')}
+                {newlyTransferredStats.viaUids.length > 4
+                  ? ` +${newlyTransferredStats.viaUids.length - 4} Via`
+                  : ''}
+                )
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-2 shrink-0">
+            <button
+              type="button"
+              onClick={() =>
+                setFilterViaType(filterViaType === 'new_transfer' ? 'all' : 'new_transfer')
+              }
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border transition-all cursor-pointer ${
+                filterViaType === 'new_transfer'
+                  ? 'bg-slate-900 text-white border-white shadow-xs'
+                  : 'bg-white/20 hover:bg-white/30 text-white border-white/50'
+              }`}
+            >
+              {filterViaType === 'new_transfer'
+                ? `Hiện lại tất cả (${records.length} Page)`
+                : `🔍 Chỉ xem Via & Page mới (${newlyTransferredStats.pageCount})`}
+            </button>
+
+            {onAcknowledgeNewTransfer && (
+              <button
+                type="button"
+                onClick={() => {
+                  onAcknowledgeNewTransfer();
+                  if (filterViaType === 'new_transfer') setFilterViaType('all');
+                  setCopyToast(
+                    '✅ Đã xác nhận nhận Via & Page mới (Đã gỡ đánh dấu đỏ ở cả Quản Lý Page & Full Via)!'
+                  );
+                  setTimeout(() => setCopyToast(null), 3000);
+                }}
+                className="px-3 py-1 rounded-lg text-[11px] font-black bg-white hover:bg-emerald-50 text-rose-700 hover:text-emerald-800 border border-white shadow-xs transition-all cursor-pointer flex items-center space-x-1"
+                title="Bấm xác nhận đã nắm thông tin Via & Page mới -> Tự động gỡ đánh dấu đỏ ở cả Quản Lý Page và Quản Trị Full Via"
+              >
+                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                <span>Đã nhận tất cả (Gỡ báo đỏ)</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Spreadsheet Container */}
       <div className="bg-white border-2 border-[#2e7d32] rounded-lg shadow-sm overflow-hidden">
         <div
@@ -1781,6 +1915,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         fixedViaUids.has(record.viaUid.trim().toLowerCase()))
                   );
 
+                  const isRowNewTransfer = isRecordNewlyTransferred(record);
+
                   const isCompact = densityMode === 'compact';
                   const cellPyClass = isCompact ? 'py-0.5' : 'py-1';
 
@@ -1790,6 +1926,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                       className={`transition-colors ${topDividerClass} ${bottomDividerClass} ${
                         isRowViaError
                           ? 'bg-rose-50/75 hover:bg-rose-100/75 border-l-4 border-l-rose-600'
+                          : isRowNewTransfer
+                          ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-600 ring-1 ring-inset ring-rose-300'
                           : isRowViaFixed
                           ? 'bg-emerald-50/80 hover:bg-emerald-100/80 border-l-4 border-l-emerald-600'
                           : `${theme.rowBg} ${theme.rowHover} ${isGroupedVia ? theme.borderLeft : ''}`
@@ -1963,18 +2101,51 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                 fixedViaUids.has(record.viaUid.trim().toLowerCase()))
                           );
 
+                          const isThisViaNewTransfer = isRecordNewlyTransferred(record);
+
                           return (
                             <td
                               rowSpan={viaRowSpan}
                               className={`px-2 py-1.5 border-r border-slate-300 font-mono text-xs text-slate-800 align-top transition-all ${
                                 isThisViaError
                                   ? 'bg-rose-100/95 border-l-4 border-l-rose-600 ring-1 ring-rose-500/40 text-rose-950'
+                                  : isThisViaNewTransfer
+                                  ? 'bg-rose-100/90 border-l-4 border-l-rose-600 ring-2 ring-rose-500/60 text-rose-950 shadow-xs'
                                   : isThisViaFixed
                                   ? 'bg-emerald-100/95 border-l-4 border-l-emerald-600 ring-2 ring-emerald-500/60 text-emerald-950 shadow-xs'
                                   : `${theme.cellBg} ${theme.borderLeft}`
                               }`}
                             >
                               <div className="flex flex-col space-y-1.5 py-0.5 w-full min-w-[195px] max-w-[230px]">
+                                {/* 🔴 THÔNG BÁO ĐỎ NỔI BẬT KHI VIA & PAGE VỪA CHUYỂN GIAO CHO NHÂN VIÊN MỚI */}
+                                {isThisViaNewTransfer && (
+                                  <div className="flex items-center justify-between gap-1 bg-rose-600 text-white px-2 py-1 rounded-md shadow-xs ring-2 ring-rose-300">
+                                    <span
+                                      className="text-[9.5px] font-black tracking-tight flex items-center space-x-1 truncate"
+                                      title={`Via ${record.viaUid} và ${viaSpan.totalInGroup} Page vừa mới được chuyển giao cho ${record.staffName}!`}
+                                    >
+                                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping shrink-0" />
+                                      <span>🔴 VIA & PAGE MỚI ({viaSpan.totalInGroup}P)</span>
+                                    </span>
+                                    {onAcknowledgeNewTransfer && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          onAcknowledgeNewTransfer({ viaUid: record.viaUid });
+                                          setCopyToast(
+                                            `✅ Đã xác nhận nhận Via ${record.viaUid} & gỡ đánh dấu đỏ!`
+                                          );
+                                          setTimeout(() => setCopyToast(null), 2500);
+                                        }}
+                                        className="px-1.5 py-0.2 bg-white hover:bg-emerald-50 text-rose-700 hover:text-emerald-800 rounded text-[9px] font-black shrink-0 cursor-pointer shadow-2xs"
+                                        title="Bấm xác nhận đã nhận Via & Page này (Gỡ đánh dấu đỏ)"
+                                      >
+                                        ✓ Đã nhận
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+
                                 {/* UID input & Copy button */}
                                 <div className="flex items-center space-x-1">
                                   <input
@@ -1991,6 +2162,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                     className={`w-full min-w-[90px] bg-white/95 hover:bg-white focus:bg-white border rounded px-1.5 py-0.5 font-mono focus:outline-hidden text-xs font-bold ${
                                       isThisViaError
                                         ? 'border-rose-400 focus:border-rose-600 text-rose-950 ring-1 ring-rose-300'
+                                        : isThisViaNewTransfer
+                                        ? 'border-rose-500 focus:border-rose-700 text-rose-950 ring-1 ring-rose-400 font-black'
                                         : isThisViaFixed
                                         ? 'border-emerald-500 focus:border-emerald-700 text-emerald-950 ring-1 ring-emerald-400 font-black'
                                         : 'border-slate-300 focus:border-emerald-600'
@@ -2271,8 +2444,18 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                       )}
 
                       {/* Col D: TÊN PAGE */}
-                      <td className="px-1.5 py-1 border-r border-slate-300 whitespace-nowrap font-semibold text-slate-900">
+                      <td className={`px-1.5 py-1 border-r border-slate-300 whitespace-nowrap font-semibold text-slate-900 ${
+                        isRowNewTransfer ? 'bg-rose-50/90' : ''
+                      }`}>
                         <div className="flex items-center space-x-1">
+                          {isRowNewTransfer && (
+                            <span
+                              className="px-1.5 py-0.5 text-[9px] font-black rounded bg-rose-600 text-white shrink-0 shadow-2xs animate-pulse"
+                              title={`Page "${record.pageName}" vừa mới được chuyển giao cho ${record.staffName}!`}
+                            >
+                              🔴 MỚI
+                            </span>
+                          )}
                           {isGroupedVia && (
                             <span
                               className={`px-1.5 py-0.5 text-[9px] font-black rounded-md ${theme.chipBg} ${theme.chipText} border border-current/25 select-none shrink-0 shadow-2xs`}
@@ -2287,7 +2470,9 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                             onChange={(e) =>
                               onUpdateRecord(record.id, { pageName: e.target.value })
                             }
-                            className="w-full bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-emerald-600 rounded px-1 py-0.5 font-semibold focus:outline-hidden text-xs max-w-[140px] truncate"
+                            className={`w-full bg-transparent hover:bg-white focus:bg-white border border-transparent hover:border-slate-300 focus:border-emerald-600 rounded px-1 py-0.5 font-semibold focus:outline-hidden text-xs max-w-[140px] truncate ${
+                              isRowNewTransfer ? 'text-rose-950 font-black' : ''
+                            }`}
                             placeholder="Tên Fanpage"
                             title={record.pageName}
                           />

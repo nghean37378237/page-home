@@ -717,6 +717,16 @@ export default function App() {
       fullTitle: 'Bảng 1: Quản Lý Fanpage & Tiến Độ Đăng Bài',
       icon: FileSpreadsheet,
       count: userScopedRecords.length,
+      newCount: userScopedRecords.filter(
+        (r) =>
+          !isAdminWaitingPool(r.staffName) &&
+          (Boolean(r.isNewlyTransferred) ||
+            viaList.some(
+              (v) =>
+                normalizeViaUidKey(v.uid) === normalizeViaUidKey(r.viaUid) &&
+                Boolean(v.isNewlyTransferred || v.pageUpdateStatus === 'pending')
+            ))
+      ).length,
       unit: 'Page',
       activeClass: 'bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -735,6 +745,7 @@ export default function App() {
         currentUser.role === 'admin'
           ? groupRecords.length
           : groupRecords.filter((g) => g.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()).length,
+      newCount: 0,
       unit: 'Dòng',
       activeClass: 'bg-red-700 text-white shadow-xs ring-2 ring-red-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -759,6 +770,7 @@ export default function App() {
                   (s) => s.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
                 )
             ).length,
+      newCount: 0,
       unit: 'Proxy',
       activeClass: 'bg-teal-700 text-white shadow-xs ring-2 ring-teal-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -777,6 +789,19 @@ export default function App() {
         currentUser.role === 'admin'
           ? viaList.length
           : viaList.filter((v) => v.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()).length,
+      newCount: (
+        currentUser.role === 'admin'
+          ? viaList
+          : viaList.filter((v) => v.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+      ).filter(
+        (v) =>
+          !isAdminWaitingPool(v.staffName) &&
+          Boolean(
+            v.isNewlyTransferred ||
+              v.pageUpdateStatus === 'pending' ||
+              (v.hasAdminAssignedPage && v.pageUpdateStatus !== 'updated')
+          )
+      ).length,
       unit: 'Via',
       activeClass: 'bg-indigo-700 text-white shadow-xs ring-2 ring-indigo-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -792,6 +817,7 @@ export default function App() {
       fullTitle: 'Bảng 5: Quản Trị Nhân Sự, Phân Quyền Bảng & Bảo Mật',
       icon: Users,
       count: accounts.filter((a) => a.role === 'staff').length,
+      newCount: 0,
       unit: 'NV',
       activeClass: 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -816,6 +842,7 @@ export default function App() {
                   (s) => s.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
                 )
             ).length,
+      newCount: 0,
       unit: 'TK',
       activeClass: 'bg-purple-700 text-white shadow-xs ring-2 ring-purple-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -831,6 +858,7 @@ export default function App() {
       fullTitle: 'Bảng 7: Quản Lý Doanh Thu, Chi Phí & Lương Nhân Viên Từng Tháng',
       icon: DollarSign,
       count: finances.length,
+      newCount: 0,
       unit: 'Tháng',
       activeClass: 'bg-amber-600 text-white shadow-xs ring-2 ring-amber-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -846,6 +874,7 @@ export default function App() {
       fullTitle: 'Thông Tin Nhân Viên, Ngày Sinh, Lương & Doanh Thu (Từ Bảng 7)',
       icon: Contact,
       count: 1,
+      newCount: 0,
       unit: 'Hồ sơ',
       activeClass: 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -861,6 +890,7 @@ export default function App() {
       fullTitle: 'Bảng 9: Xưởng Ghép Ảnh & Chia Việc Nhân Viên (lamanh.vercel.app)',
       icon: ImageIcon,
       count: imageTasks.length,
+      newCount: 0,
       unit: 'Bài',
       activeClass: 'bg-rose-700 text-white shadow-xs ring-2 ring-rose-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -1359,11 +1389,14 @@ export default function App() {
       appendHistoryNote?: boolean;
       historyNoteText?: string;
       dateStr?: string;
+      markNewTransfer?: boolean;
     }
   ): { primaryVia: FullViaItem; duplicateViaIds: string[]; resolvedFullViaStr: string } => {
     const uidPure = cleanUid.split('|')[0].trim();
     const pageCount = heldPages.length;
     const dateStr = options?.dateStr || `${new Date().getDate()}/${new Date().getMonth() + 1}`;
+    const isMovingToWaitingPool = isAdminWaitingPool(targetCleanStaff);
+    const shouldMarkRedNew = Boolean(options?.markNewTransfer && !isMovingToWaitingPool);
 
     // Tìm FullViaItem giàu dữ liệu nhất (ưu tiên item đã có pass / twoFa / rawFullVia)
     const sortedVias = [...matchingVias].sort((a, b) => {
@@ -1414,8 +1447,22 @@ export default function App() {
         twoFa: bestTwoFa || primaryExisting.twoFa || '',
         rawFullVia: resolvedFullViaStr,
         staffName: targetCleanStaff,
-        pageUpdateStatus: pageCount > 0 ? 'updated' : primaryExisting.pageUpdateStatus || 'none',
-        hasAdminAssignedPage: pageCount > 0 ? true : primaryExisting.hasAdminAssignedPage,
+        pageUpdateStatus: shouldMarkRedNew
+          ? 'pending'
+          : isMovingToWaitingPool
+          ? pageCount > 0
+            ? 'updated'
+            : 'none'
+          : pageCount > 0
+          ? primaryExisting.pageUpdateStatus || 'updated'
+          : primaryExisting.pageUpdateStatus || 'none',
+        hasAdminAssignedPage: shouldMarkRedNew
+          ? true
+          : pageCount > 0
+          ? true
+          : primaryExisting.hasAdminAssignedPage,
+        isNewlyTransferred: shouldMarkRedNew ? true : isMovingToWaitingPool ? false : primaryExisting.isNewlyTransferred,
+        ...(shouldMarkRedNew ? { pageAssignedAt: dateStr } : {}),
         ...(options?.appendHistoryNote && options?.historyNoteText
           ? { note: options.historyNoteText, sharedNote: options.historyNoteText }
           : {}),
@@ -1437,8 +1484,10 @@ export default function App() {
       twoFa: bestTwoFa,
       staffName: targetCleanStaff,
       status: 'active',
-      pageUpdateStatus: pageCount > 0 ? 'updated' : 'none',
-      hasAdminAssignedPage: pageCount > 0,
+      pageUpdateStatus: shouldMarkRedNew ? 'pending' : pageCount > 0 ? 'updated' : 'none',
+      hasAdminAssignedPage: shouldMarkRedNew ? true : pageCount > 0,
+      isNewlyTransferred: shouldMarkRedNew,
+      ...(shouldMarkRedNew ? { pageAssignedAt: dateStr } : {}),
       rawFullVia: resolvedFullViaStr,
       note: defaultNote,
       sharedNote: defaultNote,
@@ -1455,6 +1504,105 @@ export default function App() {
     setIsTransferModalOpen(true);
   };
 
+  // Xác nhận nhân viên đã nhận Via & Page mới chuyển giao -> Gỡ đánh dấu đỏ ở cả Quản Lý Page và Quản Trị Full Via
+  const handleAcknowledgeNewTransfer = async (options?: {
+    viaUid?: string;
+    recordId?: string;
+    staffName?: string;
+  }) => {
+    const targetViaLower = normalizeViaUidKey(options?.viaUid);
+    const targetRecordId = options?.recordId;
+    const targetStaffLower = options?.staffName?.trim().toLowerCase();
+
+    const dateStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
+
+    // 1. Tìm các Page cần gỡ đánh dấu đỏ
+    const pagesToClear = records.filter((r) => {
+      if (targetRecordId && r.id === targetRecordId) return true;
+      if (targetViaLower && normalizeViaUidKey(r.viaUid) === targetViaLower) return true;
+      if (targetStaffLower && r.staffName.trim().toLowerCase() === targetStaffLower) {
+        return Boolean(
+          r.isNewlyTransferred ||
+            viaList.some(
+              (v) =>
+                normalizeViaUidKey(v.uid) === normalizeViaUidKey(r.viaUid) &&
+                Boolean(v.isNewlyTransferred || v.pageUpdateStatus === 'pending')
+            )
+        );
+      }
+      if (!targetRecordId && !targetViaLower && !targetStaffLower) {
+        if (
+          currentUser.role === 'staff' &&
+          r.staffName.trim().toLowerCase() !== currentUser.name.trim().toLowerCase()
+        ) {
+          return false;
+        }
+        return Boolean(r.isNewlyTransferred);
+      }
+      return false;
+    });
+
+    const clearedPageRecords: PageRecord[] = pagesToClear.map((r) => ({
+      ...r,
+      isNewlyTransferred: false,
+      viaTransferColor: r.viaTransferColor === 'red' ? 'green' : r.viaTransferColor,
+      viaTransferStatus: r.viaTransferStatus === 'pending' ? 'completed' : r.viaTransferStatus || 'completed',
+    }));
+
+    // 2. Tìm các FullViaItem cần gỡ đánh dấu đỏ (chuyển từ pending đỏ sang updated xanh)
+    const affectedViaLowers = new Set<string>();
+    if (targetViaLower) affectedViaLowers.add(targetViaLower);
+    pagesToClear.forEach((p) => {
+      const uL = normalizeViaUidKey(p.viaUid);
+      if (uL) affectedViaLowers.add(uL);
+    });
+
+    const viasToClear = viaList.filter((v) => {
+      const vLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+      if (affectedViaLowers.has(vLower)) return true;
+      if (targetStaffLower && v.staffName.trim().toLowerCase() === targetStaffLower) {
+        return Boolean(v.isNewlyTransferred || v.pageUpdateStatus === 'pending');
+      }
+      if (!targetRecordId && !targetViaLower && !targetStaffLower) {
+        if (
+          currentUser.role === 'staff' &&
+          v.staffName.trim().toLowerCase() !== currentUser.name.trim().toLowerCase()
+        ) {
+          return false;
+        }
+        return Boolean(v.isNewlyTransferred || v.pageUpdateStatus === 'pending');
+      }
+      return false;
+    });
+
+    const clearedVias: FullViaItem[] = viasToClear.map((v) => {
+      const vLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+      const hasPages = records.some((r) => normalizeViaUidKey(r.viaUid) === vLower);
+      return {
+        ...v,
+        isNewlyTransferred: false,
+        pageUpdateStatus: hasPages ? 'updated' : 'none',
+        pageUpdatedAt: dateStr,
+      };
+    });
+
+    if (clearedPageRecords.length > 0) {
+      const pageMap = new Map(clearedPageRecords.map((p) => [p.id, p]));
+      setRecords((prev) => prev.map((r) => pageMap.get(r.id) || r));
+    }
+    if (clearedVias.length > 0) {
+      const viaMap = new Map(clearedVias.map((v) => [v.id, v]));
+      setViaList((prev) => prev.map((v) => viaMap.get(v.id) || v));
+    }
+
+    if (clearedPageRecords.length > 0) {
+      await batchSaveCloudPageRecords(clearedPageRecords);
+    }
+    if (clearedVias.length > 0) {
+      await batchSaveCloudVias(clearedVias);
+    }
+  };
+
   const handleConfirmTransferPageVia = async (params: TransferPageViaParams) => {
     const {
       pageIds,
@@ -1467,18 +1615,20 @@ export default function App() {
     } = params;
 
     const targetCleanStaff = targetStaffName.trim() || currentUser.name;
+    const isMovingToWaitingPool = isAdminWaitingPool(targetCleanStaff);
+    const shouldMarkRedNew = !isMovingToWaitingPool;
     const now = new Date();
     const dateStr = `${now.getDate()}/${now.getMonth() + 1}`;
 
     // CASE 1: Chuyển 1 hoặc nhiều Nick Via (UID) + TOÀN BỘ Page mà Via đó đang cầm sang cho nhân viên khác (hoặc Kho Chờ Admin)
-    // ĐỒNG THỜI chuyển luôn Full Via trong Quản Lý Full Via sang cho nhân viên đó!
+    // ĐỒNG THỜI chuyển luôn Full Via trong Quản Lý Full Via sang cho nhân viên đó & ĐÁNH DẤU ĐỎ báo nhân viên có Via & Page mới!
     if (transferViaUidsToStaff && transferViaUidsToStaff.length > 0) {
       const uidLowerSet = new Set(
         transferViaUidsToStaff.map((u) => normalizeViaUidKey(u)).filter(Boolean)
       );
       if (uidLowerSet.size === 0) return;
 
-      // 1a. Chuẩn bị & cập nhật (hoặc tạo mới) các Full Via trong Quản Trị Full Via sang tên nhân viên mới
+      // 1a. Chuẩn bị & cập nhật (hoặc tạo mới) các Full Via trong Quản Trị Full Via sang tên nhân viên mới (kèm đánh dấu đỏ)
       const viasToSave: FullViaItem[] = [];
       const duplicateViaIdsToDelete: string[] = [];
       const fullViaStrByUidLower = new Map<string, string>();
@@ -1505,6 +1655,7 @@ export default function App() {
             appendHistoryNote,
             historyNoteText,
             dateStr,
+            markNewTransfer: shouldMarkRedNew,
           }
         );
 
@@ -1515,11 +1666,13 @@ export default function App() {
         }
       });
 
-      // 1b. Tính toán danh sách Fanpage cần cập nhật trực tiếp từ mảng records (không phụ thuộc callback bất đồng bộ của setRecords)
+      // 1b. Tính toán danh sách Fanpage cần cập nhật trực tiếp từ mảng records (kèm đánh dấu đỏ báo nhân viên mới nhận)
       const transferNoteMsg =
         appendHistoryNote && historyNoteText
           ? historyNoteText
-          : `Chuyển Via + Page sang ${targetCleanStaff} (${dateStr})`;
+          : shouldMarkRedNew
+          ? `🔴 Mới giao Via + Page cho ${targetCleanStaff} (${dateStr})`
+          : `📦 Cất Via + Page vào ${targetCleanStaff} (${dateStr})`;
 
       const updatedRecords: PageRecord[] = [];
       const nextRecords = records.map((r) => {
@@ -1534,9 +1687,11 @@ export default function App() {
           staffName: targetCleanStaff,
           bmNote: cleanBm,
           viaTransferStatus: 'completed',
-          viaTransferColor: 'green',
+          viaTransferColor: shouldMarkRedNew ? 'red' : 'yellow',
           viaTransferNote: transferNoteMsg,
           viaTransferUpdatedAt: dateStr,
+          isNewlyTransferred: shouldMarkRedNew,
+          newlyTransferredAt: shouldMarkRedNew ? dateStr : undefined,
           ...(syncedFullVia ? { fullVia: syncedFullVia } : {}),
         };
         updatedRecords.push(updated);
@@ -1590,7 +1745,7 @@ export default function App() {
       return;
     }
 
-    // CASE 2: Chuyển 1 hoặc nhiều Fanpage sang Nick Via đích (và chuyển luôn Full Via trong Quản Lý Full Via sang nhân viên nhận)
+    // CASE 2: Chuyển 1 hoặc nhiều Fanpage sang Nick Via đích (và chuyển luôn Full Via trong Quản Lý Full Via sang nhân viên nhận + Đánh dấu đỏ)
     if (pageIds.length === 0 || !targetViaUid) return;
 
     const targetCleanVia = targetViaUid.split('|')[0].trim();
@@ -1616,6 +1771,7 @@ export default function App() {
       appendHistoryNote,
       historyNoteText,
       dateStr,
+      markNewTransfer: shouldMarkRedNew,
     });
 
     // Kiểm tra xem các UID nguồn của những Page đang chuyển có còn cầm Page nào ở nhân viên cũ không;
@@ -1646,7 +1802,7 @@ export default function App() {
           targetCleanStaff,
           matchingSrcVias,
           [],
-          { appendHistoryNote, historyNoteText, dateStr }
+          { appendHistoryNote, historyNoteText, dateStr, markNewTransfer: shouldMarkRedNew }
         );
         viasToPersist.push(primaryVia);
         dupIdsToRemove.push(...duplicateViaIds);
@@ -1664,7 +1820,7 @@ export default function App() {
       const transferNoteMsg =
         appendHistoryNote && historyNoteText
           ? historyNoteText
-          : `Đã chuyển sang Via ${targetCleanVia} - NV ${targetCleanStaff}`;
+          : `🔴 Mới chuyển sang Via ${targetCleanVia} - NV ${targetCleanStaff}`;
 
       const updated: PageRecord = isSelectedPage
         ? {
@@ -1673,9 +1829,11 @@ export default function App() {
             staffName: targetCleanStaff,
             bmNote: cleanBm,
             viaTransferStatus: 'completed',
-            viaTransferColor: 'green',
+            viaTransferColor: shouldMarkRedNew ? 'red' : 'yellow',
             viaTransferNote: transferNoteMsg,
             viaTransferUpdatedAt: dateStr,
+            isNewlyTransferred: shouldMarkRedNew,
+            newlyTransferredAt: shouldMarkRedNew ? dateStr : undefined,
             isViaFixed: true,
             isViaError: false,
             viaStatus: 'active',
@@ -1684,6 +1842,8 @@ export default function App() {
         : {
             ...r,
             staffName: targetCleanStaff,
+            isNewlyTransferred: shouldMarkRedNew ? true : r.isNewlyTransferred,
+            newlyTransferredAt: shouldMarkRedNew ? dateStr : r.newlyTransferredAt,
             fullVia: resolvedFullViaStr || targetFullVia || r.fullVia,
           };
       updatedRecords.push(updated);
@@ -2283,67 +2443,122 @@ export default function App() {
 
   const handleUpdateVia = async (updatedVia: FullViaItem) => {
     const cleanUidLower = normalizeViaUidKey(updatedVia.uid) || normalizeViaUidKey(updatedVia.rawFullVia);
+    const prevVia = viaList.find((v) => v.id === updatedVia.id);
+    const staffChangedToNewEmployee = Boolean(
+      prevVia &&
+        prevVia.staffName.trim().toLowerCase() !== updatedVia.staffName.trim().toLowerCase() &&
+        !isAdminWaitingPool(updatedVia.staffName)
+    );
+    const staffMovedToPool = Boolean(
+      prevVia &&
+        prevVia.staffName.trim().toLowerCase() !== updatedVia.staffName.trim().toLowerCase() &&
+        isAdminWaitingPool(updatedVia.staffName)
+    );
+    const dateStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
+
+    const finalVia: FullViaItem = staffChangedToNewEmployee
+      ? {
+          ...updatedVia,
+          pageUpdateStatus: 'pending',
+          hasAdminAssignedPage: true,
+          isNewlyTransferred: true,
+          pageAssignedAt: dateStr,
+        }
+      : staffMovedToPool
+      ? {
+          ...updatedVia,
+          isNewlyTransferred: false,
+        }
+      : updatedVia.pageUpdateStatus === 'updated' || updatedVia.pageUpdateStatus === 'none'
+      ? {
+          ...updatedVia,
+          isNewlyTransferred: false,
+        }
+      : updatedVia;
+
     const isViaVhh =
-      updatedVia.adminReportStatus === 'VHH' ||
-      updatedVia.status === 'dead' ||
-      (updatedVia.note || '').toLowerCase().includes('vhh');
+      finalVia.adminReportStatus === 'VHH' ||
+      finalVia.status === 'dead' ||
+      (finalVia.note || '').toLowerCase().includes('vhh');
     const isViaRestored =
-      updatedVia.status === 'fixed' ||
-      updatedVia.adminReportStatus === 'Live' ||
-      (updatedVia.status === 'active' &&
-        !updatedVia.isError &&
-        updatedVia.adminReportStatus !== 'VHH' &&
-        updatedVia.adminReportStatus !== '282' &&
-        updatedVia.adminReportStatus !== '956');
+      finalVia.status === 'fixed' ||
+      finalVia.adminReportStatus === 'Live' ||
+      (finalVia.status === 'active' &&
+        !finalVia.isError &&
+        finalVia.adminReportStatus !== 'VHH' &&
+        finalVia.adminReportStatus !== '282' &&
+        finalVia.adminReportStatus !== '956');
 
     const effectiveReportNote =
-      updatedVia.adminReportStatus && updatedVia.adminReportStatus !== 'None'
-        ? updatedVia.adminReportStatus
+      finalVia.adminReportStatus && finalVia.adminReportStatus !== 'None'
+        ? finalVia.adminReportStatus
         : isViaVhh
         ? 'VHH'
         : '';
 
     const fullStr =
-      updatedVia.rawFullVia || `${updatedVia.uid}|${updatedVia.pass}|${updatedVia.twoFa}`;
+      finalVia.rawFullVia || `${finalVia.uid}|${finalVia.pass}|${finalVia.twoFa}`;
+    const isPendingRed = Boolean(
+      finalVia.isNewlyTransferred || finalVia.pageUpdateStatus === 'pending'
+    );
+
     const matching = records
       .filter((r) => normalizeViaUidKey(r.viaUid) === cleanUidLower)
       .map((r) => ({
         ...r,
         fullVia: fullStr,
-        staffName: updatedVia.staffName || r.staffName,
-        isViaFixed: Boolean(updatedVia.isFixed || updatedVia.status === 'fixed'),
+        staffName: finalVia.staffName || r.staffName,
+        isNewlyTransferred: staffChangedToNewEmployee
+          ? true
+          : !isPendingRed
+          ? false
+          : r.isNewlyTransferred,
+        newlyTransferredAt: staffChangedToNewEmployee ? dateStr : r.newlyTransferredAt,
+        ...(staffChangedToNewEmployee
+          ? {
+              viaTransferStatus: 'completed' as const,
+              viaTransferColor: 'red' as const,
+              viaTransferNote: `🔴 Mới giao Via + Page cho ${finalVia.staffName} (${dateStr})`,
+              viaTransferUpdatedAt: dateStr,
+            }
+          : !isPendingRed && r.viaTransferColor === 'red' && r.isNewlyTransferred
+          ? {
+              viaTransferColor: 'green' as const,
+            }
+          : {}),
+        isViaFixed: Boolean(finalVia.isFixed || finalVia.status === 'fixed'),
         isViaError: Boolean(
-          updatedVia.isError ||
-          updatedVia.adminReportStatus === 'VHH' ||
-          updatedVia.adminReportStatus === '282' ||
-          updatedVia.adminReportStatus === '956' ||
-          updatedVia.status === 'error' ||
-          updatedVia.status === 'checkpoint' ||
-          updatedVia.status === 'dead'
+          finalVia.isError ||
+          finalVia.adminReportStatus === 'VHH' ||
+          finalVia.adminReportStatus === '282' ||
+          finalVia.adminReportStatus === '956' ||
+          finalVia.status === 'error' ||
+          finalVia.status === 'checkpoint' ||
+          finalVia.status === 'dead'
         ),
         viaStatus:
-          updatedVia.status ||
-          (updatedVia.isFixed
+          finalVia.status ||
+          (finalVia.isFixed
             ? 'fixed'
-            : updatedVia.adminReportStatus === 'VHH'
+            : finalVia.adminReportStatus === 'VHH'
             ? 'dead'
-            : updatedVia.adminReportStatus === '282' ||
-              updatedVia.adminReportStatus === '956' ||
-              updatedVia.isError
+            : finalVia.adminReportStatus === '282' ||
+              finalVia.adminReportStatus === '956' ||
+              finalVia.isError
             ? 'checkpoint'
             : 'active'),
-        viaErrorNote: isViaRestored && updatedVia.status === 'fixed' ? '' : effectiveReportNote,
-        viaSharedNote: updatedVia.sharedNote || updatedVia.note || r.viaSharedNote,
+        viaErrorNote: isViaRestored && finalVia.status === 'fixed' ? '' : effectiveReportNote,
+        viaSharedNote: finalVia.sharedNote || finalVia.note || r.viaSharedNote,
       }));
 
     // Cập nhật state React đồng bộ ngay lập tức cho cả Via và Page (trước khi await)
-    setViaList((prev) => prev.map((v) => (v.id === updatedVia.id ? updatedVia : v)));
+    setViaList((prev) => prev.map((v) => (v.id === finalVia.id ? finalVia : v)));
     if (matching.length > 0) {
       const updatedMap = new Map(matching.map((m) => [m.id, m]));
       setRecords((prev) => prev.map((r) => updatedMap.get(r.id) || r));
     }
 
-    await setCloudVia(updatedVia);
+    await setCloudVia(finalVia);
     if (matching.length > 0) {
       await batchSaveCloudPageRecords(matching);
     }
@@ -3669,6 +3884,16 @@ export default function App() {
                     >
                       {tab.count} {tab.unit}
                     </span>
+
+                    {/* Đánh dấu đỏ báo có Via / Page mới chuyển giao */}
+                    {tab.newCount > 0 && (
+                      <span
+                        className="px-1.5 py-0.5 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-2 ring-rose-300 animate-pulse"
+                        title={`Có ${tab.newCount} ${tab.unit} mới được chuyển giao!`}
+                      >
+                        🔴 +{tab.newCount} mới
+                      </span>
+                    )}
                   </button>
                 ))}
               </div>
@@ -3885,6 +4110,7 @@ export default function App() {
               onUpdateStaffNameForAll={handleUpdateStaffNameForAll}
               onUpdateFullViaForAll={handleUpdateFullViaForAll}
               onAddPageToVia={handleAddPageToVia}
+              onAcknowledgeNewTransfer={handleAcknowledgeNewTransfer}
             />
           </>
         ) : activeTab === 'group' ? (
@@ -3965,6 +4191,7 @@ export default function App() {
                 setFilter((prev) => ({ ...prev, staffName: staffName === 'all' ? '' : staffName }));
               }}
               onTransferViaPages={(viaUid) => handleOpenTransferModal(undefined, viaUid)}
+              onAcknowledgeNewTransfer={handleAcknowledgeNewTransfer}
             />
           </FullViaErrorBoundary>
         ) : activeTab === 'staff_management' ? (
