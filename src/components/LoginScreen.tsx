@@ -94,7 +94,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       });
   }, []);
 
-  // Mode: 'google' (Google Sign In - MẶC ĐỊNH) | 'admin' (Admin PIN) | 'request' (Xin cấp quyền) | 'staff' (Tên + PIN)
+  // Mode: 'google' (Google Sign In - MẶC ĐỊNH BẮT BUỘC CHO NHÂN VIÊN) | 'admin' (Dành riêng cho Quản Lý) | 'request' (Xin cấp quyền) | 'staff' (Dự phòng)
   const [activeTab, setActiveTab] = useState<'google' | 'admin' | 'request' | 'staff'>('google');
 
   // Dedicated Pending Approval State (User logged in with Gmail but needs Admin approval)
