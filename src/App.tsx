@@ -120,6 +120,12 @@ import { ImageStudioTab } from './components/ImageStudioTab';
 import { getCleanBmName } from './utils/helpers';
 import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon } from 'lucide-react';
 
+// Helper chuẩn hóa UID để so khớp chính xác giữa Quản Lý Page và Quản Lý Full Via
+function normalizeViaUidKey(raw?: string): string {
+  if (!raw) return '';
+  return raw.split('|')[0].trim().toLowerCase();
+}
+
 export default function App() {
   // Application data stored purely in Cloud Firestore
   const [records, setRecords] = useState<PageRecord[]>([]);
@@ -1370,12 +1376,6 @@ export default function App() {
     if (currentUser.name?.trim().toLowerCase() === staffLower) {
       handleLogout();
     }
-  };
-
-  // Helper chuẩn hóa UID để so khớp chính xác giữa Quản Lý Page và Quản Lý Full Via
-  const normalizeViaUidKey = (raw?: string): string => {
-    if (!raw) return '';
-    return raw.split('|')[0].trim().toLowerCase();
   };
 
   // Helper hợp nhất thông tin Full Via (UID|Pass|2FA) từ danh sách FullViaItem và PageRecord
