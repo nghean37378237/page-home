@@ -2105,11 +2105,11 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                       <button
                                         type="button"
                                         onClick={() => onTransferViaPages(record.viaUid)}
-                                        className="text-[9px] font-bold text-indigo-700 hover:text-indigo-950 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded px-1 py-0.2 inline-flex items-center space-x-0.5 transition-colors shadow-2xs cursor-pointer"
-                                        title={`Chuyển tất cả page của Nick Via "${record.viaUid}" sang Via khác`}
+                                        className="text-[9px] font-bold text-indigo-800 hover:text-indigo-950 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 rounded px-1.5 py-0.2 inline-flex items-center space-x-0.5 transition-colors shadow-2xs cursor-pointer"
+                                        title={`Chuyển Nick Via "${record.viaUid}" kèm toàn bộ ${viaSpan.totalInGroup} Page đang cầm sang cho Nhân viên khác (hoặc đổi sang Via khác)`}
                                       >
-                                        <ArrowRightLeft className="w-2 h-2 text-indigo-600" />
-                                        <span>Chuyển</span>
+                                        <ArrowRightLeft className="w-2.5 h-2.5 text-indigo-600" />
+                                        <span>Chuyển Via+{viaSpan.totalInGroup}P</span>
                                       </button>
                                     )}
 

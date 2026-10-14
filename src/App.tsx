@@ -1351,30 +1351,167 @@ export default function App() {
       targetFullVia,
       appendHistoryNote,
       historyNoteText,
+      transferViaUidsToStaff,
     } = params;
 
+    const targetCleanStaff = targetStaffName.trim() || currentUser.name;
+    const now = new Date();
+    const dateStr = `${now.getDate()}/${now.getMonth() + 1}`;
+
+    // CASE 1: Chuyển 1 hoặc nhiều Nick Via + TOÀN BỘ Page mà Via đó đang cầm sang cho 1 nhân viên khác
+    if (transferViaUidsToStaff && transferViaUidsToStaff.length > 0) {
+      const uidLowerSet = new Set(transferViaUidsToStaff.map((u) => u.trim().toLowerCase()).filter(Boolean));
+      if (uidLowerSet.size === 0) return;
+
+      // 1a. Cập nhật toàn bộ Fanpage mà các Via này đang cầm sang nhân viên mới
+      const updatedRecords: PageRecord[] = [];
+      setRecords((prev) =>
+        prev.map((r) => {
+          const rUidLower = (r.viaUid || '').trim().toLowerCase();
+          if (!rUidLower || !uidLowerSet.has(rUidLower)) return r;
+
+          const cleanBm = (r.bmNote || '').split('|')[0].trim();
+          const transferNoteMsg =
+            appendHistoryNote && historyNoteText
+              ? historyNoteText
+              : `Chuyển Via + Page sang NV ${targetCleanStaff} (${dateStr})`;
+
+          const updated: PageRecord = {
+            ...r,
+            staffName: targetCleanStaff,
+            bmNote: cleanBm,
+            viaTransferStatus: 'completed',
+            viaTransferColor: 'green',
+            viaTransferNote: transferNoteMsg,
+            viaTransferUpdatedAt: dateStr,
+          };
+          updatedRecords.push(updated);
+          return updated;
+        })
+      );
+
+      if (updatedRecords.length > 0) {
+        await batchSaveCloudPageRecords(updatedRecords);
+      }
+
+      // 1b. Cập nhật (hoặc tạo mới nếu chưa có) các Nick Via đó trong Quản Trị Full Via sang tên nhân viên mới & báo trạng thái đang cầm Page
+      const existingViaByLowerUid = new Map<string, FullViaItem>();
+      viaList.forEach((v) => {
+        if (v.uid) existingViaByLowerUid.set(v.uid.trim().toLowerCase(), v);
+      });
+
+      const viasToSave: FullViaItem[] = [];
+      transferViaUidsToStaff.forEach((rawUid) => {
+        const cleanUid = rawUid.trim();
+        if (!cleanUid) return;
+        const lower = cleanUid.toLowerCase();
+        const heldPages = records.filter((r) => (r.viaUid || '').trim().toLowerCase() === lower);
+        const pageCount = heldPages.length;
+        const existingVia = existingViaByLowerUid.get(lower);
+
+        if (existingVia) {
+          const updatedVia: FullViaItem = {
+            ...existingVia,
+            staffName: targetCleanStaff,
+            pageUpdateStatus: pageCount > 0 ? 'updated' : existingVia.pageUpdateStatus || 'none',
+            hasAdminAssignedPage: pageCount > 0 ? true : existingVia.hasAdminAssignedPage,
+            ...(appendHistoryNote && historyNoteText
+              ? { note: historyNoteText, sharedNote: historyNoteText }
+              : {}),
+          };
+          viasToSave.push(updatedVia);
+        } else {
+          const sampleFullVia = heldPages.find((p) => p.fullVia)?.fullVia || '';
+          const parts = sampleFullVia.split('|');
+          const newVia: FullViaItem = {
+            id: `via-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            uid: cleanUid,
+            pass: parts[1]?.trim() || '',
+            twoFa: parts[2]?.trim() || '',
+            staffName: targetCleanStaff,
+            status: 'active',
+            pageUpdateStatus: pageCount > 0 ? 'updated' : 'none',
+            hasAdminAssignedPage: pageCount > 0,
+            rawFullVia: sampleFullVia || `${cleanUid}||`,
+            note:
+              appendHistoryNote && historyNoteText
+                ? historyNoteText
+                : `Đang cầm ${pageCount} Page (Bàn giao cho ${targetCleanStaff} ngày ${dateStr})`,
+            sharedNote:
+              appendHistoryNote && historyNoteText
+                ? historyNoteText
+                : `Đang cầm ${pageCount} Page (Bàn giao cho ${targetCleanStaff} ngày ${dateStr})`,
+            createdAt: new Date().toLocaleDateString('vi-VN'),
+          };
+          viasToSave.push(newVia);
+        }
+      });
+
+      if (viasToSave.length > 0) {
+        const savedMap = new Map(viasToSave.map((v) => [v.uid.trim().toLowerCase(), v]));
+        setViaList((prev) => {
+          const kept = prev.filter((v) => !savedMap.has((v.uid || '').trim().toLowerCase()));
+          return [...kept, ...viasToSave];
+        });
+        await batchSaveCloudVias(viasToSave);
+      }
+
+      // 1c. Đồng bộ nhân viên bên Bảng Group nếu có cùng UID Via
+      const matchingGroups = groupRecords.filter((g) =>
+        uidLowerSet.has((g.uid || '').trim().toLowerCase())
+      );
+      if (matchingGroups.length > 0) {
+        const updatedGroups = matchingGroups.map((g) => ({
+          ...g,
+          staffName: targetCleanStaff,
+          updatedAt: new Date().toISOString(),
+        }));
+        const groupMap = new Map(updatedGroups.map((g) => [g.id, g]));
+        setGroupRecords((prev) => {
+          const next = prev.map((g) => groupMap.get(g.id) || g);
+          saveLocalGroupBackup(next);
+          return next;
+        });
+        await batchSaveCloudGroupRecords(updatedGroups);
+      }
+      return;
+    }
+
+    // CASE 2: Chuyển 1 hoặc nhiều Fanpage sang Nick Via đích
     if (pageIds.length === 0 || !targetViaUid) return;
 
     const targetCleanVia = targetViaUid.trim();
-    const targetCleanStaff = targetStaffName.trim() || currentUser.name;
 
-    // Check if target Via exists in viaList. If not, automatically create it!
-    const targetViaExists = viaList.some(
+    // Check if target Via exists in viaList. If not, automatically create it; if yes, update its staffName & pageUpdateStatus!
+    const existingTargetVia = viaList.find(
       (v) => v.uid.trim().toLowerCase() === targetCleanVia.toLowerCase()
     );
-    if (!targetViaExists) {
+    if (!existingTargetVia) {
       const newViaItem: FullViaItem = {
         id: `via-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         uid: targetCleanVia,
         staffName: targetCleanStaff,
         status: 'active',
-        pass: targetFullVia ? targetFullVia.split('|')[1]?.trim() : undefined,
-        twoFa: targetFullVia ? targetFullVia.split('|')[2]?.trim() : undefined,
-        rawFullVia: targetFullVia,
+        pageUpdateStatus: 'updated',
+        hasAdminAssignedPage: true,
+        pass: targetFullVia ? targetFullVia.split('|')[1]?.trim() : '',
+        twoFa: targetFullVia ? targetFullVia.split('|')[2]?.trim() : '',
+        rawFullVia: targetFullVia || `${targetCleanVia}||`,
         note: `Tự động tạo khi chuyển Fanpage ngày ${new Date().toLocaleDateString('vi-VN')}`,
       };
       setViaList((prev) => [...prev, newViaItem]);
       await setCloudVia(newViaItem);
+    } else {
+      const updatedTargetVia: FullViaItem = {
+        ...existingTargetVia,
+        staffName: targetCleanStaff,
+        pageUpdateStatus: 'updated',
+        hasAdminAssignedPage: true,
+      };
+      setViaList((prev) =>
+        prev.map((v) => (v.id === existingTargetVia.id ? updatedTargetVia : v))
+      );
+      await setCloudVia(updatedTargetVia);
     }
 
     // Update records in local state optimistically
@@ -1389,8 +1526,6 @@ export default function App() {
           ? historyNoteText
           : `Đã đổi sang Via ${targetCleanVia}`;
 
-        const now = new Date();
-        const dateStr = `${now.getDate()}/${now.getMonth() + 1}`;
         const updated: PageRecord = {
           ...r,
           viaUid: targetCleanVia,
@@ -1953,6 +2088,8 @@ export default function App() {
       }));
 
     if (matching.length > 0) {
+      const updatedMap = new Map(matching.map((m) => [m.id, m]));
+      setRecords((prev) => prev.map((r) => updatedMap.get(r.id) || r));
       await batchSaveCloudPageRecords(matching);
     }
   };
@@ -2288,7 +2425,30 @@ export default function App() {
       }
     });
 
-    if (reportedByUid.size === 0) return;
+    // Ngoài các dòng báo lỗi (VHH, 282, 956, Hạn Chế), tự động đồng bộ các Nick Via đang cầm Page bên Bảng Quản Lý Page vào Quản Trị Full Via nếu chưa có mặt
+    const pageHoldingViasByUid = new Map<
+      string,
+      { uid: string; staffName: string; pageCount: number; rawFullVia?: string; sharedNote?: string }
+    >();
+    records.forEach((r) => {
+      const uid = (r.viaUid || '').trim();
+      if (!uid) return;
+      const lower = uid.toLowerCase();
+      if (!pageHoldingViasByUid.has(lower)) {
+        pageHoldingViasByUid.set(lower, {
+          uid,
+          staffName: r.staffName || currentUser.name || 'Chưa gán',
+          pageCount: 0,
+          rawFullVia: r.fullVia,
+          sharedNote: r.viaSharedNote,
+        });
+      }
+      const entry = pageHoldingViasByUid.get(lower)!;
+      entry.pageCount += 1;
+      if (!entry.rawFullVia && r.fullVia) entry.rawFullVia = r.fullVia;
+    });
+
+    if (reportedByUid.size === 0 && pageHoldingViasByUid.size === 0) return;
 
     const viasToUpsert: FullViaItem[] = [];
     const existingViaMap = new Map<string, FullViaItem>();
@@ -2339,8 +2499,33 @@ export default function App() {
           createdAt: new Date().toLocaleDateString('vi-VN'),
           rawFullVia: info.rawFullVia || `${info.uid}||`,
           pageUpdateStatus: info.source === 'Page' ? 'updated' : 'none',
+          hasAdminAssignedPage: info.source === 'Page',
         });
       }
+    });
+
+    // Tự động thêm các Via đang cầm Page (1, 2, 3, 4... Page) vào Quản Trị Full Via nếu chưa tồn tại trong danh sách
+    pageHoldingViasByUid.forEach((holdInfo, uidLower) => {
+      if (existingViaMap.has(uidLower) || viasToUpsert.some((v) => v.uid.trim().toLowerCase() === uidLower)) {
+        return;
+      }
+      const parts = (holdInfo.rawFullVia || '').split('|');
+      viasToUpsert.push({
+        id: `via-sync-${holdInfo.uid}`,
+        uid: holdInfo.uid,
+        pass: parts[1]?.trim() || '',
+        twoFa: parts[2]?.trim() || '',
+        staffName: holdInfo.staffName,
+        status: 'active',
+        isError: false,
+        isFixed: false,
+        note: holdInfo.sharedNote || '',
+        sharedNote: holdInfo.sharedNote || '',
+        createdAt: new Date().toLocaleDateString('vi-VN'),
+        rawFullVia: holdInfo.rawFullVia || `${holdInfo.uid}||`,
+        pageUpdateStatus: 'updated',
+        hasAdminAssignedPage: true,
+      });
     });
 
     if (viasToUpsert.length > 0) {
@@ -2350,7 +2535,7 @@ export default function App() {
         return [...kept, ...viasToUpsert];
       });
       batchSaveCloudVias(viasToUpsert).catch((err) =>
-        console.warn('[App] Auto-sync Via notes from Page/Group to FullVia warning:', err)
+        console.warn('[App] Auto-sync Vias from Page/Group to FullVia warning:', err)
       );
     }
   }, [groupRecords, records, viaList, currentUser.isAuthenticated, currentUser.name]);

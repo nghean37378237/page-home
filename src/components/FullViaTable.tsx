@@ -183,16 +183,23 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     adminReportStatus: 'None',
   });
 
-  // Calculate pages associated with each viaUid
+  // Calculate pages associated with each viaUid (case-insensitive & exact)
   const pagesPerViaUid = useMemo(() => {
     const map = new Map<string, PageRecord[]>();
     allRecords.forEach((r) => {
       const uid = r.viaUid?.trim();
       if (!uid) return;
-      if (!map.has(uid)) {
-        map.set(uid, []);
+      const lowerKey = uid.toLowerCase();
+      if (!map.has(lowerKey)) {
+        map.set(lowerKey, []);
       }
-      map.get(uid)!.push(r);
+      map.get(lowerKey)!.push(r);
+      if (uid !== lowerKey) {
+        if (!map.has(uid)) {
+          map.set(uid, []);
+        }
+        map.get(uid)!.push(r);
+      }
     });
     return map;
   }, [allRecords]);
@@ -224,26 +231,36 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     return list;
   }, [availableStaffNames, strictlyGuardedVias, currentUser]);
 
-  // Statistics per staff for quick badges
+  // Statistics per staff for quick badges (including how many Vias hold pages and total Pages held)
   const staffStats = useMemo(() => {
-    const stats: Record<string, { total: number; active: number; checkpoint: number; dead: number }> = {};
+    const stats: Record<
+      string,
+      { total: number; active: number; checkpoint: number; dead: number; viasWithPages: number; totalPages: number }
+    > = {};
     distinctStaffNames.forEach((name) => {
-      stats[name] = { total: 0, active: 0, checkpoint: 0, dead: 0 };
+      stats[name] = { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
     });
 
     strictlyGuardedVias.forEach((v) => {
       const name = v.staffName?.trim() || 'Chưa gán';
       if (!stats[name]) {
-        stats[name] = { total: 0, active: 0, checkpoint: 0, dead: 0 };
+        stats[name] = { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
       }
       stats[name].total++;
       if (v.status === 'checkpoint') stats[name].checkpoint++;
       else if (v.status === 'dead') stats[name].dead++;
       else stats[name].active++;
+
+      const uidClean = v.uid?.trim().toLowerCase() || '';
+      const pages = uidClean ? pagesPerViaUid.get(uidClean) || [] : [];
+      if (pages.length > 0) {
+        stats[name].viasWithPages++;
+        stats[name].totalPages += pages.length;
+      }
     });
 
     return stats;
-  }, [distinctStaffNames, strictlyGuardedVias]);
+  }, [distinctStaffNames, strictlyGuardedVias, pagesPerViaUid]);
 
   // Visual theme helper per staff
   const getStaffTheme = (staffName: string) => {
@@ -382,21 +399,35 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     return currentBaseVias.filter((v) => isViaPendingPageUpdate(v)).length;
   }, [currentBaseVias]);
 
-  // Đếm nick Đã có Page (Màu xanh)
-  const hasPageCountInScope = useMemo(() => {
-    return currentBaseVias.filter((v) => {
-      const uid = v.uid?.trim();
-      const pages = uid ? (pagesPerViaUid.get(uid) || pagesPerViaUid.get(uid.toLowerCase()) || []) : [];
-      return isViaPageUpdated(v, pages.length);
-    }).length;
+  // Đếm nick Đã có Page (Màu xanh) và tổng số lượng Fanpage đang cầm trong phạm vi
+  const { hasPageCountInScope, totalPagesInScope, multiPageViasCountInScope } = useMemo(() => {
+    let hasPageCount = 0;
+    let totalPages = 0;
+    let multiPageVias = 0;
+    currentBaseVias.forEach((v) => {
+      const uid = v.uid?.trim().toLowerCase();
+      const pages = uid ? pagesPerViaUid.get(uid) || [] : [];
+      if (isViaPageUpdated(v, pages.length) || pages.length > 0) {
+        hasPageCount++;
+      }
+      totalPages += pages.length;
+      if (pages.length >= 2) {
+        multiPageVias++;
+      }
+    });
+    return {
+      hasPageCountInScope: hasPageCount,
+      totalPagesInScope: totalPages,
+      multiPageViasCountInScope: multiPageVias,
+    };
   }, [currentBaseVias, pagesPerViaUid]);
 
   // Đếm nick Chưa có Page (Trắng/Trống)
   const noPageCountInScope = useMemo(() => {
     return currentBaseVias.filter((v) => {
-      const uid = v.uid?.trim();
-      const pages = uid ? (pagesPerViaUid.get(uid) || pagesPerViaUid.get(uid.toLowerCase()) || []) : [];
-      return !isViaPendingPageUpdate(v) && !isViaPageUpdated(v, pages.length);
+      const uid = v.uid?.trim().toLowerCase();
+      const pages = uid ? pagesPerViaUid.get(uid) || [] : [];
+      return !isViaPendingPageUpdate(v) && !isViaPageUpdated(v, pages.length) && pages.length === 0;
     }).length;
   }, [currentBaseVias, pagesPerViaUid]);
 
@@ -850,6 +881,32 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     setTimeout(() => setCopyToastMessage(null), 3000);
   };
 
+  // Batch transfer all selected Vias + all their held Pages to another staff member
+  const handleBatchTransferViasToStaff = (newStaffName: string) => {
+    const cleanStaff = newStaffName.trim();
+    if (!cleanStaff) return;
+    const selectedVias = scopedVias.filter((v) => selectedViaIds.has(v.id));
+    if (selectedVias.length === 0) return;
+
+    let totalTransferredPages = 0;
+    selectedVias.forEach((v) => {
+      const uidLower = v.uid?.trim().toLowerCase() || '';
+      const heldPages = uidLower ? pagesPerViaUid.get(uidLower) || [] : [];
+      totalTransferredPages += heldPages.length;
+      onUpdateVia({
+        ...v,
+        staffName: cleanStaff,
+        ...(heldPages.length > 0 ? { pageUpdateStatus: 'updated', hasAdminAssignedPage: true } : {}),
+      });
+    });
+
+    setSelectedViaIds(new Set());
+    setCopyToastMessage(
+      `✅ Đã chuyển ${selectedVias.length} Via kèm toàn bộ ${totalTransferredPages} Page sang cho nhân viên: ${cleanStaff}!`
+    );
+    setTimeout(() => setCopyToastMessage(null), 3500);
+  };
+
   // Open modal for add
   const handleOpenAddModal = () => {
     setEditingVia(null);
@@ -1152,6 +1209,20 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               >
                 {via.uid}
               </span>
+              {assignedPages.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
+                  className={`font-extrabold text-[9.5px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 cursor-pointer transition-colors ${
+                    assignedPages.length >= 2
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white ring-1 ring-emerald-400'
+                      : 'bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300'
+                  }`}
+                  title={`Nick Via này đang cầm ${assignedPages.length} Fanpage: ${assignedPages.map((p) => p.pageName).join(', ')}. Bấm để xem chi tiết bên Quản Lý Page.`}
+                >
+                  📗 {assignedPages.length} Page
+                </button>
+              )}
               {via.adminReportStatus === 'VHH' ? (
                 <span
                   className="bg-rose-600 text-white font-extrabold text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0"
@@ -1386,36 +1457,74 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           </div>
         </td>
 
-        {/* 5. CỘT NHÂN VIÊN */}
+        {/* 5. CỘT NHÂN VIÊN (CHUYỂN VIA + TOÀN BỘ PAGE CẦM SANG NHÂN VIÊN KHÁC) */}
         <td className={`py-2 px-2 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
-          {currentUser.role === 'admin' ? (
-            <select
-              value={via.staffName}
-              onChange={(e) => {
-                const newStaff = e.target.value;
-                onUpdateVia({ ...via, staffName: newStaff });
-                setCopyToastMessage(`Đã chuyển quyền quản lý nick ${via.uid} sang cho: ${newStaff}`);
-                setTimeout(() => setCopyToastMessage(null), 2500);
-              }}
-              className="bg-white border border-slate-300 hover:border-indigo-400 text-xs font-semibold text-slate-800 rounded px-1.5 py-1 shadow-2xs focus:ring-1 focus:ring-indigo-500 focus:outline-hidden cursor-pointer w-full"
-              title="Bấm để chuyển nick này cho nhân viên khác"
-            >
-              <option value="">-- Chọn nhân viên --</option>
-              {distinctStaffNames.map((name) => (
-                <option key={name} value={name}>
-                  👤 {name}
-                </option>
-              ))}
-            </select>
-          ) : (
-            <div className="inline-flex items-center space-x-1 px-2 py-0.5 bg-slate-100 text-slate-800 rounded font-semibold text-[11px] border border-slate-200">
-              <UserCheck className="w-3 h-3 text-slate-600" />
-              <span>{via.staffName || 'Chưa phân công'}</span>
+          <div className="flex flex-col space-y-1">
+            {currentUser.role === 'admin' ? (
+              <select
+                value={via.staffName}
+                onChange={(e) => {
+                  const newStaff = e.target.value;
+                  if (!newStaff) return;
+                  onUpdateVia({
+                    ...via,
+                    staffName: newStaff,
+                    ...(assignedPages.length > 0
+                      ? { pageUpdateStatus: 'updated', hasAdminAssignedPage: true }
+                      : {}),
+                  });
+                  setCopyToastMessage(
+                    assignedPages.length > 0
+                      ? `✅ Đã chuyển Via ${via.uid} + toàn bộ ${assignedPages.length} Page đang cầm sang cho NV: ${newStaff}!`
+                      : `✅ Đã chuyển quyền quản lý nick Via ${via.uid} sang cho: ${newStaff}`
+                  );
+                  setTimeout(() => setCopyToastMessage(null), 3000);
+                }}
+                className="bg-white border border-slate-300 hover:border-indigo-400 text-xs font-bold text-slate-800 rounded px-1.5 py-1 shadow-2xs focus:ring-1 focus:ring-indigo-500 focus:outline-hidden cursor-pointer w-full"
+                title={`Đổi nhân viên phụ trách (Tự động chuyển cả Via ${via.uid} + toàn bộ ${assignedPages.length} Page sang nhân viên mới)`}
+              >
+                <option value="">-- Chọn nhân viên --</option>
+                {distinctStaffNames.map((name) => (
+                  <option key={name} value={name}>
+                    👤 {name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <div className="inline-flex items-center space-x-1 px-2 py-0.5 bg-slate-100 text-slate-800 rounded font-semibold text-[11px] border border-slate-200">
+                <UserCheck className="w-3 h-3 text-slate-600" />
+                <span>{via.staffName || 'Chưa phân công'}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-1">
+              {assignedPages.length > 0 ? (
+                <span
+                  className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded truncate"
+                  title={`Via của ${via.staffName} đang cầm ${assignedPages.length} Fanpage`}
+                >
+                  📗 Cầm {assignedPages.length} Page
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400 italic">0 Page</span>
+              )}
+
+              {onTransferViaPages && (
+                <button
+                  type="button"
+                  onClick={() => onTransferViaPages(via.uid)}
+                  className="inline-flex items-center space-x-0.5 px-1.5 py-0.2 text-[9.5px] font-bold text-indigo-700 hover:text-indigo-950 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded cursor-pointer shrink-0 transition-colors"
+                  title={`Mở bảng Chuyển Via "${via.uid}" kèm toàn bộ ${assignedPages.length} Page sang nhân viên khác`}
+                >
+                  <ArrowRightLeft className="w-2.5 h-2.5 text-indigo-600" />
+                  <span>Chuyển NV</span>
+                </button>
+              )}
             </div>
-          )}
+          </div>
         </td>
 
-        {/* 6. PAGE ĐANG CẦM (GỌN GÀNG, SẠCH SẼ) */}
+        {/* 6. PAGE ĐANG CẦM (HIỂN THỊ RÕ SỐ LƯỢNG 1, 2, 3, 4... PAGE VIA ĐÓ CẦM & DANH SÁCH PAGE) */}
         <td
           className={`py-2 px-2 border-r transition-all text-center ${
             isRowError
@@ -1424,12 +1533,12 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               ? 'border-emerald-200 bg-emerald-50/50'
               : isPendingPage
               ? 'border-rose-300 bg-rose-50/95 ring-1 ring-inset ring-rose-300'
-              : isUpdatedPage
+              : isUpdatedPage || assignedPages.length > 0
               ? 'border-emerald-300 bg-emerald-50/90'
               : 'border-slate-200'
           }`}
         >
-          <div className="flex flex-col items-center space-y-1 w-full min-w-[155px] max-w-[210px] mx-auto">
+          <div className="flex flex-col items-center space-y-1 w-full min-w-[175px] max-w-[235px] mx-auto">
             {isPendingPage ? (
               <>
                 {/* 🔴 Admin đã thêm Page (Màu đỏ để nhân viên biết) */}
@@ -1438,19 +1547,23 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     <button
                       type="button"
                       onClick={() => handleSetViaPageStatus(via, 'none')}
-                      className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[11px] font-bold shadow-2xs cursor-pointer flex items-center space-x-1"
+                      className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10.5px] font-bold shadow-2xs cursor-pointer flex items-center space-x-1"
                       title="Admin đã thêm page để nhân viên biết. Bấm để chuyển lại về Chưa có page."
                     >
                       <AlertCircle className="w-3 h-3" />
-                      <span>🔴 Admin đã thêm Page</span>
+                      <span>
+                        🔴 Admin thêm {assignedPages.length > 0 ? `(${assignedPages.length} Page)` : 'Page'}
+                      </span>
                     </button>
                   ) : (
                     <span
-                      className="px-2 py-0.5 bg-rose-600 text-white rounded text-[11px] font-bold shadow-2xs flex items-center space-x-1 animate-pulse"
+                      className="px-2 py-0.5 bg-rose-600 text-white rounded text-[10.5px] font-bold shadow-2xs flex items-center space-x-1 animate-pulse"
                       title="Admin đã thêm page cho nick này để bạn biết và làm việc!"
                     >
                       <AlertCircle className="w-3 h-3" />
-                      <span>🔴 Admin đã thêm Page</span>
+                      <span>
+                        🔴 Admin thêm {assignedPages.length > 0 ? `(${assignedPages.length} Page)` : 'Page'}
+                      </span>
                     </span>
                   )}
 
@@ -1463,6 +1576,26 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     ✓ Đã có
                   </button>
                 </div>
+
+                {assignedPages.length > 0 && (
+                  <div className="w-full bg-white/95 border border-rose-200 rounded px-1.5 py-1 text-left space-y-0.5">
+                    <div className="text-[10px] font-extrabold text-rose-900 flex items-center justify-between">
+                      <span>📗 Đang cầm {assignedPages.length} Page:</span>
+                      <button
+                        type="button"
+                        onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
+                        className="text-indigo-700 hover:underline font-bold cursor-pointer"
+                      >
+                        Mở xem →
+                      </button>
+                    </div>
+                    {assignedPages.map((p, pIdx) => (
+                      <div key={p.id} className="text-[10px] text-slate-700 truncate font-medium">
+                        {pIdx + 1}. {p.pageName || `Page ${pIdx + 1}`}
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 <div className="flex items-center justify-center space-x-1 w-full text-[10px]">
                   {onFilterPageByVia && (
@@ -1487,18 +1620,22 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   )}
                 </div>
               </>
-            ) : isUpdatedPage ? (
+            ) : isUpdatedPage || assignedPages.length > 0 ? (
               <>
-                {/* 🟢 Đã Có Page */}
+                {/* 🟢 Đã Có Page: Hiển thị rõ Số Lượng Page Via Cầm (1, 2, 3, 4... Page) */}
                 <div className="flex items-center justify-between gap-1 w-full">
                   <button
                     type="button"
                     onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
-                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold shadow-2xs cursor-pointer flex items-center space-x-1"
-                    title="Bấm để lọc xem danh sách các Fanpage của nick này"
+                    className={`px-2 py-0.5 text-white rounded text-[11px] font-extrabold shadow-2xs cursor-pointer flex items-center space-x-1 ${
+                      assignedPages.length >= 2
+                        ? 'bg-emerald-700 hover:bg-emerald-800 ring-1 ring-emerald-400'
+                        : 'bg-emerald-600 hover:bg-emerald-700'
+                    }`}
+                    title={`Nick Via ${via.uid} của ${via.staffName} đang cầm ${assignedPages.length || 1} Fanpage. Bấm để lọc xem danh sách các Fanpage này.`}
                   >
-                    <CheckCircle2 className="w-3 h-3" />
-                    <span>📗 {assignedPages.length || 1} Page</span>
+                    <CheckCircle2 className="w-3 h-3 shrink-0" />
+                    <span>📗 Đang cầm {assignedPages.length || 1} Page</span>
                   </button>
 
                   <div className="flex items-center space-x-0.5">
@@ -1506,8 +1643,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       <button
                         type="button"
                         onClick={() => onAddPageForVia(via.uid, via.staffName)}
-                        className="px-1 py-0.5 text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded cursor-pointer"
-                        title="Thêm Fanpage mới"
+                        className="px-1 py-0.5 text-[10px] font-bold text-emerald-800 bg-white hover:bg-emerald-100 border border-emerald-300 rounded cursor-pointer"
+                        title="Thêm Fanpage mới vào Via này"
                       >
                         +Page
                       </button>
@@ -1526,15 +1663,39 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 </div>
 
                 {assignedPages.length > 0 && (
-                  <div className="w-full flex items-center space-x-1 overflow-hidden text-[10px]">
-                    <span className="truncate text-slate-700 font-medium" title={assignedPages.map(p => p.pageName).join(', ')}>
-                      {assignedPages[0].pageName || 'Page 1'}
-                    </span>
+                  <div className="w-full bg-white/90 border border-emerald-200/90 rounded px-1.5 py-1 text-left space-y-0.5 shadow-2xs">
                     {assignedPages.length > 1 && (
-                      <span className="text-[9px] bg-slate-100 text-slate-600 px-1 rounded shrink-0">
-                        +{assignedPages.length - 1}
-                      </span>
+                      <div className="flex items-center justify-between text-[9.5px] font-bold text-emerald-900 border-b border-emerald-100 pb-0.5 mb-0.5">
+                        <span>
+                          🟢 {assignedPages.filter((p) => p.status !== 'Không làm').length} làm • 🔴{' '}
+                          {assignedPages.filter((p) => p.status === 'Không làm').length} nghỉ
+                        </span>
+                        <span className="text-indigo-700 font-extrabold">
+                          Tổng: {assignedPages.length} Page
+                        </span>
+                      </div>
                     )}
+                    <div className="max-h-16 overflow-y-auto space-y-0.5 pr-0.5">
+                      {assignedPages.map((p, pIdx) => (
+                        <div
+                          key={p.id}
+                          onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
+                          className="text-[10px] flex items-center justify-between gap-1 cursor-pointer hover:text-indigo-700"
+                          title={`${p.pageName} (${p.status}) - Bấm để mở bên Quản Lý Page`}
+                        >
+                          <span className="truncate font-semibold text-slate-800">
+                            {assignedPages.length > 1 ? `${pIdx + 1}. ` : ''}
+                            {p.pageName || `Page ${pIdx + 1}`}
+                          </span>
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                              p.status === 'Không làm' ? 'bg-rose-500' : 'bg-emerald-500'
+                            }`}
+                            title={p.status}
+                          />
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
               </>
@@ -1550,12 +1711,12 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       title="Nhấn để chuyển sang trạng thái: Cần gán Page"
                     >
                       <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                      <span>Chưa có page</span>
+                      <span>0 Page (Chưa có)</span>
                     </button>
                   ) : (
                     <span className="px-2 py-0.5 bg-slate-50 text-slate-500 border border-slate-200 rounded text-[11px] font-medium flex items-center space-x-1">
                       <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                      <span>Chưa có page</span>
+                      <span>0 Page (Chưa có)</span>
                     </span>
                   )}
 
@@ -2144,14 +2305,19 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
                 selectedStaffFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
               }`}>
-                {viaList.length}
+                {viaList.length} Via
+              </span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                selectedStaffFilter === 'all' ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+              }`}>
+                📗 {allRecords.filter((r) => Boolean(r.viaUid?.trim())).length} Page
               </span>
             </button>
 
             {/* Individual Staff Tabs */}
             {distinctStaffNames.map((name) => {
               const theme = getStaffTheme(name);
-              const stats = staffStats[name] || { total: 0, active: 0, checkpoint: 0, dead: 0 };
+              const stats = staffStats[name] || { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
               const isSelected = selectedStaffFilter.trim().toLowerCase() === name.trim().toLowerCase();
 
               return (
@@ -2165,20 +2331,39 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
                     isSelected ? theme.activeTab : theme.inactiveTab
                   }`}
+                  title={`Nhân viên ${name}: ${stats.total} Nick Via (${stats.viasWithPages} Via có Page - Tổng cộng đang cầm ${stats.totalPages} Fanpage)`}
                 >
                   <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : theme.dot}`} />
                   <span>{name}</span>
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
                     isSelected ? 'bg-black/25 text-white' : 'bg-white text-slate-800'
                   }`}>
-                    {stats.total}
+                    {stats.total} Via
                   </span>
+                  {stats.totalPages > 0 && (
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                      isSelected ? 'bg-emerald-400 text-slate-950' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                    }`}>
+                      📗 {stats.totalPages} Page
+                    </span>
+                  )}
                 </button>
               );
             })}
           </div>
 
           <div className="flex items-center space-x-2 shrink-0">
+            {onTransferViaPages && (
+              <button
+                type="button"
+                onClick={() => onTransferViaPages('')}
+                className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-2xs transition-colors cursor-pointer"
+                title="Chuyển Nick Via kèm toàn bộ Page (2, 3, 4... Page) sang cho nhân viên khác"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5" />
+                <span>Chuyển Via + Page Sang NV Khác</span>
+              </button>
+            )}
             {selectedStaffFilter === 'all' && (
               <button
                 type="button"
@@ -2198,14 +2383,19 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         </div>
       ) : (
         /* Staff Banner: Dedicated to current logged-in staff */
-        <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex items-center justify-between text-xs text-emerald-900">
+        <div className="bg-emerald-50 border-b border-emerald-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-900">
           <div className="flex items-center space-x-2">
             <UserCheck className="w-4 h-4 text-emerald-700" />
             <span>Tài khoản Full Via bàn giao cho: <strong className="uppercase">{currentUser.name}</strong></span>
           </div>
-          <span className="font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded-full text-[11px]">
-            {scopedVias.length} Nick
-          </span>
+          <div className="flex items-center space-x-2">
+            <span className="font-bold bg-white text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full text-[11px]">
+              {scopedVias.length} Nick Via
+            </span>
+            <span className="font-extrabold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
+              📗 Đang cầm {totalPagesInScope} Fanpage ({multiPageViasCountInScope} Via cầm ≥ 2 Page)
+            </span>
+          </div>
         </div>
       )}
 
@@ -2334,9 +2524,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   ? 'bg-emerald-600 text-white shadow-2xs'
                   : 'text-emerald-700 hover:bg-emerald-50'
               }`}
-              title="Lọc các nick có page từ đầu (Màu xanh)"
+              title="Lọc các nick đang cầm Page (Màu xanh)"
             >
-              🟢 Có Page từ đầu ({hasPageCountInScope})
+              🟢 Có Page ({hasPageCountInScope} Via / {totalPagesInScope} Page)
             </button>
             <button
               type="button"
@@ -2417,6 +2607,28 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
           {selectedCount > 0 && (
             <>
+              {currentUser.role === 'admin' && (
+                <select
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    handleBatchTransferViasToStaff(e.target.value);
+                    e.target.value = '';
+                  }}
+                  defaultValue=""
+                  className="px-2.5 py-1.5 rounded-lg border border-emerald-400 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold cursor-pointer shadow-2xs"
+                  title="Chuyển toàn bộ các Via đã chọn kèm tất cả Fanpage của các Via đó sang nhân viên khác"
+                >
+                  <option value="" disabled>
+                    👤 Chuyển {selectedCount} Via + Page sang NV...
+                  </option>
+                  {distinctStaffNames.map((name) => (
+                    <option key={name} value={name} className="bg-white text-slate-900 font-bold">
+                      → Chuyển sang: {name}
+                    </option>
+                  ))}
+                </select>
+              )}
+
               <button
                 type="button"
                 onClick={handleCopySelectedUids}
@@ -2440,7 +2652,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           )}
 
           <span>
-            Hiển thị: <strong className="text-slate-800">{scopedVias.length}</strong> / {viaList.length} nick
+            Hiển thị: <strong className="text-slate-800">{scopedVias.length}</strong> / {viaList.length} Via (Đang cầm <strong className="text-emerald-700">{totalPagesInScope} Page</strong>)
           </span>
         </div>
       </div>
@@ -2545,6 +2757,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
                 const activeCount = staffVias.filter((v) => v.status !== 'checkpoint' && v.status !== 'dead').length;
                 const checkpointCount = staffVias.filter((v) => v.status === 'checkpoint').length;
+                const staffPagesCount = staffVias.reduce((acc, v) => {
+                  const uid = v.uid?.trim().toLowerCase();
+                  return acc + (uid ? (pagesPerViaUid.get(uid) || []).length : 0);
+                }, 0);
 
                 return (
                   <React.Fragment key={staffName}>
@@ -2552,13 +2768,16 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     <tr className="bg-slate-100 border-y-2 border-slate-300">
                       <td colSpan={10} className="py-2.5 px-4">
                         <div className="flex items-center justify-between">
-                          <div className="flex items-center space-x-2">
+                          <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                             <span className="text-xs font-black text-indigo-950 uppercase tracking-wide flex items-center gap-1.5">
                               <Users className="w-4 h-4 text-indigo-600" />
                               <span>Nhân Viên: {staffName}</span>
                             </span>
                             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-100 text-indigo-900 border border-indigo-200">
-                              {staffVias.length} Nick do Admin nhập
+                              {staffVias.length} Nick Via
+                            </span>
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white shadow-2xs">
+                              📗 Đang cầm tổng {staffPagesCount} Page
                             </span>
                             <span className="text-[11px] text-slate-500">
                               ({activeCount} Hoạt Động{checkpointCount > 0 ? `, ${checkpointCount} Checkpoint` : ''})
@@ -3067,6 +3286,31 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             <span>Copy Full</span>
           </button>
 
+          {/* Quick Chuyển Via + Page sang NV khác batch in floating pill */}
+          {currentUser.role === 'admin' && (
+            <div className="flex items-center space-x-1 pl-1 border-l border-slate-700 shrink-0">
+              <select
+                onChange={(e) => {
+                  if (!e.target.value) return;
+                  handleBatchTransferViasToStaff(e.target.value);
+                  e.target.value = '';
+                }}
+                defaultValue=""
+                className="bg-emerald-700 hover:bg-emerald-600 border border-emerald-400 text-white text-xs font-extrabold rounded-xl px-2.5 py-1.5 focus:outline-hidden cursor-pointer shadow-md"
+                title="Chuyển các Via đang chọn kèm toàn bộ Fanpage của Via đó sang nhân viên khác"
+              >
+                <option value="" disabled>
+                  👤 Chuyển {selectedCount} Via + Page sang NV...
+                </option>
+                {distinctStaffNames.map((name) => (
+                  <option key={name} value={name} className="bg-slate-900 text-white font-bold">
+                    → Chuyển sang: {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Quick Báo Admin batch in floating pill */}
           <div className="flex items-center space-x-1 pl-1 border-l border-slate-700 shrink-0">
             <select
@@ -3082,6 +3326,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               <option value="" disabled>📢 Báo Admin...</option>
               <option value="Live">🟢 Live</option>
               <option value="VHH">🔴 VHH</option>
+              <option value="282">🟠 282</option>
+              <option value="956">🟣 956</option>
+              <option value="Hạn Chế">🟡 Hạn Chế</option>
               <option value="SDT">📱 SDT</option>
               <option value="Selfie">🤳 Selfie</option>
               <option value="Email code">✉️ Email code</option>
