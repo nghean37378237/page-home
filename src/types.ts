@@ -409,11 +409,23 @@ export interface AppUser {
 
 export type ViaPageUpdateStatus = 'none' | 'pending' | 'updated';
 
-export type ViaAdminReportStatus = 'None' | 'Live' | 'VHH' | 'SDT' | 'Selfie' | 'Email code';
+export type ViaAdminReportStatus =
+  | 'None'
+  | 'Live'
+  | 'VHH'
+  | '282'
+  | '956'
+  | 'Hạn Chế'
+  | 'SDT'
+  | 'Selfie'
+  | 'Email code';
 export const VIA_ADMIN_REPORT_OPTIONS: ViaAdminReportStatus[] = [
   'None',
-  'Live',
   'VHH',
+  '282',
+  '956',
+  'Hạn Chế',
+  'Live',
   'SDT',
   'Selfie',
   'Email code',

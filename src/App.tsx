@@ -1845,6 +1845,7 @@ export default function App() {
 
   // Full Via CRUD in Cloud Firestore
   const handleAddVia = async (newVia: FullViaItem) => {
+    setViaList((prev) => [...prev.filter((v) => v.id !== newVia.id), newVia]);
     await setCloudVia(newVia);
 
     const fullStr = newVia.rawFullVia || `${newVia.uid}|${newVia.pass}|${newVia.twoFa}`;
@@ -1858,12 +1859,70 @@ export default function App() {
   };
 
   const handleUpdateVia = async (updatedVia: FullViaItem) => {
+    setViaList((prev) => prev.map((v) => (v.id === updatedVia.id ? updatedVia : v)));
     await setCloudVia(updatedVia);
+
+    const cleanUidLower = updatedVia.uid.trim().toLowerCase();
+    const isViaVhh =
+      updatedVia.adminReportStatus === 'VHH' ||
+      updatedVia.status === 'dead' ||
+      (updatedVia.note || '').toLowerCase().includes('vhh');
+    const isViaRestored =
+      updatedVia.status === 'fixed' ||
+      updatedVia.adminReportStatus === 'Live' ||
+      (updatedVia.status === 'active' &&
+        !updatedVia.isError &&
+        updatedVia.adminReportStatus !== 'VHH' &&
+        updatedVia.adminReportStatus !== '282' &&
+        updatedVia.adminReportStatus !== '956');
+
+    const effectiveReportNote =
+      updatedVia.adminReportStatus && updatedVia.adminReportStatus !== 'None'
+        ? updatedVia.adminReportStatus
+        : isViaVhh
+        ? 'VHH'
+        : '';
+
+    // Đồng bộ ngược sang Bảng Group nếu Via được báo ở Quản Trị Via
+    if (cleanUidLower) {
+      const matchingGroups = groupRecords.filter(
+        (g) => (g.uid || '').trim().toLowerCase() === cleanUidLower
+      );
+      if (matchingGroups.length > 0) {
+        if (effectiveReportNote && ['VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effectiveReportNote)) {
+          const toUpdateGroups = matchingGroups
+            .filter((g) => (g.note || '').trim() !== effectiveReportNote)
+            .map((g) => ({ ...g, note: effectiveReportNote, updatedAt: new Date().toISOString() }));
+          if (toUpdateGroups.length > 0) {
+            const updatedMap = new Map(toUpdateGroups.map((g) => [g.id, g]));
+            setGroupRecords((prev) => {
+              const next = prev.map((g) => updatedMap.get(g.id) || g);
+              saveLocalGroupBackup(next);
+              return next;
+            });
+            await batchSaveCloudGroupRecords(toUpdateGroups);
+          }
+        } else if (isViaRestored || updatedVia.adminReportStatus === 'None') {
+          const toClearGroups = matchingGroups
+            .filter((g) => Boolean((g.note || '').trim()))
+            .map((g) => ({ ...g, note: '', updatedAt: new Date().toISOString() }));
+          if (toClearGroups.length > 0) {
+            const updatedMap = new Map(toClearGroups.map((g) => [g.id, g]));
+            setGroupRecords((prev) => {
+              const next = prev.map((g) => updatedMap.get(g.id) || g);
+              saveLocalGroupBackup(next);
+              return next;
+            });
+            await batchSaveCloudGroupRecords(toClearGroups);
+          }
+        }
+      }
+    }
 
     const fullStr =
       updatedVia.rawFullVia || `${updatedVia.uid}|${updatedVia.pass}|${updatedVia.twoFa}`;
     const matching = records
-      .filter((r) => r.viaUid.trim().toLowerCase() === updatedVia.uid.trim().toLowerCase())
+      .filter((r) => r.viaUid.trim().toLowerCase() === cleanUidLower)
       .map((r) => ({
         ...r,
         fullVia: fullStr,
@@ -1871,11 +1930,25 @@ export default function App() {
         isViaFixed: Boolean(updatedVia.isFixed || updatedVia.status === 'fixed'),
         isViaError: Boolean(
           updatedVia.isError ||
+          updatedVia.adminReportStatus === 'VHH' ||
+          updatedVia.adminReportStatus === '282' ||
+          updatedVia.adminReportStatus === '956' ||
           updatedVia.status === 'error' ||
           updatedVia.status === 'checkpoint' ||
           updatedVia.status === 'dead'
         ),
-        viaStatus: updatedVia.status || (updatedVia.isFixed ? 'fixed' : updatedVia.isError ? 'checkpoint' : 'active'),
+        viaStatus:
+          updatedVia.status ||
+          (updatedVia.isFixed
+            ? 'fixed'
+            : updatedVia.adminReportStatus === 'VHH'
+            ? 'dead'
+            : updatedVia.adminReportStatus === '282' ||
+              updatedVia.adminReportStatus === '956' ||
+              updatedVia.isError
+            ? 'checkpoint'
+            : 'active'),
+        viaErrorNote: isViaRestored && updatedVia.status === 'fixed' ? '' : effectiveReportNote,
         viaSharedNote: updatedVia.sharedNote || updatedVia.note || r.viaSharedNote,
       }));
 
@@ -1885,10 +1958,13 @@ export default function App() {
   };
 
   const handleDeleteVia = async (viaId: string) => {
+    setViaList((prev) => prev.filter((v) => v.id !== viaId));
     await deleteCloudVia(viaId);
   };
 
   const handleDeleteBatchVias = async (viaIds: string[]) => {
+    const idSet = new Set(viaIds);
+    setViaList((prev) => prev.filter((v) => !idSet.has(v.id)));
     await batchDeleteCloudVias(viaIds);
   };
 
@@ -1938,6 +2014,347 @@ export default function App() {
     await deleteCloudImageTask(id);
   };
 
+  // Đồng bộ trạng thái VHH / 282 / 956 / Hạn Chế / Live từ Bảng Page & Bảng Group sang Bảng Quản Trị Via (Full Via)
+  const syncGroupNoteToVia = async (
+    uid: string,
+    noteValue: string,
+    staffName?: string,
+    viaName?: string,
+    sourceLabel: string = 'Group',
+    rawFullViaHint?: string
+  ) => {
+    const cleanUid = (uid || '').trim();
+    if (!cleanUid) return;
+    const cleanUidLower = cleanUid.toLowerCase();
+    const noteStr = (noteValue || '').trim();
+    const noteLower = noteStr.toLowerCase();
+
+    const isVhh =
+      noteLower === 'vhh' || noteLower.includes('vhh') || noteLower.includes('vô hiệu');
+    const is282 = noteLower.includes('282');
+    const is956 = noteLower.includes('956');
+    const isCheckpoint = is282 || is956;
+    const isHanChe = noteLower.includes('hạn chế') || noteLower.includes('han che');
+    const isLive = noteLower === 'live' || noteLower.includes('hoạt động tốt');
+
+    const reportStatus: FullViaItem['adminReportStatus'] = isVhh
+      ? 'VHH'
+      : is282
+      ? '282'
+      : is956
+      ? '956'
+      : isHanChe
+      ? 'Hạn Chế'
+      : isLive
+      ? 'Live'
+      : 'None';
+
+    const matchedVia = viaList.find(
+      (v) => (v.uid || '').trim().toLowerCase() === cleanUidLower
+    );
+
+    if (matchedVia) {
+      let updatedVia: FullViaItem | null = null;
+      if (isVhh) {
+        const existingNote = (matchedVia.note || '').trim();
+        const nextNote = existingNote
+          ? existingNote.toLowerCase().includes('vhh')
+            ? existingNote
+            : `VHH - ${existingNote}`
+          : viaName
+          ? `VHH (${viaName})`
+          : `VHH (Từ bảng ${sourceLabel})`;
+        updatedVia = {
+          ...matchedVia,
+          adminReportStatus: 'VHH',
+          status: 'dead',
+          isError: true,
+          isFixed: false,
+          note: nextNote,
+          sharedNote: nextNote,
+        };
+      } else if (isCheckpoint) {
+        const cpCode = is282 ? '282' : '956';
+        updatedVia = {
+          ...matchedVia,
+          adminReportStatus: cpCode,
+          status: 'checkpoint',
+          isError: true,
+          isFixed: false,
+          note: viaName ? `${cpCode} (${viaName})` : `${cpCode} (Từ bảng ${sourceLabel})`,
+          sharedNote: viaName ? `${cpCode} (${viaName})` : `${cpCode} (Từ bảng ${sourceLabel})`,
+        };
+      } else if (isHanChe) {
+        updatedVia = {
+          ...matchedVia,
+          adminReportStatus: 'Hạn Chế',
+          note: 'Hạn Chế',
+          sharedNote: 'Hạn Chế',
+        };
+      } else if (isLive) {
+        updatedVia = {
+          ...matchedVia,
+          adminReportStatus: 'Live',
+          status: 'active',
+          isError: false,
+        };
+      } else if (!noteStr) {
+        const cleanedNote = (matchedVia.note || '')
+          .replace(/^(VHH|282|956|Hạn Chế)\s*-?\s*/i, '')
+          .replace(/(VHH|282|956|Hạn Chế)\s*\([^)]*\)/gi, '')
+          .trim();
+        updatedVia = {
+          ...matchedVia,
+          adminReportStatus: 'None',
+          status:
+            matchedVia.status === 'dead' ||
+            matchedVia.status === 'error' ||
+            matchedVia.status === 'checkpoint'
+              ? 'active'
+              : matchedVia.status,
+          isError: false,
+          note: cleanedNote,
+          sharedNote: cleanedNote,
+        };
+      }
+
+      if (updatedVia) {
+        setViaList((prev) => prev.map((v) => (v.id === updatedVia!.id ? updatedVia! : v)));
+        await setCloudVia(updatedVia);
+
+        // Đồng bộ trạng thái lỗi sang các Fanpage đang cầm Via này
+        const matchingPages = records
+          .filter((r) => r.viaUid.trim().toLowerCase() === cleanUidLower)
+          .map((r) => ({
+            ...r,
+            viaErrorNote: noteStr,
+            isViaError: Boolean(
+              updatedVia!.isError ||
+                updatedVia!.adminReportStatus === 'VHH' ||
+                updatedVia!.adminReportStatus === '282' ||
+                updatedVia!.adminReportStatus === '956'
+            ),
+            isViaFixed: Boolean(updatedVia!.isFixed),
+            viaStatus: updatedVia!.status || 'active',
+            viaSharedNote: updatedVia!.sharedNote || updatedVia!.note || r.viaSharedNote,
+          }));
+        if (matchingPages.length > 0) {
+          await batchSaveCloudPageRecords(matchingPages);
+        }
+      }
+    } else if (isVhh || isCheckpoint || isHanChe || isLive) {
+      // Nếu UID ở bảng Page hoặc Group chưa có trong Quản Trị Full Via thì tự động thêm vào để Admin nắm
+      const parts = (rawFullViaHint || '').split('|');
+      const newVia: FullViaItem = {
+        id: `via-sync-${cleanUid}`,
+        uid: cleanUid,
+        pass: parts[1]?.trim() || '',
+        twoFa: parts[2]?.trim() || '',
+        staffName: staffName || currentUser.name || 'Chưa gán',
+        adminReportStatus: reportStatus,
+        status: isVhh ? 'dead' : isCheckpoint ? 'checkpoint' : 'active',
+        isError: isVhh || isCheckpoint,
+        isFixed: false,
+        note: viaName ? `${noteStr} (${viaName} - ${sourceLabel})` : `${noteStr} (Từ bảng ${sourceLabel})`,
+        sharedNote: viaName ? `${noteStr} (${viaName} - ${sourceLabel})` : `${noteStr} (Từ bảng ${sourceLabel})`,
+        createdAt: new Date().toLocaleDateString('vi-VN'),
+        rawFullVia: rawFullViaHint || `${cleanUid}||`,
+        pageUpdateStatus: sourceLabel === 'Page' ? 'updated' : 'none',
+      };
+      setViaList((prev) => [
+        ...prev.filter((v) => (v.uid || '').trim().toLowerCase() !== cleanUidLower),
+        newVia,
+      ]);
+      await setCloudVia(newVia);
+    }
+  };
+
+  // Handler khi nhân viên báo cáo Ghi Chú Via (VHH, 282, 956, Hạn Chế, Live) trực tiếp từ Bảng Quản Lý Page
+  const handleUpdateViaReportNoteFromPage = async (
+    viaUid: string,
+    reportNote: string,
+    targetRecord: PageRecord
+  ) => {
+    const cleanUid = (viaUid || targetRecord.viaUid || '').trim();
+    const cleanUidLower = cleanUid.toLowerCase();
+    const noteStr = (reportNote || '').trim();
+    const noteLower = noteStr.toLowerCase();
+
+    const isVhh =
+      noteLower === 'vhh' || noteLower.includes('vhh') || noteLower.includes('vô hiệu');
+    const isCheckpoint = noteLower.includes('282') || noteLower.includes('956');
+    const isErr = isVhh || isCheckpoint;
+
+    // 1. Cập nhật tất cả các dòng Fanpage cùng UID (hoặc dòng hiện tại nếu chưa có UID)
+    const matchingPages = cleanUid
+      ? records.filter((r) => r.viaUid.trim().toLowerCase() === cleanUidLower)
+      : records.filter((r) => r.id === targetRecord.id);
+
+    if (matchingPages.length > 0) {
+      const updatedPages = matchingPages.map((r) => ({
+        ...r,
+        viaErrorNote: noteStr,
+        isViaError: isErr,
+        isViaFixed: isErr ? false : r.isViaFixed,
+        viaStatus: isVhh ? ('dead' as const) : isCheckpoint ? ('checkpoint' as const) : ('active' as const),
+      }));
+      await batchSaveCloudPageRecords(updatedPages);
+    }
+
+    if (!cleanUid) return;
+
+    // 2. Đồng bộ sang Bảng Group nếu cùng UID có mặt bên Group
+    const matchingGroups = groupRecords.filter(
+      (g) => (g.uid || '').trim().toLowerCase() === cleanUidLower
+    );
+    if (matchingGroups.length > 0) {
+      const updatedGroups = matchingGroups.map((g) => ({
+        ...g,
+        note: noteStr,
+        updatedAt: new Date().toISOString(),
+      }));
+      const updatedMap = new Map(updatedGroups.map((g) => [g.id, g]));
+      setGroupRecords((prev) => {
+        const next = prev.map((g) => updatedMap.get(g.id) || g);
+        saveLocalGroupBackup(next);
+        return next;
+      });
+      await batchSaveCloudGroupRecords(updatedGroups);
+    }
+
+    // 3. Đồng bộ ngay lập tức sang Quản Trị Full Via để Admin nắm
+    await syncGroupNoteToVia(
+      cleanUid,
+      noteStr,
+      targetRecord.staffName,
+      targetRecord.pageName,
+      'Page',
+      targetRecord.fullVia
+    );
+  };
+
+  // Tự động đồng bộ các dòng Page & Group đã chọn VHH / 282 / 956 / Hạn Chế từ trước sang Quản Trị Via (Full Via)
+  useEffect(() => {
+    if (!currentUser.isAuthenticated || (groupRecords.length === 0 && records.length === 0)) return;
+
+    const reportedByUid = new Map<
+      string,
+      {
+        uid: string;
+        staffName: string;
+        label: string;
+        source: string;
+        reportStatus: FullViaItem['adminReportStatus'];
+        rawFullVia?: string;
+      }
+    >();
+
+    const parseNoteToStatus = (raw: string): FullViaItem['adminReportStatus'] | null => {
+      const lower = (raw || '').trim().toLowerCase();
+      if (!lower) return null;
+      if (lower === 'vhh' || lower.includes('vhh') || lower.includes('vô hiệu')) return 'VHH';
+      if (lower.includes('282')) return '282';
+      if (lower.includes('956')) return '956';
+      if (lower.includes('hạn chế') || lower.includes('han che')) return 'Hạn Chế';
+      return null;
+    };
+
+    groupRecords.forEach((g) => {
+      const uid = (g.uid || '').trim();
+      const status = parseNoteToStatus(g.note || '');
+      if (uid && status) {
+        reportedByUid.set(uid.toLowerCase(), {
+          uid,
+          staffName: g.staffName || currentUser.name || 'Chưa gán',
+          label: g.viaName || 'Group',
+          source: 'Group',
+          reportStatus: status,
+        });
+      }
+    });
+
+    records.forEach((r) => {
+      const uid = (r.viaUid || '').trim();
+      const status = parseNoteToStatus(r.viaErrorNote || r.viaSharedNote || '');
+      if (uid && status) {
+        reportedByUid.set(uid.toLowerCase(), {
+          uid,
+          staffName: r.staffName || currentUser.name || 'Chưa gán',
+          label: r.pageName || 'Page',
+          source: 'Page',
+          reportStatus: status,
+          rawFullVia: r.fullVia,
+        });
+      }
+    });
+
+    if (reportedByUid.size === 0) return;
+
+    const viasToUpsert: FullViaItem[] = [];
+    const existingViaMap = new Map<string, FullViaItem>();
+    viaList.forEach((v) => {
+      if (v.uid) existingViaMap.set(v.uid.trim().toLowerCase(), v);
+    });
+
+    reportedByUid.forEach((info, uidLower) => {
+      const existing = existingViaMap.get(uidLower);
+      const isVhh = info.reportStatus === 'VHH';
+      const isCp = info.reportStatus === '282' || info.reportStatus === '956';
+      if (existing) {
+        if (
+          existing.adminReportStatus !== info.reportStatus &&
+          existing.status !== 'fixed' &&
+          !existing.isFixed
+        ) {
+          const existingNote = (existing.note || '').trim();
+          const nextNote = existingNote
+            ? existingNote.toLowerCase().includes((info.reportStatus || '').toLowerCase())
+              ? existingNote
+              : `${info.reportStatus} - ${existingNote}`
+            : `${info.reportStatus} (${info.label})`;
+          viasToUpsert.push({
+            ...existing,
+            adminReportStatus: info.reportStatus,
+            status: isVhh ? 'dead' : isCp ? 'checkpoint' : existing.status || 'active',
+            isError: isVhh || isCp ? true : existing.isError,
+            isFixed: false,
+            note: nextNote,
+            sharedNote: nextNote,
+          });
+        }
+      } else {
+        const parts = (info.rawFullVia || '').split('|');
+        viasToUpsert.push({
+          id: `via-sync-${info.uid}`,
+          uid: info.uid,
+          pass: parts[1]?.trim() || '',
+          twoFa: parts[2]?.trim() || '',
+          staffName: info.staffName,
+          adminReportStatus: info.reportStatus,
+          status: isVhh ? 'dead' : isCp ? 'checkpoint' : 'active',
+          isError: isVhh || isCp,
+          isFixed: false,
+          note: `${info.reportStatus} (${info.label} - ${info.source})`,
+          sharedNote: `${info.reportStatus} (${info.label} - ${info.source})`,
+          createdAt: new Date().toLocaleDateString('vi-VN'),
+          rawFullVia: info.rawFullVia || `${info.uid}||`,
+          pageUpdateStatus: info.source === 'Page' ? 'updated' : 'none',
+        });
+      }
+    });
+
+    if (viasToUpsert.length > 0) {
+      setViaList((prev) => {
+        const upsertMap = new Map(viasToUpsert.map((v) => [v.uid.trim().toLowerCase(), v]));
+        const kept = prev.filter((v) => !upsertMap.has((v.uid || '').trim().toLowerCase()));
+        return [...kept, ...viasToUpsert];
+      });
+      batchSaveCloudVias(viasToUpsert).catch((err) =>
+        console.warn('[App] Auto-sync Via notes from Page/Group to FullVia warning:', err)
+      );
+    }
+  }, [groupRecords, records, viaList, currentUser.isAuthenticated, currentUser.name]);
+
   // Group Records handlers (Add, Update, Delete, Batch)
   const handleAddGroupRecord = async (record: GroupRecord) => {
     setGroupRecords((prev) => {
@@ -1946,9 +2363,50 @@ export default function App() {
       return next;
     });
     await setCloudGroupRecord(record);
+
+    if (record.uid && record.note) {
+      await syncGroupNoteToVia(record.uid, record.note, record.staffName, record.viaName);
+    }
   };
 
   const handleUpdateGroupRecord = async (id: string, updates: Partial<GroupRecord>) => {
+    const targetRecord = groupRecords.find((g) => g.id === id);
+    const targetUid = (updates.uid ?? targetRecord?.uid ?? '').trim();
+    const targetStaff = (updates.staffName ?? targetRecord?.staffName ?? currentUser.name ?? '').trim();
+    const targetViaName = (updates.viaName ?? targetRecord?.viaName ?? '').trim();
+
+    // Nếu cập nhật ghi chú (VHH, 282, 956, Hạn Chế, Trống) cho 1 UID thì đồng bộ cho cả các dòng cùng UID trong Group
+    if ('note' in updates && targetUid) {
+      const targetUidLower = targetUid.toLowerCase();
+      const sameUidRecords = groupRecords.filter(
+        (g) => (g.uid || '').trim().toLowerCase() === targetUidLower
+      );
+      if (sameUidRecords.length > 1) {
+        const updatedSameUid = sameUidRecords.map((g) =>
+          g.id === id
+            ? { ...g, ...updates, updatedAt: new Date().toISOString() }
+            : { ...g, note: updates.note || '', updatedAt: new Date().toISOString() }
+        );
+        const updatedMap = new Map(updatedSameUid.map((g) => [g.id, g]));
+        setGroupRecords((prev) => {
+          const next = prev.map((g) => updatedMap.get(g.id) || g);
+          saveLocalGroupBackup(next);
+          return next;
+        });
+        await batchSaveCloudGroupRecords(updatedSameUid);
+      } else {
+        setGroupRecords((prev) => {
+          const next = prev.map((g) => (g.id === id ? { ...g, ...updates } : g));
+          saveLocalGroupBackup(next);
+          return next;
+        });
+        await updateCloudGroupRecord(id, updates);
+      }
+
+      await syncGroupNoteToVia(targetUid, updates.note || '', targetStaff, targetViaName);
+      return;
+    }
+
     setGroupRecords((prev) => {
       const next = prev.map((g) => (g.id === id ? { ...g, ...updates } : g));
       saveLocalGroupBackup(next);
@@ -1979,6 +2437,16 @@ export default function App() {
       return next;
     });
     await batchSaveCloudGroupRecords(newRecords);
+
+    // Đồng bộ trạng thái ghi chú (VHH, 282, 956, Hạn Chế) sang Quản Trị Via
+    const seenUids = new Set<string>();
+    for (const rec of newRecords) {
+      const cleanUid = (rec.uid || '').trim();
+      if (cleanUid && !seenUids.has(cleanUid.toLowerCase())) {
+        seenUids.add(cleanUid.toLowerCase());
+        await syncGroupNoteToVia(cleanUid, rec.note || '', rec.staffName, rec.viaName);
+      }
+    }
   };
 
   const handleBatchDeleteGroupRecords = async (ids: string[]) => {
@@ -2728,6 +3196,7 @@ export default function App() {
             <FanpageSheetTable
               records={filteredRecords}
               allRecords={records}
+              existingVias={viaList}
               currentUser={currentUser}
               errorViaUids={errorViaUids}
               fixedViaUids={fixedViaUids}
@@ -2746,6 +3215,7 @@ export default function App() {
               onToggleViaError={handleToggleViaError}
               onToggleViaFixed={handleToggleViaFixed}
               onUpdateViaSharedNoteForAll={handleUpdateViaSharedNoteForAll}
+              onUpdateViaReportNote={handleUpdateViaReportNoteFromPage}
               onUpdateViaUidForAll={handleUpdateViaUidForAll}
               onUpdateStaffNameForAll={handleUpdateStaffNameForAll}
               onUpdateFullViaForAll={handleUpdateFullViaForAll}

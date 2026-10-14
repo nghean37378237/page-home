@@ -287,7 +287,12 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   // Permission filter: Staff only sees their own; Admin sees all (or filtered by staff tab/dropdown)
   // Helper to check if a via is in error state or marked red
   const isViaError = (v: FullViaItem) => {
-    return Boolean(v.isError) || v.status === 'error' || v.status === 'dead';
+    return (
+      Boolean(v.isError) ||
+      v.status === 'error' ||
+      v.status === 'dead' ||
+      v.adminReportStatus === 'VHH'
+    );
   };
 
   // Helper: Admin đã tự cập nhật báo "Đã có Page" (Màu Đỏ) -> Chờ nhân viên update page lên
@@ -395,12 +400,15 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     }).length;
   }, [currentBaseVias, pagesPerViaUid]);
 
-  // Counts for Báo Admin: Live, VHH, SDT, Selfie, Email code
+  // Counts for Báo Admin: Live, VHH, 282, 956, Hạn Chế, SDT, Selfie, Email code
   const adminReportCounts = useMemo(() => {
     const counts: Record<string, number> = {
       all: currentBaseVias.length,
       Live: 0,
       VHH: 0,
+      '282': 0,
+      '956': 0,
+      'Hạn Chế': 0,
       SDT: 0,
       Selfie: 0,
       'Email code': 0,
@@ -1144,10 +1152,40 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               >
                 {via.uid}
               </span>
-              {isRowError && (
-                <span className="bg-red-600 text-white font-extrabold text-[9px] px-1 py-0.2 rounded shadow-2xs shrink-0">
-                  LỖI
+              {via.adminReportStatus === 'VHH' ? (
+                <span
+                  className="bg-rose-600 text-white font-extrabold text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0"
+                  title="Nick bị Vô Hiệu Hóa (VHH) - Đồng bộ từ Quản Lý Page & Bảng Group"
+                >
+                  🔴 VHH
                 </span>
+              ) : via.adminReportStatus === '282' ? (
+                <span
+                  className="bg-amber-500 text-white font-extrabold text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0"
+                  title="Nick bị Checkpoint 282 - Đồng bộ từ Quản Lý Page & Bảng Group"
+                >
+                  🟠 282
+                </span>
+              ) : via.adminReportStatus === '956' ? (
+                <span
+                  className="bg-purple-600 text-white font-extrabold text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0"
+                  title="Nick bị Khóa Tím 956 - Đồng bộ từ Quản Lý Page & Bảng Group"
+                >
+                  🟣 956
+                </span>
+              ) : via.adminReportStatus === 'Hạn Chế' ? (
+                <span
+                  className="bg-yellow-500 text-slate-950 font-extrabold text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0"
+                  title="Nick bị Hạn Chế / Spam - Đồng bộ từ Quản Lý Page & Bảng Group"
+                >
+                  🟡 HẠN CHẾ
+                </span>
+              ) : (
+                isRowError && (
+                  <span className="bg-red-600 text-white font-extrabold text-[9px] px-1 py-0.2 rounded shadow-2xs shrink-0">
+                    LỖI
+                  </span>
+                )
               )}
               {isRowFixed && (
                 <span
@@ -1591,11 +1629,17 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           </select>
         </td>
 
-        {/* 8. BÁO ADMIN (GỌN GÀNG) */}
+        {/* 8. BÁO ADMIN / GHI CHÚ VIA TỪ PAGE & GROUP */}
         <td
           className={`py-2 px-2 border-r text-center transition-all ${
             via.adminReportStatus === 'VHH'
               ? 'bg-rose-50/90 border-rose-200'
+              : via.adminReportStatus === '282'
+              ? 'bg-amber-50/90 border-amber-200'
+              : via.adminReportStatus === '956'
+              ? 'bg-purple-50/90 border-purple-200'
+              : via.adminReportStatus === 'Hạn Chế'
+              ? 'bg-yellow-50/90 border-yellow-200'
               : via.adminReportStatus === 'SDT'
               ? 'bg-blue-50/80 border-blue-200'
               : via.adminReportStatus === 'Selfie'
@@ -1613,14 +1657,22 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             value={via.adminReportStatus || 'None'}
             onChange={(e) => {
               const val = e.target.value as ViaAdminReportStatus;
+              const isVhh = val === 'VHH';
+              const isCp = val === '282' || val === '956';
+              const isLive = val === 'Live';
               onUpdateVia({
                 ...via,
                 adminReportStatus: val,
+                ...(isVhh ? { status: 'dead', isError: true, isFixed: false } : {}),
+                ...(isCp ? { status: 'checkpoint', isError: true, isFixed: false } : {}),
+                ...(isLive ? { status: 'active', isError: false } : {}),
               });
               setCopyToastMessage(
                 val === 'None'
                   ? `Đã xóa Báo Admin cho nick ${via.uid}`
-                  : `📢 Đã báo Admin: [${val}] cho nick ${via.uid}!`
+                  : isVhh
+                  ? `🔴 Đã báo VHH cho nick ${via.uid} & đồng bộ sang Quản Lý Page / Group!`
+                  : `📢 Đã báo Admin: [${val}] cho nick ${via.uid} & đồng bộ sang Quản Lý Page / Group!`
               );
               setTimeout(() => setCopyToastMessage(null), 2500);
             }}
@@ -1629,6 +1681,12 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 ? 'bg-emerald-600 text-white border-emerald-700'
                 : via.adminReportStatus === 'VHH'
                 ? 'bg-rose-600 text-white border-rose-700 ring-1 ring-rose-300'
+                : via.adminReportStatus === '282'
+                ? 'bg-amber-500 text-white border-amber-600'
+                : via.adminReportStatus === '956'
+                ? 'bg-purple-600 text-white border-purple-700'
+                : via.adminReportStatus === 'Hạn Chế'
+                ? 'bg-yellow-500 text-slate-950 border-yellow-600'
                 : via.adminReportStatus === 'SDT'
                 ? 'bg-blue-600 text-white border-blue-700'
                 : via.adminReportStatus === 'Selfie'
@@ -1637,11 +1695,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 ? 'bg-amber-500 text-white border-amber-600'
                 : 'bg-white text-slate-700 border-slate-300 hover:border-indigo-400'
             }`}
-            title="Báo tình trạng nick lên Admin: Live, VHH, SDT, Selfie, Email code"
+            title="Báo tình trạng nick lên Admin (Đồng bộ 2 chiều với cột Ghi Chú Via ở Quản Lý Page & Group)"
           >
             <option value="None">⚪ Chưa báo</option>
-            <option value="Live">🟢 Live</option>
-            <option value="VHH">🔴 VHH</option>
+            <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
+            <option value="282">🟠 282 (Checkpoint)</option>
+            <option value="956">🟣 956 (Khóa Tím)</option>
+            <option value="Hạn Chế">🟡 Hạn Chế / Spam</option>
+            <option value="Live">🟢 Live (Hoạt Động Tốt)</option>
             <option value="SDT">📱 SDT</option>
             <option value="Selfie">🤳 Selfie</option>
             <option value="Email code">✉️ Email code</option>
@@ -2211,6 +2272,22 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             </button>
             <button
               type="button"
+              onClick={() =>
+                setAdminReportFilter((prev) => (prev === 'VHH' ? 'all' : 'VHH'))
+              }
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                adminReportFilter === 'VHH'
+                  ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-300'
+                  : adminReportCounts.VHH > 0
+                  ? 'bg-rose-50 text-rose-700 font-black hover:bg-rose-100 border border-rose-200'
+                  : 'text-slate-500 hover:bg-slate-100'
+              }`}
+              title="Lọc nhanh các nick bị VHH (Đồng bộ từ Bảng Group & Báo Admin)"
+            >
+              🔴 VHH ({adminReportCounts.VHH})
+            </button>
+            <button
+              type="button"
               onClick={() => setStatusFilter('fixed')}
               className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
                 statusFilter === 'fixed'
@@ -2284,11 +2361,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   ? 'bg-amber-100 text-amber-900 border-amber-400 ring-1 ring-amber-300'
                   : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'
               }`}
-              title="Lọc theo trạng thái Báo Admin"
+              title="Lọc theo trạng thái Báo Admin / Ghi chú Via từ Quản Lý Page & Group"
             >
               <option value="all">📢 Báo Admin: Tất cả ({adminReportCounts.all})</option>
-              <option value="Live">🟢 Báo: Live ({adminReportCounts.Live})</option>
               <option value="VHH">🔴 Báo: VHH ({adminReportCounts.VHH})</option>
+              <option value="282">🟠 Báo: 282 ({adminReportCounts['282']})</option>
+              <option value="956">🟣 Báo: 956 ({adminReportCounts['956']})</option>
+              <option value="Hạn Chế">🟡 Báo: Hạn Chế ({adminReportCounts['Hạn Chế']})</option>
+              <option value="Live">🟢 Báo: Live ({adminReportCounts.Live})</option>
               <option value="SDT">📱 Báo: SDT ({adminReportCounts.SDT})</option>
               <option value="Selfie">🤳 Báo: Selfie ({adminReportCounts.Selfie})</option>
               <option value="Email code">✉️ Báo: Email code ({adminReportCounts['Email code']})</option>

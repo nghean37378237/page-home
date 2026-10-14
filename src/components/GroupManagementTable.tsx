@@ -168,10 +168,26 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     const map = new Map<string, FullViaItem>();
     if (!existingVias) return map;
     existingVias.forEach((v) => {
-      if (v.uid) map.set(v.uid.trim(), v);
+      if (v.uid) {
+        map.set(v.uid.trim(), v);
+        map.set(v.uid.trim().toLowerCase(), v);
+      }
     });
     return map;
   }, [existingVias]);
+
+  const getEffectiveNote = (r: GroupRecord): string => {
+    if (r.note && r.note.trim()) return r.note;
+    const uid = (r.uid || '').trim();
+    const linked = uid ? viaMapByUid.get(uid) || viaMapByUid.get(uid.toLowerCase()) : undefined;
+    if (linked?.adminReportStatus === 'VHH' || linked?.status === 'dead') {
+      return 'VHH';
+    }
+    if (linked?.adminReportStatus === '282') return '282';
+    if (linked?.adminReportStatus === '956') return '956';
+    if (linked?.adminReportStatus === 'Hạn Chế') return 'Hạn Chế';
+    return '';
+  };
 
   // Unique UIDs in staffScopedRecords
   const uniqueUidsCount = useMemo(() => {
@@ -575,7 +591,17 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   const handleQuickUpdateNote = async (rowId: string, newNote: string) => {
     try {
       await onUpdateRecord(rowId, { note: newNote });
-      triggerCopyFeedback(`note-${rowId}`, `Đã đổi ghi chú thành "${newNote || 'Trống'}"`);
+      if (newNote.toUpperCase() === 'VHH') {
+        triggerCopyFeedback(
+          `note-${rowId}`,
+          `🔴 Đã chuyển sang VHH & tự động cập nhật sang Quản Trị Via!`
+        );
+      } else {
+        triggerCopyFeedback(
+          `note-${rowId}`,
+          `Đã đổi ghi chú thành "${newNote || 'Trống'}" & đồng bộ Quản Trị Via`
+        );
+      }
     } catch (err) {
       console.error('Lỗi cập nhật ghi chú:', err);
     }
@@ -597,7 +623,12 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
         }
       }
 
-      triggerCopyFeedback('batch-note', `Đã gán ghi chú "${newNote || 'Trống'}" cho ${selectedIds.size} UID!`);
+      triggerCopyFeedback(
+        'batch-note',
+        newNote.toUpperCase() === 'VHH'
+          ? `🔴 Đã gán VHH cho ${selectedIds.size} UID & đồng bộ sang Quản Trị Via!`
+          : `Đã gán ghi chú "${newNote || 'Trống'}" cho ${selectedIds.size} UID!`
+      );
     } catch (err) {
       console.error('Lỗi gán ghi chú hàng loạt:', err);
     }
@@ -2146,31 +2177,37 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                               {/* Ghi chú: dropdown tương tác nhanh VHH, 282, 956, Hạn Chế */}
                               <td className="py-2.5 px-3">
                                 <div className="relative inline-flex items-center">
-                                  <select
-                                    value={row.note || ''}
-                                    onChange={(e) => handleQuickUpdateNote(row.id, e.target.value)}
-                                    className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
-                                      (row.note || '').toLowerCase().includes('vhh')
-                                        ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
-                                        : (row.note || '').includes('282')
-                                        ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
-                                        : (row.note || '').includes('956')
-                                        ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
-                                        : (row.note || '').toLowerCase().includes('hạn chế')
-                                        ? 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200'
-                                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                                    }`}
-                                    title="Nhấp để đổi nhanh tình trạng ghi chú: VHH, 282, 956, Hạn Chế"
-                                  >
-                                    <option value="">- Trống -</option>
-                                    <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
-                                    <option value="282">🟠 282 (Checkpoint 282)</option>
-                                    <option value="956">🟣 956 (Checkpoint 956)</option>
-                                    <option value="Hạn Chế">🟡 Hạn Chế</option>
-                                    {row.note && !['VHH', '282', '956', 'Hạn Chế'].includes(row.note) && (
-                                      <option value={row.note}>{row.note}</option>
-                                    )}
-                                  </select>
+                                  {(() => {
+                                    const effNote = getEffectiveNote(row);
+                                    return (
+                                      <select
+                                        value={effNote}
+                                        onChange={(e) => handleQuickUpdateNote(row.id, e.target.value)}
+                                        className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
+                                          effNote.toLowerCase().includes('vhh')
+                                            ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
+                                            : effNote.includes('282')
+                                            ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                            : effNote.includes('956')
+                                            ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
+                                            : effNote.toLowerCase().includes('hạn chế')
+                                            ? 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200'
+                                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                        }`}
+                                        title="Nhấp để đổi nhanh tình trạng ghi chú (Tự động đồng bộ sang Quản Trị Via)"
+                                      >
+                                        <option value="">- Trống -</option>
+                                        <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
+                                        <option value="282">🟠 282 (Checkpoint 282)</option>
+                                        <option value="956">🟣 956 (Khóa Tím)</option>
+                                        <option value="Hạn Chế">🟡 Hạn Chế / Spam</option>
+                                        <option value="Live">🟢 Hoạt Động Tốt</option>
+                                        {effNote && !['VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effNote) && (
+                                          <option value={effNote}>{effNote}</option>
+                                        )}
+                                      </select>
+                                    );
+                                  })()}
                                 </div>
                               </td>
 
@@ -2512,31 +2549,37 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                       {/* Ghi chú trong chế độ Flat View */}
                       <td className="py-2.5 px-3">
                         <div className="relative inline-flex items-center">
-                          <select
-                            value={r.note || ''}
-                            onChange={(e) => handleQuickUpdateNote(r.id, e.target.value)}
-                            className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
-                              (r.note || '').toLowerCase().includes('vhh')
-                                ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
-                                : (r.note || '').includes('282')
-                                ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
-                                : (r.note || '').includes('956')
-                                ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
-                                : (r.note || '').toLowerCase().includes('hạn chế')
-                                ? 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200'
-                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                            }`}
-                            title="Nhấp để đổi nhanh tình trạng ghi chú"
-                          >
-                            <option value="">- Trống -</option>
-                            <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
-                            <option value="282">🟠 282 (Checkpoint 282)</option>
-                            <option value="956">🟣 956 (Checkpoint 956)</option>
-                            <option value="Hạn Chế">🟡 Hạn Chế</option>
-                            {r.note && !['VHH', '282', '956', 'Hạn Chế'].includes(r.note) && (
-                              <option value={r.note}>{r.note}</option>
-                            )}
-                          </select>
+                          {(() => {
+                            const effNote = getEffectiveNote(r);
+                            return (
+                              <select
+                                value={effNote}
+                                onChange={(e) => handleQuickUpdateNote(r.id, e.target.value)}
+                                className={`text-[11px] font-bold rounded-lg px-2 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
+                                  effNote.toLowerCase().includes('vhh')
+                                    ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
+                                    : effNote.includes('282')
+                                    ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                    : effNote.includes('956')
+                                    ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
+                                    : effNote.toLowerCase().includes('hạn chế')
+                                    ? 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200'
+                                    : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}
+                                title="Nhấp để đổi nhanh tình trạng ghi chú (Tự động đồng bộ sang Quản Trị Via)"
+                              >
+                                <option value="">- Trống -</option>
+                                <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
+                                <option value="282">🟠 282 (Checkpoint 282)</option>
+                                <option value="956">🟣 956 (Khóa Tím)</option>
+                                <option value="Hạn Chế">🟡 Hạn Chế / Spam</option>
+                                <option value="Live">🟢 Hoạt Động Tốt</option>
+                                {effNote && !['VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effNote) && (
+                                  <option value={effNote}>{effNote}</option>
+                                )}
+                              </select>
+                            );
+                          })()}
                         </div>
                       </td>
 

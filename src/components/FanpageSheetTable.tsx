@@ -53,6 +53,7 @@ import {
   ViaTransferColor,
   VIA_TRANSFER_PRESETS,
   VIA_TRANSFER_COLORS,
+  FullViaItem,
 } from '../types';
 import {
   PAGE_STATUS_OPTIONS,
@@ -304,12 +305,14 @@ export const getViaTransferCellStyle = (
 interface FanpageSheetTableProps {
   records: PageRecord[];
   allRecords?: PageRecord[];
+  existingVias?: FullViaItem[];
   currentUser: AppUser;
   errorViaUids?: Set<string>;
   fixedViaUids?: Set<string>;
   onToggleViaError?: (viaUid: string, isError: boolean, recordId?: string) => void;
   onToggleViaFixed?: (viaUid: string, isFixed: boolean, recordId?: string) => void;
   onUpdateViaSharedNoteForAll?: (viaUid: string, sharedNote: string) => void;
+  onUpdateViaReportNote?: (viaUid: string, reportNote: string, record: PageRecord) => void;
   onUpdateRecord: (id: string, updates: Partial<PageRecord>) => void;
   onUpdateViaUidForAll?: (oldUid: string, newUid: string) => void;
   onUpdateStaffNameForAll?: (oldName: string, newName: string) => void;
@@ -349,12 +352,14 @@ export type SheetRowItem =
 export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   records,
   allRecords,
+  existingVias,
   currentUser,
   errorViaUids,
   fixedViaUids,
   onToggleViaError,
   onToggleViaFixed,
   onUpdateViaSharedNoteForAll,
+  onUpdateViaReportNote,
   onUpdateRecord,
   onUpdateViaUidForAll,
   onUpdateStaffNameForAll,
@@ -750,6 +755,106 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     });
     return map;
   }, [records]);
+
+  // Map UID -> FullViaItem from Quản Trị Full Via (Bảng 4)
+  const viaMapByUid = useMemo(() => {
+    const map = new Map<string, FullViaItem>();
+    if (!existingVias) return map;
+    existingVias.forEach((v) => {
+      if (v.uid) map.set(v.uid.trim().toLowerCase(), v);
+    });
+    return map;
+  }, [existingVias]);
+
+  // Map UID -> viaErrorNote across records in Fanpage table
+  const viaReportNoteMap = useMemo(() => {
+    const map = new Map<string, string>();
+    const pool = allRecords && allRecords.length > 0 ? allRecords : records;
+    pool.forEach((r) => {
+      const uid = r.viaUid.trim().toLowerCase();
+      if (uid && r.viaErrorNote && !map.has(uid)) {
+        map.set(uid, r.viaErrorNote);
+      }
+    });
+    return map;
+  }, [records, allRecords]);
+
+  // Lấy giá trị Ghi Chú Via đồng bộ giữa Quản Lý Page và Quản Trị Full Via
+  const getEffectiveViaNote = (r: PageRecord): string => {
+    const uidLower = (r.viaUid || '').trim().toLowerCase();
+    const directNote = (r.viaErrorNote || (uidLower ? viaReportNoteMap.get(uidLower) : '') || '').trim();
+    if (directNote) {
+      const lower = directNote.toLowerCase();
+      if (lower === 'vhh' || lower.includes('vhh') || lower.includes('vô hiệu')) return 'VHH';
+      if (lower.includes('282')) return '282';
+      if (lower.includes('956')) return '956';
+      if (lower.includes('hạn chế') || lower.includes('han che')) return 'Hạn Chế';
+      if (lower === 'live' || lower.includes('hoạt động tốt')) return 'Live';
+      return directNote;
+    }
+
+    if (uidLower) {
+      const matchedVia = viaMapByUid.get(uidLower);
+      if (matchedVia) {
+        if (matchedVia.adminReportStatus === 'VHH') return 'VHH';
+        if (matchedVia.adminReportStatus === '282') return '282';
+        if (matchedVia.adminReportStatus === '956') return '956';
+        if (matchedVia.adminReportStatus === 'Hạn Chế') return 'Hạn Chế';
+        if (matchedVia.adminReportStatus === 'Live') return 'Live';
+        if (matchedVia.adminReportStatus && matchedVia.adminReportStatus !== 'None') {
+          return matchedVia.adminReportStatus;
+        }
+        const vNote = (matchedVia.note || matchedVia.sharedNote || '').trim().toLowerCase();
+        if (vNote === 'vhh' || vNote.includes('vhh')) return 'VHH';
+        if (vNote.includes('282')) return '282';
+        if (vNote.includes('956')) return '956';
+        if (vNote.includes('hạn chế')) return 'Hạn Chế';
+      }
+    }
+
+    const sharedLower = (r.viaSharedNote || (uidLower ? viaSharedNotesMap.get(uidLower) : '') || '')
+      .trim()
+      .toLowerCase();
+    if (sharedLower === 'vhh' || sharedLower.startsWith('vhh ')) return 'VHH';
+    if (sharedLower === '282' || sharedLower.includes('282')) return '282';
+    if (sharedLower === '956' || sharedLower.includes('956')) return '956';
+    if (sharedLower === 'hạn chế' || sharedLower.includes('hạn chế')) return 'Hạn Chế';
+
+    return '';
+  };
+
+  const handleQuickUpdateViaNote = (record: PageRecord, newNote: string) => {
+    const cleanUid = (record.viaUid || '').trim();
+    if (onUpdateViaReportNote) {
+      onUpdateViaReportNote(cleanUid, newNote, record);
+    } else {
+      const isErr = newNote === 'VHH' || newNote === '282' || newNote === '956';
+      onUpdateRecord(record.id, {
+        viaErrorNote: newNote,
+        isViaError: isErr,
+        isViaFixed: isErr ? false : record.isViaFixed,
+        viaStatus:
+          newNote === 'VHH'
+            ? 'dead'
+            : newNote === '282' || newNote === '956'
+            ? 'checkpoint'
+            : 'active',
+      });
+    }
+
+    if (newNote === 'VHH') {
+      setCopyToast(
+        `🔴 Đã báo VHH cho Via ${cleanUid || record.pageName} & tự động cập nhật sang Quản Trị Full Via!`
+      );
+    } else if (newNote) {
+      setCopyToast(
+        `📢 Đã báo Ghi chú Via "${newNote}" cho UID ${cleanUid || record.pageName} & đồng bộ sang Quản Trị Full Via!`
+      );
+    } else {
+      setCopyToast(`⚪ Đã xóa Ghi chú Via cho UID ${cleanUid || record.pageName} & đồng bộ Quản Trị Full Via.`);
+    }
+    setTimeout(() => setCopyToast(null), 2800);
+  };
 
   // Global theme map for Via to ensure consistent colors across pages and filters
   const globalViaThemeMap = useMemo(() => {
@@ -1433,7 +1538,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
                 <th className="w-11 min-w-[38px] max-w-[44px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">M</th>
                 <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-slate-700">N - BM</th>
-                <th className="w-28 min-w-[100px] max-w-[118px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">O</th>
+                <th className="w-28 min-w-[104px] max-w-[122px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-rose-800 bg-rose-50/70">O - VIA</th>
+                <th className="w-28 min-w-[100px] max-w-[118px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">P</th>
                 <th className="w-20 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center font-normal border-l border-slate-300">Thao Tác</th>
               </tr>
 
@@ -1507,6 +1613,9 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                     </span>
                   </div>
                 </th>
+                <th className="w-28 min-w-[104px] max-w-[122px] px-1 py-0.5 border-r border-emerald-800/80 text-center bg-[#7f1d1d]" title="Ghi chú tình trạng Via (VHH, 282, 956, Hạn Chế) - Tự động đồng bộ sang Quản Trị Full Via">
+                  <span className="font-extrabold tracking-tight text-[9.5px]">GHI CHÚ VIA</span>
+                </th>
                 <th className="w-28 min-w-[100px] max-w-[118px] px-1 py-0.5 border-r border-emerald-800/80 text-center bg-[#1d5212]" title="Ghi chú & trạng thái đổi Via (VD: Đang add, Đã xong)">
                   <span className="font-extrabold tracking-tight text-[9.5px]">ĐỔI VIA</span>
                 </th>
@@ -1520,7 +1629,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             <tbody className="divide-y divide-slate-300 text-slate-800">
               {paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={16} className="py-8 text-center text-slate-400 bg-white">
+                  <td colSpan={17} className="py-8 text-center text-slate-400 bg-white">
                     Không tìm thấy dòng nào phù hợp. Hãy đặt lại bộ lọc hoặc tạo thêm Page mới.
                   </td>
                 </tr>
@@ -1535,7 +1644,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         <td className="px-1 py-1 text-center border-r border-emerald-300 font-mono text-emerald-800 text-[10px] bg-emerald-100/50 select-none">
                           {startIndex + index + 1}
                         </td>
-                        <td colSpan={15} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
+                        <td colSpan={16} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center space-x-2">
                               <button
@@ -2048,34 +2157,75 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                   </span>
                                 </label>
 
-                                {/* Ô GHI CHÚ CHUNG CHO 2 HAY 3 PAGE CHUNG 1 VIA (CHUNG CHO CẢ VIA) */}
-                                <div className="pt-1 border-t border-slate-300/80 flex flex-col space-y-0.5">
-                                  <div className="flex items-center justify-between text-[10px] font-bold text-slate-700">
-                                    <span className="flex items-center space-x-1">
-                                      <span>📝 Ghi chú chung cả via:</span>
-                                    </span>
-                                    {isGroupedVia && (
-                                      <span className="text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1 rounded border border-emerald-300">
-                                        chung {viaSpan.totalInGroup} page
-                                      </span>
-                                    )}
-                                  </div>
-                                  <textarea
-                                    rows={isGroupedVia ? 2 : 1}
-                                    value={record.viaSharedNote ?? viaSharedNotesMap.get(record.viaUid.trim().toLowerCase()) ?? ''}
-                                    onChange={(e) => {
-                                      const newNote = e.target.value;
-                                      if (onUpdateViaSharedNoteForAll) {
-                                        onUpdateViaSharedNoteForAll(record.viaUid, newNote);
-                                      } else {
-                                        onUpdateRecord(record.id, { viaSharedNote: newNote });
-                                      }
-                                    }}
-                                    placeholder="Ghi chú chung cho các page cùng via này..."
-                                    className="w-full text-xs font-medium bg-white hover:bg-white focus:bg-white border border-slate-300 focus:border-emerald-600 rounded px-1.5 py-0.5 text-slate-800 focus:outline-hidden shadow-2xs resize-none"
-                                    title="Ghi chú chung này áp dụng cho tất cả các Fanpage dùng chung nick Via này"
-                                  />
-                                </div>
+                                {/* Ô CHỌN NHANH BÁO CÁO GHI CHÚ VIA (VHH, 282, 956, Hạn Chế) ĐỒNG BỘ FULL VIA */}
+                                {(() => {
+                                  const effViaNote = getEffectiveViaNote(record);
+                                  return (
+                                    <div className="pt-1 border-t border-slate-300/80 flex flex-col space-y-1">
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="text-[9.5px] font-extrabold text-slate-700 shrink-0">
+                                          📢 Báo Via:
+                                        </span>
+                                        <select
+                                          value={effViaNote}
+                                          onChange={(e) => handleQuickUpdateViaNote(record, e.target.value)}
+                                          className={`w-full text-[10.5px] font-bold rounded-md px-1.5 py-0.5 border transition-all cursor-pointer focus:outline-hidden shadow-2xs ${
+                                            effViaNote.toLowerCase().includes('vhh')
+                                              ? 'bg-rose-600 text-white border-rose-700 ring-1 ring-rose-300'
+                                              : effViaNote.includes('282')
+                                              ? 'bg-amber-100 text-amber-900 border-amber-400'
+                                              : effViaNote.includes('956')
+                                              ? 'bg-purple-100 text-purple-900 border-purple-400'
+                                              : effViaNote.toLowerCase().includes('hạn chế')
+                                              ? 'bg-yellow-100 text-yellow-900 border-yellow-400'
+                                              : effViaNote === 'Live'
+                                              ? 'bg-emerald-100 text-emerald-900 border-emerald-400'
+                                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                                          }`}
+                                          title="Báo tình trạng Via (Tự động cập nhật sang Quản Trị Full Via & Bảng Group)"
+                                        >
+                                          <option value="">- Trống -</option>
+                                          <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
+                                          <option value="282">🟠 282 (Checkpoint)</option>
+                                          <option value="956">🟣 956 (Khóa Tím)</option>
+                                          <option value="Hạn Chế">🟡 Hạn Chế / Spam</option>
+                                          <option value="Live">🟢 Hoạt Động Tốt</option>
+                                          {effViaNote &&
+                                            !['VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effViaNote) && (
+                                              <option value={effViaNote}>{effViaNote}</option>
+                                            )}
+                                        </select>
+                                      </div>
+
+                                      {/* Ô GHI CHÚ CHUNG CHO 2 HAY 3 PAGE CHUNG 1 VIA */}
+                                      <div className="flex items-center justify-between text-[10px] font-bold text-slate-700">
+                                        <span className="flex items-center space-x-1">
+                                          <span>📝 Ghi chú chung cả via:</span>
+                                        </span>
+                                        {isGroupedVia && (
+                                          <span className="text-[9px] text-emerald-800 font-bold bg-emerald-50 px-1 rounded border border-emerald-300">
+                                            chung {viaSpan.totalInGroup} page
+                                          </span>
+                                        )}
+                                      </div>
+                                      <textarea
+                                        rows={isGroupedVia ? 2 : 1}
+                                        value={record.viaSharedNote ?? viaSharedNotesMap.get(record.viaUid.trim().toLowerCase()) ?? ''}
+                                        onChange={(e) => {
+                                          const newNote = e.target.value;
+                                          if (onUpdateViaSharedNoteForAll) {
+                                            onUpdateViaSharedNoteForAll(record.viaUid, newNote);
+                                          } else {
+                                            onUpdateRecord(record.id, { viaSharedNote: newNote });
+                                          }
+                                        }}
+                                        placeholder="Ghi chú chung cho các page cùng via này..."
+                                        className="w-full text-xs font-medium bg-white hover:bg-white focus:bg-white border border-slate-300 focus:border-emerald-600 rounded px-1.5 py-0.5 text-slate-800 focus:outline-hidden shadow-2xs resize-none"
+                                        title="Ghi chú chung này áp dụng cho tất cả các Fanpage dùng chung nick Via này"
+                                      />
+                                    </div>
+                                  );
+                                })()}
                               </div>
                             </td>
                           );
@@ -2504,7 +2654,45 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         )}
                       </td>
 
-                      {/* Col O: GHI CHÚ ĐỔI VIA (Nhỏ gọn, khoa học) */}
+                      {/* Col O: GHI CHÚ VIA (Tương tự cột Ghi chú bên Group: VHH, 282, 956, Hạn Chế - Đồng bộ Quản Trị Full Via) */}
+                      <td className="w-28 min-w-[104px] max-w-[122px] px-1 py-0.5 border-r border-slate-300 text-center align-middle">
+                        {(() => {
+                          const effViaNote = getEffectiveViaNote(record);
+                          return (
+                            <select
+                              value={effViaNote}
+                              onChange={(e) => handleQuickUpdateViaNote(record, e.target.value)}
+                              className={`w-full text-[10.5px] font-bold rounded-lg px-1.5 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-red-500 shadow-2xs ${
+                                effViaNote.toLowerCase().includes('vhh')
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
+                                  : effViaNote.includes('282')
+                                  ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                  : effViaNote.includes('956')
+                                  ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
+                                  : effViaNote.toLowerCase().includes('hạn chế')
+                                  ? 'bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-200'
+                                  : effViaNote === 'Live'
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
+                                  : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                              }`}
+                              title="Chọn ghi chú Via (VHH, 282, 956, Hạn Chế) - Tự động đồng bộ ngay vào Quản Trị Full Via để Admin nắm"
+                            >
+                              <option value="">- Trống -</option>
+                              <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
+                              <option value="282">🟠 282 (Checkpoint)</option>
+                              <option value="956">🟣 956 (Khóa Tím)</option>
+                              <option value="Hạn Chế">🟡 Hạn Chế / Spam</option>
+                              <option value="Live">🟢 Hoạt Động Tốt</option>
+                              {effViaNote &&
+                                !['VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effViaNote) && (
+                                  <option value={effViaNote}>{effViaNote}</option>
+                                )}
+                            </select>
+                          );
+                        })()}
+                      </td>
+
+                      {/* Col P: GHI CHÚ ĐỔI VIA (Nhỏ gọn, khoa học) */}
                       <td
                         className={`w-28 min-w-[100px] max-w-[118px] px-1 py-0.5 border-r border-slate-300 transition-all align-middle ${getViaTransferCellStyle(
                           record.viaTransferStatus,
