@@ -1342,6 +1342,112 @@ export default function App() {
     }
   };
 
+  // Helper chuẩn hóa UID để so khớp chính xác giữa Quản Lý Page và Quản Lý Full Via
+  const normalizeViaUidKey = (raw?: string): string => {
+    if (!raw) return '';
+    return raw.split('|')[0].trim().toLowerCase();
+  };
+
+  // Helper hợp nhất thông tin Full Via (UID|Pass|2FA) từ danh sách FullViaItem và PageRecord
+  const buildMergedViaForStaff = (
+    cleanUid: string,
+    targetCleanStaff: string,
+    matchingVias: FullViaItem[],
+    heldPages: PageRecord[],
+    options?: {
+      rawFullViaHint?: string;
+      appendHistoryNote?: boolean;
+      historyNoteText?: string;
+      dateStr?: string;
+    }
+  ): { primaryVia: FullViaItem; duplicateViaIds: string[]; resolvedFullViaStr: string } => {
+    const uidPure = cleanUid.split('|')[0].trim();
+    const pageCount = heldPages.length;
+    const dateStr = options?.dateStr || `${new Date().getDate()}/${new Date().getMonth() + 1}`;
+
+    // Tìm FullViaItem giàu dữ liệu nhất (ưu tiên item đã có pass / twoFa / rawFullVia)
+    const sortedVias = [...matchingVias].sort((a, b) => {
+      const scoreA = (a.pass ? 2 : 0) + (a.twoFa ? 2 : 0) + (a.rawFullVia && a.rawFullVia.includes('|') ? 1 : 0);
+      const scoreB = (b.pass ? 2 : 0) + (b.twoFa ? 2 : 0) + (b.rawFullVia && b.rawFullVia.includes('|') ? 1 : 0);
+      return scoreB - scoreA;
+    });
+
+    const primaryExisting = sortedVias[0];
+    const duplicateViaIds = sortedVias.slice(1).map((v) => v.id);
+
+    // Trích xuất pass, 2fa, rawFullVia tốt nhất từ mọi nguồn (FullViaItem, hint, hoặc PageRecord.fullVia)
+    const samplePageFullVia =
+      options?.rawFullViaHint ||
+      heldPages.find((p) => p.fullVia && p.fullVia.includes('|'))?.fullVia ||
+      heldPages.find((p) => p.fullVia)?.fullVia ||
+      (cleanUid.includes('|') ? cleanUid : '');
+
+    const bestRawFromVias =
+      sortedVias.find((v) => v.rawFullVia && v.rawFullVia.split('|').filter(Boolean).length >= 2)?.rawFullVia ||
+      primaryExisting?.rawFullVia ||
+      '';
+
+    const bestPass =
+      sortedVias.find((v) => v.pass?.trim())?.pass?.trim() ||
+      samplePageFullVia.split('|')[1]?.trim() ||
+      bestRawFromVias.split('|')[1]?.trim() ||
+      '';
+
+    const bestTwoFa =
+      sortedVias.find((v) => v.twoFa?.trim())?.twoFa?.trim() ||
+      samplePageFullVia.split('|')[2]?.trim() ||
+      bestRawFromVias.split('|')[2]?.trim() ||
+      '';
+
+    const resolvedFullViaStr =
+      bestRawFromVias && bestRawFromVias.split('|').filter(Boolean).length >= 2
+        ? bestRawFromVias.trim()
+        : samplePageFullVia && samplePageFullVia.includes('|')
+        ? samplePageFullVia.trim()
+        : `${uidPure}|${bestPass}|${bestTwoFa}`;
+
+    if (primaryExisting) {
+      const primaryVia: FullViaItem = {
+        ...primaryExisting,
+        uid: uidPure,
+        pass: bestPass || primaryExisting.pass || '',
+        twoFa: bestTwoFa || primaryExisting.twoFa || '',
+        rawFullVia: resolvedFullViaStr,
+        staffName: targetCleanStaff,
+        pageUpdateStatus: pageCount > 0 ? 'updated' : primaryExisting.pageUpdateStatus || 'none',
+        hasAdminAssignedPage: pageCount > 0 ? true : primaryExisting.hasAdminAssignedPage,
+        ...(options?.appendHistoryNote && options?.historyNoteText
+          ? { note: options.historyNoteText, sharedNote: options.historyNoteText }
+          : {}),
+      };
+      return { primaryVia, duplicateViaIds, resolvedFullViaStr };
+    }
+
+    const defaultNote =
+      options?.appendHistoryNote && options?.historyNoteText
+        ? options.historyNoteText
+        : pageCount > 0
+        ? `Đang cầm ${pageCount} Page (Bàn giao cho ${targetCleanStaff} ngày ${dateStr})`
+        : `Bàn giao cho ${targetCleanStaff} ngày ${dateStr}`;
+
+    const newVia: FullViaItem = {
+      id: `via-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      uid: uidPure,
+      pass: bestPass,
+      twoFa: bestTwoFa,
+      staffName: targetCleanStaff,
+      status: 'active',
+      pageUpdateStatus: pageCount > 0 ? 'updated' : 'none',
+      hasAdminAssignedPage: pageCount > 0,
+      rawFullVia: resolvedFullViaStr,
+      note: defaultNote,
+      sharedNote: defaultNote,
+      createdAt: new Date().toLocaleDateString('vi-VN'),
+    };
+
+    return { primaryVia: newVia, duplicateViaIds: [], resolvedFullViaStr };
+  };
+
   // Transfer Page to another Via handlers
   const handleOpenTransferModal = (record?: PageRecord, viaUid?: string) => {
     setSelectedRecordToTransfer(record || null);
@@ -1364,107 +1470,108 @@ export default function App() {
     const now = new Date();
     const dateStr = `${now.getDate()}/${now.getMonth() + 1}`;
 
-    // CASE 1: Chuyển 1 hoặc nhiều Nick Via + TOÀN BỘ Page mà Via đó đang cầm sang cho 1 nhân viên khác
+    // CASE 1: Chuyển 1 hoặc nhiều Nick Via (UID) + TOÀN BỘ Page mà Via đó đang cầm sang cho nhân viên khác (hoặc Kho Chờ Admin)
+    // ĐỒNG THỜI chuyển luôn Full Via trong Quản Lý Full Via sang cho nhân viên đó!
     if (transferViaUidsToStaff && transferViaUidsToStaff.length > 0) {
-      const uidLowerSet = new Set(transferViaUidsToStaff.map((u) => u.trim().toLowerCase()).filter(Boolean));
+      const uidLowerSet = new Set(
+        transferViaUidsToStaff.map((u) => normalizeViaUidKey(u)).filter(Boolean)
+      );
       if (uidLowerSet.size === 0) return;
 
-      // 1a. Cập nhật toàn bộ Fanpage mà các Via này đang cầm sang nhân viên mới
-      const updatedRecords: PageRecord[] = [];
-      setRecords((prev) =>
-        prev.map((r) => {
-          const rUidLower = (r.viaUid || '').trim().toLowerCase();
-          if (!rUidLower || !uidLowerSet.has(rUidLower)) return r;
+      // 1a. Chuẩn bị & cập nhật (hoặc tạo mới) các Full Via trong Quản Trị Full Via sang tên nhân viên mới
+      const viasToSave: FullViaItem[] = [];
+      const duplicateViaIdsToDelete: string[] = [];
+      const fullViaStrByUidLower = new Map<string, string>();
 
-          const cleanBm = (r.bmNote || '').split('|')[0].trim();
-          const transferNoteMsg =
-            appendHistoryNote && historyNoteText
-              ? historyNoteText
-              : `Chuyển Via + Page sang NV ${targetCleanStaff} (${dateStr})`;
-
-          const updated: PageRecord = {
-            ...r,
-            staffName: targetCleanStaff,
-            bmNote: cleanBm,
-            viaTransferStatus: 'completed',
-            viaTransferColor: 'green',
-            viaTransferNote: transferNoteMsg,
-            viaTransferUpdatedAt: dateStr,
-          };
-          updatedRecords.push(updated);
-          return updated;
-        })
+      const uniqueRawUids = Array.from(
+        new Set(transferViaUidsToStaff.map((u) => u.split('|')[0].trim()).filter(Boolean))
       );
 
-      if (updatedRecords.length > 0) {
-        await batchSaveCloudPageRecords(updatedRecords);
-      }
+      uniqueRawUids.forEach((cleanUid) => {
+        const lower = normalizeViaUidKey(cleanUid);
+        if (!lower) return;
+        const heldPages = records.filter((r) => normalizeViaUidKey(r.viaUid) === lower);
+        const matchingVias = viaList.filter(
+          (v) => normalizeViaUidKey(v.uid) === lower || normalizeViaUidKey(v.rawFullVia) === lower
+        );
 
-      // 1b. Cập nhật (hoặc tạo mới nếu chưa có) các Nick Via đó trong Quản Trị Full Via sang tên nhân viên mới & báo trạng thái đang cầm Page
-      const existingViaByLowerUid = new Map<string, FullViaItem>();
-      viaList.forEach((v) => {
-        if (v.uid) existingViaByLowerUid.set(v.uid.trim().toLowerCase(), v);
-      });
+        const { primaryVia, duplicateViaIds, resolvedFullViaStr } = buildMergedViaForStaff(
+          cleanUid,
+          targetCleanStaff,
+          matchingVias,
+          heldPages,
+          {
+            rawFullViaHint: targetFullVia,
+            appendHistoryNote,
+            historyNoteText,
+            dateStr,
+          }
+        );
 
-      const viasToSave: FullViaItem[] = [];
-      transferViaUidsToStaff.forEach((rawUid) => {
-        const cleanUid = rawUid.trim();
-        if (!cleanUid) return;
-        const lower = cleanUid.toLowerCase();
-        const heldPages = records.filter((r) => (r.viaUid || '').trim().toLowerCase() === lower);
-        const pageCount = heldPages.length;
-        const existingVia = existingViaByLowerUid.get(lower);
-
-        if (existingVia) {
-          const updatedVia: FullViaItem = {
-            ...existingVia,
-            staffName: targetCleanStaff,
-            pageUpdateStatus: pageCount > 0 ? 'updated' : existingVia.pageUpdateStatus || 'none',
-            hasAdminAssignedPage: pageCount > 0 ? true : existingVia.hasAdminAssignedPage,
-            ...(appendHistoryNote && historyNoteText
-              ? { note: historyNoteText, sharedNote: historyNoteText }
-              : {}),
-          };
-          viasToSave.push(updatedVia);
-        } else {
-          const sampleFullVia = heldPages.find((p) => p.fullVia)?.fullVia || '';
-          const parts = sampleFullVia.split('|');
-          const newVia: FullViaItem = {
-            id: `via-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            uid: cleanUid,
-            pass: parts[1]?.trim() || '',
-            twoFa: parts[2]?.trim() || '',
-            staffName: targetCleanStaff,
-            status: 'active',
-            pageUpdateStatus: pageCount > 0 ? 'updated' : 'none',
-            hasAdminAssignedPage: pageCount > 0,
-            rawFullVia: sampleFullVia || `${cleanUid}||`,
-            note:
-              appendHistoryNote && historyNoteText
-                ? historyNoteText
-                : `Đang cầm ${pageCount} Page (Bàn giao cho ${targetCleanStaff} ngày ${dateStr})`,
-            sharedNote:
-              appendHistoryNote && historyNoteText
-                ? historyNoteText
-                : `Đang cầm ${pageCount} Page (Bàn giao cho ${targetCleanStaff} ngày ${dateStr})`,
-            createdAt: new Date().toLocaleDateString('vi-VN'),
-          };
-          viasToSave.push(newVia);
+        viasToSave.push(primaryVia);
+        duplicateViaIdsToDelete.push(...duplicateViaIds);
+        if (resolvedFullViaStr) {
+          fullViaStrByUidLower.set(lower, resolvedFullViaStr);
         }
       });
 
+      // 1b. Tính toán danh sách Fanpage cần cập nhật trực tiếp từ mảng records (không phụ thuộc callback bất đồng bộ của setRecords)
+      const transferNoteMsg =
+        appendHistoryNote && historyNoteText
+          ? historyNoteText
+          : `Chuyển Via + Page sang ${targetCleanStaff} (${dateStr})`;
+
+      const updatedRecords: PageRecord[] = [];
+      const nextRecords = records.map((r) => {
+        const rUidLower = normalizeViaUidKey(r.viaUid);
+        if (!rUidLower || !uidLowerSet.has(rUidLower)) return r;
+
+        const cleanBm = (r.bmNote || '').split('|')[0].trim();
+        const syncedFullVia = fullViaStrByUidLower.get(rUidLower) || r.fullVia;
+
+        const updated: PageRecord = {
+          ...r,
+          staffName: targetCleanStaff,
+          bmNote: cleanBm,
+          viaTransferStatus: 'completed',
+          viaTransferColor: 'green',
+          viaTransferNote: transferNoteMsg,
+          viaTransferUpdatedAt: dateStr,
+          ...(syncedFullVia ? { fullVia: syncedFullVia } : {}),
+        };
+        updatedRecords.push(updated);
+        return updated;
+      });
+
+      // Cập nhật state React đồng bộ ngay lập tức cho cả Page và Full Via
+      if (updatedRecords.length > 0) {
+        setRecords(nextRecords);
+      }
+
       if (viasToSave.length > 0) {
-        const savedMap = new Map(viasToSave.map((v) => [v.uid.trim().toLowerCase(), v]));
         setViaList((prev) => {
-          const kept = prev.filter((v) => !savedMap.has((v.uid || '').trim().toLowerCase()));
+          const kept = prev.filter((v) => {
+            const vLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+            return !uidLowerSet.has(vLower);
+          });
           return [...kept, ...viasToSave];
         });
+      }
+
+      // Lưu lên Cloud Firestore
+      if (updatedRecords.length > 0) {
+        await batchSaveCloudPageRecords(updatedRecords);
+      }
+      if (viasToSave.length > 0) {
         await batchSaveCloudVias(viasToSave);
+      }
+      if (duplicateViaIdsToDelete.length > 0) {
+        await batchDeleteCloudVias(duplicateViaIdsToDelete);
       }
 
       // 1c. Đồng bộ nhân viên bên Bảng Group nếu có cùng UID Via
       const matchingGroups = groupRecords.filter((g) =>
-        uidLowerSet.has((g.uid || '').trim().toLowerCase())
+        uidLowerSet.has(normalizeViaUidKey(g.uid))
       );
       if (matchingGroups.length > 0) {
         const updatedGroups = matchingGroups.map((g) => ({
@@ -1483,77 +1590,145 @@ export default function App() {
       return;
     }
 
-    // CASE 2: Chuyển 1 hoặc nhiều Fanpage sang Nick Via đích
+    // CASE 2: Chuyển 1 hoặc nhiều Fanpage sang Nick Via đích (và chuyển luôn Full Via trong Quản Lý Full Via sang nhân viên nhận)
     if (pageIds.length === 0 || !targetViaUid) return;
 
-    const targetCleanVia = targetViaUid.trim();
+    const targetCleanVia = targetViaUid.split('|')[0].trim();
+    const targetViaLower = normalizeViaUidKey(targetCleanVia);
+    const pageIdSet = new Set(pageIds);
 
-    // Check if target Via exists in viaList. If not, automatically create it; if yes, update its staffName & pageUpdateStatus!
-    const existingTargetVia = viaList.find(
-      (v) => v.uid.trim().toLowerCase() === targetCleanVia.toLowerCase()
+    // Tìm toàn bộ FullViaItem của targetViaUid trong Quản Lý Full Via
+    const matchingTargetVias = viaList.filter(
+      (v) =>
+        normalizeViaUidKey(v.uid) === targetViaLower ||
+        normalizeViaUidKey(v.rawFullVia) === targetViaLower
     );
-    if (!existingTargetVia) {
-      const newViaItem: FullViaItem = {
-        id: `via-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        uid: targetCleanVia,
-        staffName: targetCleanStaff,
-        status: 'active',
-        pageUpdateStatus: 'updated',
-        hasAdminAssignedPage: true,
-        pass: targetFullVia ? targetFullVia.split('|')[1]?.trim() : '',
-        twoFa: targetFullVia ? targetFullVia.split('|')[2]?.trim() : '',
-        rawFullVia: targetFullVia || `${targetCleanVia}||`,
-        note: `Tự động tạo khi chuyển Fanpage ngày ${new Date().toLocaleDateString('vi-VN')}`,
-      };
-      setViaList((prev) => [...prev, newViaItem]);
-      await setCloudVia(newViaItem);
-    } else {
-      const updatedTargetVia: FullViaItem = {
-        ...existingTargetVia,
-        staffName: targetCleanStaff,
-        pageUpdateStatus: 'updated',
-        hasAdminAssignedPage: true,
-      };
-      setViaList((prev) =>
-        prev.map((v) => (v.id === existingTargetVia.id ? updatedTargetVia : v))
+    const targetHeldPages = records.filter(
+      (r) => pageIdSet.has(r.id) || normalizeViaUidKey(r.viaUid) === targetViaLower
+    );
+
+    const {
+      primaryVia: updatedTargetVia,
+      duplicateViaIds: targetDupIds,
+      resolvedFullViaStr,
+    } = buildMergedViaForStaff(targetCleanVia, targetCleanStaff, matchingTargetVias, targetHeldPages, {
+      rawFullViaHint: targetFullVia,
+      appendHistoryNote,
+      historyNoteText,
+      dateStr,
+    });
+
+    // Kiểm tra xem các UID nguồn của những Page đang chuyển có còn cầm Page nào ở nhân viên cũ không;
+    // Nếu toàn bộ Page của UID nguồn đều được chuyển sang nhân viên mới thì chuyển luôn cả Full Via nguồn sang nhân viên mới
+    const sourceUidsToAlsoMove = new Set<string>();
+    const transferredRecordsSource = records.filter((r) => pageIdSet.has(r.id));
+    transferredRecordsSource.forEach((r) => {
+      const sLower = normalizeViaUidKey(r.viaUid);
+      if (!sLower || sLower === targetViaLower) return;
+      const remainingPagesOnSourceUid = records.filter(
+        (other) => !pageIdSet.has(other.id) && normalizeViaUidKey(other.viaUid) === sLower
       );
-      await setCloudVia(updatedTargetVia);
+      if (remainingPagesOnSourceUid.length === 0 && r.staffName.trim().toLowerCase() !== targetCleanStaff.toLowerCase()) {
+        sourceUidsToAlsoMove.add(sLower);
+      }
+    });
+
+    const viasToPersist: FullViaItem[] = [updatedTargetVia];
+    const dupIdsToRemove: string[] = [...targetDupIds];
+
+    sourceUidsToAlsoMove.forEach((srcLower) => {
+      const matchingSrcVias = viaList.filter(
+        (v) => normalizeViaUidKey(v.uid) === srcLower || normalizeViaUidKey(v.rawFullVia) === srcLower
+      );
+      if (matchingSrcVias.length > 0) {
+        const { primaryVia, duplicateViaIds } = buildMergedViaForStaff(
+          matchingSrcVias[0].uid,
+          targetCleanStaff,
+          matchingSrcVias,
+          [],
+          { appendHistoryNote, historyNoteText, dateStr }
+        );
+        viasToPersist.push(primaryVia);
+        dupIdsToRemove.push(...duplicateViaIds);
+      }
+    });
+
+    // Tính toán danh sách PageRecord cập nhật (gồm các page được chọn + các page khác đang dùng chung targetViaUid để đồng bộ cùng 1 nhân viên)
+    const updatedRecords: PageRecord[] = [];
+    const nextRecords = records.map((r) => {
+      const isSelectedPage = pageIdSet.has(r.id);
+      const isSameTargetVia = normalizeViaUidKey(r.viaUid) === targetViaLower;
+      if (!isSelectedPage && !isSameTargetVia) return r;
+
+      const cleanBm = (r.bmNote || '').split('|')[0].trim();
+      const transferNoteMsg =
+        appendHistoryNote && historyNoteText
+          ? historyNoteText
+          : `Đã chuyển sang Via ${targetCleanVia} - NV ${targetCleanStaff}`;
+
+      const updated: PageRecord = isSelectedPage
+        ? {
+            ...r,
+            viaUid: targetCleanVia,
+            staffName: targetCleanStaff,
+            bmNote: cleanBm,
+            viaTransferStatus: 'completed',
+            viaTransferColor: 'green',
+            viaTransferNote: transferNoteMsg,
+            viaTransferUpdatedAt: dateStr,
+            isViaFixed: true,
+            isViaError: false,
+            viaStatus: 'active',
+            fullVia: resolvedFullViaStr || targetFullVia || r.fullVia,
+          }
+        : {
+            ...r,
+            staffName: targetCleanStaff,
+            fullVia: resolvedFullViaStr || targetFullVia || r.fullVia,
+          };
+      updatedRecords.push(updated);
+      return updated;
+    });
+
+    // Cập nhật state React đồng bộ ngay lập tức
+    const movedViaLowerSet = new Set([targetViaLower, ...Array.from(sourceUidsToAlsoMove)]);
+    setViaList((prev) => {
+      const kept = prev.filter((v) => {
+        const vLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+        return !movedViaLowerSet.has(vLower);
+      });
+      return [...kept, ...viasToPersist];
+    });
+    if (updatedRecords.length > 0) {
+      setRecords(nextRecords);
     }
 
-    // Update records in local state optimistically
-    const updatedRecords: PageRecord[] = [];
-    setRecords((prev) =>
-      prev.map((r) => {
-        if (!pageIds.includes(r.id)) return r;
-
-        // BM luôn luôn chỉ giữ tên BM sạch, bỏ hết từ dấu | phía sau
-        const cleanBm = (r.bmNote || '').split('|')[0].trim();
-        const transferNoteMsg = appendHistoryNote && historyNoteText
-          ? historyNoteText
-          : `Đã đổi sang Via ${targetCleanVia}`;
-
-        const updated: PageRecord = {
-          ...r,
-          viaUid: targetCleanVia,
-          staffName: targetCleanStaff,
-          bmNote: cleanBm,
-          viaTransferStatus: 'completed',
-          viaTransferColor: 'green',
-          viaTransferNote: transferNoteMsg,
-          viaTransferUpdatedAt: dateStr,
-          isViaFixed: true,
-          isViaError: false,
-          viaStatus: 'active',
-          ...(targetFullVia ? { fullVia: targetFullVia } : {}),
-        };
-        updatedRecords.push(updated);
-        return updated;
-      })
-    );
-
-    // Batch save to Cloud Firestore
+    // Lưu lên Cloud Firestore
+    await batchSaveCloudVias(viasToPersist);
+    if (dupIdsToRemove.length > 0) {
+      await batchDeleteCloudVias(dupIdsToRemove);
+    }
     if (updatedRecords.length > 0) {
       await batchSaveCloudPageRecords(updatedRecords);
+    }
+
+    // Đồng bộ bên Bảng Group nếu có cùng UID
+    const matchingGroups = groupRecords.filter((g) =>
+      movedViaLowerSet.has(normalizeViaUidKey(g.uid))
+    );
+    if (matchingGroups.length > 0) {
+      const updatedGroups = matchingGroups.map((g) => ({
+        ...g,
+        staffName: targetCleanStaff,
+        updatedAt: new Date().toISOString(),
+      }));
+      const groupMap = new Map(updatedGroups.map((g) => [g.id, g]));
+      setGroupRecords((prev) => {
+        const next = prev.map((g) => groupMap.get(g.id) || g);
+        saveLocalGroupBackup(next);
+        return next;
+      });
+      await batchSaveCloudGroupRecords(updatedGroups);
     }
   };
 
@@ -1782,7 +1957,32 @@ export default function App() {
       sanitizedUpdates.bmNote = getCleanBmName(sanitizedUpdates.bmNote);
     }
 
+    const nextStaff = (sanitizedUpdates.staffName ?? existing.staffName).trim();
+    const nextViaUid = (sanitizedUpdates.viaUid ?? existing.viaUid).trim();
+    const staffChanged =
+      Boolean(sanitizedUpdates.staffName) &&
+      nextStaff.toLowerCase() !== existing.staffName.trim().toLowerCase();
+    const viaChanged =
+      sanitizedUpdates.viaUid !== undefined &&
+      normalizeViaUidKey(nextViaUid) !== normalizeViaUidKey(existing.viaUid);
+
+    setRecords((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...sanitizedUpdates } : r))
+    );
     await updateCloudPageRecord(id, sanitizedUpdates);
+
+    // Nếu chuyển nhân viên hoặc đổi UID trên dòng Page thì đồng bộ luôn Full Via trong Quản Lý Full Via sang nhân viên đó
+    if ((staffChanged || viaChanged) && nextViaUid) {
+      await handleConfirmTransferPageVia({
+        pageIds: [id],
+        targetViaUid: nextViaUid,
+        targetStaffName: nextStaff,
+        targetFullVia: sanitizedUpdates.fullVia || existing.fullVia,
+        appendHistoryNote: false,
+        historyNoteText: '',
+        transferViaUidsToStaff: staffChanged && !viaChanged ? [nextViaUid] : undefined,
+      });
+    }
   };
 
   const handleToggleViaError = async (viaUid: string, isError: boolean) => {
@@ -1913,20 +2113,59 @@ export default function App() {
 
   const handleUpdateViaUidForAll = async (oldUid: string, newUid: string) => {
     const trimmedOld = oldUid.trim();
-    const trimmedNew = newUid.trim();
+    const trimmedNew = newUid.split('|')[0].trim();
     if (!trimmedOld || !trimmedNew || trimmedOld === trimmedNew) return;
+
+    const newLower = normalizeViaUidKey(trimmedNew);
+    const matchingTargetVias = viaList.filter(
+      (v) => normalizeViaUidKey(v.uid) === newLower || normalizeViaUidKey(v.rawFullVia) === newLower
+    );
+    const targetViaFullStr =
+      matchingTargetVias[0]?.rawFullVia ||
+      (matchingTargetVias[0]
+        ? `${matchingTargetVias[0].uid}|${matchingTargetVias[0].pass || ''}|${matchingTargetVias[0].twoFa || ''}`
+        : newUid.includes('|')
+        ? newUid.trim()
+        : undefined);
 
     const matching = records
       .filter(
         (r) =>
-          r.viaUid.trim() === trimmedOld &&
+          normalizeViaUidKey(r.viaUid) === normalizeViaUidKey(trimmedOld) &&
           (currentUser.role === 'admin' ||
             r.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
       )
-      .map((r) => ({ ...r, viaUid: trimmedNew }));
+      .map((r) => ({
+        ...r,
+        viaUid: trimmedNew,
+        ...(targetViaFullStr ? { fullVia: targetViaFullStr } : {}),
+      }));
 
     if (matching.length > 0) {
+      const mapUpdated = new Map(matching.map((m) => [m.id, m]));
+      setRecords((prev) => prev.map((r) => mapUpdated.get(r.id) || r));
       await batchSaveCloudPageRecords(matching);
+
+      // Đồng bộ luôn Full Via trong Quản Lý Full Via sang nhân viên đang cầm các Page này
+      const ownerStaff = matching[0].staffName?.trim() || currentUser.name;
+      const { primaryVia, duplicateViaIds } = buildMergedViaForStaff(
+        trimmedNew,
+        ownerStaff,
+        matchingTargetVias,
+        matching,
+        { rawFullViaHint: targetViaFullStr }
+      );
+      setViaList((prev) => {
+        const kept = prev.filter(
+          (v) =>
+            normalizeViaUidKey(v.uid) !== newLower && normalizeViaUidKey(v.rawFullVia) !== newLower
+        );
+        return [...kept, primaryVia];
+      });
+      await setCloudVia(primaryVia);
+      if (duplicateViaIds.length > 0) {
+        await batchDeleteCloudVias(duplicateViaIds);
+      }
     }
   };
 
@@ -1936,16 +2175,59 @@ export default function App() {
     const trimmedNew = newName.trim();
     if (!trimmedOld || !trimmedNew || trimmedOld.toLowerCase() === trimmedNew.toLowerCase()) return;
 
+    const oldLower = trimmedOld.toLowerCase();
     const matching = records
-      .filter((r) => r.staffName.trim().toLowerCase() === trimmedOld.toLowerCase())
+      .filter((r) => r.staffName.trim().toLowerCase() === oldLower)
       .map((r) => ({ ...r, staffName: trimmedNew }));
 
+    const heldUidLowers = new Set(
+      matching.map((r) => normalizeViaUidKey(r.viaUid)).filter(Boolean)
+    );
+
     if (matching.length > 0) {
+      setRecords((prev) =>
+        prev.map((r) => (r.staffName.trim().toLowerCase() === oldLower ? { ...r, staffName: trimmedNew } : r))
+      );
       await batchSaveCloudPageRecords(matching);
     }
 
+    // Đồng bộ luôn toàn bộ Full Via của nhân viên cũ hoặc các UID đang cầm Page sang nhân viên mới
+    const matchingVias = viaList
+      .filter(
+        (v) =>
+          v.staffName.trim().toLowerCase() === oldLower ||
+          heldUidLowers.has(normalizeViaUidKey(v.uid)) ||
+          heldUidLowers.has(normalizeViaUidKey(v.rawFullVia))
+      )
+      .map((v) => ({ ...v, staffName: trimmedNew }));
+
+    if (matchingVias.length > 0) {
+      const viaMap = new Map(matchingVias.map((v) => [v.id, v]));
+      setViaList((prev) => prev.map((v) => viaMap.get(v.id) || v));
+      await batchSaveCloudVias(matchingVias);
+    }
+
+    // Đồng bộ bên Bảng Group
+    const matchingGroups = groupRecords
+      .filter(
+        (g) =>
+          (g.staffName || '').trim().toLowerCase() === oldLower ||
+          heldUidLowers.has(normalizeViaUidKey(g.uid))
+      )
+      .map((g) => ({ ...g, staffName: trimmedNew, updatedAt: new Date().toISOString() }));
+
+    if (matchingGroups.length > 0) {
+      const grpMap = new Map(matchingGroups.map((g) => [g.id, g]));
+      setGroupRecords((prev) => {
+        const next = prev.map((g) => grpMap.get(g.id) || g);
+        saveLocalGroupBackup(next);
+        return next;
+      });
+      await batchSaveCloudGroupRecords(matchingGroups);
+    }
+
     const updatedStaff = customStaffList.map((name) =>
-      name.trim().toLowerCase() === trimmedOld.toLowerCase() ? trimmedNew : name
+      name.trim().toLowerCase() === oldLower ? trimmedNew : name
     );
     await saveCloudSettings({ customStaffList: updatedStaff });
   };
@@ -2000,10 +2282,7 @@ export default function App() {
   };
 
   const handleUpdateVia = async (updatedVia: FullViaItem) => {
-    setViaList((prev) => prev.map((v) => (v.id === updatedVia.id ? updatedVia : v)));
-    await setCloudVia(updatedVia);
-
-    const cleanUidLower = updatedVia.uid.trim().toLowerCase();
+    const cleanUidLower = normalizeViaUidKey(updatedVia.uid) || normalizeViaUidKey(updatedVia.rawFullVia);
     const isViaVhh =
       updatedVia.adminReportStatus === 'VHH' ||
       updatedVia.status === 'dead' ||
@@ -2024,46 +2303,10 @@ export default function App() {
         ? 'VHH'
         : '';
 
-    // Đồng bộ ngược sang Bảng Group nếu Via được báo ở Quản Trị Via
-    if (cleanUidLower) {
-      const matchingGroups = groupRecords.filter(
-        (g) => (g.uid || '').trim().toLowerCase() === cleanUidLower
-      );
-      if (matchingGroups.length > 0) {
-        if (effectiveReportNote && ['VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effectiveReportNote)) {
-          const toUpdateGroups = matchingGroups
-            .filter((g) => (g.note || '').trim() !== effectiveReportNote)
-            .map((g) => ({ ...g, note: effectiveReportNote, updatedAt: new Date().toISOString() }));
-          if (toUpdateGroups.length > 0) {
-            const updatedMap = new Map(toUpdateGroups.map((g) => [g.id, g]));
-            setGroupRecords((prev) => {
-              const next = prev.map((g) => updatedMap.get(g.id) || g);
-              saveLocalGroupBackup(next);
-              return next;
-            });
-            await batchSaveCloudGroupRecords(toUpdateGroups);
-          }
-        } else if (isViaRestored || updatedVia.adminReportStatus === 'None') {
-          const toClearGroups = matchingGroups
-            .filter((g) => Boolean((g.note || '').trim()))
-            .map((g) => ({ ...g, note: '', updatedAt: new Date().toISOString() }));
-          if (toClearGroups.length > 0) {
-            const updatedMap = new Map(toClearGroups.map((g) => [g.id, g]));
-            setGroupRecords((prev) => {
-              const next = prev.map((g) => updatedMap.get(g.id) || g);
-              saveLocalGroupBackup(next);
-              return next;
-            });
-            await batchSaveCloudGroupRecords(toClearGroups);
-          }
-        }
-      }
-    }
-
     const fullStr =
       updatedVia.rawFullVia || `${updatedVia.uid}|${updatedVia.pass}|${updatedVia.twoFa}`;
     const matching = records
-      .filter((r) => r.viaUid.trim().toLowerCase() === cleanUidLower)
+      .filter((r) => normalizeViaUidKey(r.viaUid) === cleanUidLower)
       .map((r) => ({
         ...r,
         fullVia: fullStr,
@@ -2093,10 +2336,53 @@ export default function App() {
         viaSharedNote: updatedVia.sharedNote || updatedVia.note || r.viaSharedNote,
       }));
 
+    // Cập nhật state React đồng bộ ngay lập tức cho cả Via và Page (trước khi await)
+    setViaList((prev) => prev.map((v) => (v.id === updatedVia.id ? updatedVia : v)));
     if (matching.length > 0) {
       const updatedMap = new Map(matching.map((m) => [m.id, m]));
       setRecords((prev) => prev.map((r) => updatedMap.get(r.id) || r));
+    }
+
+    await setCloudVia(updatedVia);
+    if (matching.length > 0) {
       await batchSaveCloudPageRecords(matching);
+    }
+
+    // Đồng bộ ngược sang Bảng Group nếu Via được báo hoặc đổi nhân viên ở Quản Trị Via
+    if (cleanUidLower) {
+      const matchingGroups = groupRecords.filter(
+        (g) => normalizeViaUidKey(g.uid) === cleanUidLower
+      );
+      if (matchingGroups.length > 0) {
+        const toUpdateGroups = matchingGroups
+          .map((g) => {
+            const nextStaff = updatedVia.staffName || g.staffName;
+            let nextNote = g.note || '';
+            if (effectiveReportNote && ['VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effectiveReportNote)) {
+              nextNote = effectiveReportNote;
+            } else if (isViaRestored || updatedVia.adminReportStatus === 'None') {
+              nextNote = '';
+            }
+            if (nextStaff === g.staffName && nextNote === (g.note || '')) return null;
+            return {
+              ...g,
+              staffName: nextStaff,
+              note: nextNote,
+              updatedAt: new Date().toISOString(),
+            };
+          })
+          .filter(Boolean) as GroupRecord[];
+
+        if (toUpdateGroups.length > 0) {
+          const updatedMap = new Map(toUpdateGroups.map((g) => [g.id, g]));
+          setGroupRecords((prev) => {
+            const next = prev.map((g) => updatedMap.get(g.id) || g);
+            saveLocalGroupBackup(next);
+            return next;
+          });
+          await batchSaveCloudGroupRecords(toUpdateGroups);
+        }
+      }
     }
   };
 
@@ -2510,9 +2796,40 @@ export default function App() {
       }
     });
 
-    // Tự động thêm các Via đang cầm Page (1, 2, 3, 4... Page) vào Quản Trị Full Via nếu chưa tồn tại trong danh sách
+    // Tự động thêm hoặc đồng bộ nhân viên cho các Via đang cầm Page (1, 2, 3, 4... Page) vào Quản Trị Full Via
     pageHoldingViasByUid.forEach((holdInfo, uidLower) => {
-      if (existingViaMap.has(uidLower) || viasToUpsert.some((v) => v.uid.trim().toLowerCase() === uidLower)) {
+      if (viasToUpsert.some((v) => normalizeViaUidKey(v.uid) === uidLower)) {
+        return;
+      }
+      const existing = existingViaMap.get(uidLower);
+      if (existing) {
+        const cleanHoldStaff = (holdInfo.staffName || '').trim();
+        const cleanExistingStaff = (existing.staffName || '').trim();
+        const needStaffSync =
+          Boolean(cleanHoldStaff) &&
+          cleanHoldStaff !== 'Chưa gán' &&
+          cleanHoldStaff.toLowerCase() !== cleanExistingStaff.toLowerCase();
+
+        const parts = (holdInfo.rawFullVia || '').split('|');
+        const nextPass = existing.pass?.trim() || parts[1]?.trim() || '';
+        const nextTwoFa = existing.twoFa?.trim() || parts[2]?.trim() || '';
+        const needCredSync =
+          (!existing.pass && Boolean(nextPass)) || (!existing.twoFa && Boolean(nextTwoFa));
+
+        if (needStaffSync || needCredSync) {
+          viasToUpsert.push({
+            ...existing,
+            staffName: needStaffSync ? cleanHoldStaff : existing.staffName,
+            pass: nextPass,
+            twoFa: nextTwoFa,
+            rawFullVia:
+              existing.rawFullVia && existing.rawFullVia.split('|').filter(Boolean).length >= 2
+                ? existing.rawFullVia
+                : holdInfo.rawFullVia || `${existing.uid}|${nextPass}|${nextTwoFa}`,
+            pageUpdateStatus: 'updated',
+            hasAdminAssignedPage: true,
+          });
+        }
         return;
       }
       const parts = (holdInfo.rawFullVia || '').split('|');
@@ -2536,8 +2853,8 @@ export default function App() {
 
     if (viasToUpsert.length > 0) {
       setViaList((prev) => {
-        const upsertMap = new Map(viasToUpsert.map((v) => [v.uid.trim().toLowerCase(), v]));
-        const kept = prev.filter((v) => !upsertMap.has((v.uid || '').trim().toLowerCase()));
+        const upsertMap = new Map(viasToUpsert.map((v) => [normalizeViaUidKey(v.uid), v]));
+        const kept = prev.filter((v) => !upsertMap.has(normalizeViaUidKey(v.uid)));
         return [...kept, ...viasToUpsert];
       });
       batchSaveCloudVias(viasToUpsert).catch((err) =>
@@ -2565,6 +2882,22 @@ export default function App() {
     const targetUid = (updates.uid ?? targetRecord?.uid ?? '').trim();
     const targetStaff = (updates.staffName ?? targetRecord?.staffName ?? currentUser.name ?? '').trim();
     const targetViaName = (updates.viaName ?? targetRecord?.viaName ?? '').trim();
+
+    // Nếu chuyển UID sang nhân viên khác trong Bảng Group thì chuyển luôn Full Via trong Quản Lý Full Via sang nhân viên đó
+    if (updates.staffName && targetUid) {
+      const targetUidLower = normalizeViaUidKey(targetUid);
+      const matchingVias = viaList.filter(
+        (v) =>
+          normalizeViaUidKey(v.uid) === targetUidLower ||
+          normalizeViaUidKey(v.rawFullVia) === targetUidLower
+      );
+      if (matchingVias.length > 0) {
+        const updatedVias = matchingVias.map((v) => ({ ...v, staffName: targetStaff }));
+        const viaMap = new Map(updatedVias.map((v) => [v.id, v]));
+        setViaList((prev) => prev.map((v) => viaMap.get(v.id) || v));
+        await batchSaveCloudVias(updatedVias);
+      }
+    }
 
     // Nếu cập nhật ghi chú (VHH, 282, 956, Hạn Chế, Trống) cho 1 UID thì đồng bộ cho cả các dòng cùng UID trong Group
     if ('note' in updates && targetUid) {
@@ -2629,13 +2962,37 @@ export default function App() {
     });
     await batchSaveCloudGroupRecords(newRecords);
 
-    // Đồng bộ trạng thái ghi chú (VHH, 282, 956, Hạn Chế) sang Quản Trị Via
+    // Đồng bộ nhân viên và trạng thái ghi chú (VHH, 282, 956, Hạn Chế) sang Quản Trị Full Via
+    const staffByUidLower = new Map<string, string>();
     const seenUids = new Set<string>();
     for (const rec of newRecords) {
       const cleanUid = (rec.uid || '').trim();
+      const uidLower = normalizeViaUidKey(cleanUid);
+      if (uidLower && rec.staffName?.trim()) {
+        staffByUidLower.set(uidLower, rec.staffName.trim());
+      }
       if (cleanUid && !seenUids.has(cleanUid.toLowerCase())) {
         seenUids.add(cleanUid.toLowerCase());
         await syncGroupNoteToVia(cleanUid, rec.note || '', rec.staffName, rec.viaName);
+      }
+    }
+
+    if (staffByUidLower.size > 0) {
+      const viasToUpdateStaff = viaList
+        .filter((v) => {
+          const vLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+          const targetStaff = staffByUidLower.get(vLower);
+          return Boolean(targetStaff && v.staffName.trim().toLowerCase() !== targetStaff.toLowerCase());
+        })
+        .map((v) => {
+          const vLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+          return { ...v, staffName: staffByUidLower.get(vLower) || v.staffName };
+        });
+
+      if (viasToUpdateStaff.length > 0) {
+        const updatedViaMap = new Map(viasToUpdateStaff.map((v) => [v.id, v]));
+        setViaList((prev) => prev.map((v) => updatedViaMap.get(v.id) || v));
+        await batchSaveCloudVias(viasToUpdateStaff);
       }
     }
   };
@@ -2813,16 +3170,33 @@ export default function App() {
     // 1. Optimistic state updates
     setRecords((prev) => [...prev, ...secureRecords]);
 
-    // 2. If a new Via was created or needs sync
+    // 2. Đồng bộ Full Via trong Quản Lý Full Via sang đúng nhân viên nhận Page
     if (secureVia) {
+      const targetLower = normalizeViaUidKey(secureVia.uid);
+      const matchingVias = viaList.filter(
+        (v) =>
+          normalizeViaUidKey(v.uid) === targetLower ||
+          normalizeViaUidKey(v.rawFullVia) === targetLower
+      );
+      const { primaryVia, duplicateViaIds } = buildMergedViaForStaff(
+        secureVia.uid,
+        secureVia.staffName || secureRecords[0]?.staffName || currentUser.name,
+        matchingVias.length > 0 ? matchingVias : [secureVia],
+        secureRecords,
+        { rawFullViaHint: secureVia.rawFullVia }
+      );
       setViaList((prev) => {
-        const existing = prev.some(
-          (v) => v.uid.trim().toLowerCase() === secureVia!.uid.trim().toLowerCase()
+        const kept = prev.filter(
+          (v) =>
+            normalizeViaUidKey(v.uid) !== targetLower &&
+            normalizeViaUidKey(v.rawFullVia) !== targetLower
         );
-        if (existing) return prev;
-        return [...prev, secureVia!];
+        return [...kept, primaryVia];
       });
-      await setCloudVia(secureVia);
+      await setCloudVia(primaryVia);
+      if (duplicateViaIds.length > 0) {
+        await batchDeleteCloudVias(duplicateViaIds);
+      }
     }
 
     // 3. Persist new records to Cloud Firestore
@@ -2849,14 +3223,61 @@ export default function App() {
       }
     }
 
+    setRecords((prev) => [...prev, ...secureRecords]);
     await batchSaveCloudPageRecords(secureRecords);
 
-    if (secureVias && secureVias.length > 0) {
-      const existingUids = new Set(viaList.map((v) => v.uid.trim()));
-      const toAdd = secureVias.filter((v) => !existingUids.has(v.uid.trim()));
-      if (toAdd.length > 0) {
-        await batchSaveCloudVias(toAdd);
-      }
+    // Đồng bộ cả các Via mới VÀ cập nhật nhân viên cho các Full Via đã tồn tại trong Quản Lý Full Via
+    const viasToUpsert: FullViaItem[] = [];
+    const dupIdsToDelete: string[] = [];
+    const processedUids = new Set<string>();
+
+    const sourceList =
+      secureVias && secureVias.length > 0
+        ? secureVias
+        : secureRecords
+            .filter((r) => Boolean(r.viaUid?.trim()))
+            .map((r) => ({
+              id: `via-imp-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              uid: r.viaUid.trim(),
+              pass: r.fullVia?.split('|')[1]?.trim() || '',
+              twoFa: r.fullVia?.split('|')[2]?.trim() || '',
+              staffName: r.staffName,
+              status: 'active' as const,
+              rawFullVia: r.fullVia || `${r.viaUid.trim()}||`,
+            }));
+
+    sourceList.forEach((vItem) => {
+      const uLower = normalizeViaUidKey(vItem.uid);
+      if (!uLower || processedUids.has(uLower)) return;
+      processedUids.add(uLower);
+
+      const matchingExisting = viaList.filter(
+        (v) => normalizeViaUidKey(v.uid) === uLower || normalizeViaUidKey(v.rawFullVia) === uLower
+      );
+      const held = secureRecords.filter((r) => normalizeViaUidKey(r.viaUid) === uLower);
+      const { primaryVia, duplicateViaIds } = buildMergedViaForStaff(
+        vItem.uid,
+        vItem.staffName,
+        matchingExisting.length > 0 ? matchingExisting : [vItem],
+        held,
+        { rawFullViaHint: vItem.rawFullVia }
+      );
+      viasToUpsert.push(primaryVia);
+      dupIdsToDelete.push(...duplicateViaIds);
+    });
+
+    if (viasToUpsert.length > 0) {
+      setViaList((prev) => {
+        const kept = prev.filter((v) => {
+          const vL = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+          return !processedUids.has(vL);
+        });
+        return [...kept, ...viasToUpsert];
+      });
+      await batchSaveCloudVias(viasToUpsert);
+    }
+    if (dupIdsToDelete.length > 0) {
+      await batchDeleteCloudVias(dupIdsToDelete);
     }
   };
 
@@ -2866,79 +3287,100 @@ export default function App() {
     const recordStaff =
       currentUser.role === 'staff' ? currentUser.name : (data.staffName || 'Nhân Viên');
     const cleanBm = getCleanBmName(data.bmNote);
+    const cleanViaUid = (data.viaUid || '').split('|')[0].trim();
+    const cleanViaLower = normalizeViaUidKey(cleanViaUid);
+
+    // Tìm Full Via trong Quản Lý Full Via để đồng bộ 2 chiều (cả nhân viên lẫn chuỗi fullVia UID|Pass|2FA)
+    const matchingVias = cleanViaLower
+      ? viaList.filter(
+          (v) =>
+            normalizeViaUidKey(v.uid) === cleanViaLower ||
+            normalizeViaUidKey(v.rawFullVia) === cleanViaLower
+        )
+      : [];
+
+    const siblingPages = cleanViaLower
+      ? records.filter((r) => r.id !== data.id && normalizeViaUidKey(r.viaUid) === cleanViaLower)
+      : [];
+
+    const mergedViaResult = cleanViaLower
+      ? buildMergedViaForStaff(
+          cleanViaUid,
+          recordStaff,
+          matchingVias,
+          [{ ...(data as PageRecord), id: data.id || 'temp', staffName: recordStaff }, ...siblingPages],
+          { rawFullViaHint: data.fullVia }
+        )
+      : null;
+
+    const effectiveFullVia = mergedViaResult?.resolvedFullViaStr || data.fullVia;
 
     if (data.id) {
       const updatedRec: PageRecord = {
         ...(records.find((r) => r.id === data.id) || {}),
         ...data,
+        viaUid: cleanViaUid || data.viaUid || '',
+        ...(effectiveFullVia ? { fullVia: effectiveFullVia } : {}),
         bmNote: cleanBm,
         id: data.id,
         staffName: recordStaff,
       } as PageRecord;
 
-      await setCloudPageRecord(updatedRec);
+      // Đồng bộ nhân viên và fullVia cho các Page cùng cầm chung UID này
+      const updatedSiblings = siblingPages.map((r) => ({
+        ...r,
+        staffName: recordStaff,
+        ...(effectiveFullVia ? { fullVia: effectiveFullVia } : {}),
+      }));
 
-      if (data.viaUid && data.fullVia) {
-        const syncList = records
-          .filter((r) => r.id !== data.id && r.viaUid.trim() === data.viaUid!.trim())
-          .map((r) => ({ ...r, fullVia: data.fullVia!.trim() }));
-        if (syncList.length > 0) {
-          await batchSaveCloudPageRecords(syncList);
-        }
-      }
-
-      // Tự động chuyển trạng thái via từ 'pending' (Đỏ) sang 'updated' (Xanh) khi nhân viên cập nhật Fanpage
-      if (data.viaUid) {
-        const cleanViaUid = data.viaUid.trim().toLowerCase();
-        const matchedVia = viaList.find((v) => v.uid.trim().toLowerCase() === cleanViaUid);
-        if (matchedVia && (matchedVia.pageUpdateStatus === 'pending' || matchedVia.hasAdminAssignedPage)) {
-          const updatedVia: FullViaItem = {
-            ...matchedVia,
-            pageUpdateStatus: 'updated',
-            pageUpdatedAt: new Date().toLocaleDateString('vi-VN'),
-          };
-          setViaList((prev) => prev.map((v) => (v.id === matchedVia.id ? updatedVia : v)));
-          await updateCloudVia(matchedVia.id, {
-            pageUpdateStatus: 'updated',
-            pageUpdatedAt: new Date().toLocaleDateString('vi-VN'),
-          });
-        }
-      }
+      const allPagesToSave = [updatedRec, ...updatedSiblings];
+      const pageMap = new Map(allPagesToSave.map((p) => [p.id, p]));
+      setRecords((prev) => prev.map((r) => pageMap.get(r.id) || r));
+      await batchSaveCloudPageRecords(allPagesToSave);
     } else {
       const newRec: PageRecord = {
         ...data,
+        viaUid: cleanViaUid || data.viaUid || '',
+        ...(effectiveFullVia ? { fullVia: effectiveFullVia } : {}),
         bmNote: cleanBm,
         id: `row-${Date.now()}`,
         staffName: recordStaff,
       };
 
-      await setCloudPageRecord(newRec);
+      const updatedSiblings = siblingPages.map((r) => ({
+        ...r,
+        staffName: recordStaff,
+        ...(effectiveFullVia ? { fullVia: effectiveFullVia } : {}),
+      }));
 
-      if (data.viaUid && data.fullVia) {
-        const syncList = records
-          .filter((r) => r.viaUid.trim() === data.viaUid!.trim())
-          .map((r) => ({ ...r, fullVia: data.fullVia!.trim() }));
-        if (syncList.length > 0) {
-          await batchSaveCloudPageRecords(syncList);
-        }
-      }
+      setRecords((prev) => {
+        const sibMap = new Map(updatedSiblings.map((p) => [p.id, p]));
+        return [...prev.map((r) => sibMap.get(r.id) || r), newRec];
+      });
+      await batchSaveCloudPageRecords([newRec, ...updatedSiblings]);
+    }
 
-      // Tự động chuyển trạng thái via từ 'pending' (Đỏ) sang 'updated' (Xanh) khi nhân viên tạo mới Fanpage
-      if (data.viaUid) {
-        const cleanViaUid = data.viaUid.trim().toLowerCase();
-        const matchedVia = viaList.find((v) => v.uid.trim().toLowerCase() === cleanViaUid);
-        if (matchedVia && (matchedVia.pageUpdateStatus === 'pending' || matchedVia.hasAdminAssignedPage)) {
-          const updatedVia: FullViaItem = {
-            ...matchedVia,
-            pageUpdateStatus: 'updated',
-            pageUpdatedAt: new Date().toLocaleDateString('vi-VN'),
-          };
-          setViaList((prev) => prev.map((v) => (v.id === matchedVia.id ? updatedVia : v)));
-          await updateCloudVia(matchedVia.id, {
-            pageUpdateStatus: 'updated',
-            pageUpdatedAt: new Date().toLocaleDateString('vi-VN'),
-          });
-        }
+    // Tự động chuyển luôn Full Via trong Quản Lý Full Via sang cho nhân viên phụ trách (recordStaff)
+    if (mergedViaResult && cleanViaLower) {
+      const { primaryVia, duplicateViaIds } = mergedViaResult;
+      const finalVia: FullViaItem = {
+        ...primaryVia,
+        staffName: recordStaff,
+        pageUpdateStatus: 'updated',
+        hasAdminAssignedPage: true,
+        pageUpdatedAt: new Date().toLocaleDateString('vi-VN'),
+      };
+      setViaList((prev) => {
+        const kept = prev.filter(
+          (v) =>
+            normalizeViaUidKey(v.uid) !== cleanViaLower &&
+            normalizeViaUidKey(v.rawFullVia) !== cleanViaLower
+        );
+        return [...kept, finalVia];
+      });
+      await setCloudVia(finalVia);
+      if (duplicateViaIds.length > 0) {
+        await batchDeleteCloudVias(duplicateViaIds);
       }
     }
   };
@@ -2955,7 +3397,23 @@ export default function App() {
       staffName: recordStaff,
     }));
 
+    setRecords((prev) => [...prev, ...newRecords]);
     await batchSaveCloudPageRecords(newRecords);
+
+    // Đồng bộ toàn bộ UID trong lô Page mới tạo sang nhân viên nhận trong Quản Lý Full Via
+    const batchUids = Array.from(
+      new Set(newRecords.map((r) => r.viaUid?.trim()).filter(Boolean))
+    );
+    if (batchUids.length > 0) {
+      await handleConfirmTransferPageVia({
+        pageIds: newRecords.map((r) => r.id),
+        targetViaUid: batchUids[0],
+        targetStaffName: recordStaff,
+        appendHistoryNote: false,
+        historyNoteText: '',
+        transferViaUidsToStaff: batchUids,
+      });
+    }
   };
 
   const handleDeleteRecord = async (id: string) => {
@@ -3397,6 +3855,22 @@ export default function App() {
               onDeleteStaffAllData={handleOpenDeleteStaffModal}
               onTransferPageRecord={(record) => handleOpenTransferModal(record)}
               onTransferViaPages={(viaUid) => handleOpenTransferModal(undefined, viaUid)}
+              availableStaffNames={allStaffNames}
+              onQuickTransferViaToStaff={(viaUid, targetStaffName) => {
+                const cleanUid = viaUid.split('|')[0].trim();
+                if (!cleanUid || !targetStaffName.trim()) return;
+                const lower = normalizeViaUidKey(cleanUid);
+                const heldPages = records.filter((r) => normalizeViaUidKey(r.viaUid) === lower);
+                const todayStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
+                void handleConfirmTransferPageVia({
+                  pageIds: heldPages.map((p) => p.id),
+                  targetViaUid: cleanUid,
+                  targetStaffName: targetStaffName.trim(),
+                  appendHistoryNote: true,
+                  historyNoteText: `Chuyển Via ${cleanUid}${heldPages.length > 0 ? ` + ${heldPages.length} Page` : ''} sang ${targetStaffName.trim()} (${todayStr})`,
+                  transferViaUidsToStaff: [cleanUid],
+                });
+              }}
               onFetchPagesForVia={handleOpenFetchPagesModal}
               onEditRecord={(record) => {
                 setEditingRecord(record);

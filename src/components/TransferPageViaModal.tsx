@@ -108,7 +108,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
     return records.filter((r) => r.staffName?.trim().toLowerCase() === userLower);
   }, [records, currentUser]);
 
-  // Aggregate all known Vias in system (combining viaList and records)
+  // Aggregate all known Vias in system (combining viaList and records, normalizing UID|Pass|2FA)
   const knownVias = useMemo(() => {
     const map = new Map<
       string,
@@ -122,12 +122,14 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
       }
     >();
 
-    // Seed from viaList
+    // Seed from viaList (prefer item with pass / twoFa / rawFullVia if duplicate UIDs exist)
     viaList.forEach((v) => {
-      const uid = v.uid?.trim();
+      const raw = (v.uid || v.rawFullVia || '').trim();
+      const uid = raw.split('|')[0].trim();
       if (!uid) return;
       const key = uid.toLowerCase();
-      if (!map.has(key)) {
+      const existing = map.get(key);
+      if (!existing) {
         map.set(key, {
           uid,
           staffName: v.staffName || '',
@@ -136,12 +138,26 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
           fullViaItem: v,
           isError: Boolean(v.isError || v.status === 'checkpoint' || v.status === 'dead' || v.status === 'error'),
         });
+      } else {
+        const oldScore =
+          (existing.fullViaItem?.pass ? 2 : 0) +
+          (existing.fullViaItem?.twoFa ? 2 : 0) +
+          (existing.fullViaItem?.rawFullVia?.includes('|') ? 1 : 0);
+        const newScore =
+          (v.pass ? 2 : 0) + (v.twoFa ? 2 : 0) + (v.rawFullVia?.includes('|') ? 1 : 0);
+        if (newScore > oldScore) {
+          existing.fullViaItem = v;
+        }
+        if (!existing.staffName && v.staffName) {
+          existing.staffName = v.staffName;
+        }
       }
     });
 
     // Add / enrich from records
     records.forEach((r) => {
-      const uid = r.viaUid?.trim();
+      const raw = (r.viaUid || '').trim();
+      const uid = raw.split('|')[0].trim();
       if (!uid) return;
       const key = uid.toLowerCase();
       if (!map.has(key)) {
@@ -156,7 +172,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
       const item = map.get(key)!;
       item.pageCount += 1;
       item.pages.push(r);
-      if (!item.staffName && r.staffName) {
+      if (r.staffName && (!item.staffName || isAdminWaitingPool(item.staffName))) {
         item.staffName = r.staffName;
       }
       if (r.isViaError || r.viaStatus === 'checkpoint' || r.viaStatus === 'dead' || r.viaStatus === 'error') {
@@ -789,6 +805,11 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                                       👤 NV đang cầm: {v.staffName}
                                     </span>
                                   )}
+                                  {v.fullViaItem && (v.fullViaItem.pass || v.fullViaItem.twoFa || v.fullViaItem.rawFullVia?.includes('|')) && (
+                                    <span className="px-1.5 py-0.2 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[9px] font-bold">
+                                      🔑 Full Via (Pass/2FA)
+                                    </span>
+                                  )}
                                   {v.isError && (
                                     <span className="px-1.5 py-0.2 bg-rose-100 text-rose-700 rounded text-[9px] font-bold">
                                       Đang báo lỗi
@@ -1038,18 +1059,18 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
 
                   {isTargetWaitingPool ? (
                     <p className="text-[11px] text-amber-950 leading-relaxed">
-                      ✓ <strong>Cất vào Kho Chờ Của Admin:</strong> Toàn bộ{' '}
-                      <strong>{selectedViaObjectsForStaffTransfer.length} Nick Via</strong> và{' '}
+                      ✓ <strong>Cất vào Kho Chờ Của Admin (Gồm cả Full Via):</strong> Toàn bộ{' '}
+                      <strong>{selectedViaObjectsForStaffTransfer.length} Nick Via (UID + Full Via Pass/2FA trong Quản Trị Full Via)</strong> và{' '}
                       <strong>{pagesOfSelectedViasForStaffTransfer.length} Fanpage</strong> đi kèm sẽ được đưa vào{' '}
                       <strong>📦 {ADMIN_WAITING_POOL}</strong> (ẩn khỏi tài khoản nhân viên, chưa nhân viên nào dùng). Khi nào cần, Admin chỉ cần chọn và bấm chuyển sang cho nhân viên đó dùng!
                     </p>
                   ) : (
                     <p className="text-[11px] text-indigo-900 leading-relaxed">
-                      ✓ <strong>Đồng bộ tự động 100%:</strong> Khi chuyển sang cho{' '}
-                      <strong>{targetStaffForViaTransfer}</strong>, cả{' '}
-                      <strong>{selectedViaObjectsForStaffTransfer.length} Nick Via</strong> và toàn bộ{' '}
+                      ✓ <strong>Đồng bộ tự động 100% cả Quản Lý Page & Quản Trị Full Via:</strong> Khi chuyển UID & Page sang cho{' '}
+                      <strong>{targetStaffForViaTransfer}</strong>, toàn bộ{' '}
+                      <strong>{selectedViaObjectsForStaffTransfer.length} Full Via (UID | Pass | 2FA) trong Quản Trị Full Via</strong> và{' '}
                       <strong>{pagesOfSelectedViasForStaffTransfer.length} Fanpage</strong> của Via đó sẽ chuyển sang tên{' '}
-                      <strong>{targetStaffForViaTransfer}</strong> để nhân viên dùng ngay.
+                      <strong>{targetStaffForViaTransfer}</strong> ngay lập tức!
                     </p>
                   )}
                 </div>

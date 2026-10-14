@@ -54,6 +54,8 @@ import {
   VIA_TRANSFER_PRESETS,
   VIA_TRANSFER_COLORS,
   FullViaItem,
+  ADMIN_WAITING_POOL,
+  isAdminWaitingPool,
 } from '../types';
 import {
   PAGE_STATUS_OPTIONS,
@@ -324,6 +326,8 @@ interface FanpageSheetTableProps {
   onDeleteStaffAllData?: (staffName: string) => void;
   onTransferPageRecord?: (record: PageRecord) => void;
   onTransferViaPages?: (viaUid: string) => void;
+  onQuickTransferViaToStaff?: (viaUid: string, targetStaffName: string) => void;
+  availableStaffNames?: string[];
   onFetchPagesForVia?: (viaUid: string, staffName: string) => void;
 }
 
@@ -371,6 +375,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   onDeleteStaffAllData,
   onTransferPageRecord,
   onTransferViaPages,
+  onQuickTransferViaToStaff,
+  availableStaffNames = [],
   onFetchPagesForVia,
 }) => {
   const [copiedViaId, setCopiedViaId] = useState<string | null>(null);
@@ -2106,12 +2112,44 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                         type="button"
                                         onClick={() => onTransferViaPages(record.viaUid)}
                                         className="text-[9px] font-bold text-indigo-800 hover:text-indigo-950 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 rounded px-1.5 py-0.2 inline-flex items-center space-x-0.5 transition-colors shadow-2xs cursor-pointer"
-                                        title={`Chuyển Nick Via "${record.viaUid}" kèm toàn bộ ${viaSpan.totalInGroup} Page đang cầm sang cho Nhân viên khác (hoặc đổi sang Via khác)`}
+                                        title={`Chuyển Nick Via "${record.viaUid}" kèm toàn bộ ${viaSpan.totalInGroup} Page đang cầm + Full Via sang cho Nhân viên khác`}
                                       >
                                         <ArrowRightLeft className="w-2.5 h-2.5 text-indigo-600" />
                                         <span>Chuyển Via+{viaSpan.totalInGroup}P</span>
                                       </button>
                                     )}
+
+                                    {currentUser.role === 'admin' &&
+                                      record.viaUid?.trim() &&
+                                      onQuickTransferViaToStaff && (
+                                        <select
+                                          value=""
+                                          onChange={(e) => {
+                                            const targetStaff = e.target.value;
+                                            if (!targetStaff) return;
+                                            onQuickTransferViaToStaff(record.viaUid, targetStaff);
+                                          }}
+                                          className="text-[9px] font-extrabold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-400 rounded px-1 py-0.2 cursor-pointer focus:outline-hidden shadow-2xs max-w-[92px]"
+                                          title={`Giao nhanh UID "${record.viaUid}" + ${viaSpan.totalInGroup} Page + Full Via (trong Quản Trị Full Via) sang cho Nhân Viên khác`}
+                                        >
+                                          <option value="">⇄ Giao NV...</option>
+                                          <option value={ADMIN_WAITING_POOL}>
+                                            📦 Kho Chờ Admin
+                                          </option>
+                                          {availableStaffNames
+                                            .filter(
+                                              (name) =>
+                                                !isAdminWaitingPool(name) &&
+                                                name.trim().toLowerCase() !==
+                                                  record.staffName.trim().toLowerCase()
+                                            )
+                                            .map((name) => (
+                                              <option key={name} value={name}>
+                                                👤 {name}
+                                              </option>
+                                            ))}
+                                        </select>
+                                      )}
 
                                     {onFetchPagesForVia && (
                                       <button
