@@ -276,30 +276,43 @@ export interface CloudSettingsData {
   requireGoogleLoginOnly?: boolean;
 }
 
+export const MASTER_OWNER_EMAIL = 'cualokhachsan@gmail.com';
+
+/**
+ * Kiểm tra Cầu Nối Chuyển Hướng CSDL (settings/db_bridge) ngay khi khởi động ứng dụng (trước cả màn hình đăng nhập)
+ * để đảm bảo mọi thiết bị mở link app đều tự động trỏ thẳng về CSDL của cualokhachsan@gmail.com
+ */
+export async function checkAndApplyCloudDbBridge(): Promise<boolean> {
+  if (!hasCustomFirebaseConfig() && typeof window !== 'undefined') {
+    try {
+      const bridgeSnap = await getDoc(doc(db, SETTINGS_COLLECTION, 'db_bridge'));
+      if (bridgeSnap.exists()) {
+        const bridgeData = bridgeSnap.data() as { redirectConfigJson?: string; targetProjectId?: string };
+        if (bridgeData?.redirectConfigJson) {
+          const parsedBridge = JSON.parse(bridgeData.redirectConfigJson);
+          if (
+            parsedBridge?.apiKey &&
+            parsedBridge?.projectId &&
+            parsedBridge.projectId !== firebaseConfigDefault.projectId
+          ) {
+            window.localStorage.setItem(CUSTOM_FIREBASE_CONFIG_STORAGE_KEY, bridgeData.redirectConfigJson);
+            window.location.reload();
+            return true;
+          }
+        }
+      }
+    } catch (bridgeErr) {
+      console.warn('[Firestore] Kiểm tra db_bridge:', bridgeErr);
+    }
+  }
+  return false;
+}
+
 // 4. Seeding Cloud Firestore with bundled backup data (backup_toan_bo_csdl_2026-10-14.json) if empty
 export async function seedCloudFirestoreIfEmpty(): Promise<void> {
   try {
-    // 0. Kiểm tra Cầu Nối Chuyển Hướng CSDL (settings/db_bridge):
-    // Nếu code app vẫn để tạm trên AI Studio hiện tại nhưng Admin đã chuyển CSDL sang Firebase Project riêng của cualokhachsan@gmail.com,
-    // tự động đồng bộ cấu hình sang trình duyệt này và KHÔNG nạp lại dữ liệu vào CSDL cũ!
-    if (!hasCustomFirebaseConfig() && typeof window !== 'undefined') {
-      try {
-        const bridgeSnap = await getDoc(doc(db, SETTINGS_COLLECTION, 'db_bridge'));
-        if (bridgeSnap.exists()) {
-          const bridgeData = bridgeSnap.data() as { redirectConfigJson?: string; targetProjectId?: string };
-          if (bridgeData?.redirectConfigJson) {
-            const parsedBridge = JSON.parse(bridgeData.redirectConfigJson);
-            if (parsedBridge?.apiKey && parsedBridge?.projectId && parsedBridge.projectId !== firebaseConfigDefault.projectId) {
-              window.localStorage.setItem(CUSTOM_FIREBASE_CONFIG_STORAGE_KEY, bridgeData.redirectConfigJson);
-              window.location.reload();
-              return;
-            }
-          }
-        }
-      } catch (bridgeErr) {
-        console.warn('[Firestore] Kiểm tra db_bridge:', bridgeErr);
-      }
-    }
+    const redirected = await checkAndApplyCloudDbBridge();
+    if (redirected) return;
 
     const writeBundledCollection = async (colName: string, items: any[]) => {
       if (!Array.isArray(items) || items.length === 0) return;
@@ -801,13 +814,26 @@ export async function batchDeleteCloudVias(viaIds: string[]): Promise<void> {
   }
 }
 
-// --- Accounts ---
+// --- Accounts (Bảo vệ khóa cứng tài khoản Super Admin cualokhachsan@gmail.com) ---
 export async function setCloudAccount(account: UserAccount): Promise<void> {
   const path = `${ACCOUNTS_COLLECTION}/${account.id}`;
   try {
-    const clean = sanitizeForFirestore(account);
-    await setDoc(doc(db, ACCOUNTS_COLLECTION, account.id), clean);
-    console.log(`[Firestore] Đã lưu thành công tài khoản "${account.username}" (ID: ${account.id}) vào collection accounts.`);
+    const isMasterAdmin =
+      account.id === 'admin' ||
+      account.id === 'account-admin' ||
+      account.role === 'admin' ||
+      account.email?.trim().toLowerCase() === MASTER_OWNER_EMAIL;
+    const enforcedAccount: UserAccount = isMasterAdmin
+      ? {
+          ...account,
+          role: 'admin',
+          status: 'approved',
+          email: MASTER_OWNER_EMAIL,
+        }
+      : account;
+    const clean = sanitizeForFirestore(enforcedAccount);
+    await setDoc(doc(db, ACCOUNTS_COLLECTION, enforcedAccount.id), clean);
+    console.log(`[Firestore] Đã lưu thành công tài khoản "${enforcedAccount.username}" (ID: ${enforcedAccount.id}) vào collection accounts.`);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -816,7 +842,19 @@ export async function setCloudAccount(account: UserAccount): Promise<void> {
 export async function updateCloudAccount(id: string, updates: Partial<UserAccount>): Promise<void> {
   const path = `${ACCOUNTS_COLLECTION}/${id}`;
   try {
-    const clean = sanitizeForFirestore(updates);
+    const isMasterAdmin =
+      id === 'admin' ||
+      id === 'account-admin' ||
+      updates.email?.trim().toLowerCase() === MASTER_OWNER_EMAIL;
+    const safeUpdates: Partial<UserAccount> = isMasterAdmin
+      ? {
+          ...updates,
+          role: 'admin',
+          status: 'approved',
+          email: MASTER_OWNER_EMAIL,
+        }
+      : updates;
+    const clean = sanitizeForFirestore(safeUpdates);
     await updateDoc(doc(db, ACCOUNTS_COLLECTION, id), clean as DocumentData);
     console.log(`[Firestore] Đã cập nhật thành công tài khoản ID: ${id}.`);
   } catch (error) {
@@ -825,6 +863,10 @@ export async function updateCloudAccount(id: string, updates: Partial<UserAccoun
 }
 
 export async function deleteCloudAccount(id: string): Promise<void> {
+  if (id === 'admin' || id === 'account-admin') {
+    console.warn('[Security] Chặn lệnh xóa tài khoản Quản Trị Viên Tối Cao (cualokhachsan@gmail.com).');
+    return;
+  }
   const path = `${ACCOUNTS_COLLECTION}/${id}`;
   try {
     await deleteDoc(doc(db, ACCOUNTS_COLLECTION, id));
@@ -1163,11 +1205,15 @@ export async function batchSaveCloudMonthlyFinances(records: MonthlyFinanceRecor
   }
 }
 
-// --- Settings ---
+// --- Settings (Khóa cứng quyền sở hữu Admin về cualokhachsan@gmail.com) ---
 export async function saveCloudSettings(settings: Partial<CloudSettingsData>): Promise<void> {
   const path = `${SETTINGS_COLLECTION}/${GENERAL_SETTINGS_DOC}`;
   try {
-    const clean = sanitizeForFirestore({ ...settings, id: GENERAL_SETTINGS_DOC });
+    const clean = sanitizeForFirestore({
+      ...settings,
+      id: GENERAL_SETTINGS_DOC,
+      adminEmail: MASTER_OWNER_EMAIL,
+    });
     await setDoc(
       doc(db, SETTINGS_COLLECTION, GENERAL_SETTINGS_DOC),
       clean,
@@ -1529,6 +1575,96 @@ export async function wipeLegacyDefaultFirebaseDatabase(
   };
 }
 
+/**
+ * Bộ quy tắc bảo mật chuẩn Firestore Rules v2 khóa độc quyền cho cualokhachsan@gmail.com
+ * Dùng để dán vào tab Rules trên Firebase Console của mail cualokhachsan@gmail.com sau khi chuyển dữ liệu
+ */
+export const HARDENED_FIRESTORE_RULES_V2 = `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
 
+    match /test/{docId} {
+      allow read, write: if isValidId(docId);
+    }
 
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\\\-\\\\.]+$');
+    }
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Super Admin độc quyền: cualokhachsan@gmail.com (Chống giả mạo với email_verified == true)
+    function isSuperAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email.lower() == 'cualokhachsan@gmail.com';
+    }
+
+    function isProtectedMasterAdminDoc(docId, existingData) {
+      return docId == 'admin' ||
+        docId == 'account-admin' ||
+        ('email' in existingData && existingData.email is string && existingData.email.lower() == 'cualokhachsan@gmail.com');
+    }
+
+    match /pageRecords/{recordId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(recordId);
+    }
+
+    match /vias/{viaId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(viaId);
+    }
+
+    match /accounts/{accountId} {
+      allow read: if true;
+      allow create: if isValidId(accountId) &&
+        (request.resource.data.role == 'staff' ||
+         (request.resource.data.role == 'admin' && request.resource.data.email.lower() == 'cualokhachsan@gmail.com') ||
+         isSuperAdmin());
+      allow update: if isValidId(accountId) &&
+        (request.resource.data.role == resource.data.role || isSuperAdmin()) &&
+        (!isProtectedMasterAdminDoc(accountId, resource.data) ||
+         (request.resource.data.role == 'admin' && request.resource.data.status == 'approved'));
+      allow delete: if isValidId(accountId) && !isProtectedMasterAdminDoc(accountId, resource.data);
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update: if isValidId(settingId) &&
+        (!('adminEmail' in request.resource.data) || request.resource.data.adminEmail.lower() == 'cualokhachsan@gmail.com' || isSuperAdmin()) &&
+        (!('ownerEmail' in request.resource.data) || request.resource.data.ownerEmail.lower() == 'cualokhachsan@gmail.com' || isSuperAdmin());
+      allow delete: if isValidId(settingId) && isSuperAdmin();
+    }
+
+    match /sharedAccounts/{accountId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(accountId);
+    }
+
+    match /groupRecords/{recordId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(recordId);
+    }
+
+    match /proxies/{proxyId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(proxyId);
+    }
+
+    match /monthlyFinances/{monthId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(monthId);
+    }
+
+    match /imageTasks/{taskId} {
+      allow read: if true;
+      allow create, update, delete: if isValidId(taskId);
+    }
+  }
+}`;

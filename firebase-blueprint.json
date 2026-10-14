@@ -24,8 +24,14 @@
         "actualPosts": { "type": "number" },
         "isCompleted": { "type": "boolean" },
         "isViaError": { "type": "boolean" },
-        "viaStatus": { "type": "string", "enum": ["active", "checkpoint", "dead", "error"] },
-        "viaErrorNote": { "type": "string", "maxLength": 500 }
+        "viaStatus": { "type": "string", "enum": ["active", "checkpoint", "dead", "error", "fixed"] },
+        "viaErrorNote": { "type": "string", "maxLength": 500 },
+        "isViaFixed": { "type": "boolean" },
+        "viaSharedNote": { "type": "string", "maxLength": 500 },
+        "viaTransferStatus": { "type": "string", "maxLength": 50 },
+        "viaTransferNote": { "type": "string", "maxLength": 500 },
+        "viaTransferColor": { "type": "string", "maxLength": 50 },
+        "viaTransferUpdatedAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["id", "staffName", "pageName", "targetPosts", "actualPosts", "isCompleted"]
     },
@@ -40,7 +46,7 @@
         "twoFa": { "type": "string", "maxLength": 200 },
         "staffName": { "type": "string", "maxLength": 100 },
         "note": { "type": "string", "maxLength": 500 },
-        "status": { "type": "string", "enum": ["active", "checkpoint", "dead", "error"] },
+        "status": { "type": "string", "enum": ["active", "checkpoint", "dead", "error", "fixed"] },
         "isError": { "type": "boolean" },
         "createdAt": { "type": "string", "maxLength": 50 },
         "rawFullVia": { "type": "string", "maxLength": 500 }
@@ -61,19 +67,28 @@
         "createdAt": { "type": "string", "maxLength": 50 },
         "approvedAt": { "type": "string", "maxLength": 50 },
         "requestNote": { "type": "string", "maxLength": 500 },
-        "adminNote": { "type": "string", "maxLength": 500 }
+        "adminNote": { "type": "string", "maxLength": 500 },
+        "allowedTabs": { "type": "array" }
       },
-      "required": ["id", "username", "role", "status", "pin"]
+      "required": ["id", "username", "role", "status"]
     },
     "AppSetting": {
       "title": "AppSetting",
-      "description": "Application security settings and staff master list",
+      "description": "Application security settings, DB bridge, and staff master list",
       "type": "object",
       "properties": {
         "id": { "type": "string", "maxLength": 128 },
         "adminPin": { "type": "string", "maxLength": 50 },
+        "adminEmail": { "type": "string", "maxLength": 200 },
+        "adminName": { "type": "string", "maxLength": 100 },
         "requireApproval": { "type": "boolean" },
-        "customStaffList": { "type": "array" }
+        "requireGoogleLoginOnly": { "type": "boolean" },
+        "customStaffList": { "type": "array" },
+        "redirectConfigJson": { "type": "string", "maxLength": 5000 },
+        "targetProjectId": { "type": "string", "maxLength": 200 },
+        "targetDatabaseId": { "type": "string", "maxLength": 200 },
+        "ownerEmail": { "type": "string", "maxLength": 200 },
+        "updatedAt": { "type": "string", "maxLength": 100 }
       },
       "required": ["id"]
     },
@@ -88,7 +103,7 @@
         "username": { "type": "string", "maxLength": 200 },
         "password": { "type": "string", "maxLength": 200 },
         "twoFa": { "type": "string", "maxLength": 200 },
-        "assignedStaff": { "type": "array", "items": { "type": "string" } },
+        "assignedStaff": { "type": "array" },
         "note": { "type": "string", "maxLength": 500 },
         "createdAt": { "type": "string", "maxLength": 50 },
         "updatedAt": { "type": "string", "maxLength": 50 }
@@ -131,8 +146,8 @@
         "location": { "type": "string", "maxLength": 100 },
         "provider": { "type": "string", "maxLength": 200 },
         "status": { "type": "string", "enum": ["active", "die", "expired", "checking"] },
-        "assignedStaff": { "type": "array", "items": { "type": "string" } },
-        "assignedViaUids": { "type": "array", "items": { "type": "string" } },
+        "assignedStaff": { "type": "array" },
+        "assignedViaUids": { "type": "array" },
         "expireDate": { "type": "string", "maxLength": 50 },
         "note": { "type": "string", "maxLength": 500 },
         "isRotating": { "type": "boolean" },
@@ -164,6 +179,23 @@
         "netProfit": { "type": "number" }
       },
       "required": ["id", "monthKey", "month", "year", "totalRevenue", "totalExpenses", "netProfit"]
+    },
+    "ImageTaskItem": {
+      "title": "ImageTaskItem",
+      "description": "Image editing and design task record for staff",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 300 },
+        "assignedStaff": { "type": "string", "maxLength": 100 },
+        "status": { "type": "string", "maxLength": 50 },
+        "priority": { "type": "string", "maxLength": 50 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "targetPage": { "type": "string", "maxLength": 200 },
+        "deadline": { "type": "string", "maxLength": 50 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["id", "title"]
     }
   },
   "firestore": {
@@ -181,7 +213,7 @@
     },
     "/settings/{settingId}": {
       "schema": "AppSetting",
-      "description": "Collection storing global system settings"
+      "description": "Collection storing global system settings and DB bridge"
     },
     "/sharedAccounts/{accountId}": {
       "schema": "SharedAccount",
@@ -198,6 +230,10 @@
     "/monthlyFinances/{monthId}": {
       "schema": "MonthlyFinanceRecord",
       "description": "Collection storing monthly finances and revenue management"
+    },
+    "/imageTasks/{taskId}": {
+      "schema": "ImageTaskItem",
+      "description": "Collection storing image tasks for staff"
     }
   }
 }

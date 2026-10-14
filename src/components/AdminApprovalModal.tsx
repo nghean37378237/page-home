@@ -59,6 +59,7 @@ import {
   hasCustomFirebaseConfig,
   clearCustomFirebaseConfig,
   firebaseConfig,
+  HARDENED_FIRESTORE_RULES_V2,
 } from '../services/firebase';
 
 interface AdminApprovalModalProps {
@@ -2869,6 +2870,48 @@ export function AdminApprovalModal({
                           {externalPushStatus.message}
                         </div>
                       )}
+                    </div>
+
+                    {/* BƯỚC KHÓA BẢO MẬT LẠI RULES CHO PROJECT MỚI TRÊN CUALOKHACHSAN@GMAIL.COM */}
+                    <div className="pt-3 border-t border-amber-200 space-y-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-emerald-50/90 border border-emerald-300 p-3 rounded-xl">
+                        <div className="space-y-0.5">
+                          <div className="text-xs font-black text-emerald-950 flex items-center gap-1.5">
+                            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                            <span>Khóa Bảo Mật CSDL Cloud (Firestore Rules v2) Cho cualokhachsan@gmail.com</span>
+                          </div>
+                          <p className="text-[11px] text-slate-600">
+                            CSDL mặc định đã được hệ thống tự động khóa bảo mật 100%. Nếu bạn tự tạo Project mới trên <code>console.firebase.google.com</code> của <strong>cualokhachsan@gmail.com</strong> (lúc nãy mở tạm <code>if true</code> để nhận dữ liệu), hãy bấm <strong>Copy Mã Bảo Mật Rules v2</strong> bên dưới và dán vào tab <strong>Rules → Publish</strong> để khóa chặt CSDL!
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyDbParam('hardened_rules', HARDENED_FIRESTORE_RULES_V2)}
+                            className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-xs"
+                          >
+                            {copiedKey === 'db_hardened_rules' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 text-white" />
+                                <span>Đã Copy Rules Bảo Mật!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>📋 Copy Mã Bảo Mật Rules v2</span>
+                              </>
+                            )}
+                          </button>
+                          <a
+                            href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${firebaseConfig.firestoreDatabaseId}/rules`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-xs"
+                          >
+                            Mở Tab Rules ↗
+                          </a>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

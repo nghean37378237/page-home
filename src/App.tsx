@@ -18,7 +18,9 @@ import {
 } from './types';
 import {
   testFirestoreConnection,
+  checkAndApplyCloudDbBridge,
   seedCloudFirestoreIfEmpty,
+  MASTER_OWNER_EMAIL,
   subscribeToPageRecords,
   subscribeToVias,
   subscribeToAccounts,
@@ -291,11 +293,19 @@ export default function App() {
 
     async function initBaseCloudFirestore() {
       try {
+        // 0. Kiểm tra Cầu Nối CSDL (db_bridge) ngay khi mở trang để tự động trỏ về CSDL của cualokhachsan@gmail.com
+        const redirected = await checkAndApplyCloudDbBridge();
+        if (redirected) return;
+
         const connected = await testFirestoreConnection();
         setIsFirestoreConnected(connected);
 
         // 1. Listen to live accounts (needed by login screen)
         unsubAccounts = subscribeToAccounts((cloudAccounts) => {
+          if (cloudAccounts.length === 0) {
+            seedCloudFirestoreIfEmpty().catch(() => {});
+            return;
+          }
           const cleanedAccounts = cloudAccounts.filter((acc) => {
             const lowerEmail = (acc.email || '').trim().toLowerCase();
             const lowerUser = (acc.username || '').trim().toLowerCase();
@@ -307,8 +317,8 @@ export default function App() {
           });
           setAccounts(cleanedAccounts);
           const adminAcc = cleanedAccounts.find((a) => a.role === 'admin');
-          if (adminAcc && adminAcc.email !== 'cualokhachsan@gmail.com') {
-            updateCloudAccount(adminAcc.id, { email: 'cualokhachsan@gmail.com' }).catch(() => {});
+          if (adminAcc && adminAcc.email !== MASTER_OWNER_EMAIL) {
+            updateCloudAccount(adminAcc.id, { email: MASTER_OWNER_EMAIL }).catch(() => {});
           }
         });
 
@@ -356,11 +366,14 @@ export default function App() {
   // AFTER a user is successfully verified. When logged out, automatically cancel listeners and wipe in-memory data!
   useEffect(() => {
     if (!currentUser.isAuthenticated || currentUser.id === 'guest') {
-      // Zero-out sensitive data arrays from RAM if not authenticated
+      // Zero-out ALL sensitive data arrays from RAM if not authenticated
       setRecords([]);
       setViaList([]);
       setSharedAccounts([]);
       setGroupRecords([]);
+      setProxies([]);
+      setFinances([]);
+      setImageTasks([]);
       return;
     }
 
@@ -432,7 +445,7 @@ export default function App() {
           }
         });
 
-        // 6. Listen to live monthly finances in Cloud Firestore (Chỉ Admin)
+        // 6. Listen to live monthly finances in Cloud Firestore (KHÓA CỨNG: CHỈ ADMIN MỚI ĐƯỢC TẢI DỮ LIỆU DOANH THU VÀO RAM)
         const isLegacyMockFinance = (rec: MonthlyFinanceRecord) => {
           return (
             rec.revenueItems?.some((r) => r.id?.startsWith('rev-10-') || r.id?.startsWith('rev-09-')) ||
@@ -443,35 +456,40 @@ export default function App() {
           );
         };
 
-        unsubFinances = subscribeToMonthlyFinances((cloudFinances) => {
-          if (cloudFinances && cloudFinances.length > 0) {
-            const mockRecords = cloudFinances.filter(isLegacyMockFinance);
-            if (mockRecords.length > 0) {
-              mockRecords.forEach((m) => {
-                deleteCloudMonthlyFinance(m.id).catch(() => {});
-              });
-            }
-            const cleanList = cloudFinances.filter((f) => !isLegacyMockFinance(f));
-            setFinances(cleanList);
-            saveLocalFinanceBackup(cleanList);
-          } else {
-            setFinances([]);
-            clearLocalFinanceBackup();
-          }
-        });
-
-        getCloudMonthlyFinances()
-          .then((list) => {
-            if (list && list.length > 0) {
-              const cleanList = list.filter((f) => !isLegacyMockFinance(f));
+        if (currentUser.role === 'admin') {
+          unsubFinances = subscribeToMonthlyFinances((cloudFinances) => {
+            if (cloudFinances && cloudFinances.length > 0) {
+              const mockRecords = cloudFinances.filter(isLegacyMockFinance);
+              if (mockRecords.length > 0) {
+                mockRecords.forEach((m) => {
+                  deleteCloudMonthlyFinance(m.id).catch(() => {});
+                });
+              }
+              const cleanList = cloudFinances.filter((f) => !isLegacyMockFinance(f));
               setFinances(cleanList);
               saveLocalFinanceBackup(cleanList);
             } else {
               setFinances([]);
               clearLocalFinanceBackup();
             }
-          })
-          .catch((err) => console.warn('[App] Direct finance fetch warning:', err));
+          });
+
+          getCloudMonthlyFinances()
+            .then((list) => {
+              if (list && list.length > 0) {
+                const cleanList = list.filter((f) => !isLegacyMockFinance(f));
+                setFinances(cleanList);
+                saveLocalFinanceBackup(cleanList);
+              } else {
+                setFinances([]);
+                clearLocalFinanceBackup();
+              }
+            })
+            .catch((err) => console.warn('[App] Direct finance fetch warning:', err));
+        } else {
+          setFinances([]);
+          clearLocalFinanceBackup();
+        }
 
         // 7. Listen to live image tasks in Cloud Firestore
         unsubImageTasks = subscribeToImageTasks((cloudTasks) => {
@@ -497,7 +515,21 @@ export default function App() {
       unsubFinances?.();
       unsubImageTasks?.();
     };
-  }, [currentUser.isAuthenticated]);
+  }, [currentUser.isAuthenticated, currentUser.role]);
+
+  // Real-time Session Security Guard: Tự động thu hồi phiên đăng nhập tức thì nếu tài khoản nhân viên bị Admin khóa hoặc xóa trên Cloud
+  useEffect(() => {
+    if (!currentUser.isAuthenticated || currentUser.role === 'admin' || accounts.length === 0) return;
+    const matched = accounts.find(
+      (a) =>
+        a.id === currentUser.id ||
+        a.username.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+    );
+    if (!matched || matched.status !== 'approved') {
+      clearCurrentUserSession();
+      setCurrentUser(GUEST_USER);
+    }
+  }, [accounts, currentUser]);
 
   // Save current active tab session
   useEffect(() => {
@@ -1161,6 +1193,14 @@ export default function App() {
 
   const handleRejectAccount = async (accountId: string) => {
     const acc = accounts.find((a) => a.id === accountId);
+    if (
+      accountId === 'admin' ||
+      accountId === 'account-admin' ||
+      acc?.role === 'admin' ||
+      acc?.email?.trim().toLowerCase() === MASTER_OWNER_EMAIL
+    ) {
+      return;
+    }
 
     // Optimistically remove from React state immediately
     setAccounts((prev) => prev.filter((a) => a.id !== accountId));
@@ -1178,6 +1218,15 @@ export default function App() {
   };
 
   const handleBlockAccount = async (accountId: string) => {
+    const acc = accounts.find((a) => a.id === accountId);
+    if (
+      accountId === 'admin' ||
+      accountId === 'account-admin' ||
+      acc?.role === 'admin' ||
+      acc?.email?.trim().toLowerCase() === MASTER_OWNER_EMAIL
+    ) {
+      return;
+    }
     // Optimistically update React state immediately
     setAccounts((prev) =>
       prev.map((a) => (a.id === accountId ? { ...a, status: 'blocked' } : a))
@@ -1252,6 +1301,14 @@ export default function App() {
     options?: { deletePosts?: boolean; deleteVias?: boolean }
   ) => {
     const acc = accounts.find((a) => a.id === accountId);
+    if (
+      accountId === 'admin' ||
+      accountId === 'account-admin' ||
+      acc?.role === 'admin' ||
+      acc?.email?.trim().toLowerCase() === MASTER_OWNER_EMAIL
+    ) {
+      return;
+    }
     const staffName = acc?.username.trim();
     const staffNameLower = staffName?.toLowerCase();
 
