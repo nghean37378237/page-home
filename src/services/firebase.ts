@@ -302,7 +302,15 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
         : INITIAL_ACCOUNTS;
       await writeBundledCollection(ACCOUNTS_COLLECTION, bundledAccounts);
     } else {
-      const existingDocs = accountsSnapshot.docs.map((d) => d.data() as UserAccount);
+      const existingDocs = accountsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as UserAccount) }));
+      // Xóa bỏ hoàn toàn tài khoản phụ thuộc mail cũ nếu tồn tại
+      for (const acc of existingDocs) {
+        const lowerEmail = (acc.email || '').trim().toLowerCase();
+        const lowerUser = (acc.username || '').trim().toLowerCase();
+        if (acc.role !== 'admin' && (lowerEmail === 'myphuong2295@gmail.com' || lowerUser === 'myphuong2295@gmail.com')) {
+          await deleteDoc(doc(db, ACCOUNTS_COLLECTION, acc.id)).catch(() => {});
+        }
+      }
       const adminAcc = existingDocs.find((a) => a.role === 'admin');
       if (!adminAcc) {
         await setDoc(doc(db, ACCOUNTS_COLLECTION, DEFAULT_ADMIN_ACCOUNT.id), DEFAULT_ADMIN_ACCOUNT);
@@ -1428,6 +1436,55 @@ export function saveActiveFirebaseConfig(rawConfigInput: string, targetDatabaseI
     );
   }
 }
+
+/**
+ * Xóa sạch toàn bộ dữ liệu trên CSDL mặc định cũ (gen-lang-client-0516107785) sau khi đã chuyển sang Project riêng của cualokhachsan@gmail.com
+ */
+export async function wipeLegacyDefaultFirebaseDatabase(
+  onProgress?: (msg: string) => void
+): Promise<{ totalDeleted: number; oldProjectId: string }> {
+  const oldAppName = `legacy_cleanup_${Date.now()}`;
+  const oldApp = initializeApp(firebaseConfigDefault, oldAppName);
+  const oldDb =
+    !firebaseConfigDefault.firestoreDatabaseId || firebaseConfigDefault.firestoreDatabaseId === '(default)'
+      ? initializeFirestore(oldApp, { ignoreUndefinedProperties: true })
+      : initializeFirestore(oldApp, { ignoreUndefinedProperties: true }, firebaseConfigDefault.firestoreDatabaseId);
+
+  const collectionsToWipe = [
+    PAGE_RECORDS_COLLECTION,
+    VIAS_COLLECTION,
+    GROUP_RECORDS_COLLECTION,
+    PROXIES_COLLECTION,
+    SHARED_ACCOUNTS_COLLECTION,
+    MONTHLY_FINANCES_COLLECTION,
+    IMAGE_TASKS_COLLECTION,
+    ACCOUNTS_COLLECTION,
+    SETTINGS_COLLECTION,
+  ];
+
+  let totalDeleted = 0;
+  for (const colName of collectionsToWipe) {
+    onProgress?.(`Đang xóa sạch bảng ${colName} trên CSDL cũ (${firebaseConfigDefault.projectId})...`);
+    const snap = await getDocs(collection(oldDb, colName));
+    if (!snap.empty) {
+      const docs = snap.docs;
+      const chunkSize = 350;
+      for (let i = 0; i < docs.length; i += chunkSize) {
+        const chunk = docs.slice(i, i + chunkSize);
+        const batch = writeBatch(oldDb);
+        chunk.forEach((d) => batch.delete(doc(oldDb, colName, d.id)));
+        await batch.commit();
+        totalDeleted += chunk.length;
+      }
+    }
+  }
+
+  return {
+    totalDeleted,
+    oldProjectId: firebaseConfigDefault.projectId,
+  };
+}
+
 
 
 

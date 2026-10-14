@@ -53,6 +53,7 @@ import {
   getFirestoreDatabaseInfo,
   pingFirestoreDatabase,
   pushBackupToExternalFirebase,
+  wipeLegacyDefaultFirebaseDatabase,
   BUNDLED_BACKUP_DATA,
   saveActiveFirebaseConfig,
   hasCustomFirebaseConfig,
@@ -779,18 +780,18 @@ export function AdminApprovalModal({
   };
 
   // Đẩy trực tiếp toàn bộ CSDL sang Project Firebase mới của mail mới (cualokhachsan@gmail.com)
-  const handlePushToNewFirebaseProject = async (switchActiveConnection = false) => {
+  const handlePushToNewFirebaseProject = async (switchActiveConnection = false, wipeOldDbAfter = false) => {
     if (!targetFirebaseConfigInput.trim()) {
       setExternalPushStatus({
         type: 'error',
-        message: 'Vui lòng dán đoạn firebaseConfig từ Project Firebase mới của bạn.',
+        message: 'Vui lòng dán đoạn firebaseConfig từ Project Firebase mới của cualokhachsan@gmail.com.',
       });
       return;
     }
     setIsPushingExternalDb(true);
     setExternalPushStatus({
       type: 'running',
-      message: 'Đang khởi tạo kết nối và đẩy dữ liệu sang Firebase mới của cualokhachsan@gmail.com...',
+      message: 'Đang khởi tạo kết nối và đẩy dữ liệu sang Firebase của cualokhachsan@gmail.com...',
     });
     try {
       const payload = buildFullBackupPayload();
@@ -800,27 +801,67 @@ export function AdminApprovalModal({
         targetDatabaseIdInput,
         (msg) => setExternalPushStatus({ type: 'running', message: msg })
       );
+      let wipedInfo = '';
+      if (wipeOldDbAfter) {
+        setExternalPushStatus({
+          type: 'running',
+          message: 'Đã đẩy xong sang cualokhachsan@gmail.com! Đang xóa sạch dữ liệu trên CSDL cũ...',
+        });
+        const wipeRes = await wipeLegacyDefaultFirebaseDatabase((msg) =>
+          setExternalPushStatus({ type: 'running', message: msg })
+        );
+        wipedInfo = ` & Đã xóa vĩnh viễn ${wipeRes.totalDeleted} bản ghi trên CSDL cũ (${wipeRes.oldProjectId})`;
+      }
       if (switchActiveConnection) {
         saveActiveFirebaseConfig(targetFirebaseConfigInput, targetDatabaseIdInput);
         setExternalPushStatus({
           type: 'success',
-          message: `✅ Đã đẩy ${res.totalDocsWritten} bản ghi & chuyển kết nối chính thức sang Project "${res.targetProjectId}"! Đang tải lại...`,
+          message: `✅ Đã đẩy ${res.totalDocsWritten} bản ghi, chuyển sang Project "${res.targetProjectId}"${wipedInfo}! Đang tải lại...`,
         });
-        setTimeout(() => window.location.reload(), 1500);
+        setTimeout(() => window.location.reload(), 1600);
         return;
       }
       setExternalPushStatus({
         type: 'success',
-        message: `✅ Đã đẩy thành công ${res.totalDocsWritten} bản ghi (đủ 8 bảng + cài đặt) sang Project "${res.targetProjectId}" (Database: ${res.targetDbId})!`,
+        message: `✅ Đã đẩy thành công ${res.totalDocsWritten} bản ghi sang Project "${res.targetProjectId}" (Database: ${res.targetDbId})${wipedInfo}!`,
       });
       setToastNotice({
         type: 'success',
-        message: `🎉 Đã chuyển toàn bộ CSDL sang Project Firebase mới (${res.targetProjectId}) thành công!`,
+        message: `🎉 Đã chuyển toàn bộ CSDL sang Project Firebase của cualokhachsan@gmail.com (${res.targetProjectId}) thành công!`,
       });
     } catch (err) {
       setExternalPushStatus({
         type: 'error',
         message: `❌ Lỗi khi đẩy sang Firebase mới: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setIsPushingExternalDb(false);
+    }
+  };
+
+  // Xóa sạch CSDL cũ nếu hệ thống đã chuyển sang kết nối Project Firebase riêng của cualokhachsan@gmail.com
+  const handleWipeLegacyDatabaseOnly = async () => {
+    if (!hasCustomFirebaseConfig()) {
+      setExternalPushStatus({
+        type: 'error',
+        message:
+          '⚠️ Hiện ứng dụng vẫn đang chạy trên Server Cloud mặc định này. Để xóa Server cũ mà không mất dữ liệu đang chạy, hãy dán firebaseConfig của cualokhachsan@gmail.com ở trên rồi bấm nút "Đẩy Sang CSDL Mới & Xóa Sạch CSDL Cũ"!',
+      });
+      return;
+    }
+    setIsPushingExternalDb(true);
+    try {
+      const wipeRes = await wipeLegacyDefaultFirebaseDatabase((msg) =>
+        setExternalPushStatus({ type: 'running', message: msg })
+      );
+      setExternalPushStatus({
+        type: 'success',
+        message: `🗑️ Đã xóa vĩnh viễn ${wipeRes.totalDeleted} bản ghi trên CSDL cũ (${wipeRes.oldProjectId}). Hệ thống hiện chỉ dùng duy nhất CSDL của cualokhachsan@gmail.com!`,
+      });
+    } catch (err) {
+      setExternalPushStatus({
+        type: 'error',
+        message: `❌ Lỗi khi xóa CSDL cũ: ${err instanceof Error ? err.message : String(err)}`,
       });
     } finally {
       setIsPushingExternalDb(false);
@@ -2091,22 +2132,22 @@ export function AdminApprovalModal({
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                         <div className="space-y-1">
                           <div className="text-xs font-black text-indigo-950 flex items-center flex-wrap gap-1.5">
-                            <span>📧 Email Admin Chính Quản Trị Hệ Thống & CSDL:</span>
+                            <span>📧 Email Chủ Sở Hữu & Quản Trị CSDL Duy Nhất:</span>
                             <span className="font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-300 select-all">
-                              {adminEmail || 'cualokhachsan@gmail.com'}
+                              cualokhachsan@gmail.com
                             </span>
                             <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                              ✅ Đã cấu hình toàn quyền Admin trong App & Firestore Rules
+                              ✅ Độc quyền Super Admin • Đã xóa & ngắt bỏ hoàn toàn mail cũ
                             </span>
                           </div>
                           <p className="text-[11px] text-slate-600">
-                            Toàn bộ quyền Quản Trị Viên (Super Admin) trên ứng dụng và <strong>Firestore Security Rules</strong> đã được chuyển sang <strong>cualokhachsan@gmail.com</strong>. Để xem bảng điều khiển Google Cloud / Firebase Console bằng mail này, hãy cấp quyền <strong>Owner</strong> trong IAM theo Bước 1 bên dưới (Project khởi tạo ban đầu từ: <code>myphuong2295@gmail.com</code>).
+                            Hệ thống đã khóa cố định <strong>cualokhachsan@gmail.com</strong> làm tài khoản Chủ Sở Hữu duy nhất trong ứng dụng, bản sao lưu lõi (438 bản ghi) và <strong>Firestore Security Rules</strong>. Mọi liên kết tài khoản Admin/cấu hình của mail cũ đã được xóa bỏ hoàn toàn khỏi hệ thống.
                           </p>
                         </div>
                         <div className="flex items-center flex-wrap gap-1.5 shrink-0">
                           <button
                             type="button"
-                            onClick={() => handleCopyDbParam('ownerEmail', adminEmail || 'cualokhachsan@gmail.com')}
+                            onClick={() => handleCopyDbParam('ownerEmail', 'cualokhachsan@gmail.com')}
                             className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-2xs"
                           >
                             {copiedKey === 'db_ownerEmail' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
@@ -2136,13 +2177,13 @@ export function AdminApprovalModal({
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                           <div>
                             <div className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
-                              <span>🔄 Chuyển Quyền Chủ Sở Hữu (Owner) Google Cloud / Firebase Sang cualokhachsan@gmail.com</span>
-                              <span className="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black px-1.5 py-0.5 rounded">
-                                Giữ nguyên 100% dữ liệu
+                              <span>🔒 Quản Trị Độc Quyền Bởi cualokhachsan@gmail.com</span>
+                              <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-black px-1.5 py-0.5 rounded">
+                                Đã xóa bỏ mail cũ
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-600 mt-0.5">
-                              Trong ứng dụng và cơ sở dữ liệu Firestore, <strong>cualokhachsan@gmail.com</strong> đã là Admin tối cao. Để mail này cũng có quyền quản lý thanh toán/gia hạn trực tiếp trên trang quản trị Google Cloud, bạn làm 1 bước duy nhất sau:
+                              Trong ứng dụng và cơ sở dữ liệu Firestore, duy nhất <strong>cualokhachsan@gmail.com</strong> có quyền Chủ Sở Hữu. Nếu bạn muốn tách sang Server Firebase riêng tạo trên <strong>cualokhachsan@gmail.com</strong> và xóa sạch Server cũ, bạn có thể thực hiện ngay bên dưới:
                             </p>
                           </div>
                         </div>
@@ -2151,12 +2192,12 @@ export function AdminApprovalModal({
                           {/* Bước 1: Cấp quyền Owner trên Google Cloud / Firebase */}
                           <div className="p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-200 space-y-1.5">
                             <div className="font-black text-indigo-950">
-                              Bước duy nhất trên Google Cloud (chỉ mất 30 giây - giữ nguyên CSDL):
+                              Quản lý quyền Chủ Sở Hữu (Owner) trên Google Cloud IAM &amp; Xóa Project cũ:
                             </div>
                             <ol className="list-decimal list-inside space-y-1 text-slate-700">
-                              <li>Mở link <strong>Google Cloud IAM</strong> bên dưới (đang đăng nhập bằng <code>myphuong2295@gmail.com</code>).</li>
-                              <li>Bấm <strong>Grant Access (Cấp quyền)</strong> → Dán <code>cualokhachsan@gmail.com</code> vào ô <em>New principals</em>.</li>
-                              <li>Ở ô <em>Select a role</em>, chọn <strong>Basic → Owner (Chủ sở hữu)</strong> → Bấm <strong>Save</strong> và xác nhận email mời trong hộp thư <code>cualokhachsan@gmail.com</code>.</li>
+                              <li>Mở <strong>Google Cloud IAM</strong> bên dưới → Cấp quyền <strong>Owner (Chủ sở hữu)</strong> cho <code>cualokhachsan@gmail.com</code>.</li>
+                              <li>Sau khi <code>cualokhachsan@gmail.com</code> đã nhận quyền Owner, bạn có thể bấm biểu tượng thùng rác cạnh email cũ trong bảng IAM để gỡ bỏ hoàn toàn email cũ khỏi Project!</li>
+                              <li>Hoặc chuyển sang Project Firebase mới ở tab <strong>Sao Lưu Dự Phòng CSDL</strong> rồi bấm <strong>Xóa Sạch CSDL Cũ</strong>.</li>
                             </ol>
                             <div className="flex flex-wrap items-center gap-1.5 pt-1">
                               <a
@@ -2165,7 +2206,7 @@ export function AdminApprovalModal({
                                 rel="noopener noreferrer"
                                 className="px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-2xs"
                               >
-                                1. Mở Google Cloud IAM (Thêm Owner) ↗
+                                1. Mở Google Cloud IAM (Quản lý Owner) ↗
                               </a>
                               <a
                                 href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/settings/iam`}
@@ -2786,30 +2827,29 @@ export function AdminApprovalModal({
                             <button
                               type="button"
                               disabled={isPushingExternalDb}
-                              onClick={() => handlePushToNewFirebaseProject(false)}
-                              className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                              onClick={() => handlePushToNewFirebaseProject(true, true)}
+                              className="w-full py-2 px-3 bg-rose-600 hover:bg-rose-700 text-white font-black text-[11px] rounded-xl shadow-xs transition-all flex items-center justify-center space-x-1 cursor-pointer disabled:opacity-50"
                             >
-                              <Upload className="w-3.5 h-3.5 shrink-0" />
-                              <span>{isPushingExternalDb ? 'Đang Đẩy CSDL...' : '1. Chỉ Đẩy Dữ Liệu Sang'}</span>
+                              <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>1. Đẩy Sang CSDL Mới &amp; Xóa Sạch CSDL Cũ</span>
                             </button>
                             <button
                               type="button"
                               disabled={isPushingExternalDb}
-                              onClick={() => handlePushToNewFirebaseProject(true)}
+                              onClick={() => handlePushToNewFirebaseProject(true, false)}
                               className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] rounded-xl shadow-xs transition-all flex items-center justify-center space-x-1 cursor-pointer disabled:opacity-50"
                             >
-                              <span>2. Đẩy & Chuyển Hẳn App Sang CSDL Này</span>
+                              <Upload className="w-3.5 h-3.5 shrink-0" />
+                              <span>2. Đẩy &amp; Chuyển Hẳn App Sang CSDL Này</span>
                             </button>
                             {hasCustomFirebaseConfig() && (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  clearCustomFirebaseConfig();
-                                  window.location.reload();
-                                }}
-                                className="w-full py-1.5 px-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] rounded-lg cursor-pointer"
+                                disabled={isPushingExternalDb}
+                                onClick={handleWipeLegacyDatabaseOnly}
+                                className="w-full py-1.5 px-2 bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 font-bold text-[10px] rounded-lg cursor-pointer"
                               >
-                                Khôi phục kết nối CSDL mặc định
+                                🗑️ Xóa Vĩnh Viễn Toàn Bộ Dữ Liệu CSDL Cũ
                               </button>
                             )}
                           </div>

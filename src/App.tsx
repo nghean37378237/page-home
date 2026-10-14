@@ -296,9 +296,18 @@ export default function App() {
 
         // 1. Listen to live accounts (needed by login screen)
         unsubAccounts = subscribeToAccounts((cloudAccounts) => {
-          setAccounts(cloudAccounts);
-          const adminAcc = cloudAccounts.find((a) => a.role === 'admin');
-          if (adminAcc && (!adminAcc.email || adminAcc.email.toLowerCase() === 'myphuong2295@gmail.com')) {
+          const cleanedAccounts = cloudAccounts.filter((acc) => {
+            const lowerEmail = (acc.email || '').trim().toLowerCase();
+            const lowerUser = (acc.username || '').trim().toLowerCase();
+            if (acc.role !== 'admin' && (lowerEmail === 'myphuong2295@gmail.com' || lowerUser === 'myphuong2295@gmail.com')) {
+              deleteCloudAccount(acc.id).catch(() => {});
+              return false;
+            }
+            return true;
+          });
+          setAccounts(cleanedAccounts);
+          const adminAcc = cleanedAccounts.find((a) => a.role === 'admin');
+          if (adminAcc && adminAcc.email !== 'cualokhachsan@gmail.com') {
             updateCloudAccount(adminAcc.id, { email: 'cualokhachsan@gmail.com' }).catch(() => {});
           }
         });
@@ -306,10 +315,7 @@ export default function App() {
         // 2. Listen to live settings (branding & Google login policy)
         unsubSettings = subscribeToSettings((cloudSettings) => {
           if (cloudSettings) {
-            const resolvedEmail =
-              !cloudSettings.adminEmail || cloudSettings.adminEmail.toLowerCase() === 'myphuong2295@gmail.com'
-                ? 'cualokhachsan@gmail.com'
-                : cloudSettings.adminEmail;
+            const resolvedEmail = 'cualokhachsan@gmail.com';
             if (cloudSettings.adminEmail !== resolvedEmail) {
               saveCloudSettings({
                 ...cloudSettings,
