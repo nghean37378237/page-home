@@ -421,6 +421,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     setIsGoogleSigningIn(true);
     setGoogleError(null);
     setShowLinkingBox(false);
+    setPendingApprovalState(null);
 
     try {
       const provider = new GoogleAuthProvider();
@@ -465,14 +466,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      // 2. Check Approved / Pending Staff Google Account
+      // 2. Check Staff Google Account granted by Admin in system
       const matched =
         findMatchingAccount(email, freshAccounts) ||
         (displayName ? findMatchingAccount(displayName, freshAccounts) : undefined);
 
       if (matched) {
         if (matched.status === 'blocked') {
-          setGoogleError(`Tài khoản Gmail "${email}" (${matched.username}) đang bị Quản Lý (${currentAdminEmail || 'cualokhachsan@gmail.com'}) tạm khóa.`);
+          setGoogleError(`Tài khoản Gmail "${email}" (${matched.username}) đang bị Quản Lý (${currentAdminEmail}) tạm khóa.`);
           return;
         }
         if (matched.status === 'pending') {
@@ -504,20 +505,16 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      // 3. Email is unlinked or not recognized - Prompt user to send request for approval to cualokhachsan@gmail.com
-      const suggestedName = displayName || email.split('@')[0];
-      setNewGoogleStaffName(suggestedName);
-      setNewGoogleUserPrompt({
-        email,
-        displayName: suggestedName,
-      });
-      setGoogleError(null);
+      // 3. Email not granted in system by Admin
+      setGoogleError(
+        `Email Gmail "${email}" chưa được Quản Lý (${currentAdminEmail}) cấp quyền trong hệ thống. Vui lòng báo Quản Lý thêm Gmail này vào danh sách nhân viên!`
+      );
     } catch (err: any) {
       console.warn('[LoginScreen] Lỗi Google OAuth popup:', err);
       if (err.code === 'auth/popup-closed-by-user') {
         setGoogleError('Bạn đã đóng cửa sổ đăng nhập Google trước khi hoàn tất. Bạn có thể thử lại hoặc nhập Gmail bên dưới.');
       } else if (err.code === 'auth/popup-blocked') {
-        setGoogleError('Trình duyệt hoặc khung hiển thị (iFrame) đang chặn cửa sổ đăng nhập Google (Pop-up). Bạn có thể bấm chọn tài khoản hoặc nhập Gmail bên dưới.');
+        setGoogleError('Trình duyệt hoặc khung hiển thị (iFrame) đang chặn cửa sổ đăng nhập Google (Pop-up). Bạn có thể bấm chọn hoặc nhập Gmail bên dưới.');
         setIsGoogleChooserOpen(true);
       } else if (err.code === 'auth/unauthorized-domain') {
         setIsUnauthorizedDomain(true);
@@ -534,7 +531,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  // 3. Handle Google Sign-In Step 1: Detect Account by Email
+  // 3. Handle Google Sign-In Step 1: Verify Email directly against Admin's authorized staff list
   const processEmailVerification = (targetEmail: string) => {
     setGoogleError(null);
     setShowLinkingBox(false);
@@ -572,7 +569,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     if (matched) {
       if (matched.status === 'blocked') {
-        setGoogleError(`Tài khoản liên kết với Gmail "${email}" đang bị tạm khóa bởi Quản Lý (${currentAdminEmail || 'cualokhachsan@gmail.com'}).`);
+        setGoogleError(`Tài khoản liên kết với Gmail "${email}" đang bị tạm khóa bởi Quản Lý (${currentAdminEmail}).`);
         return;
       }
       if (matched.status === 'pending') {
@@ -585,23 +582,28 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         return;
       }
 
-      // Approved Staff Account -> Verify PIN or Allow In
-      setPendingGoogleAuth({
-        role: 'staff',
-        account: matched,
+      // Auto-link email if not linked yet
+      if (!matched.email || matched.email.toLowerCase() !== email) {
+        onLinkAccountEmail?.(matched.id, email);
+      }
+
+      // Approved Staff Account in system -> Log in directly by Gmail without PIN!
+      onLoginSuccess({
+        id: matched.id,
+        name: matched.username,
         email: email,
+        role: 'staff',
+        status: 'approved',
+        isAuthenticated: true,
+        allowedTabs: matched.allowedTabs,
       });
-      setGooglePasswordInput('');
       return;
     }
 
-    // If not matched, prompt employee to request approval from cualokhachsan@gmail.com
-    const suggested = email.split('@')[0];
-    setNewGoogleStaffName(suggested);
-    setNewGoogleUserPrompt({
-      email,
-      displayName: suggested,
-    });
+    // If not matched, inform user that Admin must grant permission in the system
+    setGoogleError(
+      `Email Gmail "${email}" chưa được Quản Lý (${currentAdminEmail}) cấp quyền trong hệ thống. Vui lòng báo Quản Lý thêm Gmail này vào hệ thống!`
+    );
   };
 
   const handleCustomGoogleSubmit = (e: React.FormEvent) => {
@@ -614,7 +616,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     processEmailVerification(email);
   };
 
-  // 3b. Handle Google Sign-In Step 2: Verify Password/PIN for Recognized Email
+  // Verify Admin Password for Admin Email
   const handleConfirmGooglePassword = (e: React.FormEvent) => {
     e.preventDefault();
     setGoogleError(null);
@@ -622,134 +624,25 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     if (!pendingGoogleAuth) return;
 
     if (!googlePasswordInput.trim()) {
-      setGoogleError(
-        pendingGoogleAuth.role === 'admin'
-          ? 'Vui lòng nhập Mật Khẩu Admin để mở khóa!'
-          : 'Vui lòng nhập Mã PIN nhân viên để mở khóa!'
-      );
+      setGoogleError('Vui lòng nhập Mật Khẩu Admin để mở khóa!');
       return;
     }
 
-    // Admin Verification
-    if (pendingGoogleAuth.role === 'admin') {
-      const isPinValid = onVerifyAdminPin
-        ? onVerifyAdminPin(googlePasswordInput.trim())
-        : (adminPin !== undefined && googlePasswordInput.trim() === adminPin.trim());
+    const isPinValid = onVerifyAdminPin
+      ? onVerifyAdminPin(googlePasswordInput.trim())
+      : (adminPin !== undefined && googlePasswordInput.trim() === adminPin.trim());
 
-      if (isPinValid) {
-        onLoginSuccess({
-          id: 'admin',
-          name: pendingGoogleAuth.adminName || adminName || 'Quản Lý (Admin)',
-          email: pendingGoogleAuth.email,
-          role: 'admin',
-          status: 'approved',
-          isAuthenticated: true,
-        });
-      } else {
-        setGoogleError('Mật khẩu Quản Trị Viên (Admin) không đúng! Vui lòng nhập lại chính xác.');
-      }
-      return;
-    }
-
-    // Staff Verification
-    if (pendingGoogleAuth.role === 'staff' && pendingGoogleAuth.account) {
-      const expectedPin = String(pendingGoogleAuth.account.pin ?? '123456').trim();
-      if (googlePasswordInput.trim() === expectedPin) {
-        // Automatically link this email to the account if not already saved
-        if (
-          !pendingGoogleAuth.account.email ||
-          pendingGoogleAuth.account.email.toLowerCase() !== pendingGoogleAuth.email
-        ) {
-          onLinkAccountEmail?.(pendingGoogleAuth.account.id, pendingGoogleAuth.email);
-        }
-
-        onLoginSuccess({
-          id: pendingGoogleAuth.account.id,
-          name: pendingGoogleAuth.account.username,
-          email: pendingGoogleAuth.email,
-          role: 'staff',
-          status: 'approved',
-          isAuthenticated: true,
-          allowedTabs: pendingGoogleAuth.account.allowedTabs,
-        });
-      } else {
-        setGoogleError(
-          `Mã PIN không đúng cho tài khoản nhân viên "${pendingGoogleAuth.account.username}". Vui lòng thử lại.`
-        );
-      }
-    }
-  };
-
-  // 4. Handle Link Google Email with Approved Staff
-  const handleLinkGoogleEmail = (e: React.FormEvent) => {
-    e.preventDefault();
-    setGoogleError(null);
-
-    if (!linkingStaffName) {
-      setGoogleError('Vui lòng chọn tên nhân viên của bạn');
-      return;
-    }
-
-    const freshAccounts = getFreshAccounts();
-    const acc = freshAccounts.find((a) => a.username === linkingStaffName && a.status === 'approved');
-
-    if (!acc) {
-      setGoogleError('Không tìm thấy tài khoản nhân viên đã duyệt.');
-      return;
-    }
-
-    const expectedPin = String(acc.pin ?? '123456').trim();
-    if (expectedPin !== linkingStaffPin.trim()) {
-      setGoogleError(`Mã PIN không đúng cho tài khoản "${acc.username}".`);
-      return;
-    }
-
-    // Save linked email
-    const email = customGoogleEmail.trim().toLowerCase();
-    onLinkAccountEmail?.(acc.id, email);
-
-    // Login directly
-    onLoginSuccess({
-      id: acc.id,
-      name: acc.username,
-      email: email,
-      role: 'staff',
-      status: 'approved',
-      isAuthenticated: true,
-      allowedTabs: acc.allowedTabs,
-    });
-  };
-
-  // 5. Handle Request Access Submit
-  const handleRequestSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setReqResult(null);
-
-    const name = reqName.trim();
-    if (!name) {
-      setReqResult({ success: false, message: 'Vui lòng nhập họ & tên nhân viên' });
-      return;
-    }
-
-    if (!reqPin || reqPin.length < 4) {
-      setReqResult({ success: false, message: 'Mã PIN phải có ít nhất 4 ký tự' });
-      return;
-    }
-
-    if (reqPin !== reqConfirmPin) {
-      setReqResult({ success: false, message: 'Xác nhận mã PIN không khớp với mã PIN đã nhập' });
-      return;
-    }
-
-    const res = onRequestAccess(name, reqPin.trim(), reqNote.trim(), reqEmail.trim());
-    setReqResult(res);
-
-    if (res.success) {
-      setReqName('');
-      setReqEmail('');
-      setReqPin('');
-      setReqConfirmPin('');
-      setReqNote('');
+    if (isPinValid) {
+      onLoginSuccess({
+        id: 'admin',
+        name: pendingGoogleAuth.adminName || adminName || 'Quản Lý (Admin)',
+        email: pendingGoogleAuth.email,
+        role: 'admin',
+        status: 'approved',
+        isAuthenticated: true,
+      });
+    } else {
+      setGoogleError('Mật khẩu Quản Trị Viên (Admin) không đúng! Vui lòng nhập lại chính xác.');
     }
   };
 
@@ -819,21 +712,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             </div>
             <div className="text-[10px] text-emerald-400 font-semibold flex items-center space-x-1 bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-800/40">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Bảo Vệ Đa Lớp</span>
+              <span>Bảo Mật Gmail</span>
             </div>
           </div>
 
-          {/* TOP TABS NAVIGATION */}
+          {/* TOP SECURITY NOTICE */}
           <div className="mb-3 p-2.5 bg-sky-950/70 rounded-xl border border-sky-500/40 text-xs flex items-center justify-between shadow-xs">
             <div className="flex items-center space-x-2 min-w-0">
               <Shield className="w-4 h-4 text-sky-400 shrink-0" />
               <span className="text-[11px] text-sky-200 truncate">
-                Nhân viên đăng nhập bằng Gmail • Quản lý phê duyệt: <strong className="text-amber-300 font-bold">{adminEmail || 'cualokhachsan@gmail.com'}</strong>
+                Chỉ đăng nhập bằng Gmail được Admin (<strong className="text-amber-300 font-bold">{adminEmail || 'cualokhachsan@gmail.com'}</strong>) cấp quyền
               </span>
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800 text-[11px] font-bold mb-4">
+          {/* CHỈ ĐỂ 2 PHẦN: LOG BẰNG GMAIL & QUẢN LÝ */}
+          <div className="grid grid-cols-2 gap-2 bg-slate-950/80 p-1.5 rounded-xl border border-slate-800 text-xs font-bold mb-4">
             <button
               type="button"
               id="tab-google-login"
@@ -841,14 +735,14 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 setActiveTab('google');
                 setGoogleError(null);
               }}
-              className={`py-2 px-1 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
+              className={`py-2.5 px-3 rounded-lg transition-all flex items-center justify-center space-x-2 cursor-pointer ${
                 activeTab === 'google'
                   ? 'bg-sky-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
               }`}
             >
-              <Mail className="w-3.5 h-3.5 mb-0.5" />
-              <span className="truncate">Gmail NV</span>
+              <Mail className="w-4 h-4 shrink-0" />
+              <span className="truncate">Log Bằng Gmail</span>
             </button>
 
             <button
@@ -858,221 +752,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 setActiveTab('admin');
                 setAdminError(null);
               }}
-              className={`py-2 px-1 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
+              className={`py-2.5 px-3 rounded-lg transition-all flex items-center justify-center space-x-2 cursor-pointer ${
                 activeTab === 'admin'
                   ? 'bg-amber-600 text-white shadow-md'
                   : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
               }`}
             >
-              <Shield className="w-3.5 h-3.5 mb-0.5" />
-              <span className="truncate">Quản Lý</span>
-            </button>
-
-            <button
-              type="button"
-              id="tab-request-access"
-              onClick={() => {
-                setActiveTab('request');
-                setReqResult(null);
-              }}
-              className={`py-2 px-1 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
-                activeTab === 'request'
-                  ? 'bg-emerald-600 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
-              }`}
-            >
-              <UserPlus className="w-3.5 h-3.5 mb-0.5" />
-              <span className="truncate">Xin Duyệt</span>
-            </button>
-
-            <button
-              type="button"
-              id="tab-staff-login"
-              onClick={() => {
-                setActiveTab('staff');
-                setStaffError(null);
-              }}
-              className={`py-2 px-1 rounded-lg transition-all flex flex-col items-center justify-center cursor-pointer ${
-                activeTab === 'staff'
-                  ? 'bg-slate-700 text-white shadow-md'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-900/60'
-              }`}
-            >
-              <KeyRound className="w-3.5 h-3.5 mb-0.5" />
-              <span className="truncate">Mã PIN</span>
+              <Shield className="w-4 h-4 shrink-0" />
+              <span className="truncate">Quản Lý (Admin)</span>
             </button>
           </div>
 
-          {/* TAB 1: NHÂN VIÊN ĐĂNG NHẬP (TÊN + PIN) */}
-          {activeTab === 'staff' && (
-            <form onSubmit={handleStaffLogin} className="space-y-3.5 animate-fadeIn">
-              {staffError && (
-                <div className="p-2.5 bg-red-950/70 border border-red-700/60 rounded-xl text-red-200 text-xs flex items-start space-x-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  <span className="leading-snug">{staffError}</span>
-                </div>
-              )}
-
-              {/* Quick Select from Approved Staff */}
-              {approvedStaffAccounts.length > 0 ? (
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
-                    <span>Chọn Tên Nhân Viên Đã Được Duyệt:</span>
-                    <span className="text-[10px] text-emerald-400 font-semibold">
-                      ({approvedStaffAccounts.length} nhân viên sẵn sàng)
-                    </span>
-                  </label>
-                  <select
-                    id="select-approved-staff"
-                    value={selectedStaffName}
-                    onChange={(e) => {
-                      setSelectedStaffName(e.target.value);
-                      if (e.target.value) {
-                        setStaffIdentifier(e.target.value);
-                      }
-                      setStaffError(null);
-                    }}
-                    className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs focus:ring-1 focus:ring-blue-500 focus:outline-hidden cursor-pointer"
-                  >
-                    <option value="">-- Chọn tài khoản của bạn trong danh sách --</option>
-                    {approvedStaffAccounts.map((acc) => (
-                      <option key={acc.id} value={acc.username}>
-                        👤 {acc.username} {acc.email ? `(${acc.email})` : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div className="p-2.5 bg-slate-900/70 border border-slate-800 rounded-xl text-xs text-slate-400 flex items-start space-x-2">
-                  <UserCheck className="w-4 h-4 text-slate-500 shrink-0 mt-0.5" />
-                  <span>
-                    Chưa có tài khoản nhân viên nào. Quản lý vào tab Quản Lý để thêm nhân sự, hoặc bạn chuyển sang tab <strong>Xin Vào</strong> để đăng ký.
-                  </span>
-                </div>
-              )}
-
-              {/* Or manual type */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Hoặc Nhập Tên / Email Nhân Viên Của Bạn:
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    id="input-staff-identifier"
-                    list="staff-options-datalist"
-                    placeholder="Nhập tên nhân viên hoặc email..."
-                    value={staffIdentifier}
-                    onChange={(e) => {
-                      setStaffIdentifier(e.target.value);
-                      if (selectedStaffName && e.target.value !== selectedStaffName) {
-                        setSelectedStaffName('');
-                      }
-                      setStaffError(null);
-                    }}
-                    className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs placeholder-slate-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
-                  />
-                  {approvedStaffAccounts.length > 0 && (
-                    <datalist id="staff-options-datalist">
-                      {approvedStaffAccounts.map((acc) => (
-                        <option key={acc.id} value={acc.username}>
-                          {acc.username} {acc.email ? `(${acc.email})` : ''}
-                        </option>
-                      ))}
-                    </datalist>
-                  )}
-                  {staffIdentifier && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStaffIdentifier('');
-                        setSelectedStaffName('');
-                      }}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* PIN input */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
-                  <span>Mã PIN Đăng Nhập:</span>
-                  <span className="text-[10px] text-slate-400 font-normal">
-                    Mặc định: 123456
-                  </span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showStaffPin ? 'text' : 'password'}
-                    id="input-staff-pin"
-                    disabled={staffLockoutSeconds > 0}
-                    placeholder={staffLockoutSeconds > 0 ? `Đang khóa (${staffLockoutSeconds}s)...` : "Nhập mã PIN của bạn..."}
-                    value={staffPinInput}
-                    onChange={(e) => setStaffPinInput(e.target.value)}
-                    className="w-full px-3 py-2.5 pr-10 bg-slate-950 border border-slate-700 disabled:opacity-50 rounded-xl text-white text-xs font-mono focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowStaffPin(!showStaffPin)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                    title={showStaffPin ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
-                  >
-                    {showStaffPin ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                id="btn-submit-staff-login"
-                disabled={isCheckingLogin || staffLockoutSeconds > 0}
-                className="w-full py-3 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 disabled:opacity-60 text-white font-bold rounded-xl text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-2 group hover:scale-[1.01]"
-              >
-                {staffLockoutSeconds > 0 ? (
-                  <>
-                    <Clock className="w-4 h-4 animate-spin text-blue-200" />
-                    <span>⏳ Tạm Khóa Bảo Vệ ({staffLockoutSeconds}s)</span>
-                  </>
-                ) : isCheckingLogin ? (
-                  <>
-                    <Clock className="w-4 h-4 animate-spin" />
-                    <span>Đang Xác Thực Tài Khoản...</span>
-                  </>
-                ) : (
-                  <>
-                    <UserCheck className="w-4 h-4" />
-                    <span>Đăng Nhập Vào Bảng Làm Việc</span>
-                    <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                  </>
-                )}
-              </button>
-
-              <div className="pt-1 flex items-center justify-between text-[11px] text-slate-400">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('google')}
-                  className="hover:text-sky-300 underline cursor-pointer"
-                >
-                  Đăng nhập nhanh bằng Google
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('request')}
-                  className="hover:text-emerald-300 underline cursor-pointer"
-                >
-                  Chưa có tài khoản? Xin cấp quyền
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* TAB 1: GOOGLE / GMAIL SIGN-IN */}
+          {/* TAB 1: LOG BẰNG GMAIL */}
           {activeTab === 'google' && (
             <div className="space-y-4 animate-fadeIn">
-              {/* 1. THÔNG BÁO: TÀI KHOẢN GMAIL ĐANG CHỜ QUẢN LÝ (cualokhachsan@gmail.com) PHÊ DUYỆT */}
+              {/* THÔNG BÁO NẾU TÀI KHOẢN GMAIL ĐANG CHỜ DUYỆT */}
               {pendingApprovalState && (
                 <div className="p-4 bg-amber-950/80 border-2 border-amber-500/80 rounded-2xl text-amber-200 text-xs space-y-3.5 shadow-2xl animate-fadeIn">
                   <div className="flex items-start space-x-3">
@@ -1081,10 +775,10 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     </div>
                     <div>
                       <h4 className="font-extrabold text-sm text-amber-300">
-                        Tài Khoản Đang Chờ Quản Lý Phê Duyệt
+                        Tài Khoản Gmail Đang Chờ Admin Kích Hoạt
                       </h4>
                       <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                        Tất cả nhân viên đăng nhập bằng Gmail bắt buộc phải được Quản Lý phê duyệt trước khi vào bảng làm việc.
+                        Gmail của bạn cần được Quản Lý bật quyền hoạt động trong hệ thống trước khi truy cập bảng làm việc.
                       </p>
                     </div>
                   </div>
@@ -1101,16 +795,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                       <span className="text-white font-bold">{pendingApprovalState.username}</span>
                     </div>
                     <div className="flex items-center justify-between">
-                      <span className="text-slate-400">Quản lý phê duyệt:</span>
+                      <span className="text-slate-400">Admin cấp quyền:</span>
                       <span className="text-emerald-400 font-mono font-bold">
                         {adminEmail || 'cualokhachsan@gmail.com'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-800/80">
-                      <span className="text-slate-400">Trạng thái:</span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 font-extrabold uppercase text-[10px] flex items-center space-x-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping"></span>
-                        <span>Đang Chờ Admin Duyệt</span>
                       </span>
                     </div>
                   </div>
@@ -1123,7 +810,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                       className="flex-1 py-3 px-3.5 bg-amber-500 hover:bg-amber-400 active:bg-amber-600 disabled:opacity-60 text-slate-950 font-black rounded-xl text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg"
                     >
                       <RefreshCw className={`w-4 h-4 ${isRecheckingStatus ? 'animate-spin' : ''}`} />
-                      <span>{isRecheckingStatus ? 'Đang kiểm tra dữ liệu...' : 'Kiểm Tra Lại Trạng Thái Duyệt'}</span>
+                      <span>{isRecheckingStatus ? 'Đang kiểm tra...' : 'Kiểm Tra Lại Quyền Truy Cập'}</span>
                     </button>
                     <button
                       type="button"
@@ -1134,67 +821,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                       className="py-3 px-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
                     >
                       Đổi Gmail Khác
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* 2. PROMPT ĐĂNG KÝ GMAIL MỚI GỬI TỚI ADMIN cualokhachsan@gmail.com */}
-              {newGoogleUserPrompt && !pendingApprovalState && (
-                <div className="p-4 bg-sky-950/80 border-2 border-sky-500/80 rounded-2xl text-slate-200 text-xs space-y-3.5 shadow-2xl animate-fadeIn">
-                  <div className="flex items-start space-x-3">
-                    <div className="w-9 h-9 rounded-xl bg-sky-500/20 border border-sky-500/40 flex items-center justify-center shrink-0">
-                      <UserPlus className="w-5 h-5 text-sky-400" />
-                    </div>
-                    <div>
-                      <h4 className="font-extrabold text-sm text-sky-300">
-                        Đăng Ký Phê Duyệt Gmail Nhân Viên Mới
-                      </h4>
-                      <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
-                        Email này chưa có trong danh sách. Gửi yêu cầu ngay để Quản Lý (<strong className="text-amber-300 font-bold">{adminEmail || 'cualokhachsan@gmail.com'}</strong>) duyệt cấp quyền!
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-950/90 rounded-xl border border-slate-800 font-mono text-[11px] flex items-center justify-between">
-                    <span className="text-slate-400">Gmail:</span>
-                    <span className="text-sky-300 font-bold truncate max-w-[220px]">
-                      {newGoogleUserPrompt.email}
-                    </span>
-                  </div>
-
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                      Họ & Tên Nhân Viên Của Bạn: <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={newGoogleStaffName}
-                      onChange={(e) => setNewGoogleStaffName(e.target.value)}
-                      placeholder="Ví dụ: Hoàng Long, Bảo, Phương My..."
-                      className="w-full px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-sky-500"
-                    />
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row gap-2 pt-1">
-                    <button
-                      type="button"
-                      onClick={handleQuickSubmitGoogleRequest}
-                      disabled={!newGoogleStaffName.trim()}
-                      className="flex-1 py-3 px-3.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer shadow-lg"
-                    >
-                      <Send className="w-4 h-4" />
-                      <span>Gửi Yêu Cầu Phê Duyệt Tới Admin</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setNewGoogleUserPrompt(null);
-                        setGoogleError(null);
-                      }}
-                      className="py-3 px-3.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-                    >
-                      Hủy
                     </button>
                   </div>
                 </div>
@@ -1231,7 +857,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                     </button>
                   </div>
                   <p className="text-[10.5px] text-emerald-300 font-medium">
-                    👉 <strong>Đăng nhập ngay không cần chờ:</strong> Bạn và nhân viên có thể bấm chọn tài khoản bên dưới để đăng nhập an toàn 100%!
+                    👉 <strong>Đăng nhập ngay không cần chờ:</strong> Bạn và nhân viên có thể nhập hoặc chọn Gmail đã được Admin cấp quyền bên dưới để vào thẳng hệ thống!
                   </p>
                 </div>
               )}
@@ -1241,30 +867,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   <div className="flex items-start space-x-2">
                     <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                     <span className="leading-snug">{googleError}</span>
-                  </div>
-                  <div className="pt-1 flex flex-col sm:flex-row gap-2 border-t border-red-800/40">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('staff');
-                        setStaffError(null);
-                      }}
-                      className="flex-1 py-2 px-3 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-lg text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm transition-colors"
-                    >
-                      <User className="w-3.5 h-3.5" />
-                      <span>Đăng Nhập Bằng Tên / Mã PIN Nhân Viên</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveTab('admin');
-                        setAdminError(null);
-                      }}
-                      className="py-2 px-3 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-lg text-xs flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm transition-colors"
-                    >
-                      <Shield className="w-3.5 h-3.5" />
-                      <span>Đăng Nhập Quản Lý (Admin)</span>
-                    </button>
                   </div>
                 </div>
               )}
@@ -1301,298 +903,170 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 )}
                 <span>
                   {isGoogleSigningIn
-                    ? 'Đang kết nối tài khoản Google...'
-                    : 'Đăng nhập với Google'}
+                    ? 'Đang kết nối tài khoản Gmail...'
+                    : 'Đăng nhập bằng Gmail (Google)'}
                 </span>
               </button>
 
-              <div className="flex items-center justify-between text-[11px] text-slate-400 pt-0.5 px-1">
-                <button
-                  type="button"
-                  onClick={() => setIsGoogleChooserOpen(!isGoogleChooserOpen)}
-                  className="text-sky-400 hover:text-sky-300 underline cursor-pointer"
-                >
-                  {isGoogleChooserOpen ? '▲ Thu gọn danh sách chọn tài khoản' : '⚡ Bấm chọn nhanh tài khoản nội bộ (Không cần Popup)'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveTab('staff');
-                    setStaffError(null);
-                  }}
-                  className="text-slate-400 hover:text-white underline cursor-pointer"
-                >
-                  Đăng nhập mã PIN →
-                </button>
-              </div>
+              {/* Direct Gmail Entry / Quick Select for Authorized Staff */}
+              <div className="p-4 bg-slate-900/95 rounded-xl border border-sky-500/30 space-y-3.5 shadow-xl">
+                <div className="flex items-center justify-between text-xs text-slate-200 font-bold border-b border-slate-800 pb-2">
+                  <span className="flex items-center space-x-1.5 text-sky-400">
+                    <Mail className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Đăng Nhập Nhanh Bằng Gmail Đã Cấp Quyền</span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-semibold">
+                    {approvedStaffAccounts.length} Gmail được phép
+                  </span>
+                </div>
 
-              {/* Google Input Dialog */}
-              {isGoogleChooserOpen && (
-                <div className="p-4 bg-slate-900/95 rounded-xl border border-sky-500/40 space-y-3 shadow-xl">
-                  <div className="flex items-center justify-between text-xs text-slate-200 font-bold border-b border-slate-800 pb-2">
-                    <span className="flex items-center space-x-1.5 text-sky-400">
-                      <Shield className="w-3.5 h-3.5 text-sky-400" />
-                      <span>Xác thực Email Google Nội Bộ</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsGoogleChooserOpen(false);
-                        setGoogleError(null);
-                        setShowLinkingBox(false);
-                      }}
-                      className="text-slate-400 hover:text-white px-1.5 py-0.5 rounded hover:bg-slate-800"
-                    >
-                      ✕
-                    </button>
-                  </div>
-
-                  {/* STEP 2: NẾU PHÁT HIỆN EMAIL THÌ BẮT BUỘC NHẬP PASS / PIN */}
-                  {pendingGoogleAuth ? (
-                    <form onSubmit={handleConfirmGooglePassword} className="space-y-3.5">
-                      <div
-                        className={`p-3 rounded-xl border text-xs ${
-                          pendingGoogleAuth.role === 'admin'
-                            ? 'bg-amber-950/50 border-amber-500/50 text-amber-200'
-                            : 'bg-emerald-950/50 border-emerald-500/50 text-emerald-200'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-1.5 font-bold mb-1">
-                          {pendingGoogleAuth.role === 'admin' ? (
-                            <>
-                              <Shield className="w-4 h-4 text-amber-400 shrink-0" />
-                              <span className="text-amber-300">Phát hiện Email Quản Trị Viên (Admin)</span>
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck className="w-4 h-4 text-emerald-400 shrink-0" />
-                              <span className="text-emerald-300">
-                                Phát hiện Email Nhân Viên: {pendingGoogleAuth.account?.username}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                        <div className="text-[11px] text-slate-300 font-mono break-all mb-1.5">
-                          {pendingGoogleAuth.email}
-                        </div>
-                        <p className="text-[10.5px] leading-snug text-slate-300">
-                          {pendingGoogleAuth.role === 'admin'
-                            ? '⚠️ Lưu ý an ninh: Trình duyệt có thể dùng chung email này. Bạn BẮT BUỘC phải nhập Mật Khẩu Admin để mở khóa hệ thống!'
-                            : 'Nhập đúng mã PIN nhân viên của bạn để xác thực vào bảng làm việc:'}
-                        </p>
+                {pendingGoogleAuth ? (
+                  <form onSubmit={handleConfirmGooglePassword} className="space-y-3.5">
+                    <div className="p-3 rounded-xl border text-xs bg-amber-950/50 border-amber-500/50 text-amber-200">
+                      <div className="flex items-center space-x-1.5 font-bold mb-1">
+                        <Shield className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span className="text-amber-300">Xác Thực Email Quản Trị Viên (Admin)</span>
                       </div>
-
-                      <div>
-                        <label className="block text-[11px] text-slate-300 font-bold mb-1">
-                          {pendingGoogleAuth.role === 'admin'
-                            ? 'Nhập Mật Khẩu Quản Lý (Admin):'
-                            : 'Nhập Mã PIN Nhân Viên:'}
-                        </label>
-                        <div className="relative">
-                          <input
-                            type={showGooglePassword ? 'text' : 'password'}
-                            id="input-google-password"
-                            placeholder={
-                              pendingGoogleAuth.role === 'admin'
-                                ? 'Nhập mật khẩu Admin...'
-                                : 'Nhập mã PIN của bạn...'
-                            }
-                            value={googlePasswordInput}
-                            onChange={(e) => setGooglePasswordInput(e.target.value)}
-                            className="w-full px-3 py-2.5 pr-10 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 font-mono focus:outline-hidden focus:border-amber-500"
-                            autoFocus
-                          />
-                          <button
-                            type="button"
-                            onClick={() => setShowGooglePassword(!showGooglePassword)}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-                          >
-                            {showGooglePassword ? (
-                              <EyeOff className="w-4 h-4" />
-                            ) : (
-                              <Eye className="w-4 h-4 text-slate-400" />
-                            )}
-                          </button>
-                        </div>
+                      <div className="text-[11px] text-slate-300 font-mono break-all mb-1.5">
+                        {pendingGoogleAuth.email}
                       </div>
+                      <p className="text-[10.5px] leading-snug text-slate-300">
+                        Nhập Mật Khẩu Admin để mở khóa quyền Quản Trị tối cao:
+                      </p>
+                    </div>
 
-                      <div className="flex items-center space-x-2">
+                    <div>
+                      <label className="block text-[11px] text-slate-300 font-bold mb-1">
+                        Mật Khẩu Quản Lý (Admin):
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showGooglePassword ? 'text' : 'password'}
+                          id="input-google-password"
+                          placeholder="Nhập mật khẩu Admin..."
+                          value={googlePasswordInput}
+                          onChange={(e) => setGooglePasswordInput(e.target.value)}
+                          className="w-full px-3 py-2.5 pr-10 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 font-mono focus:outline-hidden focus:border-amber-500"
+                          autoFocus
+                        />
                         <button
                           type="button"
-                          onClick={() => {
-                            setPendingGoogleAuth(null);
-                            setGoogleError(null);
-                          }}
-                          className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium cursor-pointer transition-colors"
+                          onClick={() => setShowGooglePassword(!showGooglePassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                         >
-                          ← Đổi Email
-                        </button>
-                        <button
-                          type="submit"
-                          id="btn-verify-google-password"
-                          className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center space-x-1.5 shadow-md"
-                        >
-                          <Lock className="w-3.5 h-3.5" />
-                          <span>Mở Khóa & Đăng Nhập</span>
+                          {showGooglePassword ? (
+                            <EyeOff className="w-4 h-4" />
+                          ) : (
+                            <Eye className="w-4 h-4 text-slate-400" />
+                          )}
                         </button>
                       </div>
-                    </form>
-                  ) : (
-                    /* STEP 1: NHẬP EMAIL GOOGLE HOẶC BẤM CHỌN NHANH */
-                    <div className="space-y-3.5">
-                      {/* Quick Select Buttons */}
-                      <div className="space-y-1.5">
-                        <div className="text-[11px] font-bold text-slate-300 flex items-center justify-between">
-                          <span>Bấm Chọn Nhanh Tài Khoản Của Bạn:</span>
-                          <span className="text-[10px] text-sky-400 font-semibold">1-Click Đăng Nhập</span>
-                        </div>
-                        <div className="grid grid-cols-1 gap-1.5 max-h-56 overflow-y-auto pr-1">
-                          {/* Admin Account Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleQuickSelectAccount(adminEmail || 'cualokhachsan@gmail.com')}
-                            className="p-2.5 bg-amber-950/40 hover:bg-amber-900/60 border border-amber-600/40 hover:border-amber-500 rounded-xl text-left transition-all flex items-center space-x-2.5 cursor-pointer group shadow-sm"
-                          >
-                            <div className="w-7 h-7 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                              <Shield className="w-4 h-4 text-amber-400" />
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="text-xs font-bold text-amber-200 truncate flex items-center space-x-1.5">
-                                <span>{adminName || 'Quản Lý (Admin)'}</span>
-                                <span className="text-[9px] px-1.5 py-0.2 bg-amber-500/30 text-amber-300 rounded font-bold uppercase tracking-wider">Quản Trị</span>
-                              </div>
-                              <div className="text-[10px] text-slate-400 font-mono truncate">
-                                {adminEmail || 'cualokhachsan@gmail.com'}
-                              </div>
-                            </div>
-                            <span className="text-[10px] text-amber-300/80 font-bold shrink-0">Chọn →</span>
-                          </button>
+                    </div>
 
-                          {/* Approved Staff Accounts */}
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPendingGoogleAuth(null);
+                          setGoogleError(null);
+                        }}
+                        className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium cursor-pointer transition-colors"
+                      >
+                        ← Đổi Gmail
+                      </button>
+                      <button
+                        type="submit"
+                        id="btn-verify-google-password"
+                        className="flex-1 py-2.5 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center space-x-1.5 shadow-md"
+                      >
+                        <Lock className="w-3.5 h-3.5" />
+                        <span>Mở Khóa Admin</span>
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="space-y-3">
+                    {/* Manual Gmail Input */}
+                    <form onSubmit={handleCustomGoogleSubmit} className="space-y-2.5">
+                      <div>
+                        <label className="block text-[11px] text-slate-300 font-semibold mb-1">
+                          Nhập Địa Chỉ Gmail Đã Được Admin Cấp Quyền:
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="email"
+                            id="input-google-email"
+                            placeholder="VD: nhanvien@gmail.com"
+                            value={customGoogleEmail}
+                            onChange={(e) => setCustomGoogleEmail(e.target.value)}
+                            className="flex-1 px-3 py-2.5 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-sky-500 font-mono"
+                          />
+                          <button
+                            type="submit"
+                            id="btn-confirm-google-email"
+                            className="px-4 py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer flex items-center justify-center space-x-1.5 shadow-sm shrink-0"
+                          >
+                            <span>Vào Hệ Thống</span>
+                            <ArrowRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </form>
+
+                    {/* Quick Select Authorized Staff Gmails */}
+                    {approvedStaffAccounts.length > 0 && (
+                      <div className="pt-2 border-t border-slate-800/80 space-y-1.5">
+                        <div className="text-[11px] font-bold text-slate-400 flex items-center justify-between">
+                          <span>Hoặc bấm chọn Gmail nhân viên đã cấp quyền:</span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto pr-1">
                           {approvedStaffAccounts.map((staff) => {
-                            const staffEmailDisplay = staff.email || `${staff.username.toLowerCase().replace(/\s+/g, '')}@gmail.com`;
+                            const staffEmailDisplay =
+                              staff.email || `${staff.username.toLowerCase().replace(/\s+/g, '')}@gmail.com`;
                             return (
                               <button
                                 key={staff.id}
                                 type="button"
                                 onClick={() => handleQuickSelectAccount(staffEmailDisplay)}
-                                className="p-2.5 bg-slate-950 hover:bg-slate-800/80 border border-slate-700/70 hover:border-sky-500 rounded-xl text-left transition-all flex items-center space-x-2.5 cursor-pointer group shadow-sm"
+                                className="p-2.5 bg-slate-950 hover:bg-slate-800/80 border border-slate-800 hover:border-sky-500/60 rounded-xl text-left transition-all flex items-center space-x-2.5 cursor-pointer group"
                               >
-                                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                                  <UserCheck className="w-4 h-4 text-emerald-400" />
+                                <div className="w-7 h-7 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                                  <UserCheck className="w-3.5 h-3.5 text-emerald-400" />
                                 </div>
                                 <div className="min-w-0 flex-1">
                                   <div className="text-xs font-bold text-slate-200 truncate flex items-center space-x-1.5">
                                     <span>{staff.username}</span>
-                                    <span className="text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded font-medium">Nhân viên</span>
+                                    <span className="text-[9px] px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 rounded font-medium">
+                                      Đã cấp quyền
+                                    </span>
                                   </div>
-                                  <div className="text-[10px] text-slate-400 font-mono truncate">
+                                  <div className="text-[10px] text-sky-400 font-mono truncate">
                                     {staffEmailDisplay}
                                   </div>
                                 </div>
-                                <span className="text-[10px] text-sky-400/80 font-bold shrink-0">Chọn →</span>
+                                <span className="text-[10px] text-sky-400 font-bold shrink-0">Đăng nhập →</span>
                               </button>
                             );
                           })}
                         </div>
                       </div>
-
-                      {/* Manual Email Input */}
-                      <form onSubmit={handleCustomGoogleSubmit} className="pt-2 border-t border-slate-800/80 space-y-2.5">
-                        <div>
-                          <label className="block text-[11px] text-slate-300 font-medium mb-1">
-                            Hoặc Nhập Địa Chỉ Email Google Khác:
-                          </label>
-                          <input
-                            type="email"
-                            id="input-google-email"
-                            placeholder="VD: emailcuaban@gmail.com"
-                            value={customGoogleEmail}
-                            onChange={(e) => setCustomGoogleEmail(e.target.value)}
-                            className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-sky-500 font-mono"
-                          />
-                        </div>
-                        <button
-                          type="submit"
-                          id="btn-confirm-google-email"
-                          className="w-full py-2.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-bold transition-colors cursor-pointer flex items-center justify-center space-x-1.5 shadow-sm"
-                        >
-                          <span>Tiếp Tục & Xác Thực Mật Khẩu</span>
-                        </button>
-                      </form>
-                    </div>
-                  )}
-
-                  {/* Account linking helper if email not recognized */}
-                  {showLinkingBox && approvedStaffAccounts.length > 0 && (
-                    <form
-                      onSubmit={handleLinkGoogleEmail}
-                      className="mt-3 p-3 bg-indigo-950/60 border border-indigo-700/50 rounded-lg space-y-2 text-xs"
-                    >
-                      <div className="font-bold text-indigo-300 flex items-center space-x-1">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Liên kết Email này với tài khoản đã được duyệt:</span>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] text-slate-400 mb-0.5">Tên nhân viên của bạn:</label>
-                        <select
-                          value={linkingStaffName}
-                          onChange={(e) => setLinkingStaffName(e.target.value)}
-                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white"
-                        >
-                          <option value="">-- Chọn tên bạn trong danh sách đã duyệt --</option>
-                          {approvedStaffAccounts.map((a) => (
-                            <option key={a.id} value={a.username}>
-                              {a.username}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] text-slate-400 mb-0.5">Mã PIN của bạn để xác thực:</label>
-                        <input
-                          type="password"
-                          placeholder="Nhập mã PIN để liên kết..."
-                          value={linkingStaffPin}
-                          onChange={(e) => setLinkingStaffPin(e.target.value)}
-                          className="w-full px-2 py-1.5 bg-slate-950 border border-slate-700 rounded text-xs text-white font-mono"
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded text-xs"
-                      >
-                        Liên Kết Email & Đăng Nhập Ngay
-                      </button>
-                    </form>
-                  )}
-                </div>
-              )}
-
-              {!requireGoogleOnly && (
-                <div className="pt-2 text-center text-xs text-slate-400">
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('staff')}
-                    className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                  >
-                    ← Đăng nhập bằng Tên & Mã PIN nội bộ
-                  </button>
-                </div>
-              )}
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
-          {/* TAB 3: QUẢN LÝ (ADMIN) */}
+          {/* TAB 2: QUẢN LÝ (ADMIN) */}
           {activeTab === 'admin' && (
-            <form onSubmit={handleAdminLogin} className="space-y-3.5 animate-fadeIn">
-              <div className="p-3 bg-amber-950/40 border border-amber-600/40 rounded-xl text-xs text-amber-200">
-                <div className="font-bold flex items-center space-x-1 text-amber-300 mb-0.5">
-                  <Shield className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Khu Vực Dành Riêng Cho Quản Lý (Admin)</span>
+            <form onSubmit={handleAdminLogin} className="space-y-4 animate-fadeIn">
+              <div className="p-3.5 bg-amber-950/40 border border-amber-600/40 rounded-xl text-xs text-amber-200 space-y-1.5">
+                <div className="font-bold flex items-center space-x-1.5 text-amber-300">
+                  <Shield className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>Quản Trị Hệ Thống & Cấp Quyền Gmail Nhân Viên</span>
                 </div>
-                <p className="text-[11px] text-amber-200/80">
-                  Admin có toàn quyền phê duyệt nhân viên, phân chia Fanpage, quản lý Nick Via và cài đặt khóa ứng dụng.
+                <p className="text-[11px] text-amber-200/80 leading-relaxed">
+                  Tài khoản Admin (<strong className="text-white font-mono">{adminEmail || 'cualokhachsan@gmail.com'}</strong>) có toàn quyền thêm Gmail nhân viên mới, phân quyền bảng làm việc và quản lý dữ liệu.
                 </p>
               </div>
 
@@ -1603,10 +1077,31 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 </div>
               )}
 
+              {/* Option 1: Login Admin via Google OAuth (cualokhachsan@gmail.com) */}
+              <div>
+                <button
+                  type="button"
+                  disabled={isGoogleSigningIn}
+                  onClick={handleFirebaseGoogleSignIn}
+                  className="w-full py-3 px-4 bg-white hover:bg-slate-100 text-slate-900 font-extrabold rounded-xl text-xs shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2.5 border border-slate-300"
+                >
+                  <Mail className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>Đăng Nhập Nhanh Bằng Gmail Admin ({adminEmail || 'cualokhachsan@gmail.com'})</span>
+                </button>
+              </div>
+
+              <div className="relative flex py-1 items-center">
+                <div className="flex-grow border-t border-slate-800"></div>
+                <span className="shrink mx-3 text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                  Hoặc mở khóa bằng Mật Khẩu Admin
+                </span>
+                <div className="flex-grow border-t border-slate-800"></div>
+              </div>
+
               <div>
                 <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
                   <span>Mật Khẩu Quản Lý (Admin):</span>
-                  <span className="text-[10px] text-amber-400 font-semibold">Bắt buộc mật khẩu bảo mật</span>
+                  <span className="text-[10px] text-amber-400 font-semibold">Bảo mật Quản Trị</span>
                 </label>
                 <div className="relative">
                   <input
@@ -1648,158 +1143,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   </>
                 )}
               </button>
-
-              <div className="pt-1 text-center text-xs text-slate-400">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab(requireGoogleOnly ? 'google' : 'staff')}
-                  className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                >
-                  {requireGoogleOnly ? '← Quay lại Đăng Nhập Google' : '← Chuyển sang Đăng nhập Nhân Viên'}
-                </button>
-              </div>
             </form>
-          )}
-
-          {/* TAB 4: XIN CẤP QUYỀN TRUY CẬP (NHÂN VIÊN MỚI) */}
-          {activeTab === 'request' && (
-            <form onSubmit={handleRequestSubmit} className="space-y-3 animate-fadeIn">
-              <div className="text-xs text-slate-300 font-bold border-b border-slate-800 pb-2 flex items-center justify-between">
-                <span>Đăng Ký Cấp Quyền Cho Nhân Viên Mới</span>
-                <span className="text-[10px] text-emerald-400 font-bold">Phê duyệt bởi: {adminEmail || 'cualokhachsan@gmail.com'}</span>
-              </div>
-
-              {reqResult && (
-                <div
-                  className={`p-3 rounded-xl text-xs flex items-start space-x-2 ${
-                    reqResult.success
-                      ? 'bg-emerald-950/60 border border-emerald-700/50 text-emerald-200'
-                      : 'bg-red-950/60 border border-red-700/50 text-red-200'
-                  }`}
-                >
-                  {reqResult.success ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
-                  ) : (
-                    <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
-                  )}
-                  <span className="leading-snug">{reqResult.message}</span>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Họ & Tên Nhân Viên: <span className="text-red-400">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  id="req-name-input"
-                  placeholder="Ví dụ: Hoàng Long, Minh Quân..."
-                  value={reqName}
-                  onChange={(e) => setReqName(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Email Google liên kết: {requireGoogleOnly ? <span className="text-amber-400 font-semibold">(Bắt buộc để đăng nhập)</span> : <span className="text-slate-500 font-normal">(khuyên dùng)</span>}
-                </label>
-                <input
-                  type="email"
-                  required={requireGoogleOnly}
-                  placeholder="VD: hoanglong.mmo@gmail.com"
-                  value={reqEmail}
-                  onChange={(e) => setReqEmail(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                    Mã PIN muốn đặt: <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="Tối thiểu 4 số (VD: 123456)"
-                    value={reqPin}
-                    onChange={(e) => setReqPin(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs font-mono focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                    Xác nhận mã PIN: <span className="text-red-400">*</span>
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    placeholder="Nhập lại mã PIN"
-                    value={reqConfirmPin}
-                    onChange={(e) => setReqConfirmPin(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs font-mono focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                  Ghi chú cho Admin:
-                </label>
-                <input
-                  type="text"
-                  placeholder="VD: Em xin phụ trách trực Page và Nick Via ca chiều"
-                  value={reqNote}
-                  onChange={(e) => setReqNote(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-white text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
-                />
-              </div>
-
-              <button
-                type="submit"
-                id="btn-submit-request-access"
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-lg transition-all cursor-pointer flex items-center justify-center space-x-1.5"
-              >
-                <UserPlus className="w-4 h-4" />
-                <span>Gửi Yêu Cầu Cho Admin ({adminEmail || 'cualokhachsan@gmail.com'}) Phê Duyệt</span>
-              </button>
-
-              <div className="pt-1 text-center text-xs text-slate-400">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab(requireGoogleOnly ? 'google' : 'staff')}
-                  className="text-blue-400 hover:text-blue-300 underline cursor-pointer"
-                >
-                  {requireGoogleOnly ? '← Đã có tài khoản? Đăng Nhập Google' : '← Đã được duyệt? Bấm vào đây để Đăng Nhập'}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {/* Emergency Admin Access Link when requireGoogleOnly is true */}
-          {requireGoogleOnly && activeTab !== 'admin' && (
-            <div className="mt-3 pt-2.5 border-t border-slate-800/80 flex items-center justify-between text-[11px]">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveTab('admin');
-                  setAdminError(null);
-                }}
-                className="text-slate-400 hover:text-amber-300 flex items-center space-x-1.5 transition-colors cursor-pointer"
-              >
-                <Lock className="w-3.5 h-3.5 text-amber-400/80" />
-                <span>Quản Lý: Đăng nhập dự phòng bằng Master PIN</span>
-              </button>
-              <span className="text-slate-500 text-[10px] font-mono">Google SSO Active</span>
-            </div>
           )}
 
           {/* Footer Note */}
           <div className="mt-4 pt-3 border-t border-slate-800/80 text-center text-[11px] text-slate-400 flex items-center justify-center space-x-1.5">
             <span>🔐</span>
-            <span>Hệ thống bảo mật dữ liệu nội bộ. Chỉ nhân viên được cấp quyền mới có thể truy cập.</span>
+            <span>Bảo mật tuyệt đối: Chỉ Gmail đã được Admin cấp quyền trong hệ thống mới được truy cập.</span>
           </div>
         </div>
 

@@ -73,6 +73,7 @@ interface StaffManagementTableProps {
   onApproveAccount: (accountId: string) => Promise<void> | void;
   onRejectAccount: (accountId: string) => Promise<void> | void;
   onUpdateAccountPermissions?: (accountId: string, allowedTabs: TabKey[]) => Promise<void> | void;
+  onUpdateEmail?: (accountId: string, newEmail: string) => Promise<void> | void;
   onSwitchToStaffView?: (staffName: string) => void;
   onOpenAdminModal?: (tab?: 'staff' | 'pending' | 'blocked' | 'admin_pin' | 'security_db') => void;
   onOpenDeleteStaffModal?: (staffName?: string) => void;
@@ -98,6 +99,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   onApproveAccount,
   onRejectAccount,
   onUpdateAccountPermissions,
+  onUpdateEmail,
   onSwitchToStaffView,
   onOpenAdminModal,
   onOpenDeleteStaffModal,
@@ -126,8 +128,9 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
 
-  // State nhập nhanh nhân viên mới trực tiếp trên giao diện (khoa học, không bị che)
+  // State nhập nhanh nhân viên mới bằng Tên + Gmail trực tiếp trên giao diện
   const [quickStaffName, setQuickStaffName] = useState('');
+  const [quickStaffEmail, setQuickStaffEmail] = useState('');
   const [quickStaffPin, setQuickStaffPin] = useState('123456');
   const [quickStaffNote, setQuickStaffNote] = useState('');
   const [isMasterAdminExpanded, setIsMasterAdminExpanded] = useState(false);
@@ -143,8 +146,9 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   } | null>(null);
   const [inspectPageSearch, setInspectPageSearch] = useState('');
 
-  // Change PIN modal state (both Admin and Staff for their own account)
+  // Change Gmail & PIN modal state
   const [pinModalAccount, setPinModalAccount] = useState<UserAccount | null>(null);
+  const [newEmailValue, setNewEmailValue] = useState('');
   const [newPinValue, setNewPinValue] = useState('');
   const [confirmPinValue, setConfirmPinValue] = useState('');
   const [pinChangeError, setPinChangeError] = useState<string | null>(null);
@@ -450,7 +454,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     }
   };
 
-  // Thêm nhanh nhân viên trực tiếp từ thanh nhập (Khoa học, thuận tiện)
+  // Thêm nhanh nhân viên trực tiếp từ thanh nhập (Kèm cấp quyền Gmail)
   const handleQuickCreateStaff = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanName = quickStaffName.trim();
@@ -458,12 +462,14 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
       alert('Vui lòng nhập họ và tên nhân viên!');
       return;
     }
+    const cleanEmail = quickStaffEmail.trim().toLowerCase() || undefined;
     const cleanPin = quickStaffPin.trim() || '123456';
-    const cleanNote = quickStaffNote.trim() || 'Thêm nhanh từ thanh quản trị';
+    const cleanNote = quickStaffNote.trim() || 'Được Admin cấp quyền Gmail từ hệ thống';
     setIsSubmittingAdd(true);
     try {
-      await onAddStaff(cleanName, cleanPin, cleanNote, undefined, ['fanpage', 'fullvia', 'staff_management']);
+      await onAddStaff(cleanName, cleanPin, cleanNote, cleanEmail, ['fanpage', 'fullvia', 'staff_management']);
       setQuickStaffName('');
+      setQuickStaffEmail('');
       setQuickStaffPin('123456');
       setQuickStaffNote('');
     } catch (err: any) {
@@ -546,16 +552,20 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const handleSavePin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pinModalAccount) return;
-    const cleanPin = newPinValue.trim();
-    if (!cleanPin) return;
+    const cleanPin = newPinValue.trim() || '123456';
+    const cleanEmail = newEmailValue.trim().toLowerCase();
 
     setIsSubmittingPin(true);
     try {
       await onUpdatePin(pinModalAccount.id, cleanPin);
+      if (onUpdateEmail && cleanEmail !== (pinModalAccount.email || '').trim().toLowerCase()) {
+        await onUpdateEmail(pinModalAccount.id, cleanEmail);
+      }
       setPinModalAccount(null);
       setNewPinValue('');
+      setNewEmailValue('');
     } catch (err) {
-      console.error('Lỗi khi đổi PIN:', err);
+      console.error('Lỗi khi cập nhật Gmail / PIN:', err);
     } finally {
       setIsSubmittingPin(false);
     }
@@ -867,7 +877,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
             </div>
           </div>
 
-          {/* 4. THANH THÊM NHANH NHÂN VIÊN MỚI (TRỰC TIẾP, NỔI BẬT, KHÔNG BỊ CHE) */}
+          {/* 4. THANH CẤP QUYỀN & THÊM NHANH NHÂN VIÊN BẰNG GMAIL */}
           <form
             onSubmit={handleQuickCreateStaff}
             className="p-4 bg-gradient-to-r from-blue-50/90 via-indigo-50/80 to-sky-50/90 border-2 border-blue-400 rounded-2xl flex flex-col md:flex-row md:items-center gap-3 shadow-2xs"
@@ -878,39 +888,38 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
               </div>
               <div>
                 <span className="text-xs font-black text-blue-950 uppercase tracking-wide block">
-                  Thêm Nhanh Nhân Viên Mới:
+                  Cấp Quyền Nhân Viên Bằng Gmail:
                 </span>
                 <span className="text-[11px] text-blue-700 font-semibold">
-                  Tạo tài khoản và lưu tức thì lên Cloud
+                  Nhập Tên + Gmail để nhân viên đăng nhập bằng Google
                 </span>
               </div>
             </div>
 
-            <div className="flex-1 min-w-[200px]">
+            <div className="flex-1 min-w-[170px]">
               <input
                 type="text"
-                placeholder="👉 Nhập họ và tên nhân viên (VD: Hoàng Long, Thu Hà...)"
+                placeholder="👉 Họ và tên NV (VD: Hoàng Long...)"
                 value={quickStaffName}
                 onChange={(e) => setQuickStaffName(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white border-2 border-blue-500 rounded-xl text-xs font-black text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-blue-600 focus:outline-hidden shadow-xs"
               />
             </div>
 
-            <div className="w-28 shrink-0">
+            <div className="flex-1 min-w-[210px]">
               <input
-                type="text"
-                placeholder="PIN: 123456"
-                value={quickStaffPin}
-                onChange={(e) => setQuickStaffPin(e.target.value)}
-                title="Mã PIN đăng nhập (mặc định: 123456)"
-                className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-800 text-center"
+                type="email"
+                placeholder="📧 Gmail đăng nhập (VD: nhanvien@gmail.com)"
+                value={quickStaffEmail}
+                onChange={(e) => setQuickStaffEmail(e.target.value)}
+                className="w-full px-3.5 py-2.5 bg-white border-2 border-emerald-500 rounded-xl text-xs font-bold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:ring-2 focus:ring-emerald-600 focus:outline-hidden shadow-xs"
               />
             </div>
 
-            <div className="flex-1 min-w-[170px] hidden lg:block">
+            <div className="flex-1 min-w-[140px] hidden xl:block">
               <input
                 type="text"
-                placeholder="Ghi chú phân công (tùy chọn)..."
+                placeholder="Ghi chú phân công..."
                 value={quickStaffNote}
                 onChange={(e) => setQuickStaffNote(e.target.value)}
                 className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-800 placeholder:text-slate-400"
@@ -924,13 +933,14 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer hover:scale-[1.02] flex items-center justify-center space-x-1.5 disabled:opacity-60"
               >
                 {isSubmittingAdd ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <UserPlus className="w-4 h-4" />}
-                <span>+ Thêm Ngay</span>
+                <span>+ Cấp Quyền Ngay</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => {
                   setAddName(quickStaffName);
+                  setAddEmail(quickStaffEmail);
                   setAddPin(quickStaffPin);
                   setAddNote(quickStaffNote);
                   setIsAddModalOpen(true);
@@ -1756,8 +1766,29 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                 </span>
                               )}
                             </div>
-                            <div className="text-[11px] text-slate-400 font-mono truncate max-w-[180px]">
-                              {acc.email || <span className="italic font-sans text-slate-300">Chưa liên kết email</span>}
+                            <div className="text-[11px] font-mono truncate max-w-[220px] flex items-center gap-1 mt-0.5">
+                              {acc.email ? (
+                                <span className="text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md truncate">
+                                  📧 {acc.email}
+                                </span>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!isAdmin) return;
+                                    setPinModalAccount(acc);
+                                    setNewEmailValue(acc.email || '');
+                                    setNewPinValue(acc.pin || '123456');
+                                    setConfirmPinValue(acc.pin || '123456');
+                                    setPinChangeError(null);
+                                    setPinChangeSuccess(null);
+                                  }}
+                                  className="italic font-sans text-rose-600 hover:text-rose-700 font-semibold bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded-md cursor-pointer"
+                                  title="Bấm để cấp Gmail đăng nhập cho nhân viên này"
+                                >
+                                  + Gán Gmail đăng nhập
+                                </button>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1950,18 +1981,19 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                               </button>
                             )}
 
-                            {/* Đổi PIN */}
+                            {/* Cập nhật Gmail & PIN */}
                             <button
                               type="button"
                               onClick={() => {
                                 setPinModalAccount(acc);
+                                setNewEmailValue(acc.email || '');
                                 setNewPinValue(acc.pin || '123456');
                                 setConfirmPinValue(acc.pin || '123456');
                                 setPinChangeError(null);
                                 setPinChangeSuccess(null);
                               }}
                               className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors cursor-pointer"
-                              title="Đổi mật khẩu PIN cho nhân viên"
+                              title="Cập nhật Gmail đăng nhập / Mã PIN cho nhân viên"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -2100,33 +2132,35 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Mật Khẩu Đăng Nhập / Mã PIN <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Mặc định: 123456"
-                    value={addPin}
-                    onChange={(e) => setAddPin(e.target.value)}
-                    required
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Mã này nhân viên sẽ dùng kèm tên để đăng nhập vào trang tính.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Email Nhân Viên (Tùy chọn)
+                <div className="p-3.5 bg-emerald-50/80 border-2 border-emerald-400 rounded-2xl space-y-1.5">
+                  <label className="block text-xs font-black text-emerald-950 flex items-center justify-between uppercase">
+                    <span>📧 GMAIL ĐĂNG NHẬP CỦA NHÂN VIÊN</span>
+                    <span className="text-[10px] font-bold text-emerald-800 bg-white px-2 py-0.5 rounded-full border border-emerald-300">
+                      DÙNG ĐỂ LOG BẰNG GMAIL
+                    </span>
                   </label>
                   <input
                     type="email"
                     placeholder="nhanvien@gmail.com"
                     value={addEmail}
                     onChange={(e) => setAddEmail(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
+                    className="w-full px-3.5 py-2.5 bg-white border-2 border-emerald-500 rounded-xl text-sm font-bold text-slate-900 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-200 focus:outline-hidden"
+                  />
+                  <p className="text-[11px] text-emerald-800">
+                    Nhân viên sẽ dùng đúng địa chỉ Gmail này để bấm "Đăng nhập bằng Google" vào hệ thống.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Mã PIN Nội Bộ (Tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Mặc định: 123456"
+                    value={addPin}
+                    onChange={(e) => setAddPin(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-800 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 focus:outline-hidden"
                   />
                 </div>
 
@@ -2245,17 +2279,17 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
         </div>
       )}
 
-      {/* Modal Đổi PIN Nhanh */}
+      {/* Modal Cập Nhật Gmail & Mã PIN */}
       {pinModalAccount && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 animate-fadeIn">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center">
+                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center">
                   <Key className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-base font-bold text-slate-900">Đổi Mật Khẩu PIN</h3>
+                  <h3 className="text-base font-bold text-slate-900">Cấp Quyền Gmail & Bảo Mật</h3>
                   <p className="text-xs text-slate-500">Nhân viên: {pinModalAccount.username}</p>
                 </div>
               </div>
@@ -2269,15 +2303,33 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
             </div>
 
             <form onSubmit={handleSavePin} className="space-y-4">
+              {isAdmin && (
+                <div>
+                  <label className="block text-xs font-black text-emerald-800 mb-1">
+                    📧 Gmail Đăng Nhập Của Nhân Viên
+                  </label>
+                  <input
+                    type="email"
+                    value={newEmailValue}
+                    onChange={(e) => setNewEmailValue(e.target.value)}
+                    placeholder="nhanvien@gmail.com"
+                    className="w-full px-3 py-2.5 bg-emerald-50/50 border-2 border-emerald-400 rounded-xl text-xs font-bold text-slate-900 focus:border-emerald-600 focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
+                  />
+                  <p className="text-[11px] text-slate-500 mt-1">
+                    Nhân viên dùng Gmail này để đăng nhập ở mục "Log bằng Gmail".
+                  </p>
+                </div>
+              )}
+
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Mã PIN Mới
+                  Mã PIN Nội Bộ
                 </label>
                 <input
                   type="text"
                   value={newPinValue}
                   onChange={(e) => setNewPinValue(e.target.value)}
-                  placeholder="Nhập mã PIN mới..."
+                  placeholder="Nhập mã PIN..."
                   required
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-mono font-bold text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-hidden"
                 />
@@ -2294,10 +2346,10 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 <button
                   type="submit"
                   disabled={isSubmittingPin}
-                  className="px-4 py-2 text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-60"
+                  className="px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs transition-colors flex items-center space-x-1.5 cursor-pointer disabled:opacity-60"
                 >
                   {isSubmittingPin && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                  <span>Cập Nhật PIN</span>
+                  <span>Lưu Cập Nhật</span>
                 </button>
               </div>
             </form>

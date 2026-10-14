@@ -2853,6 +2853,7 @@ export default function App() {
             onUpdateAccountPermissions={async (accountId, allowedTabs) => {
               await handleUpdateAccountInfo(accountId, { allowedTabs });
             }}
+            onUpdateEmail={handleUpdateAccountEmail}
             onOpenDeleteStaffModal={handleOpenDeleteStaffModal}
             onSwitchToStaffView={(staffName) => {
               const staffUser = availableUsers.find((u) => u.name.trim().toLowerCase() === staffName.trim().toLowerCase());
