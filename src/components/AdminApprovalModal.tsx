@@ -49,14 +49,24 @@ import {
   HardDrive,
   Upload,
 } from 'lucide-react';
-import { getFirestoreDatabaseInfo, pingFirestoreDatabase } from '../services/firebase';
-import firebaseConfig from '../../firebase-applet-config.json';
+import {
+  getFirestoreDatabaseInfo,
+  pingFirestoreDatabase,
+  pushBackupToExternalFirebase,
+  BUNDLED_BACKUP_DATA,
+  saveActiveFirebaseConfig,
+  hasCustomFirebaseConfig,
+  clearCustomFirebaseConfig,
+  firebaseConfig,
+} from '../services/firebase';
 
 interface AdminApprovalModalProps {
   isOpen: boolean;
   onClose: () => void;
   accounts: UserAccount[];
   adminPin: string;
+  adminEmail?: string;
+  adminName?: string;
   records: PageRecord[];
   viaList?: FullViaItem[];
   groupRecords?: GroupRecord[];
@@ -73,7 +83,7 @@ interface AdminApprovalModalProps {
   onDeleteAccount: (accountId: string, options?: { deletePosts?: boolean; deleteVias?: boolean }) => void | Promise<void>;
   onDeleteStaffPosts?: (staffName: string) => void | Promise<void>;
   onAddPreApprovedStaff: (username: string, pin: string, adminNote?: string, email?: string) => void | Promise<void>;
-  onChangeAdminPin: (newPin: string) => void | Promise<void>;
+  onChangeAdminPin: (newPin: string, newName?: string, newEmail?: string) => void | Promise<void>;
   onUpdateAccountEmail?: (accountId: string, newEmail: string) => void | Promise<void>;
   onUpdateAccountInfo?: (accountId: string, updates: Partial<UserAccount>) => void | Promise<void>;
   requireGoogleOnly?: boolean;
@@ -86,6 +96,8 @@ export function AdminApprovalModal({
   onClose,
   accounts,
   adminPin,
+  adminEmail = 'cualokhachsan@gmail.com',
+  adminName = 'Quản Lý (Admin)',
   records,
   viaList = [],
   groupRecords = [],
@@ -113,6 +125,8 @@ export function AdminApprovalModal({
   const [activeTab, setActiveTab] = useState<'staff' | 'pending' | 'blocked' | 'admin_pin' | 'security_db'>(
     initialTab || 'staff'
   );
+  const [newOwnerEmailInput, setNewOwnerEmailInput] = useState(adminEmail || 'cualokhachsan@gmail.com');
+  const [isSavingOwnerEmail, setIsSavingOwnerEmail] = useState(false);
 
   // Sub-tab for Security & Database panel
   const [secSubTab, setSecSubTab] = useState<'anti_hack_guide' | 'db_params' | 'admin_pin' | 'backup'>('anti_hack_guide');
@@ -638,41 +652,65 @@ export function AdminApprovalModal({
   };
 
   const [isRestoringBackup, setIsRestoringBackup] = useState(false);
+  const [targetFirebaseConfigInput, setTargetFirebaseConfigInput] = useState('');
+  const [targetDatabaseIdInput, setTargetDatabaseIdInput] = useState('(default)');
+  const [isPushingExternalDb, setIsPushingExternalDb] = useState(false);
+  const [externalPushStatus, setExternalPushStatus] = useState<{
+    type: 'idle' | 'running' | 'success' | 'error';
+    message: string;
+  }>({ type: 'idle', message: '' });
 
-  // Xuất file backup JSON toàn bộ CSDL (6-7 Bảng đầy đủ)
+  const buildFullBackupPayload = () => ({
+    exportTimestamp: new Date().toISOString(),
+    exportDateVi: new Date().toLocaleString('vi-VN'),
+    databaseInfo: dbInfo,
+    settings: {
+      adminPin,
+      adminName,
+      adminEmail: adminEmail || 'cualokhachsan@gmail.com',
+      requireGoogleLoginOnly: requireGoogleOnly,
+      customStaffList: Array.from(
+        new Set(
+          accounts
+            .filter((a) => a.role === 'staff' && a.username)
+            .map((a) => a.username.trim())
+        )
+      ),
+    },
+    systemMetrics: {
+      totalRecords: records.length,
+      totalGroupRecords: groupRecords.length,
+      totalProxies: proxies.length,
+      totalVias: viaList.length,
+      totalAccounts: accounts.length,
+      totalSharedAccounts: sharedAccounts.length,
+      totalMonthlyFinances: finances.length,
+      totalImageTasks: imageTasks.length,
+    },
+    pageRecords: records,
+    groupRecords: groupRecords,
+    proxies: proxies,
+    vias: viaList,
+    accounts: accounts.map((a) => ({
+      id: a.id,
+      username: a.username,
+      role: a.role,
+      status: a.status,
+      pin: a.pin,
+      email: a.role === 'admin' ? a.email || 'cualokhachsan@gmail.com' : a.email,
+      adminNote: a.adminNote,
+      allowedTabs: a.allowedTabs,
+      createdAt: a.createdAt,
+      approvedAt: a.approvedAt,
+    })),
+    sharedAccounts: sharedAccounts,
+    monthlyFinances: finances,
+    imageTasks: imageTasks,
+  });
+
+  // Xuất file backup JSON toàn bộ CSDL (8 Bảng + Settings đầy đủ)
   const handleExportBackup = () => {
-    const backupData = {
-      exportTimestamp: new Date().toISOString(),
-      exportDateVi: new Date().toLocaleString('vi-VN'),
-      databaseInfo: dbInfo,
-      systemMetrics: {
-        totalRecords: records.length,
-        totalGroupRecords: groupRecords.length,
-        totalProxies: proxies.length,
-        totalVias: viaList.length,
-        totalAccounts: accounts.length,
-        totalSharedAccounts: sharedAccounts.length,
-        totalMonthlyFinances: finances.length,
-        totalImageTasks: imageTasks.length,
-      },
-      pageRecords: records,
-      groupRecords: groupRecords,
-      proxies: proxies,
-      vias: viaList,
-      accounts: accounts.map((a) => ({
-        id: a.id,
-        username: a.username,
-        role: a.role,
-        status: a.status,
-        email: a.email,
-        adminNote: a.adminNote,
-        createdAt: a.createdAt,
-        approvedAt: a.approvedAt,
-      })),
-      sharedAccounts: sharedAccounts,
-      monthlyFinances: finances,
-      imageTasks: imageTasks,
-    };
+    const backupData = buildFullBackupPayload();
 
     const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -686,11 +724,11 @@ export function AdminApprovalModal({
 
     setToastNotice({
       type: 'success',
-      message: '🎉 Đã xuất bản sao lưu TOÀN BỘ CSDL (Fanpage, Group, Proxy, Via, Accounts, Shared) thành công!',
+      message: '🎉 Đã tải xuống file .JSON chứa TOÀN BỘ CSDL (8 bảng + cài đặt Admin) thành công!',
     });
   };
 
-  // Khôi phục dữ liệu CSDL từ file JSON sao lưu
+  // Khôi phục / Update dữ liệu CSDL từ file JSON sao lưu
   const handleRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -705,7 +743,7 @@ export function AdminApprovalModal({
           setIsRestoringBackup(false);
           setToastNotice({
             type: 'success',
-            message: '🎉 Khôi phục dữ liệu CSDL từ bản sao lưu thành công!',
+            message: '🎉 Đã Upload & Cập nhật toàn bộ CSDL từ file .JSON lên hệ thống thành công!',
           });
         }
       } catch (err) {
@@ -718,6 +756,75 @@ export function AdminApprovalModal({
     };
     reader.readAsText(file);
     e.target.value = '';
+  };
+
+  // Đẩy ngay bản backup_toan_bo_csdl_2026-10-14.json đã được tích hợp sẵn trong hệ thống lên CSDL hiện tại
+  const handleRestoreBundledBackup = async () => {
+    if (!onRestoreBackup || !BUNDLED_BACKUP_DATA) return;
+    setIsRestoringBackup(true);
+    try {
+      await onRestoreBackup(BUNDLED_BACKUP_DATA);
+      setToastNotice({
+        type: 'success',
+        message: '🎉 Đã đẩy toàn bộ 438 bản ghi từ file backup_toan_bo_csdl_2026-10-14.json lên CSDL của cualokhachsan@gmail.com thành công!',
+      });
+    } catch (err) {
+      setToastNotice({
+        type: 'error',
+        message: '❌ Có lỗi khi đồng bộ bản sao lưu tích hợp sẵn.',
+      });
+    } finally {
+      setIsRestoringBackup(false);
+    }
+  };
+
+  // Đẩy trực tiếp toàn bộ CSDL sang Project Firebase mới của mail mới (cualokhachsan@gmail.com)
+  const handlePushToNewFirebaseProject = async (switchActiveConnection = false) => {
+    if (!targetFirebaseConfigInput.trim()) {
+      setExternalPushStatus({
+        type: 'error',
+        message: 'Vui lòng dán đoạn firebaseConfig từ Project Firebase mới của bạn.',
+      });
+      return;
+    }
+    setIsPushingExternalDb(true);
+    setExternalPushStatus({
+      type: 'running',
+      message: 'Đang khởi tạo kết nối và đẩy dữ liệu sang Firebase mới của cualokhachsan@gmail.com...',
+    });
+    try {
+      const payload = buildFullBackupPayload();
+      const res = await pushBackupToExternalFirebase(
+        targetFirebaseConfigInput,
+        payload,
+        targetDatabaseIdInput,
+        (msg) => setExternalPushStatus({ type: 'running', message: msg })
+      );
+      if (switchActiveConnection) {
+        saveActiveFirebaseConfig(targetFirebaseConfigInput, targetDatabaseIdInput);
+        setExternalPushStatus({
+          type: 'success',
+          message: `✅ Đã đẩy ${res.totalDocsWritten} bản ghi & chuyển kết nối chính thức sang Project "${res.targetProjectId}"! Đang tải lại...`,
+        });
+        setTimeout(() => window.location.reload(), 1500);
+        return;
+      }
+      setExternalPushStatus({
+        type: 'success',
+        message: `✅ Đã đẩy thành công ${res.totalDocsWritten} bản ghi (đủ 8 bảng + cài đặt) sang Project "${res.targetProjectId}" (Database: ${res.targetDbId})!`,
+      });
+      setToastNotice({
+        type: 'success',
+        message: `🎉 Đã chuyển toàn bộ CSDL sang Project Firebase mới (${res.targetProjectId}) thành công!`,
+      });
+    } catch (err) {
+      setExternalPushStatus({
+        type: 'error',
+        message: `❌ Lỗi khi đẩy sang Firebase mới: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    } finally {
+      setIsPushingExternalDb(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -1971,10 +2078,182 @@ export function AdminApprovalModal({
                       <div className="flex items-center space-x-2">
                         <Server className="w-4 h-4 text-indigo-600" />
                         <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">
-                          Thông Số Kỹ Thuật Kết Nối CSDL (Connection Specifications)
+                          Thông Số Kỹ Thuật Kết Nối CSDL & Tài Khoản Chủ Sở Hữu
                         </h4>
                       </div>
-                      <span className="text-[11px] text-slate-500">Mã hóa định danh dự án</span>
+                      <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                        Admin Chính: {adminEmail || 'cualokhachsan@gmail.com'}
+                      </span>
+                    </div>
+
+                    {/* Hộp thông tin Email Chủ Sở Hữu & Chuyển Quyền Sang Mail Chính */}
+                    <div className="p-3.5 rounded-xl bg-gradient-to-r from-indigo-50 via-blue-50 to-emerald-50 border border-indigo-200 space-y-3">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="space-y-1">
+                          <div className="text-xs font-black text-indigo-950 flex items-center flex-wrap gap-1.5">
+                            <span>📧 Email Admin Chính Quản Trị Hệ Thống & CSDL:</span>
+                            <span className="font-mono text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-300 select-all">
+                              {adminEmail || 'cualokhachsan@gmail.com'}
+                            </span>
+                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
+                              ✅ Đã cấu hình toàn quyền Admin trong App & Firestore Rules
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600">
+                            Toàn bộ quyền Quản Trị Viên (Super Admin) trên ứng dụng và <strong>Firestore Security Rules</strong> đã được chuyển sang <strong>cualokhachsan@gmail.com</strong>. Để xem bảng điều khiển Google Cloud / Firebase Console bằng mail này, hãy cấp quyền <strong>Owner</strong> trong IAM theo Bước 1 bên dưới (Project khởi tạo ban đầu từ: <code>myphuong2295@gmail.com</code>).
+                          </p>
+                        </div>
+                        <div className="flex items-center flex-wrap gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyDbParam('ownerEmail', adminEmail || 'cualokhachsan@gmail.com')}
+                            className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-[11px] flex items-center gap-1 cursor-pointer shadow-2xs"
+                          >
+                            {copiedKey === 'db_ownerEmail' ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                            <span>Copy cualokhachsan@gmail.com</span>
+                          </button>
+                          <a
+                            href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/firestore/databases/${firebaseConfig.firestoreDatabaseId}/data`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] shadow-2xs transition-colors"
+                          >
+                            Mở Firebase Console ↗
+                          </a>
+                          <a
+                            href={`https://console.cloud.google.com/billing?project=${firebaseConfig.projectId}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shadow-2xs transition-colors"
+                          >
+                            Gia Hạn / Billing GCP ↗
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Khu vực Chuyển Đổi Sang Mail Chính Của Bạn */}
+                      <div className="pt-3 border-t border-indigo-200/70 bg-white/90 rounded-xl p-3 space-y-2.5">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                              <span>🔄 Chuyển Quyền Chủ Sở Hữu (Owner) Google Cloud / Firebase Sang cualokhachsan@gmail.com</span>
+                              <span className="bg-amber-100 text-amber-800 border border-amber-300 text-[10px] font-black px-1.5 py-0.5 rounded">
+                                Giữ nguyên 100% dữ liệu
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 mt-0.5">
+                              Trong ứng dụng và cơ sở dữ liệu Firestore, <strong>cualokhachsan@gmail.com</strong> đã là Admin tối cao. Để mail này cũng có quyền quản lý thanh toán/gia hạn trực tiếp trên trang quản trị Google Cloud, bạn làm 1 bước duy nhất sau:
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-[11px]">
+                          {/* Bước 1: Cấp quyền Owner trên Google Cloud / Firebase */}
+                          <div className="p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-200 space-y-1.5">
+                            <div className="font-black text-indigo-950">
+                              Bước duy nhất trên Google Cloud (chỉ mất 30 giây - giữ nguyên CSDL):
+                            </div>
+                            <ol className="list-decimal list-inside space-y-1 text-slate-700">
+                              <li>Mở link <strong>Google Cloud IAM</strong> bên dưới (đang đăng nhập bằng <code>myphuong2295@gmail.com</code>).</li>
+                              <li>Bấm <strong>Grant Access (Cấp quyền)</strong> → Dán <code>cualokhachsan@gmail.com</code> vào ô <em>New principals</em>.</li>
+                              <li>Ở ô <em>Select a role</em>, chọn <strong>Basic → Owner (Chủ sở hữu)</strong> → Bấm <strong>Save</strong> và xác nhận email mời trong hộp thư <code>cualokhachsan@gmail.com</code>.</li>
+                            </ol>
+                            <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                              <a
+                                href={`https://console.cloud.google.com/iam-admin/iam?project=${firebaseConfig.projectId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] shadow-2xs"
+                              >
+                                1. Mở Google Cloud IAM (Thêm Owner) ↗
+                              </a>
+                              <a
+                                href={`https://console.firebase.google.com/project/${firebaseConfig.projectId}/settings/iam`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] shadow-2xs"
+                              >
+                                2. Mở Firebase Permissions ↗
+                              </a>
+                            </div>
+                          </div>
+
+                          {/* Bước 2: Cập nhật Gmail Admin Chính trong hệ thống & Sao lưu */}
+                          <div className="p-2.5 rounded-lg bg-emerald-50/70 border border-emerald-200 space-y-2 flex flex-col justify-between">
+                            <div className="space-y-1">
+                              <div className="font-black text-emerald-950">
+                                Cập nhật Gmail Chính làm Admin trong Ứng dụng (hoặc Tải File .JSON sang CSDL mới)
+                              </div>
+                              <p className="text-slate-600">
+                                Nhập Gmail chính của bạn để hệ thống chuyển quyền đăng nhập Admin Google sang mail mới:
+                              </p>
+                              <div className="flex items-center gap-1.5 pt-0.5">
+                                <input
+                                  type="email"
+                                  value={newOwnerEmailInput}
+                                  onChange={(e) => setNewOwnerEmailInput(e.target.value)}
+                                  placeholder="Nhập Gmail chính của bạn (vd: tenban@gmail.com)..."
+                                  className="flex-1 min-w-0 px-2.5 py-1.5 rounded-lg border border-emerald-300 bg-white text-xs font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                                />
+                                <button
+                                  type="button"
+                                  disabled={isSavingOwnerEmail || !newOwnerEmailInput.trim()}
+                                  onClick={async () => {
+                                    const trimmed = newOwnerEmailInput.trim();
+                                    if (!trimmed) return;
+                                    setIsSavingOwnerEmail(true);
+                                    try {
+                                      await onChangeAdminPin(adminPin, adminName, trimmed);
+                                      setToastNotice({
+                                        type: 'success',
+                                        message: `✅ Đã chuyển Email Admin chính sang: ${trimmed}`,
+                                      });
+                                    } finally {
+                                      setIsSavingOwnerEmail(false);
+                                    }
+                                  }}
+                                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[11px] shrink-0 cursor-pointer disabled:opacity-50 shadow-2xs"
+                                >
+                                  {isSavingOwnerEmail ? 'Đang lưu...' : 'Lưu Mail Chính'}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-between gap-1.5 pt-1.5 border-t border-emerald-200/60">
+                              <span className="text-[10px] font-bold text-emerald-950">
+                                Cách 2: Download CSDL (.json) & Update lên mail mới:
+                              </span>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={handleExportBackup}
+                                  className="px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-900 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer shadow-2xs"
+                                >
+                                  <Download className="w-3 h-3" />
+                                  <span>1. Tải Full CSDL (.json)</span>
+                                </button>
+                                <label className="px-2.5 py-1 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] flex items-center gap-1 cursor-pointer shadow-2xs">
+                                  <Upload className="w-3 h-3" />
+                                  <span>{isRestoringBackup ? 'Đang Update...' : '2. Upload .JSON Lên CSDL'}</span>
+                                  <input
+                                    type="file"
+                                    accept=".json"
+                                    disabled={isRestoringBackup}
+                                    onChange={handleRestoreFile}
+                                    className="hidden"
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => setSecSubTab('backup')}
+                                  className="px-2 py-1 rounded-md bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] cursor-pointer shadow-2xs"
+                                >
+                                  Đẩy Sang Firebase Mới →
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
@@ -2310,20 +2589,62 @@ export function AdminApprovalModal({
               {/* SUB-TAB 3: SAO LƯU DỰ PHÒNG CSDL (BACKUP DATABASE)   */}
               {/* ---------------------------------------------------- */}
               {secSubTab === 'backup' && (
-                <div className="max-w-lg mx-auto space-y-4 py-2">
+                <div className="max-w-3xl mx-auto space-y-4 py-2">
+                  {/* HỘP XÁC NHẬN ĐÃ NHÚNG SẴN FILE BACKUP 2026-10-14 CHO CUALOKHACHSAN@GMAIL.COM */}
+                  <div className="bg-emerald-50 border-2 border-emerald-400 rounded-2xl p-4 shadow-2xs space-y-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="flex items-start space-x-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shrink-0">
+                          <CheckCircle2 className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <h4 className="font-black text-emerald-950 text-sm">
+                              Đã Tích Hợp Sẵn File: backup_toan_bo_csdl_2026-10-14.json
+                            </h4>
+                            <span className="bg-emerald-600 text-white text-[10px] font-black px-2 py-0.5 rounded-full">
+                              Chủ sở hữu: cualokhachsan@gmail.com
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-emerald-900 mt-0.5 leading-relaxed">
+                            Toàn bộ <strong>438 bản ghi</strong> trong file của bạn (<strong>190 Fanpage, 159 Full Via, 60 Group, 11 Proxy, 9 Web Chung, 7 Tài khoản nhân sự, 2 kỳ Doanh thu</strong>) đã được đẩy lên CSDL hiện tại VÀ đóng gói sẵn vào lõi ứng dụng. Khi bạn mở hoặc Remix ứng dụng này trên mail <strong>cualokhachsan@gmail.com</strong>, hệ thống sẽ <strong>tự động nạp 100% dữ liệu này lên Cloud mới</strong> mà không cần upload lại file!
+                          </p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isRestoringBackup}
+                        onClick={handleRestoreBundledBackup}
+                        className="px-3.5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs rounded-xl shadow-xs shrink-0 cursor-pointer disabled:opacity-50"
+                      >
+                        {isRestoringBackup ? 'Đang Đồng Bộ...' : '⚡ Đẩy Lại Bản 2026-10-14 Lên Cloud'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* PHƯƠNG ÁN 1: DOWNLOAD FILE .JSON VỀ MÁY & UPLOAD LÊN MAIL MỚI */}
                   <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs space-y-4">
-                    <div className="flex items-center space-x-3 border-b border-slate-100 pb-3">
-                      <div className="w-10 h-10 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold">
-                        <Download className="w-5 h-5" />
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                          <Download className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <h4 className="font-extrabold text-slate-900 text-sm">
+                            Cách 1: Download CSDL Hiện Tại (.json) & Upload Lên Mail Mới (cualokhachsan@gmail.com)
+                          </h4>
+                          <p className="text-[11px] text-slate-500">
+                            Tải toàn bộ 8 bảng + cấu hình hệ thống về máy tính thành 1 file <code>.json</code> duy nhất, sau đó Upload lên CSDL mới chỉ với 1 cú nhấp chuột
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="font-extrabold text-slate-900 text-sm">Xuất Bản Sao Lưu CSDL Firestore</h4>
-                        <p className="text-[11px] text-slate-500">Tải trọn vẹn dữ liệu hệ thống về máy tính dưới dạng file JSON</p>
-                      </div>
+                      <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2.5 py-1 rounded-full shrink-0">
+                        Khuyên Dùng • An Toàn 100%
+                      </span>
                     </div>
 
                     <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2 text-xs">
-                      <div className="font-bold text-slate-700">Dữ liệu đóng gói an toàn bao gồm toàn bộ 8 bảng:</div>
+                      <div className="font-bold text-slate-700">Dữ liệu đóng gói trọn vẹn trong file .JSON bao gồm:</div>
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-center">
                         <div className="p-2 bg-white rounded-lg border border-slate-200">
                           <div className="font-black text-indigo-700 text-base">{records.length}</div>
@@ -2360,39 +2681,154 @@ export function AdminApprovalModal({
                       </div>
                     </div>
 
-                    <button
-                      type="button"
-                      onClick={handleExportBackup}
-                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md transition-all flex items-center justify-center space-x-2 cursor-pointer"
-                    >
-                      <Download className="w-4 h-4" />
-                      <span>Tải Bản Sao Lưu Toàn Bộ CSDL (.json)</span>
-                    </button>
-
-                    {/* Khôi Phục CSDL Từ File Backup */}
-                    <div className="pt-3 border-t border-slate-200">
-                      <div className="text-xs font-bold text-slate-800 mb-1.5 flex items-center space-x-1.5">
-                        <Upload className="w-4 h-4 text-indigo-600" />
-                        <span>Khôi Phục CSDL Từ Bản Sao Lưu:</span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Bước 1: Download */}
+                      <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 flex flex-col justify-between space-y-2.5">
+                        <div>
+                          <div className="text-xs font-black text-emerald-950">
+                            Bước 1: Tải CSDL Hiện Tại Về Máy (.json)
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5">
+                            Bấm nút dưới đây để lưu toàn bộ dữ liệu hiện tại thành file <code>backup_toan_bo_csdl.json</code> về máy tính của bạn.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleExportBackup}
+                          className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center justify-center space-x-2 cursor-pointer"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>1. Tải Bản Sao Lưu Toàn Bộ CSDL (.json)</span>
+                        </button>
                       </div>
-                      <p className="text-[11px] text-slate-500 mb-2">
-                        Chọn file backup <code>.json</code> đã tải về trước đó để đồng bộ lại toàn bộ dữ liệu vào Firestore.
-                      </p>
-                      <label className="w-full py-2.5 px-3 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl border border-slate-300 transition-all flex items-center justify-center space-x-2 cursor-pointer">
-                        <HardDrive className="w-4 h-4 text-slate-600" />
-                        <span>{isRestoringBackup ? 'Đang Khôi Phục...' : 'Chọn File JSON Để Khôi Phục CSDL'}</span>
-                        <input
-                          type="file"
-                          accept=".json"
-                          disabled={isRestoringBackup}
-                          onChange={handleRestoreFile}
-                          className="hidden"
-                        />
-                      </label>
+
+                      {/* Bước 2: Upload / Update */}
+                      <div className="p-3.5 rounded-xl bg-indigo-50/70 border border-indigo-200 flex flex-col justify-between space-y-2.5">
+                        <div>
+                          <div className="text-xs font-black text-indigo-950">
+                            Bước 2: Upload File .JSON Lên CSDL Mới
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5">
+                            Khi đã mở ứng dụng trên CSDL của mail mới (<code>cualokhachsan@gmail.com</code>), chọn file <code>.json</code> vừa tải để tự động đẩy toàn bộ 8 bảng lên!
+                          </p>
+                        </div>
+                        <label className="w-full py-2.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center justify-center space-x-2 cursor-pointer">
+                          <Upload className="w-4 h-4" />
+                          <span>{isRestoringBackup ? 'Đang Upload & Đồng Bộ...' : '2. Chọn File .JSON Để Update Lên CSDL'}</span>
+                          <input
+                            type="file"
+                            accept=".json"
+                            disabled={isRestoringBackup}
+                            onChange={handleRestoreFile}
+                            className="hidden"
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* PHƯƠNG ÁN 2: ĐẨY TRỰC TIẾP CSDL SANG PROJECT FIREBASE MỚI CỦA MAIL MỚI */}
+                  <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-2xs space-y-3.5">
+                    <div className="flex items-center space-x-3 border-b border-amber-100 pb-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center font-bold shrink-0">
+                        <Server className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-sm">
+                          Cách 2: Bắn Trực Tiếp Toàn Bộ CSDL Hiện Tại Sang Project Firebase Mới Của cualokhachsan@gmail.com
+                        </h4>
+                        <p className="text-[11px] text-slate-600">
+                          Nếu bạn tự tạo 1 Project Firebase hoàn toàn mới trên <code>console.firebase.google.com</code> bằng mail <strong>cualokhachsan@gmail.com</strong>, chỉ cần dán <code>firebaseConfig</code> của project mới vào dưới đây để đẩy thẳng dữ liệu sang!
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="text-[11px] text-slate-400 text-center">
-                      * Bản sao lưu JSON giúp bạn lưu trữ ngoại tuyến an toàn 100%, có thể khôi phục bất cứ lúc nào.
+                    <div className="text-[11px] text-slate-700 bg-amber-50/60 border border-amber-200/80 rounded-xl p-3 space-y-1">
+                      <div className="font-bold text-amber-950">Hướng dẫn tạo CSDL mới trên mail cualokhachsan@gmail.com (nếu không dùng chung project cũ):</div>
+                      <ol className="list-decimal list-inside space-y-0.5">
+                        <li>Đăng nhập <a href="https://console.firebase.google.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold underline">console.firebase.google.com</a> bằng mail <strong>cualokhachsan@gmail.com</strong> → Bấm <strong>Create a project</strong>.</li>
+                        <li>Vào mục <strong>Build → Firestore Database → Create database</strong> (chọn vùng <code>asia-east1</code> và mở tab <strong>Rules</strong> chỉnh tạm thành <code>allow read, write: if true;</code> để nhận dữ liệu).</li>
+                        <li>Vào <strong>Project Settings (⚙️) → Add app → Web (&lt;/&gt;)</strong> → Copy đoạn <code>firebaseConfig</code> dán vào ô bên dưới rồi bấm <strong>Đẩy Toàn Bộ Dữ Liệu Sang Firebase Mới</strong>.</li>
+                      </ol>
+                    </div>
+
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <div className="flex-1">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Dán đoạn cấu hình <code>firebaseConfig</code> của Project mới (hỗ trợ cả code JS hoặc JSON):
+                          </label>
+                          <textarea
+                            rows={4}
+                            value={targetFirebaseConfigInput}
+                            onChange={(e) => setTargetFirebaseConfigInput(e.target.value)}
+                            placeholder={`{\n  "apiKey": "AIzaSy...",\n  "authDomain": "ten-project-moi.firebaseapp.com",\n  "projectId": "ten-project-moi",\n  "appId": "1:123456:web:abcdef"\n}`}
+                            className="w-full p-2.5 text-xs font-mono border border-slate-300 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 outline-hidden"
+                          />
+                        </div>
+                        <div className="sm:w-52 space-y-2 flex flex-col justify-between">
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                              Tên Database ID đích:
+                            </label>
+                            <input
+                              type="text"
+                              value={targetDatabaseIdInput}
+                              onChange={(e) => setTargetDatabaseIdInput(e.target.value)}
+                              placeholder="(default)"
+                              className="w-full px-2.5 py-2 text-xs font-mono font-bold border border-slate-300 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-amber-500 outline-hidden"
+                            />
+                            <p className="text-[10px] text-slate-400 mt-1">
+                              Mặc định khi tạo mới trên Firebase là <code>(default)</code>.
+                            </p>
+                          </div>
+                          <div className="space-y-1.5">
+                            <button
+                              type="button"
+                              disabled={isPushingExternalDb}
+                              onClick={() => handlePushToNewFirebaseProject(false)}
+                              className="w-full py-2 px-3 bg-amber-600 hover:bg-amber-700 text-white font-black text-xs rounded-xl shadow-xs transition-all flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                            >
+                              <Upload className="w-3.5 h-3.5 shrink-0" />
+                              <span>{isPushingExternalDb ? 'Đang Đẩy CSDL...' : '1. Chỉ Đẩy Dữ Liệu Sang'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isPushingExternalDb}
+                              onClick={() => handlePushToNewFirebaseProject(true)}
+                              className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-[11px] rounded-xl shadow-xs transition-all flex items-center justify-center space-x-1 cursor-pointer disabled:opacity-50"
+                            >
+                              <span>2. Đẩy & Chuyển Hẳn App Sang CSDL Này</span>
+                            </button>
+                            {hasCustomFirebaseConfig() && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  clearCustomFirebaseConfig();
+                                  window.location.reload();
+                                }}
+                                className="w-full py-1.5 px-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] rounded-lg cursor-pointer"
+                              >
+                                Khôi phục kết nối CSDL mặc định
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {externalPushStatus.type !== 'idle' && (
+                        <div
+                          className={`p-3 rounded-xl border text-xs font-bold ${
+                            externalPushStatus.type === 'success'
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-900'
+                              : externalPushStatus.type === 'error'
+                              ? 'bg-rose-50 border-rose-300 text-rose-900'
+                              : 'bg-blue-50 border-blue-200 text-blue-900'
+                          }`}
+                        >
+                          {externalPushStatus.message}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

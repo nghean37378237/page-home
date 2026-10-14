@@ -16,7 +16,8 @@ import {
   Unsubscribe,
   DocumentData,
 } from 'firebase/firestore';
-import firebaseConfig from '../../firebase-applet-config.json';
+import firebaseConfigDefault from '../../firebase-applet-config.json';
+import bundledBackupJson from '../data/bundledBackup.json';
 import { PageRecord, UserAccount, FullViaItem, SharedAccount, GroupRecord, ProxyItem, GroupInteractionStatus, MonthlyFinanceRecord, ImageTaskItem } from '../types';
 import {
   INITIAL_PAGE_RECORDS,
@@ -35,15 +36,50 @@ import {
 } from './storage';
 import { getCleanBmName } from '../utils/helpers';
 
+export const BUNDLED_BACKUP_DATA = bundledBackupJson as any;
+const CUSTOM_FIREBASE_CONFIG_STORAGE_KEY = 'mmo_custom_firebase_config_v1';
+
+function getActiveFirebaseConfig(): typeof firebaseConfigDefault {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = window.localStorage.getItem(CUSTOM_FIREBASE_CONFIG_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.apiKey && parsed.projectId) {
+          return {
+            ...firebaseConfigDefault,
+            ...parsed,
+            firestoreDatabaseId: parsed.firestoreDatabaseId || '(default)',
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('[Firestore] Failed to read custom firebase config:', e);
+    }
+  }
+  return firebaseConfigDefault;
+}
+
+export const firebaseConfig = getActiveFirebaseConfig();
+
+export function hasCustomFirebaseConfig(): boolean {
+  if (typeof window === 'undefined') return false;
+  return Boolean(window.localStorage.getItem(CUSTOM_FIREBASE_CONFIG_STORAGE_KEY));
+}
+
+export function clearCustomFirebaseConfig(): void {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(CUSTOM_FIREBASE_CONFIG_STORAGE_KEY);
+}
+
 // 1. Initialize Firebase App and Firestore Database instance with ignoreUndefinedProperties: true
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
 // CRITICAL: Must pass firebaseConfig.firestoreDatabaseId and enable ignoreUndefinedProperties
-export const db = initializeFirestore(
-  app,
-  { ignoreUndefinedProperties: true },
-  firebaseConfig.firestoreDatabaseId
-);
+export const db =
+  !firebaseConfig.firestoreDatabaseId || firebaseConfig.firestoreDatabaseId === '(default)'
+    ? initializeFirestore(app, { ignoreUndefinedProperties: true })
+    : initializeFirestore(app, { ignoreUndefinedProperties: true }, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
 
 /**
@@ -240,25 +276,35 @@ export interface CloudSettingsData {
   requireGoogleLoginOnly?: boolean;
 }
 
-// 4. Seeding Cloud Firestore with initial data if empty
+// 4. Seeding Cloud Firestore with bundled backup data (backup_toan_bo_csdl_2026-10-14.json) if empty
 export async function seedCloudFirestoreIfEmpty(): Promise<void> {
   try {
-    // Only seed initial accounts if the collection is completely empty (first initialization)
+    const writeBundledCollection = async (colName: string, items: any[]) => {
+      if (!Array.isArray(items) || items.length === 0) return;
+      const chunkSize = 350;
+      for (let i = 0; i < items.length; i += chunkSize) {
+        const chunk = items.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        chunk.forEach((item, idx) => {
+          const docId = item?.id ? String(item.id) : `doc-${Date.now()}-${i + idx}`;
+          batch.set(doc(db, colName, docId), sanitizeForFirestore({ ...item, id: docId }));
+        });
+        await batch.commit();
+      }
+    };
+
+    // 1. Accounts
     const accountsSnapshot = await getDocs(collection(db, ACCOUNTS_COLLECTION));
     if (accountsSnapshot.empty) {
-      console.log('[Firestore] Cơ sở dữ liệu tài khoản trống. Khởi tạo tài khoản ban đầu...');
-      const batch = writeBatch(db);
-      INITIAL_ACCOUNTS.forEach((acc) => {
-        const ref = doc(db, ACCOUNTS_COLLECTION, acc.id);
-        batch.set(ref, acc);
-      });
-      await batch.commit();
+      console.log('[Firestore] Khởi tạo danh sách tài khoản từ bản sao lưu chuẩn...');
+      const bundledAccounts = Array.isArray(BUNDLED_BACKUP_DATA?.accounts) && BUNDLED_BACKUP_DATA.accounts.length > 0
+        ? BUNDLED_BACKUP_DATA.accounts
+        : INITIAL_ACCOUNTS;
+      await writeBundledCollection(ACCOUNTS_COLLECTION, bundledAccounts);
     } else {
-      // If accounts collection already exists, ensure Admin account exists and has cualokhachsan@gmail.com
       const existingDocs = accountsSnapshot.docs.map((d) => d.data() as UserAccount);
       const adminAcc = existingDocs.find((a) => a.role === 'admin');
       if (!adminAcc) {
-        console.log('[Firestore] Bổ sung tài khoản Quản Lý (Admin)...');
         await setDoc(doc(db, ACCOUNTS_COLLECTION, DEFAULT_ADMIN_ACCOUNT.id), DEFAULT_ADMIN_ACCOUNT);
       } else if (adminAcc.email !== 'cualokhachsan@gmail.com') {
         await updateDoc(doc(db, ACCOUNTS_COLLECTION, adminAcc.id), {
@@ -267,21 +313,23 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       }
     }
 
-    // Check if settings doc already exists
+    // 2. Settings
     const settingsDocRef = doc(db, SETTINGS_COLLECTION, GENERAL_SETTINGS_DOC);
     const settingsSnap = await getDoc(settingsDocRef);
     if (!settingsSnap.exists()) {
-      console.log('[Firestore] Seeding general settings to Cloud Firestore...');
+      const bundledSettings = BUNDLED_BACKUP_DATA?.settings || {};
       const initialSettings: CloudSettingsData = {
         id: GENERAL_SETTINGS_DOC,
-        adminPin: DEFAULT_ADMIN_SETTINGS.adminPin,
-        requireApproval: DEFAULT_ADMIN_SETTINGS.requireApproval,
-        customStaffList: DEFAULT_STAFF_MEMBERS,
-        adminName: DEFAULT_ADMIN_SETTINGS.adminName,
-        adminEmail: DEFAULT_ADMIN_SETTINGS.adminEmail,
-        requireGoogleLoginOnly: DEFAULT_ADMIN_SETTINGS.requireGoogleLoginOnly ?? true,
+        adminPin: bundledSettings.adminPin || DEFAULT_ADMIN_SETTINGS.adminPin,
+        requireApproval: bundledSettings.requireApproval ?? DEFAULT_ADMIN_SETTINGS.requireApproval,
+        customStaffList: Array.isArray(bundledSettings.customStaffList) && bundledSettings.customStaffList.length > 0
+          ? bundledSettings.customStaffList
+          : DEFAULT_STAFF_MEMBERS,
+        adminName: bundledSettings.adminName || DEFAULT_ADMIN_SETTINGS.adminName,
+        adminEmail: 'cualokhachsan@gmail.com',
+        requireGoogleLoginOnly: bundledSettings.requireGoogleLoginOnly ?? true,
       };
-      await setDoc(settingsDocRef, initialSettings);
+      await setDoc(settingsDocRef, sanitizeForFirestore(initialSettings));
     } else {
       const currentSettings = settingsSnap.data() as CloudSettingsData;
       if (currentSettings.adminEmail !== 'cualokhachsan@gmail.com') {
@@ -289,62 +337,53 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       }
     }
 
-    // Check if vias collection has data
+    // 3. Full Vias
     const viasSnapshot = await getDocs(collection(db, VIAS_COLLECTION));
     if (viasSnapshot.empty) {
-      console.log('[Firestore] Seeding Full Vias to Cloud Firestore...');
-      const initialVias = getInitialFullViaItems();
-      const batch = writeBatch(db);
-      initialVias.forEach((via) => {
-        const ref = doc(db, VIAS_COLLECTION, via.id);
-        batch.set(ref, via);
-      });
-      await batch.commit();
+      const bundledVias = Array.isArray(BUNDLED_BACKUP_DATA?.vias) && BUNDLED_BACKUP_DATA.vias.length > 0
+        ? BUNDLED_BACKUP_DATA.vias
+        : getInitialFullViaItems();
+      await writeBundledCollection(VIAS_COLLECTION, bundledVias);
     }
 
-    // Check if pageRecords collection has data
+    // 4. Fanpage Records
     const recordsSnapshot = await getDocs(collection(db, PAGE_RECORDS_COLLECTION));
     if (recordsSnapshot.empty) {
-      console.log('[Firestore] Seeding Fanpage Records to Cloud Firestore...');
-      // Split into batches of 400 (Firestore batch max is 500)
-      const chunkSize = 400;
-      for (let i = 0; i < INITIAL_PAGE_RECORDS.length; i += chunkSize) {
-        const chunk = INITIAL_PAGE_RECORDS.slice(i, i + chunkSize);
-        const batch = writeBatch(db);
-        chunk.forEach((rec) => {
-          const ref = doc(db, PAGE_RECORDS_COLLECTION, rec.id);
-          batch.set(ref, rec);
-        });
-        await batch.commit();
-      }
+      const bundledRecords = Array.isArray(BUNDLED_BACKUP_DATA?.pageRecords) && BUNDLED_BACKUP_DATA.pageRecords.length > 0
+        ? BUNDLED_BACKUP_DATA.pageRecords
+        : INITIAL_PAGE_RECORDS;
+      await writeBundledCollection(PAGE_RECORDS_COLLECTION, bundledRecords);
     }
 
-    // Check if sharedAccounts collection has data
+    // 5. Group Records
+    const groupsSnapshot = await getDocs(collection(db, GROUP_RECORDS_COLLECTION));
+    if (groupsSnapshot.empty && Array.isArray(BUNDLED_BACKUP_DATA?.groupRecords) && BUNDLED_BACKUP_DATA.groupRecords.length > 0) {
+      await writeBundledCollection(GROUP_RECORDS_COLLECTION, BUNDLED_BACKUP_DATA.groupRecords);
+    }
+
+    // 6. Shared Accounts
     const sharedSnapshot = await getDocs(collection(db, SHARED_ACCOUNTS_COLLECTION));
     if (sharedSnapshot.empty) {
-      console.log('[Firestore] Seeding Shared Accounts to Cloud Firestore...');
-      const batch = writeBatch(db);
-      INITIAL_SHARED_ACCOUNTS.forEach((acc) => {
-        const ref = doc(db, SHARED_ACCOUNTS_COLLECTION, acc.id);
-        batch.set(ref, sanitizeForFirestore(acc));
-      });
-      await batch.commit();
+      const bundledShared = Array.isArray(BUNDLED_BACKUP_DATA?.sharedAccounts) && BUNDLED_BACKUP_DATA.sharedAccounts.length > 0
+        ? BUNDLED_BACKUP_DATA.sharedAccounts
+        : INITIAL_SHARED_ACCOUNTS;
+      await writeBundledCollection(SHARED_ACCOUNTS_COLLECTION, bundledShared);
     }
 
-    // Check if proxies collection has data
+    // 7. Proxies
     const proxiesSnapshot = await getDocs(collection(db, PROXIES_COLLECTION));
     if (proxiesSnapshot.empty) {
-      console.log('[Firestore] Seeding Proxies to Cloud Firestore...');
-      const batch = writeBatch(db);
-      INITIAL_PROXIES.forEach((prx) => {
-        const ref = doc(db, PROXIES_COLLECTION, prx.id);
-        batch.set(ref, sanitizeForFirestore(prx));
-      });
-      await batch.commit();
+      const bundledProxies = Array.isArray(BUNDLED_BACKUP_DATA?.proxies) && BUNDLED_BACKUP_DATA.proxies.length > 0
+        ? BUNDLED_BACKUP_DATA.proxies
+        : INITIAL_PROXIES;
+      await writeBundledCollection(PROXIES_COLLECTION, bundledProxies);
     }
 
-    // groupRecords: Do NOT auto-seed if empty. User manages their own group records.
-    // If the user wants sample groups, they can click "Nạp Lại Dữ Liệu Mẫu" in the UI.
+    // 8. Monthly Finances
+    const financesSnapshot = await getDocs(collection(db, MONTHLY_FINANCES_COLLECTION));
+    if (financesSnapshot.empty && Array.isArray(BUNDLED_BACKUP_DATA?.monthlyFinances) && BUNDLED_BACKUP_DATA.monthlyFinances.length > 0) {
+      await writeBundledCollection(MONTHLY_FINANCES_COLLECTION, BUNDLED_BACKUP_DATA.monthlyFinances);
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, 'seed_data');
   }
@@ -1253,4 +1292,142 @@ export async function batchSaveCloudImageTasks(tasks: ImageTaskItem[]): Promise<
     throw error;
   }
 }
+
+/**
+ * Phân tích cú pháp chuỗi cấu hình Firebase (hỗ trợ cả JSON chuẩn và đoạn code JS copy từ Firebase Console)
+ */
+export function parseFirebaseConfigInput(rawInput: string): {
+  apiKey: string;
+  authDomain?: string;
+  projectId: string;
+  storageBucket?: string;
+  messagingSenderId?: string;
+  appId?: string;
+  firestoreDatabaseId?: string;
+} {
+  const trimmed = rawInput.trim();
+  if (!trimmed) {
+    throw new Error('Vui lòng dán cấu hình Firebase (firebaseConfig) của project mới.');
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && parsed.apiKey && parsed.projectId) {
+      return parsed;
+    }
+  } catch {
+    // Fallback sang regex trích xuất từ đoạn code JS của Firebase Console
+  }
+
+  const extractField = (key: string): string | undefined => {
+    const regex = new RegExp(`["']?${key}["']?\\s*:\\s*["']([^"']+)["']`, 'i');
+    const match = trimmed.match(regex);
+    return match ? match[1].trim() : undefined;
+  };
+
+  const apiKey = extractField('apiKey');
+  const projectId = extractField('projectId');
+  if (!apiKey || !projectId) {
+    throw new Error(
+      'Không tìm thấy apiKey hoặc projectId trong đoạn cấu hình. Vui lòng copy nguyên khối firebaseConfig từ Project Settings của Firebase mới.'
+    );
+  }
+
+  return {
+    apiKey,
+    projectId,
+    authDomain: extractField('authDomain') || `${projectId}.firebaseapp.com`,
+    storageBucket: extractField('storageBucket') || `${projectId}.appspot.com`,
+    messagingSenderId: extractField('messagingSenderId'),
+    appId: extractField('appId'),
+    firestoreDatabaseId: extractField('firestoreDatabaseId') || '(default)',
+  };
+}
+
+/**
+ * Đẩy toàn bộ dữ liệu CSDL (từ bản sao lưu hoặc đang chạy) sang 1 Project Firebase mới của mail mới
+ */
+export async function pushBackupToExternalFirebase(
+  rawConfigInput: string,
+  backupData: any,
+  targetDatabaseId?: string,
+  onProgress?: (msg: string) => void
+): Promise<{ totalDocsWritten: number; targetProjectId: string; targetDbId: string }> {
+  const parsedConfig = parseFirebaseConfigInput(rawConfigInput);
+  const dbId = (targetDatabaseId || parsedConfig.firestoreDatabaseId || '(default)').trim();
+  const appName = `migration_target_${Date.now()}`;
+
+  onProgress?.(`Đang kết nối tới Project mới: ${parsedConfig.projectId} (DB: ${dbId})...`);
+  const targetApp = initializeApp(parsedConfig, appName);
+  const targetDb =
+    dbId === '(default)' || !dbId
+      ? initializeFirestore(targetApp, { ignoreUndefinedProperties: true })
+      : initializeFirestore(targetApp, { ignoreUndefinedProperties: true }, dbId);
+
+  let totalDocsWritten = 0;
+
+  const writeCollectionBatch = async (colName: string, items: any[], label: string) => {
+    if (!Array.isArray(items) || items.length === 0) return;
+    onProgress?.(`Đang đẩy ${items.length} bản ghi bảng ${label} (${colName})...`);
+    const chunkSize = 350;
+    for (let i = 0; i < items.length; i += chunkSize) {
+      const chunk = items.slice(i, i + chunkSize);
+      const batch = writeBatch(targetDb);
+      chunk.forEach((item, idx) => {
+        const docId = item?.id ? String(item.id) : `doc-${Date.now()}-${i + idx}`;
+        const cleanItem = sanitizeForFirestore({ ...item, id: docId });
+        batch.set(doc(targetDb, colName, docId), cleanItem);
+      });
+      await batch.commit();
+      totalDocsWritten += chunk.length;
+    }
+  };
+
+  await writeCollectionBatch(PAGE_RECORDS_COLLECTION, backupData.pageRecords || [], 'Fanpage');
+  await writeCollectionBatch(VIAS_COLLECTION, backupData.vias || [], 'Full Via');
+  await writeCollectionBatch(GROUP_RECORDS_COLLECTION, backupData.groupRecords || [], 'Group');
+  await writeCollectionBatch(PROXIES_COLLECTION, backupData.proxies || [], 'Proxy');
+  await writeCollectionBatch(SHARED_ACCOUNTS_COLLECTION, backupData.sharedAccounts || [], 'Web Chung');
+  await writeCollectionBatch(MONTHLY_FINANCES_COLLECTION, backupData.monthlyFinances || [], 'Doanh Thu');
+  await writeCollectionBatch(IMAGE_TASKS_COLLECTION, backupData.imageTasks || [], 'Làm Ảnh');
+  await writeCollectionBatch(ACCOUNTS_COLLECTION, backupData.accounts || [], 'Nhân Viên & Tài Khoản');
+
+  onProgress?.('Đang đồng bộ cấu hình hệ thống & Admin (settings/general)...');
+  const settingsPayload = sanitizeForFirestore({
+    id: GENERAL_SETTINGS_DOC,
+    adminPin: backupData.settings?.adminPin || DEFAULT_ADMIN_SETTINGS.adminPin,
+    adminName: backupData.settings?.adminName || DEFAULT_ADMIN_SETTINGS.adminName,
+    adminEmail: backupData.settings?.adminEmail || 'cualokhachsan@gmail.com',
+    requireApproval: true,
+    requireGoogleLoginOnly: backupData.settings?.requireGoogleLoginOnly ?? true,
+    customStaffList: backupData.settings?.customStaffList || DEFAULT_STAFF_MEMBERS,
+  });
+  await setDoc(doc(targetDb, SETTINGS_COLLECTION, GENERAL_SETTINGS_DOC), settingsPayload, { merge: true });
+  totalDocsWritten += 1;
+
+  return {
+    totalDocsWritten,
+    targetProjectId: parsedConfig.projectId,
+    targetDbId: dbId,
+  };
+}
+
+/**
+ * Lưu cấu hình Firebase mới của mail cualokhachsan@gmail.com làm CSDL chính thức của ứng dụng
+ */
+export function saveActiveFirebaseConfig(rawConfigInput: string, targetDatabaseId?: string): void {
+  const parsed = parseFirebaseConfigInput(rawConfigInput);
+  const dbId = (targetDatabaseId || parsed.firestoreDatabaseId || '(default)').trim();
+  if (typeof window !== 'undefined') {
+    window.localStorage.setItem(
+      CUSTOM_FIREBASE_CONFIG_STORAGE_KEY,
+      JSON.stringify({
+        ...parsed,
+        firestoreDatabaseId: dbId,
+      })
+    );
+  }
+}
+
+
 

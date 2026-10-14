@@ -297,15 +297,30 @@ export default function App() {
         // 1. Listen to live accounts (needed by login screen)
         unsubAccounts = subscribeToAccounts((cloudAccounts) => {
           setAccounts(cloudAccounts);
+          const adminAcc = cloudAccounts.find((a) => a.role === 'admin');
+          if (adminAcc && (!adminAcc.email || adminAcc.email.toLowerCase() === 'myphuong2295@gmail.com')) {
+            updateCloudAccount(adminAcc.id, { email: 'cualokhachsan@gmail.com' }).catch(() => {});
+          }
         });
 
         // 2. Listen to live settings (branding & Google login policy)
         unsubSettings = subscribeToSettings((cloudSettings) => {
           if (cloudSettings) {
+            const resolvedEmail =
+              !cloudSettings.adminEmail || cloudSettings.adminEmail.toLowerCase() === 'myphuong2295@gmail.com'
+                ? 'cualokhachsan@gmail.com'
+                : cloudSettings.adminEmail;
+            if (cloudSettings.adminEmail !== resolvedEmail) {
+              saveCloudSettings({
+                ...cloudSettings,
+                id: 'general',
+                adminEmail: resolvedEmail,
+              }).catch(() => {});
+            }
             setAdminSettings({
               adminPin: cloudSettings.adminPin || DEFAULT_ADMIN_SETTINGS.adminPin,
               adminName: cloudSettings.adminName || DEFAULT_ADMIN_SETTINGS.adminName,
-              adminEmail: cloudSettings.adminEmail || DEFAULT_ADMIN_SETTINGS.adminEmail,
+              adminEmail: resolvedEmail,
               requireApproval: cloudSettings.requireApproval ?? DEFAULT_ADMIN_SETTINGS.requireApproval,
               requireGoogleLoginOnly: cloudSettings.requireGoogleLoginOnly ?? DEFAULT_ADMIN_SETTINGS.requireGoogleLoginOnly,
             });
@@ -2048,6 +2063,46 @@ export default function App() {
       await batchSaveCloudImageTasks(backupData.imageTasks);
       setImageTasks(backupData.imageTasks);
       saveLocalImageTasksBackup(backupData.imageTasks);
+    }
+
+    // 8. Tài khoản nhân viên & phân quyền (kèm PIN)
+    if (Array.isArray(backupData.accounts) && backupData.accounts.length > 0) {
+      const normalizedAccounts = backupData.accounts.map((acc: any) => ({
+        ...acc,
+        pin: acc.pin || '123456',
+        ...(acc.role === 'admin' ? { email: acc.email || 'cualokhachsan@gmail.com' } : {}),
+      }));
+      for (const acc of normalizedAccounts) {
+        if (acc && acc.id && acc.username) {
+          await setCloudAccount(acc);
+        }
+      }
+      setAccounts(normalizedAccounts);
+    }
+
+    // 9. Cài đặt hệ thống (settings/general)
+    if (backupData.settings && typeof backupData.settings === 'object') {
+      const nextAdminEmail = backupData.settings.adminEmail || 'cualokhachsan@gmail.com';
+      const nextAdminPin = backupData.settings.adminPin || adminSettings.adminPin;
+      const nextAdminName = backupData.settings.adminName || adminSettings.adminName;
+      const nextStaffList = Array.isArray(backupData.settings.customStaffList)
+        ? backupData.settings.customStaffList
+        : customStaffList;
+
+      setAdminSettings((prev) => ({
+        ...prev,
+        adminPin: nextAdminPin,
+        adminName: nextAdminName,
+        adminEmail: nextAdminEmail,
+      }));
+      setCustomStaffList(nextStaffList);
+
+      await saveCloudSettings({
+        adminPin: nextAdminPin,
+        adminName: nextAdminName,
+        adminEmail: nextAdminEmail,
+        customStaffList: nextStaffList,
+      });
     }
   };
 
@@ -4221,6 +4276,8 @@ export default function App() {
           initialTab={adminApprovalModalTab}
           accounts={accounts}
           adminPin={adminSettings.adminPin}
+          adminEmail={adminSettings.adminEmail}
+          adminName={adminSettings.adminName}
           records={records}
           viaList={viaList}
           groupRecords={groupRecords}
