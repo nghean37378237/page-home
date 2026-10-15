@@ -206,8 +206,10 @@ function parseTkwStatsHtml(html) {
     scope: 'site',
   };
 
-  // 1. Extract embedded TKWLive.initial JSON
-  const tkwLiveMatch = html.match(/var\s+TKWLive\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+  // 1. Extract embedded window.TKWDash or TKWLive JSON (v3.4 - v3.6+)
+  const tkwLiveMatch =
+    html.match(/window\.TKWDash\s*=\s*(\{[\s\S]*?\});(?:\s*\/\/#|\s*<\/script>)/) ||
+    html.match(/var\s+TKWLive\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
   if (tkwLiveMatch) {
     try {
       const parsed = JSON.parse(tkwLiveMatch[1]);
@@ -215,11 +217,19 @@ function parseTkwStatsHtml(html) {
         cachedSession.nonce = parsed.nonce;
       }
       if (parsed.initial) {
+        const mins = Array.isArray(parsed.initial.minutes)
+          ? parsed.initial.minutes.map((m) => ({
+              time: String(m.time || ''),
+              views: Number(m.views || 0),
+              visitors: Number(m.visitors || 0),
+            }))
+          : [];
         realtime = {
           online: Number(parsed.initial.online || 0),
           today_views: Number(parsed.initial.today_views || 0),
           today_visitors: Number(parsed.initial.today_visitors || 0),
-          minutes: Array.isArray(parsed.initial.minutes) ? parsed.initial.minutes : [],
+          minutes: mins,
+          series: mins,
           pages: Array.isArray(parsed.initial.pages)
             ? parsed.initial.pages.map((p) => ({
                 title: String(p.title || '(Không tiêu đề)'),
@@ -228,13 +238,33 @@ function parseTkwStatsHtml(html) {
               }))
             : [],
           updated: String(parsed.initial.updated || ''),
-          code: String(parsed.initial.code || parsed.liveEmployee || ''),
+          code: String(parsed.initial.code || parsed.code || parsed.liveEmployee || ''),
           scope: String(parsed.initial.scope || parsed.scope || 'site'),
         };
       }
     } catch {
       // Fallback below
     }
+  }
+
+  const onlineDomMatch = html.match(/data-metric="online"[^>]*>([\s\S]*?)<\/strong>/);
+  const viewsDomMatch = html.match(/data-metric="today_views"[^>]*>([\s\S]*?)<\/strong>/);
+  const visitorsDomMatch = html.match(/data-metric="today_visitors"[^>]*>([\s\S]*?)<\/strong>/);
+  const updatedDomMatch = html.match(/data-updated[^>]*>([\s\S]*?)<\/span>/);
+
+  if (realtime.online === 0 && onlineDomMatch) {
+    realtime.online = parseNumber(stripTags(onlineDomMatch[1]));
+  }
+  if (realtime.today_views === 0 && viewsDomMatch) {
+    realtime.today_views = parseNumber(stripTags(viewsDomMatch[1]));
+  }
+  if (realtime.today_visitors === 0 && visitorsDomMatch) {
+    realtime.today_visitors = parseNumber(stripTags(visitorsDomMatch[1]));
+  }
+  if (!realtime.updated && updatedDomMatch) {
+    const rawUpd = stripTags(updatedDomMatch[1]);
+    const timeMatch = rawUpd.match(/(\d{2}:\d{2}:\d{2})/);
+    realtime.updated = timeMatch ? timeMatch[1] : rawUpd;
   }
 
   if (realtime.pages.length === 0) {
@@ -548,6 +578,7 @@ export default async function handler(req, res) {
         const body = new URLSearchParams({
           action: 'tkw_live_panel',
           nonce: session.nonce,
+          code: liveEmployee,
           live_employee: liveEmployee,
           scope,
         });
@@ -562,13 +593,15 @@ export default async function handler(req, res) {
         if (liveRes.ok) {
           const json = await liveRes.json();
           if (json && json.success && json.data) {
+            const mins = Array.isArray(json.data.minutes) ? json.data.minutes : [];
             return res.status(200).json({
               ok: true,
               realtime: {
                 online: Number(json.data.online || 0),
                 today_views: Number(json.data.today_views || 0),
                 today_visitors: Number(json.data.today_visitors || 0),
-                minutes: Array.isArray(json.data.minutes) ? json.data.minutes : [],
+                minutes: mins,
+                series: mins,
                 pages: Array.isArray(json.data.pages) ? json.data.pages : [],
                 updated: String(json.data.updated || ''),
                 code: String(json.data.code || liveEmployee),

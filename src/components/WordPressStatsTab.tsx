@@ -448,7 +448,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
     ]
   );
 
-  // Poll realtime panel every 15 seconds just like assets/dashboard.js v3.4 on celeb24h.com
+  // Poll realtime panel every 15 seconds just like assets/dashboard.js v3.6.0 on celeb24h.com
   const pollRealtimeOnly = useCallback(async () => {
     try {
       setRefreshingLive(true);
@@ -457,26 +457,53 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
           ? viewerEmployeeCode
           : scope === 'employee'
           ? employee
+          : !isAdmin && viewerEmployeeCode
+          ? viewerEmployeeCode
           : '';
       const effectiveLiveScope =
-        scope === 'mine' || (scope === 'employee' && effectiveLiveCode) ? 'employee' : 'site';
+        scope === 'site' ? 'site' : effectiveLiveCode ? 'employee' : 'site';
 
       const q = new URLSearchParams({
         mode: 'live',
-        live_employee: effectiveLiveCode,
+        live_employee: effectiveLiveScope === 'employee' ? effectiveLiveCode : '',
         scope: effectiveLiveScope,
       });
-      const res = await fetch(`/api/wp-stats?${q.toString()}`);
+
+      const requests: Promise<Response>[] = [fetch(`/api/wp-stats?${q.toString()}`)];
+      if (effectiveLiveScope === 'employee' && canSeeSiteWide) {
+        const siteQ = new URLSearchParams({
+          mode: 'live',
+          live_employee: '',
+          scope: 'site',
+        });
+        requests.push(fetch(`/api/wp-stats?${siteQ.toString()}`));
+      }
+
+      const [res, siteRes] = await Promise.all(requests);
       const json = await res.json();
+      const siteJson = siteRes ? await siteRes.json().catch(() => null) : null;
+
       if (res.ok && json.ok && json.realtime) {
-        setData((prev) => (prev ? { ...prev, realtime: json.realtime } : prev));
+        setData((prev) =>
+          prev
+            ? {
+                ...prev,
+                realtime: json.realtime,
+                ...(siteJson && siteJson.ok && siteJson.realtime
+                  ? { siteRealtime: siteJson.realtime }
+                  : effectiveLiveScope === 'site'
+                  ? { siteRealtime: json.realtime }
+                  : {}),
+              }
+            : prev
+        );
       }
     } catch {
       // Ignore silent background poll errors
     } finally {
       setRefreshingLive(false);
     }
-  }, [scope, employee, viewerEmployeeCode]);
+  }, [scope, employee, viewerEmployeeCode, isAdmin, canSeeSiteWide]);
 
   useEffect(() => {
     const defaultScope: 'site' | 'mine' = isAdmin ? 'site' : viewerEmployeeCode ? 'mine' : 'site';
@@ -501,13 +528,13 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
     return () => window.clearInterval(timer);
   }, [pollRealtimeOnly]);
 
-  // Draw 30-minute canvas bar chart matching assets/dashboard.js v3.4 from wp-simple-stats
+  // Draw 30-minute canvas bar chart matching assets/dashboard.js v3.6.0 from wp-simple-stats
   const drawChart = useCallback((series: WpRealtimeMinute[]) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const width = Math.max(300, rect.width || 640);
-    const height = Math.max(195, rect.height || 245);
+    const height = Math.max(160, rect.height || 245);
     const dpr = window.devicePixelRatio || 1;
     canvas.width = width * dpr;
     canvas.height = height * dpr;
@@ -520,52 +547,54 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
     const ch = height - pad.t - pad.b;
     ctx.clearRect(0, 0, width, height);
 
-    const max = Math.max(
-      1,
-      ...series.map((x) => Math.max(Number(x.views || 0), Number(x.visitors || 0)))
-    );
+    let mx = 1;
+    series.forEach((s) => {
+      mx = Math.max(mx, Number(s.views || 0), Number(s.visitors || 0));
+    });
+    mx = Math.ceil(mx / 5) * 5;
 
-    ctx.strokeStyle = '#edf1f6';
-    ctx.fillStyle = '#8091a7';
-    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    for (let i = 0; i <= 4; i++) {
-      const y = pad.t + ch * (1 - i / 4);
+    ctx.font = '11px Arial, sans-serif';
+    ctx.textAlign = 'right';
+    ctx.strokeStyle = '#dbe4f1';
+    ctx.fillStyle = '#667d9c';
+    for (let j = 0; j <= 5; j++) {
+      const y = pad.t + ch - (j * ch) / 5;
       ctx.beginPath();
       ctx.moveTo(pad.l, y);
       ctx.lineTo(width - pad.r, y);
       ctx.stroke();
-      ctx.fillText(String(Math.round((max * i) / 4)), 4, y + 4);
+      ctx.fillText(String(Math.round((mx * j) / 5)), pad.l - 6, y + 3);
     }
 
-    const n = Math.max(1, series.length);
-    const groupW = cw / n;
-    const barW = Math.max(2, Math.min(8, groupW * 0.36));
+    const step = cw / Math.max(series.length, 1);
+    const bar = Math.max(2, Math.min(9, step * 0.34));
 
-    series.forEach((item, idx) => {
-      const baseX = pad.l + idx * groupW + (groupW - barW * 2 - 2) / 2;
-      const vh = (Number(item.views || 0) / max) * ch;
-      const uh = (Number(item.visitors || 0) / max) * ch;
+    series.forEach((s, i) => {
+      const x = pad.l + i * step + step * 0.1;
+      const v = (ch * Number(s.views || 0)) / mx;
+      const u = (ch * Number(s.visitors || 0)) / mx;
 
       ctx.fillStyle = '#47ce89';
-      ctx.fillRect(baseX, pad.t + ch - vh, barW, vh);
+      ctx.fillRect(x, pad.t + ch - v, bar, v);
 
       ctx.fillStyle = '#55b9eb';
-      ctx.fillRect(baseX + barW + 2, pad.t + ch - uh, barW, uh);
+      ctx.fillRect(x + bar + 1, pad.t + ch - u, bar, u);
 
-      if (idx % 5 === 0 || idx === n - 1) {
-        ctx.fillStyle = '#8091a7';
-        ctx.fillText(item.time || '', baseX - 6, height - 6);
+      if (i % 5 === 0) {
+        ctx.fillStyle = '#657b97';
+        ctx.textAlign = 'center';
+        ctx.fillText(s.time || '', x + bar, pad.t + ch + 17);
       }
     });
   }, []);
 
   useEffect(() => {
-    const series = data?.realtime?.series || [];
+    const series = data?.realtime?.minutes || data?.realtime?.series || [];
     drawChart(series);
     const onResize = () => drawChart(series);
     window.addEventListener('resize', onResize);
     return () => window.removeEventListener('resize', onResize);
-  }, [data?.realtime?.series, drawChart, viewSection]);
+  }, [data?.realtime?.minutes, data?.realtime?.series, drawChart, viewSection]);
 
   const handleSelectRange = (newRange: string) => {
     setRange(newRange);

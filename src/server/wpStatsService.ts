@@ -15,6 +15,7 @@ export interface WpRealtimeData {
   today_views: number;
   today_visitors: number;
   minutes: WpRealtimeMinute[];
+  series?: WpRealtimeMinute[];
   pages: WpActivePage[];
   updated: string;
   code: string;
@@ -335,8 +336,10 @@ export function parseTkwStatsHtml(html: string) {
     scope: 'site',
   };
 
-  // 1. Extract embedded TKWLive.initial JSON
-  const tkwLiveMatch = html.match(/var\s+TKWLive\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+  // 1. Extract embedded window.TKWDash or TKWLive JSON (v3.4 - v3.6+)
+  const tkwLiveMatch =
+    html.match(/window\.TKWDash\s*=\s*(\{[\s\S]*?\});(?:\s*\/\/#|\s*<\/script>)/) ||
+    html.match(/var\s+TKWLive\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
   if (tkwLiveMatch) {
     try {
       const parsed = JSON.parse(tkwLiveMatch[1]);
@@ -344,11 +347,19 @@ export function parseTkwStatsHtml(html: string) {
         cachedSession.nonce = parsed.nonce;
       }
       if (parsed.initial) {
+        const mins: WpRealtimeMinute[] = Array.isArray(parsed.initial.minutes)
+          ? parsed.initial.minutes.map((m: any) => ({
+              time: String(m.time || ''),
+              views: Number(m.views || 0),
+              visitors: Number(m.visitors || 0),
+            }))
+          : [];
         realtime = {
           online: Number(parsed.initial.online || 0),
           today_views: Number(parsed.initial.today_views || 0),
           today_visitors: Number(parsed.initial.today_visitors || 0),
-          minutes: Array.isArray(parsed.initial.minutes) ? parsed.initial.minutes : [],
+          minutes: mins,
+          series: mins,
           pages: Array.isArray(parsed.initial.pages)
             ? parsed.initial.pages.map((p: any) => ({
                 title: String(p.title || '(Không tiêu đề)'),
@@ -357,13 +368,34 @@ export function parseTkwStatsHtml(html: string) {
               }))
             : [],
           updated: String(parsed.initial.updated || ''),
-          code: String(parsed.initial.code || parsed.liveEmployee || ''),
+          code: String(parsed.initial.code || parsed.code || parsed.liveEmployee || ''),
           scope: String(parsed.initial.scope || parsed.scope || 'site'),
         };
       }
     } catch {
       // Fallback to DOM regex below
     }
+  }
+
+  // Fallback for DOM metrics if JSON parsing missed them
+  const onlineDomMatch = html.match(/data-metric="online"[^>]*>([\s\S]*?)<\/strong>/);
+  const viewsDomMatch = html.match(/data-metric="today_views"[^>]*>([\s\S]*?)<\/strong>/);
+  const visitorsDomMatch = html.match(/data-metric="today_visitors"[^>]*>([\s\S]*?)<\/strong>/);
+  const updatedDomMatch = html.match(/data-updated[^>]*>([\s\S]*?)<\/span>/);
+
+  if (realtime.online === 0 && onlineDomMatch) {
+    realtime.online = parseNumber(stripTags(onlineDomMatch[1]));
+  }
+  if (realtime.today_views === 0 && viewsDomMatch) {
+    realtime.today_views = parseNumber(stripTags(viewsDomMatch[1]));
+  }
+  if (realtime.today_visitors === 0 && visitorsDomMatch) {
+    realtime.today_visitors = parseNumber(stripTags(visitorsDomMatch[1]));
+  }
+  if (!realtime.updated && updatedDomMatch) {
+    const rawUpd = stripTags(updatedDomMatch[1]);
+    const timeMatch = rawUpd.match(/(\d{2}:\d{2}:\d{2})/);
+    realtime.updated = timeMatch ? timeMatch[1] : rawUpd;
   }
 
   // Fallback for active pages if not in TKWLive.initial
@@ -876,6 +908,7 @@ export async function fetchWpLivePanelOnly(
     const body = new URLSearchParams({
       action: 'tkw_live_panel',
       nonce: session.nonce,
+      code: liveEmployee,
       live_employee: liveEmployee,
       scope: effectiveScope,
     });
@@ -890,11 +923,15 @@ export async function fetchWpLivePanelOnly(
     if (res.ok) {
       const json = await res.json();
       if (json && json.success && json.data) {
+        const mins: WpRealtimeMinute[] = Array.isArray(json.data.minutes)
+          ? json.data.minutes
+          : [];
         return {
           online: Number(json.data.online || 0),
           today_views: Number(json.data.today_views || 0),
           today_visitors: Number(json.data.today_visitors || 0),
-          minutes: Array.isArray(json.data.minutes) ? json.data.minutes : [],
+          minutes: mins,
+          series: mins,
           pages: Array.isArray(json.data.pages) ? json.data.pages : [],
           updated: String(json.data.updated || ''),
           code: String(json.data.code || liveEmployee),
