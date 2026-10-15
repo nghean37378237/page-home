@@ -119,8 +119,9 @@ import { BulkImportProxyModal } from './components/BulkImportProxyModal';
 import { RevenueManagementTable } from './components/RevenueManagementTable';
 import { StaffInfoTable } from './components/StaffInfoTable';
 import { ImageStudioTab } from './components/ImageStudioTab';
+import { WordPressStatsTab } from './components/WordPressStatsTab';
 import { getCleanBmName } from './utils/helpers';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon } from 'lucide-react';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon, BarChart3 } from 'lucide-react';
 
 // Helper chuẩn hóa UID để so khớp chính xác giữa Quản Lý Page và Quản Lý Full Via
 function normalizeViaUidKey(raw?: string): string {
@@ -222,6 +223,10 @@ export default function App() {
     // Tab Làm Ảnh cho phép nhân viên truy cập để làm ảnh & nhận việc ghép ảnh
     if (!filteredTabs.includes('image_studio')) {
       filteredTabs.push('image_studio');
+    }
+    // Tab Thống Kê View cho phép truy cập để theo dõi số liệu view từ celeb24h.com
+    if (!filteredTabs.includes('view_stats')) {
+      filteredTabs.push('view_stats');
     }
     return filteredTabs;
   }, [currentUser, accounts]);
@@ -957,6 +962,22 @@ export default function App() {
       accentColor: 'text-rose-700',
       description: 'Xưởng ghép ảnh đa bố cục, Story FB, viral, và phân chia việc cho nhân viên làm ảnh',
       visible: userAllowedTabs.includes('image_studio'),
+    },
+    {
+      id: 'view_stats' as TabKey,
+      num: currentUser.role === 'admin' ? 10 : (userAllowedTabs.indexOf('view_stats') !== -1 ? userAllowedTabs.indexOf('view_stats') + 1 : 7),
+      title: 'Thống Kê View',
+      fullTitle: 'Bảng 10: Thống Kê View Website (celeb24h.com)',
+      icon: BarChart3,
+      count: 'Live',
+      newCount: 0,
+      unit: 'View',
+      activeClass: 'bg-cyan-700 text-white shadow-xs ring-2 ring-cyan-500/25',
+      activeNumClass: 'bg-white/20 text-white',
+      dotColor: 'bg-cyan-500',
+      accentColor: 'text-cyan-700',
+      description: 'Số liệu thống kê Realtime, Top 10 bài viết, lượt xem theo ngày và bảng xếp hạng mã nhân viên từ celeb24h.com',
+      visible: userAllowedTabs.includes('view_stats'),
     },
   ].filter((t) => t.visible), [userAllowedTabs, currentUser, userScopedRecords, groupRecords, proxies, viaList, accounts, sharedAccounts, finances, imageTasks]);
 
@@ -4218,6 +4239,8 @@ export default function App() {
             onDeleteTask={handleDeleteImageTask}
             allPageNames={Array.from(new Set(records.map((r) => r.pageName).filter(Boolean)))}
           />
+        ) : activeTab === 'view_stats' ? (
+          <WordPressStatsTab />
         ) : (
           <SharedAccountsTable
             accounts={sharedAccounts}

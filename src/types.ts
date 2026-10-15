@@ -211,7 +211,8 @@ export type TabKey =
   | 'shared_accounts'
   | 'revenue'
   | 'staff_info'
-  | 'image_studio';
+  | 'image_studio'
+  | 'view_stats';
 
 export interface TabPermissionConfig {
   id: TabKey;
@@ -233,6 +234,7 @@ export const ALL_TAB_KEYS: TabKey[] = [
   'revenue',
   'staff_info',
   'image_studio',
+  'view_stats',
 ];
 
 // Các bảng phân quyền cho nhân viên (Bảng 5 Quản Trị NV & Bảng 7 Quản Lý Doanh Thu chỉ dành riêng cho Admin quản lý)
@@ -244,6 +246,7 @@ export const STAFF_ASSIGNABLE_TABS: TabKey[] = [
   'shared_accounts',
   'staff_info',
   'image_studio',
+  'view_stats',
 ];
 
 export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
@@ -327,6 +330,15 @@ export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
     badgeName: 'Làm Ảnh',
     color: 'rose',
     description: 'Xưởng ghép ảnh chuyên nghiệp đa bố cục (lamanh.vercel.app), chia việc cho nhân viên làm ảnh và xuất ảnh HD.',
+  },
+  view_stats: {
+    id: 'view_stats',
+    tabNumber: 10,
+    label: 'Bảng 10: Thống Kê View',
+    shortLabel: 'B10 Thống Kê View',
+    badgeName: 'TK View',
+    color: 'cyan',
+    description: 'Bảng thống kê lượt xem Realtime, Top 10 bài viết và xếp hạng mã nhân viên lấy trực tiếp từ web celeb24h.com',
   },
 };
 
