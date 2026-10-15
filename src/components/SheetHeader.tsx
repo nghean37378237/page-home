@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
 import {
   FileSpreadsheet,
   Download,
@@ -14,6 +14,12 @@ import {
   LogOut,
   KeyRound,
   Database,
+  Layers,
+  Globe,
+  Briefcase,
+  Wrench,
+  LayoutGrid,
+  ListFilter,
 } from 'lucide-react';
 import { PageRecord, AppUser, FullViaItem, TabKey } from '../types';
 
@@ -32,6 +38,74 @@ export interface NavTabItem {
   dotColor: string;
   accentColor: string;
 }
+
+export type NavGroupKey = 'fb_ops' | 'web_studio' | 'hr_finance' | 'infra_tools';
+
+interface NavGroupConfig {
+  id: NavGroupKey;
+  label: string;
+  shortLabel: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+  tabIds: TabKey[];
+  activeBg: string;
+  activeBorder: string;
+  badgeBg: string;
+  subBarBg: string;
+}
+
+const NAV_GROUPS: NavGroupConfig[] = [
+  {
+    id: 'fb_ops',
+    label: 'Facebook & Via',
+    shortLabel: 'FB & Via',
+    description: 'Quản lý Fanpage, Group Facebook và Kho Nick Full Via',
+    icon: FileSpreadsheet,
+    tabIds: ['fanpage', 'group', 'fullvia'],
+    activeBg: 'bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-500/25',
+    activeBorder: 'border-emerald-600',
+    badgeBg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    subBarBg: 'from-emerald-50/80 via-white to-indigo-50/50 border-emerald-200/80',
+  },
+  {
+    id: 'web_studio',
+    label: 'Website & Nội Dung',
+    shortLabel: 'Web & Bài',
+    description: 'Viết bài đẩy lên web celeb24h.com, Thống kê View Realtime & Xưởng ghép ảnh',
+    icon: Globe,
+    tabIds: ['web_publish', 'view_stats', 'image_studio'],
+    activeBg: 'bg-cyan-700 text-white shadow-xs ring-2 ring-cyan-500/25',
+    activeBorder: 'border-cyan-600',
+    badgeBg: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+    subBarBg: 'from-cyan-50/80 via-white to-emerald-50/50 border-cyan-200/80',
+  },
+  {
+    id: 'hr_finance',
+    label: 'Nhân Sự & Lương',
+    shortLabel: 'Nhân Sự & Lương',
+    description: 'Hồ sơ nhân viên, bảng lương tháng, doanh thu & phân quyền hệ thống',
+    icon: Briefcase,
+    tabIds: ['staff_info', 'staff_management', 'revenue'],
+    activeBg: 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25',
+    activeBorder: 'border-blue-600',
+    badgeBg: 'bg-blue-50 text-blue-800 border-blue-200',
+    subBarBg: 'from-blue-50/80 via-white to-amber-50/50 border-blue-200/80',
+  },
+  {
+    id: 'infra_tools',
+    label: 'Proxy & Công Cụ',
+    shortLabel: 'Proxy & Web',
+    description: 'Quản lý IP Proxy nuôi Via & Tài khoản Web dùng chung (Canva, ChatGPT...)',
+    icon: Wrench,
+    tabIds: ['proxy', 'shared_accounts'],
+    activeBg: 'bg-purple-700 text-white shadow-xs ring-2 ring-purple-500/25',
+    activeBorder: 'border-purple-600',
+    badgeBg: 'bg-purple-50 text-purple-800 border-purple-200',
+    subBarBg: 'from-purple-50/80 via-white to-teal-50/50 border-purple-200/80',
+  },
+];
+
+const NAV_LAYOUT_STORAGE_KEY = 'ql_fanpage_nav_layout_mode_v1';
 
 interface SheetHeaderProps {
   records: PageRecord[];
@@ -83,7 +157,25 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
   onOpenChangeMyPin,
 }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isAllTabsMenuOpen, setIsAllTabsMenuOpen] = useState(false);
+  const [navMode, setNavMode] = useState<'grouped' | 'flat'>(() => {
+    try {
+      const saved = localStorage.getItem(NAV_LAYOUT_STORAGE_KEY);
+      if (saved === 'flat' || saved === 'grouped') return saved;
+    } catch {}
+    return 'grouped';
+  });
+  // Lưu lại tab gần nhất người dùng chọn trong từng nhóm để khi bấm chuyển nhóm sẽ mở đúng tab quen dùng
+  const [lastTabByGroup, setLastTabByGroup] = useState<Partial<Record<NavGroupKey, TabKey>>>({});
   const tabListRef = useRef<HTMLDivElement | null>(null);
+
+  const handleToggleNavMode = () => {
+    const next = navMode === 'grouped' ? 'flat' : 'grouped';
+    setNavMode(next);
+    try {
+      localStorage.setItem(NAV_LAYOUT_STORAGE_KEY, next);
+    } catch {}
+  };
 
   const handleScrollTabs = (direction: 'left' | 'right') => {
     if (!tabListRef.current) return;
@@ -94,9 +186,61 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
     });
   };
 
+  // Phân bổ navTabs hiện có vào 4 nhóm khoa học
+  const visibleGroups = useMemo(() => {
+    const tabMap = new Map<TabKey, NavTabItem>();
+    navTabs.forEach((t) => tabMap.set(t.id, t));
+
+    return NAV_GROUPS.map((group) => {
+      const items = group.tabIds
+        .map((id) => tabMap.get(id))
+        .filter((item): item is NavTabItem => Boolean(item));
+      const totalNewCount = items.reduce((sum, item) => sum + (item.newCount || 0), 0);
+      return {
+        ...group,
+        items,
+        totalNewCount,
+      };
+    }).filter((g) => g.items.length > 0);
+  }, [navTabs]);
+
+  // Xác định nhóm đang active dựa trên activeTab hiện tại
+  const currentGroup = useMemo(() => {
+    return (
+      visibleGroups.find((g) => g.items.some((i) => i.id === activeTab)) ||
+      visibleGroups[0] ||
+      null
+    );
+  }, [visibleGroups, activeTab]);
+
+  const handleSelectTabWithMemory = (tabId: TabKey) => {
+    if (!onSelectTab) return;
+    const grp = visibleGroups.find((g) => g.items.some((i) => i.id === tabId));
+    if (grp) {
+      setLastTabByGroup((prev) => ({ ...prev, [grp.id]: tabId }));
+    }
+    onSelectTab(tabId);
+  };
+
+  const handleSelectGroup = (group: (typeof visibleGroups)[number]) => {
+    if (!onSelectTab || group.items.length === 0) return;
+    const remembered = lastTabByGroup[group.id];
+    const targetTab =
+      remembered && group.items.some((i) => i.id === remembered)
+        ? remembered
+        : group.items[0].id;
+    setLastTabByGroup((prev) => ({ ...prev, [group.id]: targetTab }));
+    onSelectTab(targetTab);
+  };
+
+  const activeNavTabObj = useMemo(
+    () => navTabs.find((t) => t.id === activeTab) || navTabs[0],
+    [navTabs, activeTab]
+  );
+
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
-      {/* HÀNG 1 DUY NHẤT: LOGO + 7 BẢNG ĐIỀU HƯỚNG + TÀI KHOẢN & BẢO MẬT */}
+      {/* HÀNG 1: LOGO + 4 NHÓM ĐIỀU HƯỚNG KHOA HỌC (HOẶC DẠNG ĐẦY ĐỦ) + TÀI KHOẢN */}
       <div className="max-w-[1700px] mx-auto px-2.5 sm:px-5 py-1.5">
         <div className="flex items-center justify-between gap-2">
           {/* 1. Bên trái: Logo, Tên Hệ Thống & Nút Bảo Mật / Cloud */}
@@ -106,7 +250,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
             </div>
             <div className="flex items-center space-x-1.5">
               <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight whitespace-nowrap hidden xl:block">
-                QL Fanpage & Via
+                QL Fanpage & Web
               </h1>
               <button
                 type="button"
@@ -125,95 +269,257 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
             </div>
           </div>
 
-          {/* 2. Ở giữa: 7 Bảng Điều Hướng Thông Minh (Gộp chung trên cùng 1 hàng) */}
+          {/* 2. Ở giữa: Thanh Điều Hướng Gom Nhóm Khoa Học (4 Phân Khu Chính) */}
           {navTabs.length > 0 && onSelectTab && (
-            <div className="flex items-center gap-1 flex-1 min-w-0 mx-1">
-              <button
-                type="button"
-                onClick={() => handleScrollTabs('left')}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer hidden sm:flex"
-                title="Cuộn sang trái"
-              >
-                <ChevronLeft className="w-3.5 h-3.5" />
-              </button>
+            <div className="flex items-center gap-1.5 flex-1 min-w-0 mx-1">
+              {navMode === 'grouped' ? (
+                <>
+                  {/* 4 Phân Khu Chính — Gọn gàng, không cần cuộn ngang */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 flex-1">
+                    {visibleGroups.map((group, gIdx) => {
+                      const isGroupActive = currentGroup?.id === group.id;
+                      const GroupIcon = group.icon;
+                      const activeSubInGroup =
+                        group.items.find((i) => i.id === activeTab) || group.items[0];
 
-              <div
-                ref={tabListRef}
-                className="flex items-center space-x-1 overflow-x-auto scrollbar-none scroll-smooth flex-1 py-0.5"
-              >
-                {navTabs.map((tab) => (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    id={`tab-btn-${tab.id}-table`}
-                    onClick={() => onSelectTab(tab.id)}
-                    className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 group ${
-                      activeTab === tab.id
-                        ? tab.activeClass
-                        : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/90'
-                    }`}
-                    title={`${tab.fullTitle} — ${tab.description}`}
-                  >
-                    <span
-                      className={`w-4 h-4 rounded flex items-center justify-center text-[10px] font-black shrink-0 transition-colors ${
-                        activeTab === tab.id
-                          ? tab.activeNumClass
-                          : 'bg-white text-slate-700 border border-slate-200/80 group-hover:bg-slate-200'
-                      }`}
+                      return (
+                        <button
+                          key={group.id}
+                          type="button"
+                          onClick={() => handleSelectGroup(group)}
+                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap shrink-0 border ${
+                            isGroupActive
+                              ? `${group.activeBg} border-transparent`
+                              : 'bg-slate-50/90 text-slate-700 hover:bg-slate-100 hover:text-slate-950 border-slate-200/90'
+                          }`}
+                          title={`${group.label}: ${group.items.map((i) => i.title).join(' • ')}`}
+                        >
+                          <span
+                            className={`w-4 h-4 rounded-md flex items-center justify-center text-[10px] font-black shrink-0 ${
+                              isGroupActive
+                                ? 'bg-white/20 text-white'
+                                : 'bg-white text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {gIdx + 1}
+                          </span>
+                          <GroupIcon className="w-3.5 h-3.5 shrink-0" />
+                          <span>{group.label}</span>
+
+                          {/* Hiển thị số tab con hoặc tên tab con đang mở */}
+                          <span
+                            className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
+                              isGroupActive
+                                ? 'bg-black/20 text-white'
+                                : 'bg-white text-slate-500 border border-slate-200/80'
+                            }`}
+                          >
+                            {isGroupActive && activeSubInGroup
+                              ? activeSubInGroup.title
+                              : `${group.items.length} mục`}
+                          </span>
+
+                          {group.totalNewCount > 0 && (
+                            <span
+                              className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-1 ring-rose-300 animate-pulse"
+                              title={`Có ${group.totalNewCount} mục mới cần xử lý`}
+                            >
+                              🔴+{group.totalNewCount}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Nút mở Menu Tất Cả Bảng (1 chạm nhảy tới bất kỳ bảng nào) & Đổi kiểu hiển thị */}
+                  <div className="relative shrink-0 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setIsAllTabsMenuOpen((prev) => !prev)}
+                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/90 cursor-pointer transition-colors"
+                      title="Xem danh mục tất cả các bảng trong hệ thống"
                     >
-                      {tab.num}
-                    </span>
+                      <LayoutGrid className="w-3.5 h-3.5 text-slate-600" />
+                      <span className="hidden md:inline">Tất cả ({navTabs.length})</span>
+                      <ChevronDown className="w-3 h-3 text-slate-500" />
+                    </button>
 
-                    <tab.icon className="w-3 h-3 shrink-0" />
-                    <span>{tab.title}</span>
+                    {isAllTabsMenuOpen && (
+                      <>
+                        <div
+                          className="fixed inset-0 z-40"
+                          onClick={() => setIsAllTabsMenuOpen(false)}
+                        />
+                        <div className="absolute right-0 top-full mt-1.5 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 p-3 text-xs space-y-2.5">
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                            <div>
+                              <div className="font-black text-slate-900 text-xs">
+                                Danh Mục Hệ Thống ({navTabs.length} Bảng)
+                              </div>
+                              <p className="text-[10px] text-slate-500">
+                                Đã gom thành {visibleGroups.length} nhóm khoa học để thao tác nhanh
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleToggleNavMode();
+                                setIsAllTabsMenuOpen(false);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] cursor-pointer"
+                            >
+                              Dàn ngang 1 hàng
+                            </button>
+                          </div>
 
-                    <span
-                      className={`px-1.5 py-0.1 rounded-full text-[10px] font-black ${
-                        activeTab === tab.id
-                          ? 'bg-white/25 text-white'
-                          : 'bg-white text-slate-700 border border-slate-200'
-                      }`}
-                    >
-                      {tab.count}
-                    </span>
-
-                    {tab.newCount > 0 && (
-                      <span
-                        className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-1 ring-rose-300 animate-pulse"
-                        title={`Có ${tab.newCount} ${tab.unit} mới được chuyển giao!`}
-                      >
-                        🔴+{tab.newCount}
-                      </span>
+                          <div className="space-y-2.5 max-h-[70vh] overflow-y-auto pr-1">
+                            {visibleGroups.map((grp) => (
+                              <div key={grp.id} className="space-y-1">
+                                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1 flex items-center justify-between">
+                                  <span>{grp.label}</span>
+                                  <span>{grp.items.length} bảng</span>
+                                </div>
+                                <div className="grid grid-cols-1 gap-1">
+                                  {grp.items.map((item) => {
+                                    const isCurrent = item.id === activeTab;
+                                    const ItemIcon = item.icon;
+                                    return (
+                                      <button
+                                        key={item.id}
+                                        type="button"
+                                        onClick={() => {
+                                          handleSelectTabWithMemory(item.id);
+                                          setIsAllTabsMenuOpen(false);
+                                        }}
+                                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-left transition-all cursor-pointer ${
+                                          isCurrent
+                                            ? `${item.activeClass} font-bold`
+                                            : 'hover:bg-slate-50 text-slate-800 border border-slate-100'
+                                        }`}
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span
+                                            className={`w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0 ${
+                                              isCurrent
+                                                ? 'bg-white/20 text-white'
+                                                : 'bg-slate-100 text-slate-700'
+                                            }`}
+                                          >
+                                            B{item.num}
+                                          </span>
+                                          <ItemIcon className="w-3.5 h-3.5 shrink-0" />
+                                          <div className="truncate">
+                                            <div className="text-xs font-bold truncate">
+                                              {item.title}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <span
+                                          className={`px-2 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                                            isCurrent
+                                              ? 'bg-white/25 text-white'
+                                              : 'bg-slate-100 text-slate-600'
+                                          }`}
+                                        >
+                                          {item.count} {item.unit}
+                                        </span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      </>
                     )}
+                  </div>
+                </>
+              ) : (
+                /* Chế độ Dàn Ngang Tất Cả Bảng (Flat Mode) nếu người dùng muốn mở rộng */
+                <>
+                  <button
+                    type="button"
+                    onClick={() => handleScrollTabs('left')}
+                    className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer hidden sm:flex"
+                    title="Cuộn sang trái"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
-                ))}
-              </div>
 
-              <button
-                type="button"
-                onClick={() => handleScrollTabs('right')}
-                className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer hidden sm:flex"
-                title="Cuộn sang phải"
-              >
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+                  <div
+                    ref={tabListRef}
+                    className="flex items-center space-x-1 overflow-x-auto scrollbar-none scroll-smooth flex-1 py-0.5"
+                  >
+                    {navTabs.map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        id={`tab-btn-${tab.id}-table`}
+                        onClick={() => handleSelectTabWithMemory(tab.id)}
+                        className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 group ${
+                          activeTab === tab.id
+                            ? tab.activeClass
+                            : 'bg-slate-50 text-slate-700 hover:bg-slate-100 hover:text-slate-900 border border-slate-200/90'
+                        }`}
+                        title={`${tab.fullTitle} — ${tab.description}`}
+                      >
+                        <span
+                          className={`w-4 h-4 rounded flex items-center justify-center text-[10px] font-black shrink-0 transition-colors ${
+                            activeTab === tab.id
+                              ? tab.activeNumClass
+                              : 'bg-white text-slate-700 border border-slate-200/80 group-hover:bg-slate-200'
+                          }`}
+                        >
+                          {tab.num}
+                        </span>
 
-              {/* Chọn nhanh Bảng trên màn hình nhỏ */}
-              <div className="relative shrink-0 lg:hidden">
-                <select
-                  value={activeTab}
-                  onChange={(e) => onSelectTab(e.target.value as TabKey)}
-                  className="text-[11px] font-bold bg-slate-50 hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-lg py-1 pl-2 pr-6 cursor-pointer focus:outline-none appearance-none"
-                  title="Chuyển nhanh bảng 1 đến 7"
-                >
-                  {navTabs.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.num}. {t.title} ({t.count})
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-3 h-3 text-slate-500 pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2" />
-              </div>
+                        <tab.icon className="w-3 h-3 shrink-0" />
+                        <span>{tab.title}</span>
+
+                        <span
+                          className={`px-1.5 py-0.1 rounded-full text-[10px] font-black ${
+                            activeTab === tab.id
+                              ? 'bg-white/25 text-white'
+                              : 'bg-white text-slate-700 border border-slate-200'
+                          }`}
+                        >
+                          {tab.count}
+                        </span>
+
+                        {tab.newCount > 0 && (
+                          <span
+                            className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-1 ring-rose-300 animate-pulse"
+                            title={`Có ${tab.newCount} ${tab.unit} mới được chuyển giao!`}
+                          >
+                            🔴+{tab.newCount}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleScrollTabs('right')}
+                    className="p-1 rounded-md text-slate-400 hover:text-slate-800 hover:bg-slate-100 transition-colors shrink-0 cursor-pointer hidden sm:flex"
+                    title="Cuộn sang phải"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleNavMode}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0 cursor-pointer"
+                    title="Thu gọn thành 4 nhóm khoa học"
+                  >
+                    <Layers className="w-3 h-3" />
+                    <span className="hidden md:inline">Gom Nhóm</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
 
@@ -504,6 +810,80 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
           </div>
         </div>
       </div>
+
+      {/* HÀNG 2 SIÊU GỌN: THANH CHUYỂN NHANH CÁC BẢNG CON TRONG NHÓM ĐANG MỞ */}
+      {navMode === 'grouped' && currentGroup && onSelectTab && (
+        <div
+          className={`bg-gradient-to-r ${currentGroup.subBarBg} border-t border-slate-200/80 px-2.5 sm:px-5 py-1`}
+        >
+          <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mr-1 hidden sm:inline-flex items-center gap-1">
+                <span>Nhóm {currentGroup.label}:</span>
+              </span>
+
+              {currentGroup.items.map((tab) => {
+                const isSelected = tab.id === activeTab;
+                const SubIcon = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    id={`tab-btn-${tab.id}-table`}
+                    onClick={() => handleSelectTabWithMemory(tab.id)}
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                      isSelected
+                        ? tab.activeClass
+                        : 'bg-white/90 text-slate-700 hover:bg-white hover:text-slate-950 border border-slate-200/90 shadow-2xs'
+                    }`}
+                    title={`${tab.fullTitle} — ${tab.description}`}
+                  >
+                    <span
+                      className={`px-1.5 py-0.2 rounded text-[10px] font-black shrink-0 ${
+                        isSelected
+                          ? tab.activeNumClass
+                          : 'bg-slate-100 text-slate-700 border border-slate-200/80'
+                      }`}
+                    >
+                      B{tab.num}
+                    </span>
+
+                    <SubIcon className="w-3.5 h-3.5 shrink-0" />
+                    <span>{tab.title}</span>
+
+                    <span
+                      className={`px-1.5 py-0.1 rounded-full text-[10px] font-black ${
+                        isSelected
+                          ? 'bg-white/25 text-white'
+                          : 'bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      {tab.count} {tab.unit}
+                    </span>
+
+                    {tab.newCount > 0 && (
+                      <span
+                        className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-1 ring-rose-300 animate-pulse"
+                        title={`Có ${tab.newCount} ${tab.unit} mới được chuyển giao!`}
+                      >
+                        🔴+{tab.newCount}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {activeNavTabObj && (
+              <div className="hidden lg:flex items-center gap-2 text-[11px] text-slate-500 truncate">
+                <span className="font-semibold text-slate-700 truncate">
+                  {activeNavTabObj.fullTitle}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </header>
   );
 };
