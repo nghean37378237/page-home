@@ -192,6 +192,14 @@ export function ImageStudioTab({
   const [watermarkTextColor, setWatermarkTextColor] = useState<string>('#FFFFFF');
   const [watermarkFontSize, setWatermarkFontSize] = useState<number>(30);
 
+  // Nhãn Kêu Gọi Góc Cuối Ảnh Bên Phải ("Full Comments 👇")
+  const [showCornerCta, setShowCornerCta] = useState<boolean>(true);
+  const [cornerCtaText, setCornerCtaText] = useState<string>('Full Comments 👇');
+  const [cornerCtaPosition, setCornerCtaPosition] = useState<
+    'bottom_right' | 'bottom_center' | 'bottom_left'
+  >('bottom_right');
+  const [cornerCtaFontSize, setCornerCtaFontSize] = useState<number>(28);
+
   // Per-slot photo assignments and transform states
   const [slotAssignments, setSlotAssignments] = useState<Record<number, string>>({
     0: SAMPLE_STUDIO_IMAGES[0],
@@ -947,6 +955,63 @@ export function ImageStudioTab({
       ctx.restore();
     }
 
+    // 4. Draw Bottom-Right Pill Badge ("Full Comments 👇")
+    if (showCornerCta && cornerCtaText.trim()) {
+      ctx.save();
+      const ctaLabel = cornerCtaText.trim();
+      const ctaScaledFont = Math.round((cornerCtaFontSize / 1080) * targetW);
+      ctx.font = `800 ${ctaScaledFont}px "Inter", "Segoe UI", "Apple Color Emoji", "Segoe UI Emoji", Arial, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      const metrics = ctx.measureText(ctaLabel);
+      const padX = ctaScaledFont * 0.85;
+      const padY = ctaScaledFont * 0.42;
+      const pillW = metrics.width + padX * 2;
+      const pillH = ctaScaledFont + padY * 2;
+
+      const margin = Math.max(20, targetW * 0.032);
+      let pillCenterX = targetW - pillW / 2 - margin;
+      if (cornerCtaPosition === 'bottom_center') {
+        pillCenterX = targetW / 2;
+      } else if (cornerCtaPosition === 'bottom_left') {
+        pillCenterX = pillW / 2 + margin;
+      }
+      const pillCenterY = targetH - pillH / 2 - margin;
+
+      // Đổ bóng nổi cho khung thuốc đen "Full Comments 👇"
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+      ctx.shadowBlur = Math.max(8, ctaScaledFont * 0.35);
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = Math.max(2, ctaScaledFont * 0.1);
+
+      ctx.fillStyle = 'rgba(10, 10, 12, 0.86)';
+      if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(
+          pillCenterX - pillW / 2,
+          pillCenterY - pillH / 2,
+          pillW,
+          pillH,
+          pillH / 2
+        );
+        ctx.fill();
+      } else {
+        ctx.fillRect(pillCenterX - pillW / 2, pillCenterY - pillH / 2, pillW, pillH);
+      }
+
+      // Viền sáng mảnh nhẹ giống ảnh mẫu
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = Math.max(1.5, ctaScaledFont * 0.06);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+      ctx.stroke();
+
+      // Chữ trắng đậm sắc nét
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillText(ctaLabel, pillCenterX, pillCenterY + ctaScaledFont * 0.03);
+      ctx.restore();
+    }
+
     return canvas;
   };
 
@@ -1620,6 +1685,25 @@ export function ImageStudioTab({
                               </div>
                             )}
 
+                            {/* Hiển thị nhãn góc cuối ảnh bên phải ("Full Comments 👇") trên từng khung nhỏ */}
+                            {showCornerCta && cornerCtaText.trim() && (
+                              <div
+                                style={{
+                                  bottom: '4%',
+                                  ...(cornerCtaPosition === 'bottom_right'
+                                    ? { right: '4%' }
+                                    : cornerCtaPosition === 'bottom_left'
+                                    ? { left: '4%' }
+                                    : { left: '50%', transform: 'translateX(-50%)' }),
+                                }}
+                                className="absolute z-20 pointer-events-none select-none"
+                              >
+                                <span className="px-1.5 py-0.5 rounded-full bg-black/85 text-white border border-white/25 text-[7px] font-extrabold tracking-tight shadow whitespace-nowrap block">
+                                  {cornerCtaText}
+                                </span>
+                              </div>
+                            )}
+
                             <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-30">
                               <span className="px-2 py-1 rounded-md bg-white text-slate-900 font-black text-[10px] shadow">
                                 Chọn Khung Này
@@ -2169,6 +2253,33 @@ export function ImageStudioTab({
                       </div>
                     </div>
                   )}
+
+                  {/* OVERLAY NHÃN GÓC CUỐI ẢNH BÊN PHẢI ("Full Comments 👇") */}
+                  {showCornerCta && cornerCtaText.trim() && (
+                    <div
+                      style={{
+                        bottom: '3.2%',
+                        ...(cornerCtaPosition === 'bottom_right'
+                          ? { right: '3.2%' }
+                          : cornerCtaPosition === 'bottom_left'
+                          ? { left: '3.2%' }
+                          : { left: '50%', transform: 'translateX(-50%)' }),
+                      }}
+                      className="absolute z-30 pointer-events-none select-none transition-all"
+                    >
+                      <div
+                        style={{
+                          fontSize: `${Math.round((cornerCtaFontSize / 1080) * 420)}px`,
+                          backgroundColor: 'rgba(10, 10, 12, 0.86)',
+                          border: '1.5px solid rgba(255, 255, 255, 0.25)',
+                          boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)',
+                        }}
+                        className="px-3.5 py-1 rounded-full text-white font-extrabold tracking-tight whitespace-nowrap text-center"
+                      >
+                        {cornerCtaText}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2348,7 +2459,96 @@ export function ImageStudioTab({
                   </div>
                 </div>
 
-                {/* 4. LOGO NỔI BẢN QUYỀN MỜ (EMBOSSED WATERMARK) & TIÊU ĐỀ */}
+                {/* 4. NHÃN GÓC CUỐI ẢNH BÊN PHẢI ("Full Comments 👇") */}
+                <div className="pt-2 border-t border-slate-100 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 text-rose-600" />
+                      Nhãn Góc Phải Cuối Ảnh (Full Comments 👇)
+                    </label>
+                    <label className="inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={showCornerCta}
+                        onChange={(e) => setShowCornerCta(e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-rose-600"></div>
+                    </label>
+                  </div>
+
+                  {showCornerCta && (
+                    <div className="space-y-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80">
+                      <input
+                        type="text"
+                        value={cornerCtaText}
+                        onChange={(e) => setCornerCtaText(e.target.value)}
+                        placeholder="Full Comments 👇"
+                        className="w-full text-xs font-bold px-3 py-1.5 bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          'Full Comments 👇',
+                          'Link In Comments 👇',
+                          'See Full Story 👇',
+                          'Xem Full Ở Comment 👇',
+                        ].map((presetLabel) => (
+                          <button
+                            key={presetLabel}
+                            type="button"
+                            onClick={() => setCornerCtaText(presetLabel)}
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold border transition-colors cursor-pointer ${
+                              cornerCtaText === presetLabel
+                                ? 'bg-slate-900 text-white border-slate-900'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                            }`}
+                          >
+                            {presetLabel}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <div className="flex items-center gap-1 flex-1">
+                          {(
+                            [
+                              { id: 'bottom_right', label: 'Cuối Phải (Chuẩn)' },
+                              { id: 'bottom_center', label: 'Giữa Dưới' },
+                              { id: 'bottom_left', label: 'Cuối Trái' },
+                            ] as const
+                          ).map((pos) => (
+                            <button
+                              key={pos.id}
+                              type="button"
+                              onClick={() => setCornerCtaPosition(pos.id)}
+                              className={`flex-1 py-1 px-1.5 rounded-md border text-[10px] font-bold text-center transition-colors cursor-pointer ${
+                                cornerCtaPosition === pos.id
+                                  ? 'bg-slate-900 text-white border-slate-900'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {pos.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className="flex items-center space-x-1 shrink-0">
+                          <span className="text-[10px] text-slate-500 font-semibold">Cỡ:</span>
+                          <input
+                            type="number"
+                            min="16"
+                            max="52"
+                            value={cornerCtaFontSize}
+                            onChange={(e) => setCornerCtaFontSize(Number(e.target.value))}
+                            className="w-12 text-xs font-bold px-1 py-0.5 bg-white border border-slate-300 rounded text-center"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 5. LOGO NỔI BẢN QUYỀN MỜ (EMBOSSED WATERMARK) & TIÊU ĐỀ */}
                 <div className="pt-2 border-t border-slate-100 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
