@@ -8,12 +8,42 @@ import {
   uploadMediaToWordPress,
   generateSeoArticleWithAi,
 } from './src/server/wpPublishService';
+import { extractImagesFromWebUrl } from './src/server/webImageExtractor';
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '25mb' }));
+
+  // API Route: Tự động lấy ảnh & tiêu đề từ bất kỳ link bài viết web nào để ghép ảnh trong Bảng 9
+  app.post('/api/extract-web-images', async (req, res) => {
+    try {
+      const url = String(req.body?.url || '');
+      const result = await extractImagesFromWebUrl(url);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[/api/extract-web-images] Error:', error);
+      res.status(400).json({
+        ok: false,
+        error: error?.message || 'Không thể lấy ảnh từ đường dẫn bài viết này',
+      });
+    }
+  });
+
+  app.get('/api/extract-web-images', async (req, res) => {
+    try {
+      const url = String(req.query.url || '');
+      const result = await extractImagesFromWebUrl(url);
+      res.json(result);
+    } catch (error: any) {
+      console.error('[/api/extract-web-images GET] Error:', error);
+      res.status(400).json({
+        ok: false,
+        error: error?.message || 'Không thể lấy ảnh từ đường dẫn bài viết này',
+      });
+    }
+  });
 
   // API Route: WebPublish Studio - Soạn thảo & Đẩy bài lên Website (celeb24h.com, WordPress, Webhook API)
   app.get('/api/wp-publish', async (_req, res) => {
