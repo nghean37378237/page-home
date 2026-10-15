@@ -36,8 +36,10 @@ function decodeHtmlEntities(str: string): string {
 }
 
 function resolveAbsoluteUrl(rawUrl: string, baseUrl: string): string {
-  const cleaned = String(rawUrl || '').trim();
-  if (!cleaned || cleaned.startsWith('data:')) return '';
+  const cleaned = String(rawUrl || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+  if (!cleaned || cleaned.startsWith('data:') || cleaned.startsWith('blob:')) return '';
   try {
     return new URL(cleaned, baseUrl).href;
   } catch {
@@ -50,6 +52,7 @@ function isJunkImageUrl(url: string): boolean {
   if (
     lower.endsWith('.svg') ||
     lower.endsWith('.gif') ||
+    lower.endsWith('.ico') ||
     lower.includes('gravatar.com') ||
     lower.includes('/plugins/') ||
     lower.includes('/themes/') ||
@@ -63,28 +66,24 @@ function isJunkImageUrl(url: string): boolean {
     lower.includes('analytics') ||
     lower.includes('doubleclick') ||
     lower.includes('facebook.com/tr') ||
+    lower.includes('google-analytics') ||
     lower.includes('1x1') ||
     lower.includes('spacer') ||
-    lower.includes('blank.')
+    lower.includes('blank.') ||
+    lower.includes('lazyload') ||
+    lower.includes('placeholder') ||
+    lower.includes('loading.')
   ) {
     return true;
   }
-  // Bỏ qua các thumbnail quá nhỏ dạng -100x100, -150x150 nếu là WordPress
-  const tinyWpMatch = lower.match(/-(\d+)x(\d+)\.(jpg|jpeg|png|webp)/);
+  // Bỏ qua các thumbnail quá nhỏ dạng -100x100, -150x150
+  const tinyWpMatch = lower.match(/-(\d+)x(\d+)\.(jpg|jpeg|png|webp|avif)/);
   if (tinyWpMatch) {
     const w = Number(tinyWpMatch[1]);
     const h = Number(tinyWpMatch[2]);
     if (w < 160 && h < 160) return true;
   }
   return false;
-}
-
-/**
- * Chuyển URL ảnh WordPress bị thu nhỏ (-300x200.jpg) sang bản gốc độ phân giải cao hơn hoặc chọn từ srcset
- */
-function upgradeWpImageResolution(url: string): string {
-  // Giữ nguyên nhưng có thể thử lấy bản lớn từ srcset trước
-  return url;
 }
 
 function pickBestUrlFromSrcset(srcset: string, baseUrl: string): string {
@@ -99,11 +98,13 @@ function pickBestUrlFromSrcset(srcset: string, baseUrl: string): string {
     let width = 0;
     if (tokens[1] && tokens[1].endsWith('w')) {
       width = parseInt(tokens[1].slice(0, -1), 10) || 0;
+    } else if (tokens[1] && tokens[1].endsWith('x')) {
+      width = (parseFloat(tokens[1].slice(0, -1)) || 1) * 600;
     }
     candidates.push({ url: u, width });
   }
   if (candidates.length === 0) return '';
-  // Ưu tiên ảnh có chiều rộng khoảng 700px - 1400px để vừa nét vừa tải nhanh
+  // Ưu tiên ảnh có chiều rộng khoảng 600px - 1600px để vừa nét vừa tải nhanh
   candidates.sort((a, b) => {
     const scoreA = a.width >= 600 && a.width <= 1600 ? a.width + 2000 : a.width;
     const scoreB = b.width >= 600 && b.width <= 1600 ? b.width + 2000 : b.width;
@@ -115,12 +116,12 @@ function pickBestUrlFromSrcset(srcset: string, baseUrl: string): string {
 async function fetchImageAsDataUrl(imageUrl: string, refererUrl: string): Promise<string | null> {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 9000);
     const res = await fetch(imageUrl, {
       headers: {
         'User-Agent': USER_AGENT,
         Referer: refererUrl,
-        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
       },
       signal: controller.signal,
     });
@@ -133,8 +134,8 @@ async function fetchImageAsDataUrl(imageUrl: string, refererUrl: string): Promis
     }
 
     const arrayBuffer = await res.arrayBuffer();
-    // Bỏ qua các ảnh quá nhỏ (< 3KB thường là icon hoặc pixel tracking)
-    if (arrayBuffer.byteLength < 3000) {
+    // Bỏ qua các ảnh quá nhỏ (< 3.5KB thường là icon hoặc pixel tracking)
+    if (arrayBuffer.byteLength < 3500) {
       return null;
     }
 
@@ -150,6 +151,25 @@ function extractImagesFromHtmlChunk(
   baseUrl: string
 ): { url: string; alt: string }[] {
   const results: { url: string; alt: string }[] = [];
+
+  // 1. Quét thẻ <source> bên trong <picture> (rất phổ biến ở báo điện tử như VnExpress, Kenh14, TuoiTre, CNN...)
+  const sourceTagRegex = /<source\b[^>]*>/gi;
+  let sourceMatch: RegExpExecArray | null;
+  while ((sourceMatch = sourceTagRegex.exec(htmlChunk)) !== null) {
+    const tag = sourceMatch[0];
+    const srcsetMatch =
+      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bsrcset=["']([^"']+)["']/i);
+    if (srcsetMatch && srcsetMatch[1]) {
+      const bestUrl = pickBestUrlFromSrcset(srcsetMatch[1], baseUrl);
+      if (bestUrl && !isJunkImageUrl(bestUrl)) {
+        results.push({ url: bestUrl, alt: '' });
+      }
+    }
+  }
+
+  // 2. Quét thẻ <img> với mọi chuẩn lazy-load của các báo & CMS
   const imgTagRegex = /<img\b[^>]*>/gi;
   let match: RegExpExecArray | null;
 
@@ -179,6 +199,8 @@ function extractImagesFromHtmlChunk(
         tag.match(/\bdata-src=["']([^"']+)["']/i) ||
         tag.match(/\bdata-original=["']([^"']+)["']/i) ||
         tag.match(/\bdata-full-url=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-hi-res-src=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-url=["']([^"']+)["']/i) ||
         tag.match(/\bsrc=["']([^"']+)["']/i);
       if (srcAttr && srcAttr[1]) {
         chosenUrl = resolveAbsoluteUrl(srcAttr[1], baseUrl);
@@ -190,10 +212,55 @@ function extractImagesFromHtmlChunk(
     const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
     const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
 
-    results.push({ url: upgradeWpImageResolution(chosenUrl), alt });
+    results.push({ url: chosenUrl, alt });
   }
 
   return results;
+}
+
+function extractImagesFromJsonLd(html: string, baseUrl: string): string[] {
+  const urls: string[] = [];
+  const scriptRegex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match: RegExpExecArray | null;
+
+  const collectFromNode = (node: any) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(collectFromNode);
+      return;
+    }
+    const imgField = node.image || node.thumbnailUrl;
+    if (typeof imgField === 'string') {
+      const u = resolveAbsoluteUrl(imgField, baseUrl);
+      if (u) urls.push(u);
+    } else if (Array.isArray(imgField)) {
+      for (const item of imgField) {
+        if (typeof item === 'string') {
+          const u = resolveAbsoluteUrl(item, baseUrl);
+          if (u) urls.push(u);
+        } else if (item && typeof item.url === 'string') {
+          const u = resolveAbsoluteUrl(item.url, baseUrl);
+          if (u) urls.push(u);
+        }
+      }
+    } else if (imgField && typeof imgField.url === 'string') {
+      const u = resolveAbsoluteUrl(imgField.url, baseUrl);
+      if (u) urls.push(u);
+    }
+    if (node['@graph'] && Array.isArray(node['@graph'])) {
+      node['@graph'].forEach(collectFromNode);
+    }
+  };
+
+  while ((match = scriptRegex.exec(html)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      collectFromNode(parsed);
+    } catch {
+      // Ignore malformed JSON-LD
+    }
+  }
+  return urls;
 }
 
 export async function extractImagesFromWebUrl(
@@ -218,17 +285,16 @@ export async function extractImagesFromWebUrl(
   const addCandidate = (url: string, alt = '', isFeatured = false) => {
     const resolved = resolveAbsoluteUrl(url, cleanUrl);
     if (!resolved || isJunkImageUrl(resolved)) return;
-    // Chuẩn hóa tên file bỏ hậu tố kích thước WP (-768x512) để tránh trùng 1 ảnh nhiều kích cỡ
     const dedupeKey = resolved
       .split('?')[0]
-      .replace(/-\d+x\d+(?=\.(jpg|jpeg|png|webp)$)/i, '')
+      .replace(/-\d+x\d+(?=\.(jpg|jpeg|png|webp|avif)$)/i, '')
       .toLowerCase();
     if (seenNormalized.has(dedupeKey)) return;
     seenNormalized.add(dedupeKey);
     candidateImages.push({ url: resolved, alt, isFeatured });
   };
 
-  // 1. Kiểm tra nếu là bài viết WordPress dạng /{postId} hoặc có WP REST API
+  // 1. Kiểm tra nếu là bài viết WordPress dạng /{postId} hoặc ?p={postId}
   const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
   const numericIdMatch =
     pathSegments.length > 0 && /^\d+$/.test(pathSegments[0])
@@ -237,45 +303,53 @@ export async function extractImagesFromWebUrl(
       ? Number(parsedUrl.searchParams.get('p'))
       : null;
 
-  if (numericIdMatch) {
+  const tryFetchWpRestPost = async (apiEndpointUrl: string) => {
     try {
-      const wpApiUrl = `${origin}/wp-json/wp/v2/posts/${numericIdMatch}?_embed`;
-      const wpRes = await fetch(wpApiUrl, {
-        headers: { 'User-Agent': USER_AGENT },
-      });
-      if (wpRes.ok) {
-        const postJson: any = await wpRes.json();
-        if (postJson && postJson.id) {
-          title = decodeHtmlEntities(postJson.title?.rendered || '');
+      const wpRes = await fetch(
+        apiEndpointUrl.includes('_embed')
+          ? apiEndpointUrl
+          : `${apiEndpointUrl}${apiEndpointUrl.includes('?') ? '&' : '?'}_embed`,
+        { headers: { 'User-Agent': USER_AGENT } }
+      );
+      if (!wpRes.ok) return;
+      const postJson: any = await wpRes.json();
+      if (postJson && postJson.id) {
+        if (!title) title = decodeHtmlEntities(postJson.title?.rendered || '');
+        if (!excerpt) {
           excerpt = decodeHtmlEntities(
             String(postJson.excerpt?.rendered || '').replace(/<[^>]+>/g, '')
           );
-          const embeddedMedia = postJson._embedded?.['wp:featuredmedia']?.[0];
-          const featUrl =
-            embeddedMedia?.media_details?.sizes?.large?.source_url ||
-            embeddedMedia?.source_url ||
-            '';
-          if (featUrl) {
-            addCandidate(featUrl, title || 'Ảnh đại diện bài viết', true);
-          }
-          const contentHtml = postJson.content?.rendered || '';
-          const contentImgs = extractImagesFromHtmlChunk(contentHtml, cleanUrl);
-          for (const img of contentImgs) {
-            addCandidate(img.url, img.alt || title, false);
-          }
+        }
+        const embeddedMedia = postJson._embedded?.['wp:featuredmedia']?.[0];
+        const featUrl =
+          embeddedMedia?.media_details?.sizes?.large?.source_url ||
+          embeddedMedia?.source_url ||
+          '';
+        if (featUrl) {
+          addCandidate(featUrl, title || 'Ảnh đại diện bài viết', true);
+        }
+        const contentHtml = postJson.content?.rendered || '';
+        const contentImgs = extractImagesFromHtmlChunk(contentHtml, cleanUrl);
+        for (const img of contentImgs) {
+          addCandidate(img.url, img.alt || title, false);
         }
       }
     } catch {
-      // Fallback sang cào HTML trực tiếp bên dưới
+      // Ignore WP REST errors and fallback to HTML scraping
     }
+  };
+
+  if (numericIdMatch) {
+    await tryFetchWpRestPost(`${origin}/wp-json/wp/v2/posts/${numericIdMatch}?_embed`);
   }
 
-  // 2. Nếu chưa lấy được qua WP ID hoặc cần lấy thêm từ HTML trang web
+  // 2. Quét trực tiếp HTML trang web (hỗ trợ mọi báo điện tử, blog, WordPress dạng slug, trang tin quốc tế...)
   if (candidateImages.length === 0 || !title) {
     const pageRes = await fetch(cleanUrl, {
       headers: {
         'User-Agent': USER_AGENT,
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
       },
     });
 
@@ -306,7 +380,15 @@ export async function extractImagesFromWebUrl(
         }
       }
 
-      // Lấy og:image (ảnh đại diện bài báo)
+      // Kiểm tra xem trang web có phải WordPress dùng URL dạng chữ (slug) không thông qua thẻ <link rel="alternate" type="application/json" href=".../wp-json/wp/v2/posts/...">
+      const wpJsonLinkMatch = html.match(
+        /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
+      );
+      if (wpJsonLinkMatch && wpJsonLinkMatch[1] && candidateImages.length === 0) {
+        await tryFetchWpRestPost(resolveAbsoluteUrl(wpJsonLinkMatch[1], cleanUrl));
+      }
+
+      // Lấy og:image / twitter:image (ảnh đại diện bài báo)
       const ogImg =
         html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
         html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
@@ -315,7 +397,13 @@ export async function extractImagesFromWebUrl(
         addCandidate(ogImg[1], title || 'Ảnh đại diện', true);
       }
 
-      // Ưu tiên vùng nội dung bài viết (<article> hoặc .entry-content / .post-content) trước
+      // Lấy ảnh từ cấu trúc dữ liệu chuẩn SEO JSON-LD (nếu có)
+      const jsonLdUrls = extractImagesFromJsonLd(html, cleanUrl);
+      for (const jUrl of jsonLdUrls) {
+        addCandidate(jUrl, title, candidateImages.length === 0);
+      }
+
+      // Ưu tiên vùng nội dung bài viết (<article> hoặc <main>) trước
       const articleMatch =
         html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
         html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
@@ -327,9 +415,14 @@ export async function extractImagesFromWebUrl(
         }
       }
 
-      // Nếu trong <article> ít hơn 4 ảnh thì quét thêm toàn trang (bỏ footer/sidebar rác)
+      // Nếu trong <article> ít hơn 6 ảnh thì quét thêm body (đã lọc bỏ header/footer/nav)
       if (candidateImages.length < 6) {
-        const allImgs = extractImagesFromHtmlChunk(html, cleanUrl);
+        const cleanedBody = html
+          .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+          .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+          .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+          .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '');
+        const allImgs = extractImagesFromHtmlChunk(cleanedBody, cleanUrl);
         for (const img of allImgs) {
           addCandidate(img.url, img.alt || title, false);
         }
@@ -337,8 +430,8 @@ export async function extractImagesFromWebUrl(
     }
   }
 
-  // 3. Tải tối đa 10 ảnh đầu tiên sang dạng Base64 DataURL để ghép Canvas không bị lỗi CORS
-  const topCandidates = candidateImages.slice(0, 10);
+  // 3. Tải tối đa 12 ảnh đầu tiên sang dạng Base64 DataURL để ghép Canvas không bao giờ bị lỗi CORS dù ảnh từ bất kỳ web nào
+  const topCandidates = candidateImages.slice(0, 12);
   const downloaded = await Promise.all(
     topCandidates.map(async (item) => {
       const dataUrl = await fetchImageAsDataUrl(item.url, origin);

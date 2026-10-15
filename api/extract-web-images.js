@@ -20,8 +20,10 @@ function decodeHtmlEntities(str) {
 }
 
 function resolveAbsoluteUrl(rawUrl, baseUrl) {
-  const cleaned = String(rawUrl || '').trim();
-  if (!cleaned || cleaned.startsWith('data:')) return '';
+  const cleaned = String(rawUrl || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+  if (!cleaned || cleaned.startsWith('data:') || cleaned.startsWith('blob:')) return '';
   try {
     return new URL(cleaned, baseUrl).href;
   } catch {
@@ -34,6 +36,7 @@ function isJunkImageUrl(url) {
   if (
     lower.endsWith('.svg') ||
     lower.endsWith('.gif') ||
+    lower.endsWith('.ico') ||
     lower.includes('gravatar.com') ||
     lower.includes('/plugins/') ||
     lower.includes('/themes/') ||
@@ -47,13 +50,17 @@ function isJunkImageUrl(url) {
     lower.includes('analytics') ||
     lower.includes('doubleclick') ||
     lower.includes('facebook.com/tr') ||
+    lower.includes('google-analytics') ||
     lower.includes('1x1') ||
     lower.includes('spacer') ||
-    lower.includes('blank.')
+    lower.includes('blank.') ||
+    lower.includes('lazyload') ||
+    lower.includes('placeholder') ||
+    lower.includes('loading.')
   ) {
     return true;
   }
-  const tinyWpMatch = lower.match(/-(\d+)x(\d+)\.(jpg|jpeg|png|webp)/);
+  const tinyWpMatch = lower.match(/-(\d+)x(\d+)\.(jpg|jpeg|png|webp|avif)/);
   if (tinyWpMatch) {
     const w = Number(tinyWpMatch[1]);
     const h = Number(tinyWpMatch[2]);
@@ -74,6 +81,8 @@ function pickBestUrlFromSrcset(srcset, baseUrl) {
     let width = 0;
     if (tokens[1] && tokens[1].endsWith('w')) {
       width = parseInt(tokens[1].slice(0, -1), 10) || 0;
+    } else if (tokens[1] && tokens[1].endsWith('x')) {
+      width = (parseFloat(tokens[1].slice(0, -1)) || 1) * 600;
     }
     candidates.push({ url: u, width });
   }
@@ -89,12 +98,12 @@ function pickBestUrlFromSrcset(srcset, baseUrl) {
 async function fetchImageAsDataUrl(imageUrl, refererUrl) {
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    const timeout = setTimeout(() => controller.abort(), 9000);
     const res = await fetch(imageUrl, {
       headers: {
         'User-Agent': USER_AGENT,
         Referer: refererUrl,
-        Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
       },
       signal: controller.signal,
     });
@@ -107,7 +116,7 @@ async function fetchImageAsDataUrl(imageUrl, refererUrl) {
     }
 
     const arrayBuffer = await res.arrayBuffer();
-    if (arrayBuffer.byteLength < 3000) {
+    if (arrayBuffer.byteLength < 3500) {
       return null;
     }
 
@@ -120,6 +129,23 @@ async function fetchImageAsDataUrl(imageUrl, refererUrl) {
 
 function extractImagesFromHtmlChunk(htmlChunk, baseUrl) {
   const results = [];
+
+  const sourceTagRegex = /<source\b[^>]*>/gi;
+  let sourceMatch;
+  while ((sourceMatch = sourceTagRegex.exec(htmlChunk)) !== null) {
+    const tag = sourceMatch[0];
+    const srcsetMatch =
+      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bsrcset=["']([^"']+)["']/i);
+    if (srcsetMatch && srcsetMatch[1]) {
+      const bestUrl = pickBestUrlFromSrcset(srcsetMatch[1], baseUrl);
+      if (bestUrl && !isJunkImageUrl(bestUrl)) {
+        results.push({ url: bestUrl, alt: '' });
+      }
+    }
+  }
+
   const imgTagRegex = /<img\b[^>]*>/gi;
   let match;
 
@@ -149,6 +175,8 @@ function extractImagesFromHtmlChunk(htmlChunk, baseUrl) {
         tag.match(/\bdata-src=["']([^"']+)["']/i) ||
         tag.match(/\bdata-original=["']([^"']+)["']/i) ||
         tag.match(/\bdata-full-url=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-hi-res-src=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-url=["']([^"']+)["']/i) ||
         tag.match(/\bsrc=["']([^"']+)["']/i);
       if (srcAttr && srcAttr[1]) {
         chosenUrl = resolveAbsoluteUrl(srcAttr[1], baseUrl);
@@ -166,7 +194,60 @@ function extractImagesFromHtmlChunk(htmlChunk, baseUrl) {
   return results;
 }
 
+function extractImagesFromJsonLd(html, baseUrl) {
+  const urls = [];
+  const scriptRegex = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+  let match;
+
+  const collectFromNode = (node) => {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) {
+      node.forEach(collectFromNode);
+      return;
+    }
+    const imgField = node.image || node.thumbnailUrl;
+    if (typeof imgField === 'string') {
+      const u = resolveAbsoluteUrl(imgField, baseUrl);
+      if (u) urls.push(u);
+    } else if (Array.isArray(imgField)) {
+      for (const item of imgField) {
+        if (typeof item === 'string') {
+          const u = resolveAbsoluteUrl(item, baseUrl);
+          if (u) urls.push(u);
+        } else if (item && typeof item.url === 'string') {
+          const u = resolveAbsoluteUrl(item.url, baseUrl);
+          if (u) urls.push(u);
+        }
+      }
+    } else if (imgField && typeof imgField.url === 'string') {
+      const u = resolveAbsoluteUrl(imgField.url, baseUrl);
+      if (u) urls.push(u);
+    }
+    if (node['@graph'] && Array.isArray(node['@graph'])) {
+      node['@graph'].forEach(collectFromNode);
+    }
+  };
+
+  while ((match = scriptRegex.exec(html)) !== null) {
+    try {
+      const parsed = JSON.parse(match[1].trim());
+      collectFromNode(parsed);
+    } catch {
+      // Ignore malformed JSON-LD
+    }
+  }
+  return urls;
+}
+
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   try {
     const rawInputUrl = req.method === 'POST' ? req.body?.url : req.query?.url;
     let cleanUrl = String(rawInputUrl || '').trim();
@@ -190,7 +271,7 @@ export default async function handler(req, res) {
       if (!resolved || isJunkImageUrl(resolved)) return;
       const dedupeKey = resolved
         .split('?')[0]
-        .replace(/-\d+x\d+(?=\.(jpg|jpeg|png|webp)$)/i, '')
+        .replace(/-\d+x\d+(?=\.(jpg|jpeg|png|webp|avif)$)/i, '')
         .toLowerCase();
       if (seenNormalized.has(dedupeKey)) return;
       seenNormalized.add(dedupeKey);
@@ -205,35 +286,44 @@ export default async function handler(req, res) {
         ? Number(parsedUrl.searchParams.get('p'))
         : null;
 
-    if (numericIdMatch) {
+    const tryFetchWpRestPost = async (apiEndpointUrl) => {
       try {
-        const wpApiUrl = `${origin}/wp-json/wp/v2/posts/${numericIdMatch}?_embed`;
-        const wpRes = await fetch(wpApiUrl, {
-          headers: { 'User-Agent': USER_AGENT },
-        });
-        if (wpRes.ok) {
-          const postJson = await wpRes.json();
-          if (postJson && postJson.id) {
-            title = decodeHtmlEntities(postJson.title?.rendered || '');
+        const wpRes = await fetch(
+          apiEndpointUrl.includes('_embed')
+            ? apiEndpointUrl
+            : `${apiEndpointUrl}${apiEndpointUrl.includes('?') ? '&' : '?'}_embed`,
+          { headers: { 'User-Agent': USER_AGENT } }
+        );
+        if (!wpRes.ok) return;
+        const postJson = await wpRes.json();
+        if (postJson && postJson.id) {
+          if (!title) title = decodeHtmlEntities(postJson.title?.rendered || '');
+          if (!excerpt) {
             excerpt = decodeHtmlEntities(
               String(postJson.excerpt?.rendered || '').replace(/<[^>]+>/g, '')
             );
-            const embeddedMedia = postJson._embedded?.['wp:featuredmedia']?.[0];
-            const featUrl =
-              embeddedMedia?.media_details?.sizes?.large?.source_url ||
-              embeddedMedia?.source_url ||
-              '';
-            if (featUrl) {
-              addCandidate(featUrl, title || 'Ảnh đại diện bài viết', true);
-            }
-            const contentHtml = postJson.content?.rendered || '';
-            const contentImgs = extractImagesFromHtmlChunk(contentHtml, cleanUrl);
-            for (const img of contentImgs) {
-              addCandidate(img.url, img.alt || title, false);
-            }
+          }
+          const embeddedMedia = postJson._embedded?.['wp:featuredmedia']?.[0];
+          const featUrl =
+            embeddedMedia?.media_details?.sizes?.large?.source_url ||
+            embeddedMedia?.source_url ||
+            '';
+          if (featUrl) {
+            addCandidate(featUrl, title || 'Ảnh đại diện bài viết', true);
+          }
+          const contentHtml = postJson.content?.rendered || '';
+          const contentImgs = extractImagesFromHtmlChunk(contentHtml, cleanUrl);
+          for (const img of contentImgs) {
+            addCandidate(img.url, img.alt || title, false);
           }
         }
-      } catch {}
+      } catch {
+        // Fallback
+      }
+    };
+
+    if (numericIdMatch) {
+      await tryFetchWpRestPost(`${origin}/wp-json/wp/v2/posts/${numericIdMatch}?_embed`);
     }
 
     if (candidateImages.length === 0 || !title) {
@@ -241,6 +331,7 @@ export default async function handler(req, res) {
         headers: {
           'User-Agent': USER_AGENT,
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
         },
       });
 
@@ -274,12 +365,24 @@ export default async function handler(req, res) {
           }
         }
 
+        const wpJsonLinkMatch = html.match(
+          /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
+        );
+        if (wpJsonLinkMatch && wpJsonLinkMatch[1] && candidateImages.length === 0) {
+          await tryFetchWpRestPost(resolveAbsoluteUrl(wpJsonLinkMatch[1], cleanUrl));
+        }
+
         const ogImg =
           html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
           html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
           html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
         if (ogImg && ogImg[1]) {
           addCandidate(ogImg[1], title || 'Ảnh đại diện', true);
+        }
+
+        const jsonLdUrls = extractImagesFromJsonLd(html, cleanUrl);
+        for (const jUrl of jsonLdUrls) {
+          addCandidate(jUrl, title, candidateImages.length === 0);
         }
 
         const articleMatch =
@@ -294,7 +397,12 @@ export default async function handler(req, res) {
         }
 
         if (candidateImages.length < 6) {
-          const allImgs = extractImagesFromHtmlChunk(html, cleanUrl);
+          const cleanedBody = html
+            .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+            .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+            .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+            .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '');
+          const allImgs = extractImagesFromHtmlChunk(cleanedBody, cleanUrl);
           for (const img of allImgs) {
             addCandidate(img.url, img.alt || title, false);
           }
@@ -302,7 +410,7 @@ export default async function handler(req, res) {
       }
     }
 
-    const topCandidates = candidateImages.slice(0, 10);
+    const topCandidates = candidateImages.slice(0, 12);
     const downloaded = await Promise.all(
       topCandidates.map(async (item) => {
         const dataUrl = await fetchImageAsDataUrl(item.url, origin);
@@ -317,8 +425,9 @@ export default async function handler(req, res) {
     );
 
     const validImages = downloaded.filter(Boolean);
+
     if (validImages.length === 0) {
-      return res.status(400).json({
+      return res.status(404).json({
         ok: false,
         error: 'Không tìm thấy ảnh hợp lệ nào trong bài viết này. Vui lòng thử link bài viết khác!',
       });
@@ -335,7 +444,7 @@ export default async function handler(req, res) {
   } catch (err) {
     return res.status(500).json({
       ok: false,
-      error: err?.message || 'Lỗi khi trích xuất ảnh từ bài viết web',
+      error: err?.message || 'Lỗi khi trích xuất ảnh từ đường dẫn web',
     });
   }
 }
