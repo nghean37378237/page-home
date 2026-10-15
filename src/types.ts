@@ -409,12 +409,15 @@ export interface UserAccount {
   wpAllowedEmployeeCodes?: string[]; // Phạm vi mã nhân viên được phép xem: ['MINE_AND_SITE'] (mặc định như web: mã cá nhân + toàn web), ['MINE_ONLY'] (chỉ mã cá nhân), ['ALL'] (tất cả mã & bảng xếp hạng), hoặc danh sách mã cụ thể
 
   // Thông tin nhân sự hồ sơ
+  fullName?: string; // Họ và tên đầy đủ (VD: CHU THỊ HUYỀN, VÕ THỊ TRÀ LY...)
+  contractType?: EmployeeContractType; // 'official' | 'probation'
   dateOfBirth?: string; // Ngày tháng năm sinh
   citizenId?: string; // Số CCCD / CMND
   startDate?: string; // Ngày bắt đầu đi làm
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountHolder?: string;
+  isProfileVisibleToStaff?: boolean; // true = Admin tích cho hiện thông tin hồ sơ nhân sự ở Bảng 8 cho nhân viên đó xem
 }
 
 export const DEFAULT_WP_EMPLOYEE_OPTIONS: { code: string; label: string; staffHint: string }[] = [
@@ -696,12 +699,95 @@ export interface StaffSalaryItem {
   // 6. Tổng thực nhận
   actualSalary: number; // Tổng thực nhận = salaryByWorkingDays + kpiBonus + (onlineSupportAllowance || 0) + (otherBonus || 0) - deduction
 
+  // Tài khoản đăng nhập liên kết (VD: 'MS.HUYEN', 'MS.LY', 'MS.HIEN', 'MSHIEP'...)
+  accountUsername?: string;
+
   // 7. Quyền hiển thị cho nhân viên (Yêu cầu mới: Admin tích chọn thì mới cho hiện ở Tab Thông Tin Nhân Viên, bỏ tích thì Lương và Doanh thu bỏ trống)
-  isVisibleToStaff?: boolean; // true = Admin đã tích cho hiện | false / undefined = Bỏ tích, ẩn số tiền Lương & Doanh thu
+  isVisibleToStaff?: boolean; // true = Admin đã tích cho hiện Lương & Doanh thu | false / undefined = Bỏ tích, ẩn số tiền Lương & Doanh thu
+  isProfileVisibleToStaff?: boolean; // true = Admin tích cho hiện thông tin Hồ Sơ Nhân Sự (Họ tên, Ngày sinh, CCCD, Ngày đi làm, STK) ở ô Hồ Sơ Nhân Sự cho nhân viên xem
 
   isPaid: boolean; // Đã thanh toán / Chưa thanh toán
   paidDate?: string; // Ngày chi trả
   note?: string; // Ghi chú (VD: Lương chính thức 25 công + KPI 10% Ads Page X...)
+}
+
+export function normalizeVietnameseText(input?: string): string {
+  if (!input) return '';
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .trim();
+}
+
+export function extractStaffGivenToken(name?: string): string {
+  const norm = normalizeVietnameseText(name);
+  if (!norm) return '';
+  // Nếu dạng MS.HUYEN, MS.LY, MR.BAO, MSHIEP, MS HIEP...
+  const cleanedPrefix = norm
+    .replace(/^(ms|mr|mrs|miss)[\.\s_\-]*/i, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .trim();
+  const parts = cleanedPrefix.split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  return parts[parts.length - 1];
+}
+
+export function isSameStaffIdentity(
+  nameA?: string,
+  nameB?: string,
+  acc?: Partial<UserAccount> | null,
+  sal?: Partial<StaffSalaryItem> | null
+): boolean {
+  const candidatesA = new Set<string>();
+  const candidatesB = new Set<string>();
+
+  if (nameA) candidatesA.add(normalizeVietnameseText(nameA));
+  if (acc?.username) candidatesA.add(normalizeVietnameseText(acc.username));
+  if (acc?.fullName) candidatesA.add(normalizeVietnameseText(acc.fullName));
+
+  if (nameB) candidatesB.add(normalizeVietnameseText(nameB));
+  if (sal?.staffName) candidatesB.add(normalizeVietnameseText(sal.staffName));
+  if (sal?.accountUsername) candidatesB.add(normalizeVietnameseText(sal.accountUsername));
+  if (sal?.bankAccountHolder) candidatesB.add(normalizeVietnameseText(sal.bankAccountHolder));
+
+  for (const a of candidatesA) {
+    if (!a) continue;
+    for (const b of candidatesB) {
+      if (!b) continue;
+      if (a === b) return true;
+    }
+  }
+
+  // So khớp theo tên gọi / mã nhân viên (VD: MS.HUYEN <-> CHU THỊ HUYỀN, MS.LY <-> VÕ THỊ TRÀ LY, MS.HIEN <-> Lưu Thị Thúy Hiền, MSHIEP <-> Phạm Thị Hiệp)
+  const tokenSetA = new Set<string>();
+  for (const a of candidatesA) {
+    const t = extractStaffGivenToken(a);
+    if (t && t.length >= 2 && t !== 'admin' && t !== 'quan' && t !== 'ly' ? true : t === 'ly') {
+      tokenSetA.add(t);
+    }
+  }
+
+  const tokenSetB = new Set<string>();
+  for (const b of candidatesB) {
+    const t = extractStaffGivenToken(b);
+    if (t && t.length >= 2) {
+      tokenSetB.add(t);
+    }
+  }
+
+  // Tránh khớp nhầm "Quản Lý (Admin)" với "MS.LY"
+  const isAdminA = Array.from(candidatesA).some((x) => x.includes('admin') || x.includes('quan ly'));
+  const isAdminB = Array.from(candidatesB).some((x) => x.includes('admin') || x.includes('quan ly'));
+  if (isAdminA !== isAdminB) return false;
+
+  for (const ta of tokenSetA) {
+    if (tokenSetB.has(ta)) return true;
+  }
+
+  return false;
 }
 
 export type ExpenseType = 'unexpected' | 'fixed' | 'tools' | 'other'; // 'Chi phí ngoài ý muốn / Phát sinh' | 'Cố định' | 'Công cụ' | 'Khác'

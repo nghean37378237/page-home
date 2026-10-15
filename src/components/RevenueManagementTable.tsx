@@ -8,6 +8,7 @@ import {
   ExpenseType,
   AppUser,
   UserAccount,
+  isSameStaffIdentity,
 } from '../types';
 import {
   DollarSign,
@@ -69,6 +70,7 @@ interface RevenueManagementTableProps {
   onClearAllFinances?: () => Promise<void> | void;
   onRefreshFinances?: () => Promise<void> | void;
   onNavigateToTab?: (tab: string) => void;
+  onUpdateAccount?: (accountId: string, data: Partial<UserAccount>) => Promise<void> | void;
 }
 
 // Danh sách ngân hàng phổ biến tại Việt Nam để gợi ý nhanh
@@ -125,6 +127,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   onDeleteBatchMonthlyFinances,
   onClearAllFinances,
   onNavigateToTab,
+  onUpdateAccount,
 }) => {
   const isAdmin = currentUser.role === 'admin';
 
@@ -218,6 +221,8 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [salaryNote, setSalaryNote] = useState('');
   // Quyền hiển thị cho nhân viên (Tích hiện / Bỏ tích ẩn số tiền)
   const [salaryIsVisibleToStaff, setSalaryIsVisibleToStaff] = useState(false);
+  // Quyền hiển thị Hồ Sơ Nhân Sự ở ô Hồ Sơ Nhân Sự cho nhân viên đó xem luôn (Mặc định tích chọn true)
+  const [salaryIsProfileVisibleToStaff, setSalaryIsProfileVisibleToStaff] = useState(true);
 
   // State sắp xếp & hiển thị bảng so sánh doanh thu các tháng
   const [comparisonSortOrder, setComparisonSortOrder] = useState<'desc' | 'asc'>('desc');
@@ -229,11 +234,14 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const handleStaffNameChange = (name: string) => {
     setSalaryStaffName(name);
     if (!editingSalaryItem && name.trim()) {
-      const trimmed = name.trim().toLowerCase();
-      const matchedAccount = accounts.find((a) => a.username.trim().toLowerCase() === trimmed);
+      const matchedAccount = accounts.find(
+        (a) => a.role === 'staff' && isSameStaffIdentity(name, a.username, a, null)
+      );
       let matchedPastSalary: StaffSalaryItem | undefined;
       for (const fin of finances) {
-        const found = fin.salaryItems?.find((s) => s.staffName.trim().toLowerCase() === trimmed);
+        const found = fin.salaryItems?.find((s) =>
+          isSameStaffIdentity(name, s.staffName, matchedAccount, s)
+        );
         if (found) {
           matchedPastSalary = found;
           break;
@@ -966,6 +974,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryPaidDate('');
     setSalaryNote('');
     setSalaryIsVisibleToStaff(false);
+    setSalaryIsProfileVisibleToStaff(true);
 
     if (initialName) {
       handleStaffNameChange(initialName);
@@ -998,6 +1007,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryPaidDate(item.paidDate || '');
     setSalaryNote(item.note || '');
     setSalaryIsVisibleToStaff(Boolean(item.isVisibleToStaff));
+    setSalaryIsProfileVisibleToStaff(item.isProfileVisibleToStaff !== false);
     setIsSalaryModalOpen(true);
   };
 
@@ -1074,6 +1084,10 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     const probation = parseNumberInput(salaryProbationInput);
     const official = parseNumberInput(salaryOfficialInput);
 
+    const matchedAcc = accounts.find(
+      (a) => a.role === 'staff' && isSameStaffIdentity(salaryStaffName.trim(), a.username, a, editingSalaryItem)
+    );
+
     let updatedItems: StaffSalaryItem[] = [];
     if (editingSalaryItem) {
       updatedItems = (activeMonthRecord.salaryItems || []).map((item) =>
@@ -1081,6 +1095,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
           ? {
               ...item,
               staffName: salaryStaffName.trim(),
+              accountUsername: matchedAcc?.username || item.accountUsername,
               dateOfBirth: salaryDateOfBirth.trim(),
               citizenId: salaryCitizenId.trim(),
               startDate: salaryStartDate.trim(),
@@ -1104,6 +1119,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               deduction,
               actualSalary: totalActual,
               isVisibleToStaff: salaryIsVisibleToStaff,
+              isProfileVisibleToStaff: salaryIsProfileVisibleToStaff,
               isPaid: salaryIsPaid,
               paidDate: salaryIsPaid ? (salaryPaidDate.trim() || new Date().toLocaleDateString('vi-VN')) : '',
               note: salaryNote.trim(),
@@ -1114,6 +1130,7 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       const newItem: StaffSalaryItem = {
         id: `sal-${Date.now()}`,
         staffName: salaryStaffName.trim(),
+        accountUsername: matchedAcc?.username,
         dateOfBirth: salaryDateOfBirth.trim(),
         citizenId: salaryCitizenId.trim(),
         startDate: salaryStartDate.trim(),
@@ -1137,11 +1154,27 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
         deduction,
         actualSalary: totalActual,
         isVisibleToStaff: salaryIsVisibleToStaff,
+        isProfileVisibleToStaff: salaryIsProfileVisibleToStaff,
         isPaid: salaryIsPaid,
         paidDate: salaryIsPaid ? (salaryPaidDate.trim() || new Date().toLocaleDateString('vi-VN')) : '',
         note: salaryNote.trim(),
       };
       updatedItems = [...(activeMonthRecord.salaryItems || []), newItem];
+    }
+
+    // Đồng bộ trực tiếp thông tin Hồ Sơ Nhân Sự sang tài khoản nhân viên để nhân viên xem được ngay ở Bảng 8
+    if (matchedAcc && onUpdateAccount) {
+      await onUpdateAccount(matchedAcc.id, {
+        fullName: salaryStaffName.trim(),
+        contractType: salaryContractType,
+        dateOfBirth: salaryDateOfBirth.trim(),
+        citizenId: salaryCitizenId.trim(),
+        startDate: salaryStartDate.trim(),
+        bankName: salaryBankName.trim(),
+        bankAccountNumber: salaryBankAccountNumber.trim(),
+        bankAccountHolder: salaryBankAccountHolder.trim().toUpperCase(),
+        isProfileVisibleToStaff: salaryIsProfileVisibleToStaff,
+      });
     }
 
     const newTotalSalary = updatedItems.reduce((acc, it) => acc + (it.actualSalary || 0), 0);
@@ -1192,17 +1225,85 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     await onSaveMonthlyFinance(updatedRecord);
   };
 
-  // Bật/tắt quyền hiển thị bảng lương & doanh thu cho nhân viên (Yêu cầu mới)
-  const handleToggleSalaryVisibility = async (salaryId: string) => {
+  // Bật/tắt quyền hiển thị Hồ Sơ Nhân Sự (Họ tên, Ngày sinh, CCCD, Ngày đi làm, STK) ở Bảng 8 cho nhân viên xem luôn
+  const handleToggleProfileVisibility = async (salaryId: string) => {
+    let targetItem: StaffSalaryItem | undefined;
     const updatedItems = (activeMonthRecord.salaryItems || []).map((item) => {
       if (item.id === salaryId) {
-        return {
+        const nextProfileVis = item.isProfileVisibleToStaff === false ? true : false;
+        const nextItem = {
           ...item,
-          isVisibleToStaff: !item.isVisibleToStaff,
+          isProfileVisibleToStaff: nextProfileVis,
         };
+        targetItem = nextItem;
+        return nextItem;
       }
       return item;
     });
+
+    if (targetItem && onUpdateAccount) {
+      const matchedAcc = accounts.find(
+        (a) => a.role === 'staff' && isSameStaffIdentity(targetItem!.staffName, a.username, a, targetItem)
+      );
+      if (matchedAcc) {
+        await onUpdateAccount(matchedAcc.id, {
+          fullName: targetItem.staffName,
+          contractType: targetItem.contractType || 'official',
+          dateOfBirth: targetItem.dateOfBirth || '',
+          citizenId: targetItem.citizenId || '',
+          startDate: targetItem.startDate || '',
+          bankName: targetItem.bankName || '',
+          bankAccountNumber: targetItem.bankAccountNumber || '',
+          bankAccountHolder: targetItem.bankAccountHolder || targetItem.staffName,
+          isProfileVisibleToStaff: targetItem.isProfileVisibleToStaff,
+        });
+      }
+    }
+
+    const updatedRecord: MonthlyFinanceRecord = {
+      ...activeMonthRecord,
+      salaryItems: updatedItems,
+      updatedAt: new Date().toLocaleString('vi-VN'),
+      updatedBy: currentUser.name || 'Admin',
+    };
+    await onSaveMonthlyFinance(updatedRecord);
+  };
+
+  // Bật/tắt quyền hiển thị bảng lương & doanh thu cho nhân viên (Yêu cầu mới)
+  const handleToggleSalaryVisibility = async (salaryId: string) => {
+    let targetItem: StaffSalaryItem | undefined;
+    const updatedItems = (activeMonthRecord.salaryItems || []).map((item) => {
+      if (item.id === salaryId) {
+        const nextVis = !item.isVisibleToStaff;
+        const nextItem = {
+          ...item,
+          isVisibleToStaff: nextVis,
+          isProfileVisibleToStaff: nextVis ? true : item.isProfileVisibleToStaff !== false,
+        };
+        targetItem = nextItem;
+        return nextItem;
+      }
+      return item;
+    });
+
+    if (targetItem && onUpdateAccount) {
+      const matchedAcc = accounts.find(
+        (a) => a.role === 'staff' && isSameStaffIdentity(targetItem!.staffName, a.username, a, targetItem)
+      );
+      if (matchedAcc) {
+        await onUpdateAccount(matchedAcc.id, {
+          fullName: targetItem.staffName,
+          contractType: targetItem.contractType || 'official',
+          dateOfBirth: targetItem.dateOfBirth || '',
+          citizenId: targetItem.citizenId || '',
+          startDate: targetItem.startDate || '',
+          bankName: targetItem.bankName || '',
+          bankAccountNumber: targetItem.bankAccountNumber || '',
+          bankAccountHolder: targetItem.bankAccountHolder || targetItem.staffName,
+          isProfileVisibleToStaff: true,
+        });
+      }
+    }
 
     const updatedRecord: MonthlyFinanceRecord = {
       ...activeMonthRecord,
@@ -1218,7 +1319,29 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     const updatedItems = (activeMonthRecord.salaryItems || []).map((item) => ({
       ...item,
       isVisibleToStaff: visible,
+      isProfileVisibleToStaff: visible ? true : item.isProfileVisibleToStaff !== false,
     }));
+
+    if (visible && onUpdateAccount) {
+      for (const item of updatedItems) {
+        const matchedAcc = accounts.find(
+          (a) => a.role === 'staff' && isSameStaffIdentity(item.staffName, a.username, a, item)
+        );
+        if (matchedAcc) {
+          await onUpdateAccount(matchedAcc.id, {
+            fullName: item.staffName,
+            contractType: item.contractType || 'official',
+            dateOfBirth: item.dateOfBirth || '',
+            citizenId: item.citizenId || '',
+            startDate: item.startDate || '',
+            bankName: item.bankName || '',
+            bankAccountNumber: item.bankAccountNumber || '',
+            bankAccountHolder: item.bankAccountHolder || item.staffName,
+            isProfileVisibleToStaff: true,
+          });
+        }
+      }
+    }
 
     const updatedRecord: MonthlyFinanceRecord = {
       ...activeMonthRecord,
@@ -3489,6 +3612,30 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                                   </span>
                                 )}
                               </div>
+                              <div className="pt-0.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleProfileVisibility(item.id)}
+                                  className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[10px] font-black cursor-pointer border transition-all ${
+                                    item.isProfileVisibleToStaff !== false
+                                      ? 'bg-blue-50 text-blue-800 border-blue-300 hover:bg-blue-100'
+                                      : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                                  }`}
+                                  title="Tích để hiện thông tin Hồ Sơ Nhân Sự ở Bảng 8 cho nhân viên đó xem luôn"
+                                >
+                                  {item.isProfileVisibleToStaff !== false ? (
+                                    <>
+                                      <Check className="w-2.5 h-2.5 text-blue-600" />
+                                      <span>Hiện Hồ Sơ NV</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <EyeOff className="w-2.5 h-2.5 text-slate-400" />
+                                      <span>Ẩn Hồ Sơ NV</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <div className="text-[11px] text-slate-400 italic">
@@ -4776,6 +4923,20 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                         className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-500"
                       />
                     </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-blue-200/80">
+                    <label className="flex items-center space-x-2 text-xs font-black text-blue-950 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={salaryIsProfileVisibleToStaff}
+                        onChange={(e) => setSalaryIsProfileVisibleToStaff(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                      />
+                      <span>
+                        Tích để hiện thông tin nhân viên ở ô Hồ Sơ Nhân Sự (Bảng 8) cho nhân viên đó xem luôn
+                      </span>
+                    </label>
                   </div>
                 </div>
 

@@ -467,40 +467,62 @@ export default function App() {
           );
         };
 
-        if (currentUser.role === 'admin') {
-          unsubFinances = subscribeToMonthlyFinances((cloudFinances) => {
-            if (cloudFinances && cloudFinances.length > 0) {
+        const sanitizeFinanceForRole = (list: MonthlyFinanceRecord[]): MonthlyFinanceRecord[] => {
+          if (currentUser.role === 'admin') return list;
+          return list.map((rec) => ({
+            ...rec,
+            revenueItems: [],
+            totalRevenue: 0,
+            officeCost: 0,
+            electricityCost: 0,
+            waterCost: 0,
+            internetCost: 0,
+            otherCosts: 0,
+            customExpenses: [],
+            totalExpenses: 0,
+            netProfit: 0,
+          }));
+        };
+
+        unsubFinances = subscribeToMonthlyFinances((cloudFinances) => {
+          if (cloudFinances && cloudFinances.length > 0) {
+            if (currentUser.role === 'admin') {
               const mockRecords = cloudFinances.filter(isLegacyMockFinance);
               if (mockRecords.length > 0) {
                 mockRecords.forEach((m) => {
                   deleteCloudMonthlyFinance(m.id).catch(() => {});
                 });
               }
-              const cleanList = cloudFinances.filter((f) => !isLegacyMockFinance(f));
-              setFinances(cleanList);
+            }
+            const cleanList = sanitizeFinanceForRole(
+              cloudFinances.filter((f) => !isLegacyMockFinance(f))
+            );
+            setFinances(cleanList);
+            if (currentUser.role === 'admin') {
               saveLocalFinanceBackup(cleanList);
+            }
+          } else {
+            setFinances([]);
+            clearLocalFinanceBackup();
+          }
+        });
+
+        getCloudMonthlyFinances()
+          .then((list) => {
+            if (list && list.length > 0) {
+              const cleanList = sanitizeFinanceForRole(
+                list.filter((f) => !isLegacyMockFinance(f))
+              );
+              setFinances(cleanList);
+              if (currentUser.role === 'admin') {
+                saveLocalFinanceBackup(cleanList);
+              }
             } else {
               setFinances([]);
               clearLocalFinanceBackup();
             }
-          });
-
-          getCloudMonthlyFinances()
-            .then((list) => {
-              if (list && list.length > 0) {
-                const cleanList = list.filter((f) => !isLegacyMockFinance(f));
-                setFinances(cleanList);
-                saveLocalFinanceBackup(cleanList);
-              } else {
-                setFinances([]);
-                clearLocalFinanceBackup();
-              }
-            })
-            .catch((err) => console.warn('[App] Direct finance fetch warning:', err));
-        } else {
-          setFinances([]);
-          clearLocalFinanceBackup();
-        }
+          })
+          .catch((err) => console.warn('[App] Direct finance fetch warning:', err));
 
         // 7. Listen to live image tasks in Cloud Firestore
         unsubImageTasks = subscribeToImageTasks((cloudTasks) => {
@@ -4229,6 +4251,12 @@ export default function App() {
               clearLocalFinanceBackup();
             }}
             onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
+            onUpdateAccount={async (accountId, data) => {
+              await updateCloudAccount(accountId, data);
+              setAccounts((prev) =>
+                prev.map((a) => (a.id === accountId ? { ...a, ...data } : a))
+              );
+            }}
           />
         ) : activeTab === 'staff_info' ? (
           <StaffInfoTable
@@ -4238,6 +4266,25 @@ export default function App() {
             records={records}
             availableStaffNames={allStaffNames}
             onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
+            onSaveMonthlyFinance={async (record) => {
+              await setCloudMonthlyFinance(record);
+              setFinances((prev) => {
+                const exists = prev.some((f) => f.id === record.id || f.monthKey === record.monthKey);
+                const next = exists
+                  ? prev.map((f) => (f.id === record.id || f.monthKey === record.monthKey ? record : f))
+                  : [record, ...prev];
+                if (currentUser.role === 'admin') {
+                  saveLocalFinanceBackup(next);
+                }
+                return next;
+              });
+            }}
+            onUpdateAccount={async (accountId, data) => {
+              await updateCloudAccount(accountId, data);
+              setAccounts((prev) =>
+                prev.map((a) => (a.id === accountId ? { ...a, ...data } : a))
+              );
+            }}
           />
         ) : activeTab === 'image_studio' ? (
           <ImageStudioTab
