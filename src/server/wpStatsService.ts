@@ -98,17 +98,24 @@ export interface WpStatsDashboardPayload {
   topTo: string;
   employeeOptions: WpEmployeeOption[];
   realtime: WpRealtimeData;
+  siteRealtime?: WpRealtimeData;
+  employeeRealtime?: WpRealtimeData | null;
   summary: WpSummaryStats;
+  siteSummary?: WpSummaryStats;
+  employeeSummary?: WpSummaryStats | null;
   topPosts: WpTopPostRow[];
   primaryTopPanel: WpTop10PanelData;
   secondaryTopPanel: WpTop10PanelData | null;
   siteTopPanel?: WpTop10PanelData;
   employeeTopPanel?: WpTop10PanelData | null;
   daily: WpDailyRow[];
+  siteDaily?: WpDailyRow[];
+  employeeDaily?: WpDailyRow[];
   employeeRanking: {
     days: number;
     selectedEmployee: string;
     staffTopPeriod: string;
+    siteRow?: WpEmployeeRankRow;
     rows: WpEmployeeRankRow[];
     detail: WpEmployeeDetail | null;
   };
@@ -151,130 +158,125 @@ function decodeHtmlEntities(str: string): string {
     .replace(/&#8217;/g, '’')
     .replace(/&#8220;/g, '“')
     .replace(/&#8221;/g, '”')
-    .replace(/&#8230;/g, '…')
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    .replace(/&nbsp;/g, ' ')
+    .trim();
 }
 
 function stripTags(html: string): string {
-  return decodeHtmlEntities(html.replace(/<[^>]*>/g, '').trim());
+  if (!html) return '';
+  return decodeHtmlEntities(html.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '));
 }
 
 function parseNumber(raw: string): number {
   if (!raw) return 0;
-  const cleaned = raw.replace(/[^\d-]/g, '');
-  const num = parseInt(cleaned, 10);
-  return Number.isNaN(num) ? 0 : num;
+  const cleaned = raw.replace(/[^\d.-]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function extractUrlFromCell(cellHtml: string): string {
-  if (!cellHtml) return '';
-  const dataCopyMatch = cellHtml.match(/data-copy-url="([^"]+)"/i);
-  if (dataCopyMatch && dataCopyMatch[1]) {
-    return decodeHtmlEntities(dataCopyMatch[1].trim());
+function extractSetCookies(res: Response): string[] {
+  const anyHeaders = res.headers as any;
+  if (typeof anyHeaders.getSetCookie === 'function') {
+    return anyHeaders.getSetCookie();
   }
-  const inputValMatch = cellHtml.match(/<input[^>]*value="([^"]+)"/i);
-  if (inputValMatch && inputValMatch[1]) {
-    return decodeHtmlEntities(inputValMatch[1].trim());
-  }
-  const hrefMatch = cellHtml.match(/<a[^>]*href="([^"]+)"/i);
-  if (hrefMatch && hrefMatch[1]) {
-    return decodeHtmlEntities(hrefMatch[1].trim());
-  }
-  return '';
+  const raw = res.headers.get('set-cookie');
+  if (!raw) return [];
+  return raw.split(/,(?=\s*[a-zA-Z0-9_-]+=)/);
 }
 
 async function loginToWordPress(force = false): Promise<WpCookieSession> {
   const now = Date.now();
-  if (!force && cachedSession && cachedSession.expiresAt > now && cachedSession.cookieHeader) {
+  if (!force && cachedSession && cachedSession.expiresAt > now) {
     return cachedSession;
   }
 
-  const loginUrl = `${DEFAULT_WP_SITE.replace(/\/$/, '')}/wp-login.php`;
+  const siteUrl = DEFAULT_WP_SITE.replace(/\/$/, '');
+  const loginUrl = `${siteUrl}/wp-login.php`;
+
   const body = new URLSearchParams({
     log: DEFAULT_WP_USER,
     pwd: DEFAULT_WP_PASS,
     'wp-submit': 'Log In',
-    redirect_to: `${DEFAULT_WP_SITE.replace(/\/$/, '')}/wp-admin/`,
+    redirect_to: `${siteUrl}/wp-admin/`,
     testcookie: '1',
   });
 
-  const res = await fetch(loginUrl, {
+  const loginRes = await fetch(loginUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       Cookie: 'wordpress_test_cookie=WP%20Cookie%20check',
       'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     },
     body: body.toString(),
     redirect: 'manual',
   });
 
-  const rawCookies: string[] =
-    typeof (res.headers as any).getSetCookie === 'function'
-      ? (res.headers as any).getSetCookie()
-      : res.headers.get('set-cookie')
-      ? [res.headers.get('set-cookie') as string]
-      : [];
-
-  const cookieParts = rawCookies
+  const cookies = extractSetCookies(loginRes)
     .map((c) => c.split(';')[0].trim())
-    .filter((c) => c && !c.endsWith('='));
+    .filter(Boolean);
 
-  const hasLoggedInCookie = cookieParts.some((c) => c.startsWith('wordpress_logged_in_'));
-  if (!hasLoggedInCookie && cookieParts.length === 0) {
-    throw new Error('Không thể đăng nhập vào WordPress Admin (celeb24h.com). Vui lòng kiểm tra thông tin tài khoản.');
+  if (cookies.length === 0 || !cookies.some((c) => c.startsWith('wordpress_logged_in_'))) {
+    throw new Error('Không thể đăng nhập vào WordPress Admin celeb24h.com. Vui lòng kiểm tra tài khoản.');
   }
 
-  const cookieHeader = ['wordpress_test_cookie=WP%20Cookie%20check', ...cookieParts].join('; ');
-
+  const cookieHeader = cookies.join('; ');
   cachedSession = {
     cookieHeader,
-    nonce: cachedSession?.nonce || '',
-    expiresAt: now + 35 * 60 * 1000,
+    nonce: '',
+    expiresAt: now + 25 * 60 * 1000,
   };
 
   return cachedSession;
 }
 
-async function fetchWpAdminHtml(url: string): Promise<string> {
-  let session = await loginToWordPress(false);
-
-  let res = await fetch(url, {
+async function fetchWpAdminHtml(url: string, retry = true): Promise<string> {
+  const session = await loginToWordPress(false);
+  const res = await fetch(url, {
+    method: 'GET',
     headers: {
       Cookie: session.cookieHeader,
       'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     },
-    redirect: 'manual',
+    redirect: 'follow',
   });
 
-  if (res.status === 301 || res.status === 302) {
-    session = await loginToWordPress(true);
-    res = await fetch(url, {
-      headers: {
-        Cookie: session.cookieHeader,
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      },
-    });
-  }
-
   const html = await res.text();
-  if (html.includes('id="loginform"') && !html.includes('tkw-modern') && !html.includes('tkw-stats')) {
-    session = await loginToWordPress(true);
+
+  if (
+    retry &&
+    (res.url.includes('wp-login.php') ||
+      html.includes('id="loginform"') ||
+      (!html.includes('tkw-modern') && !html.includes('tkw-employees') && !html.includes('Bảng xếp hạng nhân viên')))
+  ) {
+    const freshSession = await loginToWordPress(true);
     const retryRes = await fetch(url, {
+      method: 'GET',
       headers: {
-        Cookie: session.cookieHeader,
+        Cookie: freshSession.cookieHeader,
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       },
+      redirect: 'follow',
     });
     return await retryRes.text();
   }
 
   return html;
+}
+
+function extractUrlFromCell(cellHtml: string): string {
+  if (!cellHtml) return '';
+  const dataCopyMatch = cellHtml.match(/data-copy-url="([^"]+)"/);
+  if (dataCopyMatch) return decodeHtmlEntities(dataCopyMatch[1]);
+  const inputValMatch = cellHtml.match(/value="([^"]+)"/);
+  if (inputValMatch) return decodeHtmlEntities(inputValMatch[1]);
+  const hrefMatch = cellHtml.match(/href="([^"]+)"/);
+  if (hrefMatch) return decodeHtmlEntities(hrefMatch[1]);
+  return '';
 }
 
 function parseTop10PanelBlock(panelHtml: string): WpTop10PanelData {
@@ -283,7 +285,7 @@ function parseTop10PanelBlock(panelHtml: string): WpTop10PanelData {
   const mutedMatch = panelHtml.match(/<p class="tkw-muted">([\s\S]*?)<\/p>/);
 
   const heading = h3Match ? stripTags(h3Match[1]) : 'Top 10 bài viết / trang';
-  const subtitle = subMatch ? stripTags(subMatch[1]) : 'Xếp theo lượt xem';
+  const subtitle = subMatch ? stripTags(subMatch[1]) : '';
   const mutedText = mutedMatch ? stripTags(mutedMatch[1]) : '';
 
   const rows: WpTopPostRow[] = [];
@@ -292,16 +294,17 @@ function parseTop10PanelBlock(panelHtml: string): WpTop10PanelData {
     const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
     let trMatch: RegExpExecArray | null;
     while ((trMatch = trRegex.exec(tbodyMatch[1])) !== null) {
+      const rowHtml = trMatch[1];
       const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/g;
       const rawCells: string[] = [];
       let tdMatch: RegExpExecArray | null;
-      while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) {
+      while ((tdMatch = tdRegex.exec(rowHtml)) !== null) {
         rawCells.push(tdMatch[1]);
       }
 
       if (rawCells.length >= 3) {
         const title = stripTags(rawCells[0]);
-        const url = extractUrlFromCell(rawCells[1]) || extractUrlFromCell(rawCells[0]);
+        const url = extractUrlFromCell(rawCells[1]);
         const views = parseNumber(stripTags(rawCells[2]));
         if (title && !title.toLowerCase().includes('chưa có dữ liệu')) {
           rows.push({ title, url, views });
@@ -321,7 +324,6 @@ function parseTop10PanelBlock(panelHtml: string): WpTop10PanelData {
 }
 
 export function parseTkwStatsHtml(html: string) {
-  // 1. Extract window.TKWDash JSON
   let realtime: WpRealtimeData = {
     online: 0,
     today_views: 0,
@@ -333,10 +335,11 @@ export function parseTkwStatsHtml(html: string) {
     scope: 'site',
   };
 
-  const tkwDashMatch = html.match(/window\.TKWDash\s*=\s*(\{[\s\S]*?\});/);
-  if (tkwDashMatch) {
+  // 1. Extract embedded TKWLive.initial JSON
+  const tkwLiveMatch = html.match(/var\s+TKWLive\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+  if (tkwLiveMatch) {
     try {
-      const parsed = JSON.parse(tkwDashMatch[1]);
+      const parsed = JSON.parse(tkwLiveMatch[1]);
       if (parsed.nonce && cachedSession) {
         cachedSession.nonce = parsed.nonce;
       }
@@ -348,29 +351,54 @@ export function parseTkwStatsHtml(html: string) {
           minutes: Array.isArray(parsed.initial.minutes) ? parsed.initial.minutes : [],
           pages: Array.isArray(parsed.initial.pages)
             ? parsed.initial.pages.map((p: any) => ({
-                title: decodeHtmlEntities(String(p.title || '')),
-                url: decodeHtmlEntities(String(p.url || '')),
+                title: String(p.title || '(Không tiêu đề)'),
+                url: String(p.url || ''),
                 count: Number(p.count || 0),
               }))
             : [],
           updated: String(parsed.initial.updated || ''),
-          code: String(parsed.code || ''),
-          scope: String(parsed.scope || 'site'),
+          code: String(parsed.initial.code || parsed.liveEmployee || ''),
+          scope: String(parsed.initial.scope || parsed.scope || 'site'),
         };
       }
-    } catch (e) {
-      console.warn('[wpStatsService] Failed to parse window.TKWDash JSON:', e);
+    } catch {
+      // Fallback to DOM regex below
     }
   }
 
-  // 2. Extract employee options from <select ... name="employee">
+  // Fallback for active pages if not in TKWLive.initial
+  if (realtime.pages.length === 0) {
+    const activeBodyMatch = html.match(/<tbody\s+data-active-pages>([\s\S]*?)<\/tbody>/);
+    if (activeBodyMatch) {
+      const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
+      let trMatch: RegExpExecArray | null;
+      while ((trMatch = trRegex.exec(activeBodyMatch[1])) !== null) {
+        const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/g;
+        const cells: string[] = [];
+        let tdMatch: RegExpExecArray | null;
+        while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) {
+          cells.push(tdMatch[1]);
+        }
+        if (cells.length >= 3) {
+          const title = stripTags(cells[0]);
+          const url = extractUrlFromCell(cells[1]);
+          const count = parseNumber(stripTags(cells[2]));
+          if (title && !title.toLowerCase().includes('chưa có khách')) {
+            realtime.pages.push({ title, url, count });
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Extract employee dropdown options
   const employeeOptions: WpEmployeeOption[] = [];
-  const selectMatch = html.match(/<select[^>]*name="employee"[^>]*>([\s\S]*?)<\/select>/);
-  if (selectMatch) {
+  const empSelectMatch = html.match(/<select[^>]*name="employee"[^>]*>([\s\S]*?)<\/select>/);
+  if (empSelectMatch) {
     const optRegex = /<option\s+value="([^"]*)"[^>]*>([\s\S]*?)<\/option>/g;
     let m: RegExpExecArray | null;
-    while ((m = optRegex.exec(selectMatch[1])) !== null) {
-      const code = stripTags(m[1]);
+    while ((m = optRegex.exec(empSelectMatch[1])) !== null) {
+      const code = decodeHtmlEntities(m[1]);
       const label = stripTags(m[2]);
       if (code) {
         employeeOptions.push({ code, label });
@@ -380,14 +408,17 @@ export function parseTkwStatsHtml(html: string) {
   const finalEmployeeOptions =
     employeeOptions.length > 0 ? employeeOptions : FALLBACK_EMPLOYEE_OPTIONS;
 
-  // 3. Extract date inputs & timezone
-  const fromMatch = html.match(/<input[^>]*name="from"[^>]*value="([^"]*)"/);
-  const toMatch = html.match(/<input[^>]*name="to"[^>]*value="([^"]*)"/);
-  const topFromMatch = html.match(/<input[^>]*name="top_from"[^>]*value="([^"]*)"/);
-  const topToMatch = html.match(/<input[^>]*name="top_to"[^>]*value="([^"]*)"/);
-  const tzMatch = html.match(/Múi giờ\s+([^\.\s<]+)/);
+  // 3. Extract date range & timezone
+  const mutedMatch = html.match(
+    /Khoảng:\s*(\d{4}-\d{2}-\d{2})\s*[–-]\s*(\d{4}-\d{2}-\d{2})\s*·\s*Múi giờ\s*([+\-\d:]+)/
+  );
+  const fromMatch = html.match(/name="from"\s+value="([^"]*)"/);
+  const toMatch = html.match(/name="to"\s+value="([^"]*)"/);
+  const topFromMatch = html.match(/name="top_from"\s+value="([^"]*)"/);
+  const topToMatch = html.match(/name="top_to"\s+value="([^"]*)"/);
+  const tzMatch = mutedMatch ? [mutedMatch[0], mutedMatch[3]] : null;
 
-  // 4. Extract Summary (.tkw-summary-card in v3.2+ or fallback table)
+  // 4. Extract Summary stats (.tkw-summary-grid / .tkw-summary-card in v3.4)
   const summary: WpSummaryStats = {
     views: 0,
     visitors: 0,
@@ -674,25 +705,35 @@ export async function fetchWpStatsDashboard(
 
   const topRange = params.topRange || '7';
   const empDays = Number(params.empDays) === 30 ? 30 : 7;
-  const empDetailCode = params.empDetailCode || employee || (viewerCode && viewerCode !== 'A0006' ? viewerCode : 'M2001');
+  const targetEmpCode =
+    employee ||
+    params.empDetailCode ||
+    (viewerCode && viewerCode !== 'A0006' ? viewerCode : 'M2001');
+  const empDetailCode = params.empDetailCode || targetEmpCode;
   const staffTopPeriod = params.staffTopPeriod || '7';
 
-  // Build URL for tkw-stats
-  const statsQuery = new URLSearchParams({
+  // Build URL for site-wide tkw-stats
+  const siteStatsQuery = new URLSearchParams({
     page: 'tkw-stats',
     range,
-    scope: effectiveWpScope,
+    scope: 'site',
   });
-  if (employee) statsQuery.set('employee', employee);
-  if (liveEmployee) statsQuery.set('live_employee', liveEmployee);
   if (params.from && params.to) {
-    statsQuery.set('from', params.from);
-    statsQuery.set('to', params.to);
+    siteStatsQuery.set('from', params.from);
+    siteStatsQuery.set('to', params.to);
   }
-  if (topRange) statsQuery.set('top_range', topRange);
+  if (topRange) siteStatsQuery.set('top_range', topRange);
   if (topRange === 'custom' && params.topFrom && params.topTo) {
-    statsQuery.set('top_from', params.topFrom);
-    statsQuery.set('top_to', params.topTo);
+    siteStatsQuery.set('top_from', params.topFrom);
+    siteStatsQuery.set('top_to', params.topTo);
+  }
+
+  // Build URL for employee-scoped tkw-stats
+  const empStatsQuery = new URLSearchParams(siteStatsQuery);
+  if (targetEmpCode) {
+    empStatsQuery.set('scope', 'employee');
+    empStatsQuery.set('employee', targetEmpCode);
+    empStatsQuery.set('live_employee', targetEmpCode);
   }
 
   // Build URL for tkw-employees
@@ -705,87 +746,118 @@ export async function fetchWpStatsDashboard(
     empQuery.set('employee', empDetailCode);
   }
 
-  // Determine which employee code to use for the secondary comparison Top 10 when viewing site-wide
-  const secondaryComparisonCode =
-    effectiveWpScope === 'site'
-      ? (viewerCode && viewerCode !== 'A0006'
-          ? viewerCode
-          : employee || (empDetailCode && empDetailCode !== 'A0006' ? empDetailCode : 'M2001'))
-      : '';
-
-  const viewerStatsQuery = new URLSearchParams(statsQuery);
-  if (secondaryComparisonCode) {
-    viewerStatsQuery.set('scope', 'employee');
-    viewerStatsQuery.set('employee', secondaryComparisonCode);
-  }
-
-  const [statsHtml, empHtml, viewerStatsHtml] = await Promise.all([
-    fetchWpAdminHtml(`${baseUrl}?${statsQuery.toString()}`),
-    fetchWpAdminHtml(`${baseUrl}?${empQuery.toString()}`),
-    secondaryComparisonCode
-      ? fetchWpAdminHtml(`${baseUrl}?${viewerStatsQuery.toString()}`)
+  // Fetch site-wide stats, employee stats, and employee ranking/detail in parallel
+  const [siteStatsHtml, empStatsHtml, empHtml] = await Promise.all([
+    fetchWpAdminHtml(`${baseUrl}?${siteStatsQuery.toString()}`),
+    targetEmpCode
+      ? fetchWpAdminHtml(`${baseUrl}?${empStatsQuery.toString()}`)
       : Promise.resolve(''),
+    fetchWpAdminHtml(`${baseUrl}?${empQuery.toString()}`),
   ]);
 
-  const parsedStats = parseTkwStatsHtml(statsHtml);
+  const parsedSite = parseTkwStatsHtml(siteStatsHtml);
+  const parsedEmpStats = empStatsHtml ? parseTkwStatsHtml(empStatsHtml) : null;
   const parsedEmp = parseTkwEmployeesHtml(empHtml, empDetailCode, staffTopPeriod);
 
-  let primaryTopPanel = parsedStats.primaryTopPanel;
-  let secondaryTopPanel = parsedStats.secondaryTopPanel;
+  const activeParsed =
+    effectiveWpScope === 'employee' && parsedEmpStats ? parsedEmpStats : parsedSite;
 
-  if (secondaryComparisonCode && viewerStatsHtml) {
-    const parsedViewer = parseTkwStatsHtml(viewerStatsHtml);
-    secondaryTopPanel = {
-      heading: `Top 10 bài viết / trang của nhân viên mã ${secondaryComparisonCode}`,
-      subtitle: `Cùng kỳ · ${parsedStats.topFrom || parsedStats.from} – ${
-        parsedStats.topTo || parsedStats.to
-      }`,
-      mutedText: `Chỉ các lượt truy cập gắn với mã ${secondaryComparisonCode}`,
-      rows: parsedViewer.primaryTopPanel.rows,
-    };
-  }
+  const siteTopPanel: WpTop10PanelData = {
+    heading: parsedSite.primaryTopPanel.heading || 'Top 10 bài viết / trang toàn website',
+    subtitle:
+      parsedSite.primaryTopPanel.subtitle ||
+      `Cùng kỳ · ${parsedSite.topFrom || parsedSite.from} – ${parsedSite.topTo || parsedSite.to}`,
+    mutedText:
+      parsedSite.primaryTopPanel.mutedText ||
+      'Tất cả lượt truy cập ở domain gốc và các subdomain',
+    rows: parsedSite.primaryTopPanel.rows,
+  };
 
-  // Always expose explicit siteTopPanel and employeeTopPanel so frontend can display both in any section
-  const siteTopPanel: WpTop10PanelData =
-    effectiveWpScope === 'site'
-      ? primaryTopPanel
-      : secondaryTopPanel || {
-          heading: 'Top 10 bài viết / trang toàn website',
-          subtitle: 'Xếp theo lượt xem',
-          mutedText: 'Tất cả lượt truy cập ở domain gốc và các subdomain',
-          rows: [],
-        };
+  const employeeTopPanel: WpTop10PanelData | null = parsedEmpStats
+    ? {
+        heading:
+          parsedEmpStats.primaryTopPanel.heading ||
+          `Top 10 bài viết / trang của nhân viên mã ${targetEmpCode}`,
+        subtitle:
+          parsedEmpStats.primaryTopPanel.subtitle ||
+          `Cùng kỳ · ${parsedEmpStats.topFrom || parsedEmpStats.from} – ${
+            parsedEmpStats.topTo || parsedEmpStats.to
+          }`,
+        mutedText:
+          parsedEmpStats.primaryTopPanel.mutedText ||
+          `Chỉ các lượt truy cập gắn với mã ${targetEmpCode}`,
+        rows: parsedEmpStats.primaryTopPanel.rows,
+      }
+    : null;
 
-  const employeeTopPanel: WpTop10PanelData | null =
-    effectiveWpScope === 'employee' ? primaryTopPanel : secondaryTopPanel;
+  const primaryTopPanel =
+    effectiveWpScope === 'employee' && employeeTopPanel ? employeeTopPanel : siteTopPanel;
+  const secondaryTopPanel =
+    effectiveWpScope === 'employee' ? siteTopPanel : employeeTopPanel;
+
+  // Build overall website row for Bảng xếp hạng nhân viên (so employee & admin can see Tổng thể của web + Mã nhân viên)
+  const sumRankViews = parsedEmp.rows.reduce((acc, r) => acc + (r.views || 0), 0);
+  const sumRankVisitors = parsedEmp.rows.reduce((acc, r) => acc + (r.visitors || 0), 0);
+  const sumRankNew = parsedEmp.rows.reduce((acc, r) => acc + (r.newVisitors || 0), 0);
+  const sumRankReturning = parsedEmp.rows.reduce((acc, r) => acc + (r.returningVisitors || 0), 0);
+  const sumRankOnline = parsedEmp.rows.reduce((acc, r) => acc + (r.online || 0), 0);
+
+  const useSiteSummaryForRank = String(empDays) === String(range) && !params.from;
+  const siteRow: WpEmployeeRankRow = {
+    code: 'Toàn website',
+    account: 'Tổng thể celeb24h.com (Gốc + Subdomain)',
+    views: useSiteSummaryForRank
+      ? Math.max(parsedSite.summary.views, sumRankViews)
+      : sumRankViews || parsedSite.summary.views,
+    visitors: useSiteSummaryForRank
+      ? Math.max(parsedSite.summary.visitors, sumRankVisitors)
+      : sumRankVisitors || parsedSite.summary.visitors,
+    newVisitors: useSiteSummaryForRank
+      ? Math.max(parsedSite.summary.newcomers, sumRankNew)
+      : sumRankNew || parsedSite.summary.newcomers,
+    returningVisitors: useSiteSummaryForRank
+      ? Math.max(parsedSite.summary.returning, sumRankReturning)
+      : sumRankReturning || parsedSite.summary.returning,
+    online: Math.max(parsedSite.realtime.online, sumRankOnline),
+  };
 
   return {
     ok: true,
     siteUrl: DEFAULT_WP_SITE,
     fetchedAt: new Date().toISOString(),
     range,
-    from: parsedStats.from,
-    to: parsedStats.to,
-    timezone: parsedStats.timezone,
+    from: activeParsed.from || parsedSite.from,
+    to: activeParsed.to || parsedSite.to,
+    timezone: activeParsed.timezone || parsedSite.timezone,
     scope: rawScope,
     employee,
     liveEmployee,
     topRange,
-    topFrom: parsedStats.topFrom,
-    topTo: parsedStats.topTo,
-    employeeOptions: parsedStats.employeeOptions,
-    realtime: parsedStats.realtime,
-    summary: parsedStats.summary,
+    topFrom: activeParsed.topFrom || parsedSite.topFrom,
+    topTo: activeParsed.topTo || parsedSite.topTo,
+    employeeOptions:
+      parsedSite.employeeOptions.length > 0
+        ? parsedSite.employeeOptions
+        : activeParsed.employeeOptions,
+    realtime: activeParsed.realtime,
+    siteRealtime: parsedSite.realtime,
+    employeeRealtime: parsedEmpStats ? parsedEmpStats.realtime : null,
+    summary: activeParsed.summary,
+    siteSummary: parsedSite.summary,
+    employeeSummary: parsedEmpStats ? parsedEmpStats.summary : null,
     topPosts: primaryTopPanel.rows,
     primaryTopPanel,
     secondaryTopPanel,
     siteTopPanel,
     employeeTopPanel,
-    daily: parsedStats.daily,
+    daily: activeParsed.daily,
+    siteDaily: parsedSite.daily,
+    employeeDaily: parsedEmpStats ? parsedEmpStats.daily : [],
     employeeRanking: {
       days: empDays,
       selectedEmployee: empDetailCode,
       staffTopPeriod,
+      siteRow,
       rows: parsedEmp.rows,
       detail: parsedEmp.detail,
     },
@@ -801,56 +873,47 @@ export async function fetchWpLivePanelOnly(
   const effectiveScope = scope || (liveEmployee ? 'employee' : 'site');
 
   if (session.nonce) {
-    try {
-      const body = new URLSearchParams({
-        action: 'tkw_live_panel',
-        nonce: session.nonce,
-        code: liveEmployee,
-        scope: effectiveScope,
-      });
-      const res = await fetch(ajaxUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          Cookie: session.cookieHeader,
-          'User-Agent':
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        },
-        body: body.toString(),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        if (json && json.success && json.data) {
-          return {
-            online: Number(json.data.online || 0),
-            today_views: Number(json.data.today_views || 0),
-            today_visitors: Number(json.data.today_visitors || 0),
-            minutes: Array.isArray(json.data.minutes) ? json.data.minutes : [],
-            pages: Array.isArray(json.data.pages)
-              ? json.data.pages.map((p: any) => ({
-                  title: decodeHtmlEntities(String(p.title || '')),
-                  url: decodeHtmlEntities(String(p.url || '')),
-                  count: Number(p.count || 0),
-                }))
-              : [],
-            updated: String(json.data.updated || ''),
-            code: liveEmployee,
-            scope: effectiveScope,
-          };
-        }
+    const body = new URLSearchParams({
+      action: 'tkw_live_panel',
+      nonce: session.nonce,
+      live_employee: liveEmployee,
+      scope: effectiveScope,
+    });
+    const res = await fetch(ajaxUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Cookie: session.cookieHeader,
+      },
+      body: body.toString(),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.success && json.data) {
+        return {
+          online: Number(json.data.online || 0),
+          today_views: Number(json.data.today_views || 0),
+          today_visitors: Number(json.data.today_visitors || 0),
+          minutes: Array.isArray(json.data.minutes) ? json.data.minutes : [],
+          pages: Array.isArray(json.data.pages) ? json.data.pages : [],
+          updated: String(json.data.updated || ''),
+          code: String(json.data.code || liveEmployee),
+          scope: String(json.data.scope || effectiveScope),
+        };
       }
-    } catch (e) {
-      console.warn('[wpStatsService] AJAX live panel fallback to full HTML:', e);
     }
   }
 
-  const baseUrl = `${DEFAULT_WP_SITE.replace(
-    /\/$/,
-    ''
-  )}/wp-admin/admin.php?page=tkw-stats&scope=${encodeURIComponent(
-    effectiveScope
-  )}&employee=${encodeURIComponent(liveEmployee)}`;
-  const html = await fetchWpAdminHtml(baseUrl);
-  const parsed = parseTkwStatsHtml(html);
-  return parsed.realtime;
+  const baseUrl = `${DEFAULT_WP_SITE.replace(/\/$/, '')}/wp-admin/admin.php`;
+  const q = new URLSearchParams({
+    page: 'tkw-stats',
+    range: '7',
+    scope: effectiveScope,
+  });
+  if (liveEmployee) {
+    q.set('employee', liveEmployee);
+    q.set('live_employee', liveEmployee);
+  }
+  const html = await fetchWpAdminHtml(`${baseUrl}?${q.toString()}`);
+  return parseTkwStatsHtml(html).realtime;
 }

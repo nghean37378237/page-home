@@ -30,122 +30,124 @@ function decodeHtmlEntities(str) {
     .replace(/&#8217;/g, '’')
     .replace(/&#8220;/g, '“')
     .replace(/&#8221;/g, '”')
-    .replace(/&#8230;/g, '…')
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+    .replace(/&nbsp;/g, ' ')
+    .trim();
 }
 
 function stripTags(html) {
-  return decodeHtmlEntities(String(html || '').replace(/<[^>]*>/g, '').trim());
+  if (!html) return '';
+  return decodeHtmlEntities(String(html).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' '));
 }
 
 function parseNumber(raw) {
   if (!raw) return 0;
-  const cleaned = String(raw).replace(/[^\d-]/g, '');
-  const num = parseInt(cleaned, 10);
-  return Number.isNaN(num) ? 0 : num;
+  const cleaned = String(raw).replace(/[^\d.-]/g, '');
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : 0;
 }
 
-function extractUrlFromCell(cellHtml) {
-  if (!cellHtml) return '';
-  const dataCopyMatch = String(cellHtml).match(/data-copy-url="([^"]+)"/i);
-  if (dataCopyMatch && dataCopyMatch[1]) {
-    return decodeHtmlEntities(dataCopyMatch[1].trim());
+function extractSetCookies(res) {
+  if (res.headers && typeof res.headers.getSetCookie === 'function') {
+    return res.headers.getSetCookie();
   }
-  const inputValMatch = String(cellHtml).match(/<input[^>]*value="([^"]+)"/i);
-  if (inputValMatch && inputValMatch[1]) {
-    return decodeHtmlEntities(inputValMatch[1].trim());
-  }
-  const hrefMatch = String(cellHtml).match(/<a[^>]*href="([^"]+)"/i);
-  if (hrefMatch && hrefMatch[1]) {
-    return decodeHtmlEntities(hrefMatch[1].trim());
-  }
-  return '';
+  const raw = res.headers ? res.headers.get('set-cookie') : '';
+  if (!raw) return [];
+  return raw.split(/,(?=\s*[a-zA-Z0-9_-]+=)/);
 }
 
 async function loginToWordPress(force = false) {
   const now = Date.now();
-  if (!force && cachedSession && cachedSession.expiresAt > now && cachedSession.cookieHeader) {
+  if (!force && cachedSession && cachedSession.expiresAt > now) {
     return cachedSession;
   }
 
-  const loginUrl = `${DEFAULT_WP_SITE.replace(/\/$/, '')}/wp-login.php`;
+  const siteUrl = DEFAULT_WP_SITE.replace(/\/$/, '');
+  const loginUrl = `${siteUrl}/wp-login.php`;
+
   const body = new URLSearchParams({
     log: DEFAULT_WP_USER,
     pwd: DEFAULT_WP_PASS,
     'wp-submit': 'Log In',
-    redirect_to: `${DEFAULT_WP_SITE.replace(/\/$/, '')}/wp-admin/`,
+    redirect_to: `${siteUrl}/wp-admin/`,
     testcookie: '1',
   });
 
-  const res = await fetch(loginUrl, {
+  const loginRes = await fetch(loginUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       Cookie: 'wordpress_test_cookie=WP%20Cookie%20check',
       'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
     },
     body: body.toString(),
     redirect: 'manual',
   });
 
-  const rawCookies =
-    typeof res.headers.getSetCookie === 'function'
-      ? res.headers.getSetCookie()
-      : res.headers.get('set-cookie')
-      ? [res.headers.get('set-cookie')]
-      : [];
-
-  const cookieParts = rawCookies
+  const cookies = extractSetCookies(loginRes)
     .map((c) => c.split(';')[0].trim())
-    .filter((c) => c && !c.endsWith('='));
+    .filter(Boolean);
 
-  const cookieHeader = ['wordpress_test_cookie=WP%20Cookie%20check', ...cookieParts].join('; ');
+  if (cookies.length === 0 || !cookies.some((c) => c.startsWith('wordpress_logged_in_'))) {
+    throw new Error('Không thể đăng nhập vào WordPress Admin celeb24h.com. Vui lòng kiểm tra tài khoản.');
+  }
+
+  const cookieHeader = cookies.join('; ');
   cachedSession = {
     cookieHeader,
-    nonce: cachedSession ? cachedSession.nonce : '',
-    expiresAt: now + 35 * 60 * 1000,
+    nonce: '',
+    expiresAt: now + 25 * 60 * 1000,
   };
+
   return cachedSession;
 }
 
-async function fetchWpAdminHtml(url) {
-  let session = await loginToWordPress(false);
-  let res = await fetch(url, {
+async function fetchWpAdminHtml(url, retry = true) {
+  const session = await loginToWordPress(false);
+  const res = await fetch(url, {
+    method: 'GET',
     headers: {
       Cookie: session.cookieHeader,
       'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     },
-    redirect: 'manual',
+    redirect: 'follow',
   });
 
-  if (res.status === 301 || res.status === 302) {
-    session = await loginToWordPress(true);
-    res = await fetch(url, {
-      headers: {
-        Cookie: session.cookieHeader,
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-      },
-    });
-  }
-
   const html = await res.text();
-  if (html.includes('id="loginform"') && !html.includes('tkw-modern') && !html.includes('tkw-stats')) {
-    session = await loginToWordPress(true);
+
+  if (
+    retry &&
+    (res.url.includes('wp-login.php') ||
+      html.includes('id="loginform"') ||
+      (!html.includes('tkw-modern') && !html.includes('tkw-employees') && !html.includes('Bảng xếp hạng nhân viên')))
+  ) {
+    const freshSession = await loginToWordPress(true);
     const retryRes = await fetch(url, {
+      method: 'GET',
       headers: {
-        Cookie: session.cookieHeader,
+        Cookie: freshSession.cookieHeader,
         'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
       },
+      redirect: 'follow',
     });
     return await retryRes.text();
   }
 
   return html;
+}
+
+function extractUrlFromCell(cellHtml) {
+  if (!cellHtml) return '';
+  const dataCopyMatch = String(cellHtml).match(/data-copy-url="([^"]+)"/);
+  if (dataCopyMatch) return decodeHtmlEntities(dataCopyMatch[1]);
+  const inputValMatch = String(cellHtml).match(/value="([^"]+)"/);
+  if (inputValMatch) return decodeHtmlEntities(inputValMatch[1]);
+  const hrefMatch = String(cellHtml).match(/href="([^"]+)"/);
+  if (hrefMatch) return decodeHtmlEntities(hrefMatch[1]);
+  return '';
 }
 
 function parseTop10PanelBlock(panelHtml) {
@@ -154,7 +156,7 @@ function parseTop10PanelBlock(panelHtml) {
   const mutedMatch = panelHtml.match(/<p class="tkw-muted">([\s\S]*?)<\/p>/);
 
   const heading = h3Match ? stripTags(h3Match[1]) : 'Top 10 bài viết / trang';
-  const subtitle = subMatch ? stripTags(subMatch[1]) : 'Xếp theo lượt xem';
+  const subtitle = subMatch ? stripTags(subMatch[1]) : '';
   const mutedText = mutedMatch ? stripTags(mutedMatch[1]) : '';
 
   const rows = [];
@@ -163,16 +165,17 @@ function parseTop10PanelBlock(panelHtml) {
     const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
     let trMatch;
     while ((trMatch = trRegex.exec(tbodyMatch[1])) !== null) {
+      const rowHtml = trMatch[1];
       const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/g;
       const rawCells = [];
       let tdMatch;
-      while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) {
+      while ((tdMatch = tdRegex.exec(rowHtml)) !== null) {
         rawCells.push(tdMatch[1]);
       }
 
       if (rawCells.length >= 3) {
         const title = stripTags(rawCells[0]);
-        const url = extractUrlFromCell(rawCells[1]) || extractUrlFromCell(rawCells[0]);
+        const url = extractUrlFromCell(rawCells[1]);
         const views = parseNumber(stripTags(rawCells[2]));
         if (title && !title.toLowerCase().includes('chưa có dữ liệu')) {
           rows.push({ title, url, views });
@@ -203,10 +206,11 @@ function parseTkwStatsHtml(html) {
     scope: 'site',
   };
 
-  const tkwDashMatch = html.match(/window\.TKWDash\s*=\s*(\{[\s\S]*?\});/);
-  if (tkwDashMatch) {
+  // 1. Extract embedded TKWLive.initial JSON
+  const tkwLiveMatch = html.match(/var\s+TKWLive\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+  if (tkwLiveMatch) {
     try {
-      const parsed = JSON.parse(tkwDashMatch[1]);
+      const parsed = JSON.parse(tkwLiveMatch[1]);
       if (parsed.nonce && cachedSession) {
         cachedSession.nonce = parsed.nonce;
       }
@@ -218,40 +222,80 @@ function parseTkwStatsHtml(html) {
           minutes: Array.isArray(parsed.initial.minutes) ? parsed.initial.minutes : [],
           pages: Array.isArray(parsed.initial.pages)
             ? parsed.initial.pages.map((p) => ({
-                title: decodeHtmlEntities(String(p.title || '')),
-                url: decodeHtmlEntities(String(p.url || '')),
+                title: String(p.title || '(Không tiêu đề)'),
+                url: String(p.url || ''),
                 count: Number(p.count || 0),
               }))
             : [],
           updated: String(parsed.initial.updated || ''),
-          code: String(parsed.code || ''),
-          scope: String(parsed.scope || 'site'),
+          code: String(parsed.initial.code || parsed.liveEmployee || ''),
+          scope: String(parsed.initial.scope || parsed.scope || 'site'),
         };
       }
-    } catch {}
+    } catch {
+      // Fallback below
+    }
   }
 
+  if (realtime.pages.length === 0) {
+    const activeBodyMatch = html.match(/<tbody\s+data-active-pages>([\s\S]*?)<\/tbody>/);
+    if (activeBodyMatch) {
+      const trRegex = /<tr[^>]*>([\s\S]*?)<\/tr>/g;
+      let trMatch;
+      while ((trMatch = trRegex.exec(activeBodyMatch[1])) !== null) {
+        const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/g;
+        const cells = [];
+        let tdMatch;
+        while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) {
+          cells.push(tdMatch[1]);
+        }
+        if (cells.length >= 3) {
+          const title = stripTags(cells[0]);
+          const url = extractUrlFromCell(cells[1]);
+          const count = parseNumber(stripTags(cells[2]));
+          if (title && !title.toLowerCase().includes('chưa có khách')) {
+            realtime.pages.push({ title, url, count });
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Extract employee dropdown options
   const employeeOptions = [];
-  const selectMatch = html.match(/<select[^>]*name="employee"[^>]*>([\s\S]*?)<\/select>/);
-  if (selectMatch) {
+  const empSelectMatch = html.match(/<select[^>]*name="employee"[^>]*>([\s\S]*?)<\/select>/);
+  if (empSelectMatch) {
     const optRegex = /<option\s+value="([^"]*)"[^>]*>([\s\S]*?)<\/option>/g;
     let m;
-    while ((m = optRegex.exec(selectMatch[1])) !== null) {
-      const code = stripTags(m[1]);
+    while ((m = optRegex.exec(empSelectMatch[1])) !== null) {
+      const code = decodeHtmlEntities(m[1]);
       const label = stripTags(m[2]);
-      if (code) employeeOptions.push({ code, label });
+      if (code) {
+        employeeOptions.push({ code, label });
+      }
     }
   }
   const finalEmployeeOptions =
     employeeOptions.length > 0 ? employeeOptions : FALLBACK_EMPLOYEE_OPTIONS;
 
-  const fromMatch = html.match(/<input[^>]*name="from"[^>]*value="([^"]*)"/);
-  const toMatch = html.match(/<input[^>]*name="to"[^>]*value="([^"]*)"/);
-  const topFromMatch = html.match(/<input[^>]*name="top_from"[^>]*value="([^"]*)"/);
-  const topToMatch = html.match(/<input[^>]*name="top_to"[^>]*value="([^"]*)"/);
-  const tzMatch = html.match(/Múi giờ\s+([^\.\s<]+)/);
+  // 3. Extract date range & timezone
+  const mutedMatch = html.match(
+    /Khoảng:\s*(\d{4}-\d{2}-\d{2})\s*[–-]\s*(\d{4}-\d{2}-\d{2})\s*·\s*Múi giờ\s*([+\-\d:]+)/
+  );
+  const fromMatch = html.match(/name="from"\s+value="([^"]*)"/);
+  const toMatch = html.match(/name="to"\s+value="([^"]*)"/);
+  const topFromMatch = html.match(/name="top_from"\s+value="([^"]*)"/);
+  const topToMatch = html.match(/name="top_to"\s+value="([^"]*)"/);
+  const tzMatch = mutedMatch ? [mutedMatch[0], mutedMatch[3]] : null;
 
-  const summary = { views: 0, visitors: 0, newcomers: 0, returning: 0 };
+  // 4. Extract Summary stats (.tkw-summary-grid / .tkw-summary-card in v3.4)
+  const summary = {
+    views: 0,
+    visitors: 0,
+    newcomers: 0,
+    returning: 0,
+  };
+
   const cardRegex =
     /<div class="tkw-summary-card">[\s\S]*?<span class="tkw-summary-label">([\s\S]*?)<\/span>\s*<strong>([\s\S]*?)<\/strong>\s*<\/div>/g;
   let cardMatch;
@@ -284,6 +328,7 @@ function parseTkwStatsHtml(html) {
     }
   }
 
+  // 5. Extract Primary Top 10 and Secondary Top 10 panels (.tkw-top10 & .tkw-top-secondary)
   let primaryTopPanel = {
     heading: 'Top 10 bài viết / trang',
     subtitle: 'Xếp theo lượt xem',
@@ -304,6 +349,7 @@ function parseTkwStatsHtml(html) {
     secondaryTopPanel = parseTop10PanelBlock(topPanels[1][1]);
   }
 
+  // 6. Extract Theo ngày table (.tkw-whitepanel.tkw-daily)
   const daily = [];
   const dailySectionMatch = html.match(
     /<div class="tkw-whitepanel[^"]*tkw-daily[^"]*">[\s\S]*?<h3>Theo ngày<\/h3>[\s\S]*?<tbody[^>]*>([\s\S]*?)<\/tbody>\s*<\/table>/
@@ -349,7 +395,9 @@ function parseTkwEmployeesHtml(html, selectedEmployee, staffTopPeriod = '7') {
       const tdRegex = /<td[^>]*>([\s\S]*?)<\/td>/g;
       const cols = [];
       let tdMatch;
-      while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) cols.push(stripTags(tdMatch[1]));
+      while ((tdMatch = tdRegex.exec(trMatch[1])) !== null) {
+        cols.push(stripTags(tdMatch[1]));
+      }
       if (cols.length >= 7) {
         rows.push({
           code: cols[0] || '(Không mã)',
@@ -369,19 +417,21 @@ function parseTkwEmployeesHtml(html, selectedEmployee, staffTopPeriod = '7') {
   if (detailHeaderMatch) {
     const code = stripTags(detailHeaderMatch[1]);
     const detailHtml = detailHeaderMatch[2];
-    const empDaily = [];
+
+    const daily = [];
     const dailyBoxMatch = detailHtml.match(/<h3>Theo ngày<\/h3><table[^>]*>([\s\S]*?)<\/table>/);
     if (dailyBoxMatch) {
       const trRegex = /<tr><td>([\s\S]*?)<\/td><td>([\s\S]*?)<\/td><td>([\s\S]*?)<\/td><\/tr>/g;
       let m;
       while ((m = trRegex.exec(dailyBoxMatch[1])) !== null) {
-        empDaily.push({
+        daily.push({
           day: stripTags(m[1]),
           views: parseNumber(stripTags(m[2])),
           visitors: parseNumber(stripTags(m[3])),
         });
       }
     }
+
     const parseTwoColBox = (heading) => {
       const list = [];
       const regex = new RegExp(`<h3>${heading}<\\/h3><table[^>]*>([\\s\\S]*?)<\\/table>`);
@@ -392,11 +442,18 @@ function parseTkwEmployeesHtml(html, selectedEmployee, staffTopPeriod = '7') {
         while ((m = trRegex.exec(match[1])) !== null) {
           const name = stripTags(m[1]);
           const count = parseNumber(stripTags(m[2]));
-          if (name && !name.toLowerCase().includes('chưa có dữ liệu')) list.push({ name, count });
+          if (name && !name.toLowerCase().includes('chưa có dữ liệu')) {
+            list.push({ name, count });
+          }
         }
       }
       return list;
     };
+
+    const sources = parseTwoColBox('Nguồn truy cập');
+    const devices = parseTwoColBox('Thiết bị');
+    const countries = parseTwoColBox('Quốc gia');
+    const regions = parseTwoColBox('Tỉnh/thành');
 
     const topPosts = [];
     let staffTopHeading = `Top 10 bài viết / trang của nhân viên mã ${code || selectedEmployee}`;
@@ -434,7 +491,9 @@ function parseTkwEmployeesHtml(html, selectedEmployee, staffTopPeriod = '7') {
         }
       }
     } else {
-      const topBoxMatch = detailHtml.match(/<h3>Top bài viết\/trang<\/h3><table[^>]*>([\s\S]*?)<\/table>/);
+      const topBoxMatch = detailHtml.match(
+        /<h3>Top bài viết\/trang<\/h3><table[^>]*>([\s\S]*?)<\/table>/
+      );
       if (topBoxMatch) {
         const trRegex = /<tr><td>([\s\S]*?)<\/td><td>([\s\S]*?)<\/td><\/tr>/g;
         let m;
@@ -450,11 +509,11 @@ function parseTkwEmployeesHtml(html, selectedEmployee, staffTopPeriod = '7') {
 
     detail = {
       code: code || selectedEmployee,
-      daily: empDaily,
-      sources: parseTwoColBox('Nguồn truy cập'),
-      devices: parseTwoColBox('Thiết bị'),
-      countries: parseTwoColBox('Quốc gia'),
-      regions: parseTwoColBox('Tỉnh/thành'),
+      daily,
+      sources,
+      devices,
+      countries,
+      regions,
       topPosts,
       staffTopHeading,
       staffTopDescription,
@@ -466,6 +525,14 @@ function parseTkwEmployeesHtml(html, selectedEmployee, staffTopPeriod = '7') {
 }
 
 export default async function handler(req, res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   try {
     const q = req.query || {};
     const mode = String(q.mode || 'dashboard');
@@ -474,26 +541,59 @@ export default async function handler(req, res) {
     if (mode === 'live') {
       const liveEmployee = String(q.live_employee || '');
       const scope = String(q.scope || (liveEmployee ? 'employee' : 'site'));
-      const html = await fetchWpAdminHtml(
-        `${baseUrl}?page=tkw-stats&scope=${encodeURIComponent(scope)}&employee=${encodeURIComponent(
-          liveEmployee
-        )}&live_employee=${encodeURIComponent(liveEmployee)}`
-      );
-      const parsed = parseTkwStatsHtml(html);
-      return res.status(200).json({ ok: true, realtime: parsed.realtime });
+      const session = await loginToWordPress(false);
+      const ajaxUrl = `${DEFAULT_WP_SITE.replace(/\/$/, '')}/wp-admin/admin-ajax.php`;
+
+      if (session.nonce) {
+        const body = new URLSearchParams({
+          action: 'tkw_live_panel',
+          nonce: session.nonce,
+          live_employee: liveEmployee,
+          scope,
+        });
+        const liveRes = await fetch(ajaxUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Cookie: session.cookieHeader,
+          },
+          body: body.toString(),
+        });
+        if (liveRes.ok) {
+          const json = await liveRes.json();
+          if (json && json.success && json.data) {
+            return res.status(200).json({
+              ok: true,
+              realtime: {
+                online: Number(json.data.online || 0),
+                today_views: Number(json.data.today_views || 0),
+                today_visitors: Number(json.data.today_visitors || 0),
+                minutes: Array.isArray(json.data.minutes) ? json.data.minutes : [],
+                pages: Array.isArray(json.data.pages) ? json.data.pages : [],
+                updated: String(json.data.updated || ''),
+                code: String(json.data.code || liveEmployee),
+                scope: String(json.data.scope || scope),
+              },
+            });
+          }
+        }
+      }
+
+      const params = new URLSearchParams({ page: 'tkw-stats', range: '7', scope });
+      if (liveEmployee) {
+        params.set('employee', liveEmployee);
+        params.set('live_employee', liveEmployee);
+      }
+      const html = await fetchWpAdminHtml(`${baseUrl}?${params.toString()}`);
+      return res.status(200).json({ ok: true, realtime: parseTkwStatsHtml(html).realtime });
     }
 
     const range = String(q.range || '7');
-    const rawScope =
-      q.scope === 'mine' || q.scope === 'employee' || q.scope === 'site'
-        ? q.scope
-        : q.employee
-        ? 'employee'
-        : 'site';
+    const rawScope = String(q.scope || (q.employee ? 'employee' : 'site'));
     const viewerCode = String(q.viewer_employee || '').trim();
     const employee =
       rawScope === 'mine'
-        ? viewerCode || String(q.employee || '') || 'M2001'
+        ? viewerCode || String(q.employee || 'M2001')
         : rawScope === 'employee'
         ? String(q.employee || viewerCode || '').trim()
         : '';
@@ -510,26 +610,33 @@ export default async function handler(req, res) {
 
     const topRange = String(q.top_range || '7');
     const empDays = Number(q.emp_days) === 30 ? 30 : 7;
-    const empDetailCode = String(
-      q.emp_detail || employee || (viewerCode && viewerCode !== 'A0006' ? viewerCode : 'M2001')
-    );
+    const targetEmpCode =
+      employee ||
+      String(q.emp_detail || '') ||
+      (viewerCode && viewerCode !== 'A0006' ? viewerCode : 'M2001');
+    const empDetailCode = String(q.emp_detail || targetEmpCode);
     const staffTopPeriod = String(q.staff_top_period || '7');
 
-    const statsQuery = new URLSearchParams({
+    const siteStatsQuery = new URLSearchParams({
       page: 'tkw-stats',
       range,
-      scope: effectiveWpScope,
+      scope: 'site',
     });
-    if (employee) statsQuery.set('employee', employee);
-    if (liveEmployee) statsQuery.set('live_employee', liveEmployee);
     if (q.from && q.to) {
-      statsQuery.set('from', String(q.from));
-      statsQuery.set('to', String(q.to));
+      siteStatsQuery.set('from', String(q.from));
+      siteStatsQuery.set('to', String(q.to));
     }
-    if (topRange) statsQuery.set('top_range', topRange);
+    if (topRange) siteStatsQuery.set('top_range', topRange);
     if (topRange === 'custom' && q.top_from && q.top_to) {
-      statsQuery.set('top_from', String(q.top_from));
-      statsQuery.set('top_to', String(q.top_to));
+      siteStatsQuery.set('top_from', String(q.top_from));
+      siteStatsQuery.set('top_to', String(q.top_to));
+    }
+
+    const empStatsQuery = new URLSearchParams(siteStatsQuery);
+    if (targetEmpCode) {
+      empStatsQuery.set('scope', 'employee');
+      empStatsQuery.set('employee', targetEmpCode);
+      empStatsQuery.set('live_employee', targetEmpCode);
     }
 
     const empQuery = new URLSearchParams({
@@ -541,93 +648,125 @@ export default async function handler(req, res) {
       empQuery.set('employee', empDetailCode);
     }
 
-    const secondaryComparisonCode =
-      effectiveWpScope === 'site'
-        ? viewerCode && viewerCode !== 'A0006'
-          ? viewerCode
-          : employee || (empDetailCode && empDetailCode !== 'A0006' ? empDetailCode : 'M2001')
-        : '';
-
-    const viewerStatsQuery = new URLSearchParams(statsQuery);
-    if (secondaryComparisonCode) {
-      viewerStatsQuery.set('scope', 'employee');
-      viewerStatsQuery.set('employee', secondaryComparisonCode);
-    }
-
-    const [statsHtml, empHtml, viewerStatsHtml] = await Promise.all([
-      fetchWpAdminHtml(`${baseUrl}?${statsQuery.toString()}`),
-      fetchWpAdminHtml(`${baseUrl}?${empQuery.toString()}`),
-      secondaryComparisonCode
-        ? fetchWpAdminHtml(`${baseUrl}?${viewerStatsQuery.toString()}`)
+    const [siteStatsHtml, empStatsHtml, empHtml] = await Promise.all([
+      fetchWpAdminHtml(`${baseUrl}?${siteStatsQuery.toString()}`),
+      targetEmpCode
+        ? fetchWpAdminHtml(`${baseUrl}?${empStatsQuery.toString()}`)
         : Promise.resolve(''),
+      fetchWpAdminHtml(`${baseUrl}?${empQuery.toString()}`),
     ]);
 
-    const parsedStats = parseTkwStatsHtml(statsHtml);
+    const parsedSite = parseTkwStatsHtml(siteStatsHtml);
+    const parsedEmpStats = empStatsHtml ? parseTkwStatsHtml(empStatsHtml) : null;
     const parsedEmp = parseTkwEmployeesHtml(empHtml, empDetailCode, staffTopPeriod);
 
-    let primaryTopPanel = parsedStats.primaryTopPanel;
-    let secondaryTopPanel = parsedStats.secondaryTopPanel;
+    const activeParsed =
+      effectiveWpScope === 'employee' && parsedEmpStats ? parsedEmpStats : parsedSite;
 
-    if (secondaryComparisonCode && viewerStatsHtml) {
-      const parsedViewer = parseTkwStatsHtml(viewerStatsHtml);
-      secondaryTopPanel = {
-        heading: `Top 10 bài viết / trang của nhân viên mã ${secondaryComparisonCode}`,
-        subtitle: `Cùng kỳ · ${parsedStats.topFrom || parsedStats.from} – ${
-          parsedStats.topTo || parsedStats.to
-        }`,
-        mutedText: `Chỉ các lượt truy cập gắn với mã ${secondaryComparisonCode}`,
-        rows: parsedViewer.primaryTopPanel.rows,
-      };
-    }
+    const siteTopPanel = {
+      heading: parsedSite.primaryTopPanel.heading || 'Top 10 bài viết / trang toàn website',
+      subtitle:
+        parsedSite.primaryTopPanel.subtitle ||
+        `Cùng kỳ · ${parsedSite.topFrom || parsedSite.from} – ${parsedSite.topTo || parsedSite.to}`,
+      mutedText:
+        parsedSite.primaryTopPanel.mutedText ||
+        'Tất cả lượt truy cập ở domain gốc và các subdomain',
+      rows: parsedSite.primaryTopPanel.rows,
+    };
 
-    const siteTopPanel =
-      effectiveWpScope === 'site'
-        ? primaryTopPanel
-        : secondaryTopPanel || {
-            heading: 'Top 10 bài viết / trang toàn website',
-            subtitle: 'Xếp theo lượt xem',
-            mutedText: 'Tất cả lượt truy cập ở domain gốc và các subdomain',
-            rows: [],
-          };
+    const employeeTopPanel = parsedEmpStats
+      ? {
+          heading:
+            parsedEmpStats.primaryTopPanel.heading ||
+            `Top 10 bài viết / trang của nhân viên mã ${targetEmpCode}`,
+          subtitle:
+            parsedEmpStats.primaryTopPanel.subtitle ||
+            `Cùng kỳ · ${parsedEmpStats.topFrom || parsedEmpStats.from} – ${
+              parsedEmpStats.topTo || parsedEmpStats.to
+            }`,
+          mutedText:
+            parsedEmpStats.primaryTopPanel.mutedText ||
+            `Chỉ các lượt truy cập gắn với mã ${targetEmpCode}`,
+          rows: parsedEmpStats.primaryTopPanel.rows,
+        }
+      : null;
 
-    const employeeTopPanel =
-      effectiveWpScope === 'employee' ? primaryTopPanel : secondaryTopPanel;
+    const primaryTopPanel =
+      effectiveWpScope === 'employee' && employeeTopPanel ? employeeTopPanel : siteTopPanel;
+    const secondaryTopPanel =
+      effectiveWpScope === 'employee' ? siteTopPanel : employeeTopPanel;
+
+    const sumRankViews = parsedEmp.rows.reduce((acc, r) => acc + (r.views || 0), 0);
+    const sumRankVisitors = parsedEmp.rows.reduce((acc, r) => acc + (r.visitors || 0), 0);
+    const sumRankNew = parsedEmp.rows.reduce((acc, r) => acc + (r.newVisitors || 0), 0);
+    const sumRankReturning = parsedEmp.rows.reduce((acc, r) => acc + (r.returningVisitors || 0), 0);
+    const sumRankOnline = parsedEmp.rows.reduce((acc, r) => acc + (r.online || 0), 0);
+
+    const useSiteSummaryForRank = String(empDays) === String(range) && !q.from;
+    const siteRow = {
+      code: 'Toàn website',
+      account: 'Tổng thể celeb24h.com (Gốc + Subdomain)',
+      views: useSiteSummaryForRank
+        ? Math.max(parsedSite.summary.views, sumRankViews)
+        : sumRankViews || parsedSite.summary.views,
+      visitors: useSiteSummaryForRank
+        ? Math.max(parsedSite.summary.visitors, sumRankVisitors)
+        : sumRankVisitors || parsedSite.summary.visitors,
+      newVisitors: useSiteSummaryForRank
+        ? Math.max(parsedSite.summary.newcomers, sumRankNew)
+        : sumRankNew || parsedSite.summary.newcomers,
+      returningVisitors: useSiteSummaryForRank
+        ? Math.max(parsedSite.summary.returning, sumRankReturning)
+        : sumRankReturning || parsedSite.summary.returning,
+      online: Math.max(parsedSite.realtime.online, sumRankOnline),
+    };
 
     return res.status(200).json({
       ok: true,
       siteUrl: DEFAULT_WP_SITE,
       fetchedAt: new Date().toISOString(),
       range,
-      from: parsedStats.from,
-      to: parsedStats.to,
-      timezone: parsedStats.timezone,
+      from: activeParsed.from || parsedSite.from,
+      to: activeParsed.to || parsedSite.to,
+      timezone: activeParsed.timezone || parsedSite.timezone,
       scope: rawScope,
       employee,
       liveEmployee,
       topRange,
-      topFrom: parsedStats.topFrom,
-      topTo: parsedStats.topTo,
-      employeeOptions: parsedStats.employeeOptions,
-      realtime: parsedStats.realtime,
-      summary: parsedStats.summary,
+      topFrom: activeParsed.topFrom || parsedSite.topFrom,
+      topTo: activeParsed.topTo || parsedSite.topTo,
+      employeeOptions:
+        parsedSite.employeeOptions.length > 0
+          ? parsedSite.employeeOptions
+          : activeParsed.employeeOptions,
+      realtime: activeParsed.realtime,
+      siteRealtime: parsedSite.realtime,
+      employeeRealtime: parsedEmpStats ? parsedEmpStats.realtime : null,
+      summary: activeParsed.summary,
+      siteSummary: parsedSite.summary,
+      employeeSummary: parsedEmpStats ? parsedEmpStats.summary : null,
       topPosts: primaryTopPanel.rows,
       primaryTopPanel,
       secondaryTopPanel,
       siteTopPanel,
       employeeTopPanel,
-      daily: parsedStats.daily,
+      daily: activeParsed.daily,
+      siteDaily: parsedSite.daily,
+      employeeDaily: parsedEmpStats ? parsedEmpStats.daily : [],
       employeeRanking: {
         days: empDays,
         selectedEmployee: empDetailCode,
         staffTopPeriod,
+        siteRow,
         rows: parsedEmp.rows,
         detail: parsedEmp.detail,
       },
     });
-  } catch (err) {
+  } catch (error) {
+    console.error('[/api/wp-stats] Error:', error);
     return res.status(500).json({
       ok: false,
-      error: err?.message || 'Lỗi kết nối WordPress celeb24h.com',
+      error: error?.message || 'Không thể lấy dữ liệu thống kê từ celeb24h.com',
     });
   }
 }

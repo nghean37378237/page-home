@@ -564,13 +564,23 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     setPermissionNotice(null);
     try {
       const cleanWpCode = selectedWpEmployeeCode.trim().toUpperCase();
+      const nextTabs: TabKey[] =
+        cleanWpCode && cleanWpCode !== 'NONE' && !selectedAllowedTabs.includes('view_stats')
+          ? [...selectedAllowedTabs, 'view_stats']
+          : selectedAllowedTabs;
+      const existingAllowedCodes = permissionModalAccount.wpAllowedEmployeeCodes || [];
+      const nextAllowedCodes =
+        cleanWpCode && cleanWpCode !== 'NONE' && existingAllowedCodes.length === 0
+          ? ['MINE_AND_SITE']
+          : existingAllowedCodes;
       if (onUpdateAccountInfo) {
         await onUpdateAccountInfo(permissionModalAccount.id, {
-          allowedTabs: selectedAllowedTabs,
+          allowedTabs: nextTabs,
           wpEmployeeCode: cleanWpCode || 'NONE',
+          ...(nextAllowedCodes.length > 0 ? { wpAllowedEmployeeCodes: nextAllowedCodes } : {}),
         });
       } else if (onUpdateAccountPermissions) {
-        await onUpdateAccountPermissions(permissionModalAccount.id, selectedAllowedTabs);
+        await onUpdateAccountPermissions(permissionModalAccount.id, nextTabs);
       }
       setPermissionNotice({
         success: true,
@@ -603,8 +613,21 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
         await onUpdateEmail(pinModalAccount.id, cleanEmail);
       }
       if (onUpdateAccountInfo) {
+        const currentTabs = resolveAccountAllowedTabs(pinModalAccount);
+        const nextTabs: TabKey[] =
+          cleanWpCode && cleanWpCode !== 'NONE' && !currentTabs.includes('view_stats')
+            ? [...currentTabs, 'view_stats']
+            : currentTabs;
+        const existingAllowedCodes = pinModalAccount.wpAllowedEmployeeCodes || [];
         await onUpdateAccountInfo(pinModalAccount.id, {
           wpEmployeeCode: cleanWpCode || 'NONE',
+          ...(cleanWpCode && cleanWpCode !== 'NONE'
+            ? {
+                allowedTabs: nextTabs,
+                wpAllowedEmployeeCodes:
+                  existingAllowedCodes.length > 0 ? existingAllowedCodes : ['MINE_AND_SITE'],
+              }
+            : {}),
         });
       }
       setPinModalAccount(null);
@@ -1980,8 +2003,23 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                         value={resolvedWpCode || 'NONE'}
                                         onChange={(e) => {
                                           const val = e.target.value;
+                                          const currentTabs = resolveAccountAllowedTabs(acc);
+                                          const nextTabs: TabKey[] =
+                                            val !== 'NONE' && !currentTabs.includes('view_stats')
+                                              ? [...currentTabs, 'view_stats']
+                                              : currentTabs;
+                                          const existingAllowedCodes = acc.wpAllowedEmployeeCodes || [];
                                           void onUpdateAccountInfo(acc.id, {
                                             wpEmployeeCode: val === 'NONE' ? 'NONE' : val,
+                                            ...(val !== 'NONE'
+                                              ? {
+                                                  allowedTabs: nextTabs,
+                                                  wpAllowedEmployeeCodes:
+                                                    existingAllowedCodes.length > 0
+                                                      ? existingAllowedCodes
+                                                      : ['MINE_AND_SITE'],
+                                                }
+                                              : {}),
                                           });
                                         }}
                                         className={`px-1.5 py-0.5 rounded text-[10px] font-bold border cursor-pointer focus:outline-hidden ${

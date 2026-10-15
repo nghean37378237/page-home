@@ -15,6 +15,7 @@ import {
   TAB_DEFINITIONS,
   ADMIN_WAITING_POOL,
   isAdminWaitingPool,
+  resolveAccountWpEmployeeCode,
 } from './types';
 import {
   testFirestoreConnection,
@@ -224,7 +225,15 @@ export default function App() {
     if (!filteredTabs.includes('image_studio')) {
       filteredTabs.push('image_studio');
     }
-    // Bảng 10: Thống Kê View (view_stats) chỉ hiển thị cho nhân viên nào được Admin tích chọn phân quyền trong allowedTabs
+    // Bảng 10: Thống Kê View (view_stats) hiển thị khi được tích chọn trong allowedTabs HOẶC khi Admin đã gán Mã NV Web
+    const hasAssignedWpCode = Boolean(
+      (currentAcc?.wpEmployeeCode && currentAcc.wpEmployeeCode !== 'NONE') ||
+        (currentUser.wpEmployeeCode && currentUser.wpEmployeeCode !== 'NONE') ||
+        (!Array.isArray(assigned) && resolveAccountWpEmployeeCode(currentAcc, currentUser.name))
+    );
+    if (hasAssignedWpCode && !filteredTabs.includes('view_stats')) {
+      filteredTabs.push('view_stats');
+    }
     return filteredTabs;
   }, [currentUser, accounts]);
 
@@ -591,6 +600,9 @@ export default function App() {
         role: 'staff',
         status: 'approved',
         isAuthenticated: true,
+        allowedTabs: matchedAccount?.allowedTabs,
+        wpEmployeeCode: matchedAccount?.wpEmployeeCode,
+        wpAllowedEmployeeCodes: matchedAccount?.wpAllowedEmployeeCodes,
       });
     });
     return list;

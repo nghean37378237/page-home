@@ -17,6 +17,7 @@ import type {
   WpStatsDashboardPayload,
   WpRealtimeMinute,
   WpTopPostRow,
+  WpEmployeeRankRow,
 } from '../server/wpStatsService';
 import {
   type AppUser,
@@ -72,7 +73,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
   // Chế độ phân quyền mã nhân viên cho tài khoản hiện tại:
   // - Admin hoặc wpAllowedEmployeeCodes có 'ALL': xem toàn bộ mã + bảng xếp hạng nhân viên
   // - 'MINE_ONLY': chỉ khóa cứng mã nhân viên của mình (không xem toàn web, không xem mã khác)
-  // - 'MINE_AND_SITE' (mặc định chuẩn như trang tkw-my-stats trên celeb24h.com): xem mã của mình + toàn website, ẩn mã người khác & ẩn bảng xếp hạng
+  // - 'MINE_AND_SITE' (mặc định chuẩn): xem mã của mình + tổng thể toàn website, ẩn mã người khác
   const staffPermissionMode = useMemo<'ALL' | 'MINE_ONLY' | 'MINE_AND_SITE'>(() => {
     if (isAdmin) return 'ALL';
     const codes = currentAccount?.wpAllowedEmployeeCodes || currentUser?.wpAllowedEmployeeCodes || [];
@@ -93,6 +94,9 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
   const [showPermissionPanel, setShowPermissionPanel] = useState<boolean>(false);
   const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
   const [customCodeInputs, setCustomCodeInputs] = useState<Record<string, string>>({});
+
+  // Cho phép Admin lọc Bảng xếp hạng: chỉ hiện Toàn web + Mã đang chọn, hoặc hiện tất cả mã
+  const [onlyShowSelectedInRankTable, setOnlyShowSelectedInRankTable] = useState<boolean>(false);
 
   // Trạng thái copy link
   const [copiedUrlKey, setCopiedUrlKey] = useState<string | null>(null);
@@ -116,6 +120,9 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
         : ['fanpage', 'fullvia', 'staff_info', 'image_studio'];
     if (!base.includes('staff_info')) base.push('staff_info');
     if (!base.includes('image_studio')) base.push('image_studio');
+    if (acc.wpEmployeeCode && acc.wpEmployeeCode !== 'NONE' && !base.includes('view_stats')) {
+      base.push('view_stats');
+    }
     return base;
   };
 
@@ -171,7 +178,6 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
         : [...currentTabs, 'view_stats'];
       await onUpdateAccountPermissions(acc.id, nextTabs);
 
-      // Nếu bật quyền xem và nhân viên chưa lưu wpEmployeeCode trên DB nhưng có mã gợi ý chuẩn thì lưu luôn
       if (!hasAccess && onUpdateAccountInfo && !acc.wpEmployeeCode) {
         const autoCode = resolveAccountWpEmployeeCode(acc);
         if (autoCode) {
@@ -191,9 +197,22 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
     setSavingStaffId(acc.id);
     try {
       const cleanCode = newCode.trim().toUpperCase() || 'NONE';
+      const currentTabs = getStaffTabs(acc);
+      const nextTabs: TabKey[] =
+        cleanCode !== 'NONE' && !currentTabs.includes('view_stats')
+          ? [...currentTabs, 'view_stats']
+          : currentTabs;
       await onUpdateAccountInfo(acc.id, {
         wpEmployeeCode: cleanCode,
-        wpAllowedEmployeeCodes: acc.wpAllowedEmployeeCodes || ['MINE_AND_SITE'],
+        ...(cleanCode !== 'NONE'
+          ? {
+              allowedTabs: nextTabs,
+              wpAllowedEmployeeCodes:
+                acc.wpAllowedEmployeeCodes && acc.wpAllowedEmployeeCodes.length > 0
+                  ? acc.wpAllowedEmployeeCodes
+                  : ['MINE_AND_SITE'],
+            }
+          : {}),
       });
     } finally {
       setSavingStaffId(null);
@@ -233,6 +252,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
           }
           await onUpdateAccountInfo(acc.id, {
             wpEmployeeCode: matchedCode,
+            allowedTabs: nextTabs,
             wpAllowedEmployeeCodes: acc.wpAllowedEmployeeCodes?.length
               ? acc.wpAllowedEmployeeCodes
               : ['MINE_AND_SITE'],
@@ -266,11 +286,8 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
   };
 
   // Chế độ hiển thị khu vực:
-  // - Admin (hoặc NV có quyền ALL): mặc định 'all' (Hiện cả Lưu lượng truy cập + Thống kê theo mã nhân viên)
-  // - Nhân viên thường (như tkw-my-stats trên web): chỉ hiển thị 'traffic' (Lưu lượng truy cập của mã nhân viên đó)
-  const [viewSection, setViewSection] = useState<'all' | 'traffic' | 'employees'>(
-    canSeeAllEmployeesRanking ? 'all' : 'traffic'
-  );
+  // Cho phép cả Admin VÀ Nhân viên xem cả 2 phần ('all': Lưu lượng truy cập + Bảng Thống kê theo mã nhân viên & Tổng thể web)
+  const [viewSection, setViewSection] = useState<'all' | 'traffic' | 'employees'>('all');
 
   // Filter states khớp 100% với tkw-stats / tkw-my-stats & tkw-employees v3.4 trên celeb24h.com
   const initialScope: 'site' | 'mine' | 'employee' = isAdmin
@@ -303,13 +320,16 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
   // Khi tài khoản hoặc quyền của người xem thay đổi, đảm bảo nhân viên bị khóa về đúng mã của mình
   useEffect(() => {
     if (!canSeeAllEmployeesRanking) {
-      setViewSection('traffic');
       if (staffPermissionMode === 'MINE_ONLY' && viewerEmployeeCode) {
         setScope('mine');
         setEmployee(viewerEmployeeCode);
-      } else if (viewerEmployeeCode && scope === 'employee' && employee !== viewerEmployeeCode) {
-        setScope('mine');
-        setEmployee(viewerEmployeeCode);
+        setEmpDetailCode(viewerEmployeeCode);
+      } else if (viewerEmployeeCode) {
+        if (scope === 'employee' && employee !== viewerEmployeeCode) {
+          setScope('mine');
+          setEmployee(viewerEmployeeCode);
+        }
+        setEmpDetailCode(viewerEmployeeCode);
       }
     }
   }, [canSeeAllEmployeesRanking, staffPermissionMode, viewerEmployeeCode, scope, employee]);
@@ -357,7 +377,9 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
       const tf = overrideParams?.topFrom ?? topCustomFrom;
       const tt = overrideParams?.topTo ?? topCustomTo;
       const ed = overrideParams?.empDays ?? empDays;
-      const edCode = overrideParams?.empDetailCode ?? empDetailCode;
+      const edCode = !canSeeAllEmployeesRanking
+        ? viewerEmployeeCode || overrideParams?.empDetailCode || empDetailCode
+        : overrideParams?.empDetailCode ?? empDetailCode;
       const stPeriod = overrideParams?.staffTopPeriod ?? staffTopPeriod;
 
       if (!overrideParams?.silent) {
@@ -498,55 +520,52 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
     const ch = height - pad.t - pad.b;
     ctx.clearRect(0, 0, width, height);
 
-    let mx = 1;
-    series.forEach((s) => {
-      mx = Math.max(mx, s.views || 0, s.visitors || 0);
-    });
-    mx = Math.ceil(mx / 5) * 5;
+    const max = Math.max(
+      1,
+      ...series.map((x) => Math.max(Number(x.views || 0), Number(x.visitors || 0)))
+    );
 
-    ctx.font = '11px Arial, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.strokeStyle = '#dbe4f1';
-    ctx.fillStyle = '#667d9c';
-
-    for (let j = 0; j <= 5; j++) {
-      const y = pad.t + ch - (j * ch) / 5;
+    ctx.strokeStyle = '#edf1f6';
+    ctx.fillStyle = '#8091a7';
+    ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    for (let i = 0; i <= 4; i++) {
+      const y = pad.t + ch * (1 - i / 4);
       ctx.beginPath();
       ctx.moveTo(pad.l, y);
       ctx.lineTo(width - pad.r, y);
       ctx.stroke();
-      ctx.fillText(String(Math.round((mx * j) / 5)), pad.l - 6, y + 3);
+      ctx.fillText(String(Math.round((max * i) / 4)), 4, y + 4);
     }
 
-    const step = cw / Math.max(series.length, 1);
-    const bar = Math.max(2, Math.min(9, step * 0.34));
+    const n = Math.max(1, series.length);
+    const groupW = cw / n;
+    const barW = Math.max(2, Math.min(8, groupW * 0.36));
 
-    series.forEach((s, i) => {
-      const x = pad.l + i * step + step * 0.1;
-      const v = (ch * (s.views || 0)) / mx;
-      const u = (ch * (s.visitors || 0)) / mx;
+    series.forEach((item, idx) => {
+      const baseX = pad.l + idx * groupW + (groupW - barW * 2 - 2) / 2;
+      const vh = (Number(item.views || 0) / max) * ch;
+      const uh = (Number(item.visitors || 0) / max) * ch;
 
       ctx.fillStyle = '#47ce89';
-      ctx.fillRect(x, pad.t + ch - v, bar, v);
+      ctx.fillRect(baseX, pad.t + ch - vh, barW, vh);
 
       ctx.fillStyle = '#55b9eb';
-      ctx.fillRect(x + bar + 1, pad.t + ch - u, bar, u);
+      ctx.fillRect(baseX + barW + 2, pad.t + ch - uh, barW, uh);
 
-      if (i % 5 === 0) {
-        ctx.fillStyle = '#657b97';
-        ctx.textAlign = 'center';
-        ctx.fillText(s.time, x + bar, pad.t + ch + 17);
+      if (idx % 5 === 0 || idx === n - 1) {
+        ctx.fillStyle = '#8091a7';
+        ctx.fillText(item.time || '', baseX - 6, height - 6);
       }
     });
   }, []);
 
   useEffect(() => {
-    const minutes = data?.realtime?.minutes || [];
-    drawChart(minutes);
-    const handleResize = () => drawChart(minutes);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [data?.realtime?.minutes, drawChart, viewSection]);
+    const series = data?.realtime?.series || [];
+    drawChart(series);
+    const onResize = () => drawChart(series);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [data?.realtime?.series, drawChart, viewSection]);
 
   const handleSelectRange = (newRange: string) => {
     setRange(newRange);
@@ -570,7 +589,8 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
       const myCode = viewerEmployeeCode || 'A0006';
       setScope('mine');
       setEmployee(myCode);
-      void fetchDashboard({ scope: 'mine', employee: myCode });
+      setEmpDetailCode(myCode);
+      void fetchDashboard({ scope: 'mine', employee: myCode, empDetailCode: myCode });
     }
   };
 
@@ -613,7 +633,18 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
   };
 
   const handleSelectEmpDetail = (code: string) => {
+    if (code === 'SITE') {
+      if (canSeeSiteWide) {
+        setScope('site');
+        setEmployee('');
+        void fetchDashboard({ scope: 'site', employee: '' });
+      }
+      return;
+    }
     const cleanCode = code === '(Không mã)' ? '' : code;
+    if (!canSeeAllEmployeesRanking && viewerEmployeeCode && cleanCode !== viewerEmployeeCode) {
+      return;
+    }
     setEmpDetailCode(cleanCode);
     if (cleanCode && canSeeAllEmployeesRanking) {
       setScope('employee');
@@ -658,9 +689,109 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
       ? viewerEmployeeCode || 'A0006'
       : scope === 'employee' && employee
       ? employee
+      : !isAdmin && viewerEmployeeCode
+      ? viewerEmployeeCode
       : '';
 
   const personalShareCode = activeDisplayCode || viewerEmployeeCode;
+
+  // Dòng Tổng thể toàn website trong Bảng xếp hạng / So sánh
+  const siteRankRow = useMemo<WpEmployeeRankRow | null>(() => {
+    if (data?.employeeRanking?.siteRow) return data.employeeRanking.siteRow;
+    if (data?.siteSummary) {
+      return {
+        code: 'SITE',
+        account: '🌐 Toàn website (Tổng thể web)',
+        views: data.siteSummary.views || 0,
+        visitors: data.siteSummary.visitors || 0,
+        newVisitors: data.siteSummary.newcomers || 0,
+        returningVisitors: data.siteSummary.returning || 0,
+        online: data.siteRealtime?.online ?? data.realtime?.online ?? 0,
+      };
+    }
+    return null;
+  }, [data?.employeeRanking?.siteRow, data?.siteSummary, data?.siteRealtime, data?.realtime]);
+
+  // Các dòng Mã nhân viên hiển thị trong bảng "Thống kê theo mã nhân viên"
+  // - Nếu là Nhân viên (hoặc khi Admin bật chế độ Chỉ hiện mã đang chọn): chỉ hiển thị đúng mã nhân viên đó cùng với dòng Toàn website!
+  // - Nếu là Admin: hiển thị đầy đủ các mã (hoặc mã đang chọn được ghim nổi bật ngay dưới dòng Toàn website)
+  const visibleEmployeeRankRows = useMemo<WpEmployeeRankRow[]>(() => {
+    const allRows = data?.employeeRanking?.rows || [];
+    const targetCode = activeDisplayCode || empDetailCode || viewerEmployeeCode;
+
+    if (!canSeeAllEmployeesRanking) {
+      if (!viewerEmployeeCode) return [];
+      const found = allRows.find(
+        (r) => r.code.trim().toUpperCase() === viewerEmployeeCode.trim().toUpperCase()
+      );
+      if (found) return [found];
+      return [
+        {
+          code: viewerEmployeeCode,
+          account: currentUser?.name || viewerEmployeeCode,
+          views: data?.empSummary?.views ?? data?.summary?.views ?? 0,
+          visitors: data?.empSummary?.visitors ?? data?.summary?.visitors ?? 0,
+          newVisitors: data?.empSummary?.newcomers ?? data?.summary?.newcomers ?? 0,
+          returningVisitors: data?.empSummary?.returning ?? data?.summary?.returning ?? 0,
+          online: data?.empRealtime?.online ?? data?.realtime?.online ?? 0,
+        },
+      ];
+    }
+
+    if (onlyShowSelectedInRankTable && targetCode) {
+      const matched = allRows.filter(
+        (r) => r.code.trim().toUpperCase() === targetCode.trim().toUpperCase()
+      );
+      if (matched.length > 0) return matched;
+    }
+
+    return allRows;
+  }, [
+    data?.employeeRanking?.rows,
+    data?.empSummary,
+    data?.summary,
+    data?.empRealtime,
+    data?.realtime,
+    activeDisplayCode,
+    empDetailCode,
+    viewerEmployeeCode,
+    canSeeAllEmployeesRanking,
+    onlyShowSelectedInRankTable,
+    currentUser?.name,
+  ]);
+
+  // Dòng của mã nhân viên đang chọn để hiển thị bảng so sánh nhanh (Toàn website + Mã NV)
+  const selectedEmployeeRankRow = useMemo<WpEmployeeRankRow | null>(() => {
+    const codeToFind = activeDisplayCode || empDetailCode || viewerEmployeeCode;
+    if (!codeToFind) return null;
+    const allRows = data?.employeeRanking?.rows || [];
+    const found = allRows.find(
+      (r) => r.code.trim().toUpperCase() === codeToFind.trim().toUpperCase()
+    );
+    if (found) return found;
+    if (data?.empSummary) {
+      const optLabel =
+        allEmployeeOptions.find((o) => o.code === codeToFind)?.label || codeToFind;
+      return {
+        code: codeToFind,
+        account: optLabel,
+        views: data.empSummary.views || 0,
+        visitors: data.empSummary.visitors || 0,
+        newVisitors: data.empSummary.newcomers || 0,
+        returningVisitors: data.empSummary.returning || 0,
+        online: data.empRealtime?.online ?? 0,
+      };
+    }
+    return null;
+  }, [
+    activeDisplayCode,
+    empDetailCode,
+    viewerEmployeeCode,
+    data?.employeeRanking?.rows,
+    data?.empSummary,
+    data?.empRealtime,
+    allEmployeeOptions,
+  ]);
 
   // Render bảng Top 10 dùng chung cho cả Primary & Secondary Top 10
   const renderTop10Table = (rows: WpTopPostRow[], tablePrefix: string, emptyText: string) => (
@@ -753,57 +884,63 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
       {/* Thanh chuyển đổi chế độ xem & Quản lý phân quyền theo mã nhân viên */}
       <div className="bg-white border border-[#d8e0ec] rounded-xl px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
         <div className="flex items-center gap-2 flex-wrap">
-          {canSeeAllEmployeesRanking ? (
-            <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setViewSection('all')}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  viewSection === 'all'
-                    ? 'bg-[#2271b1] text-white shadow-2xs'
-                    : 'text-slate-700 hover:bg-white'
-                }`}
-              >
-                <Activity className="w-3.5 h-3.5" />
-                <span>Tất cả (Lưu lượng + Xếp hạng Mã NV)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewSection('traffic')}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  viewSection === 'traffic'
-                    ? 'bg-[#2271b1] text-white shadow-2xs'
-                    : 'text-slate-700 hover:bg-white'
-                }`}
-              >
-                <BarChart3 className="w-3.5 h-3.5" />
-                <span>Lưu lượng truy cập</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewSection('employees')}
-                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
-                  viewSection === 'employees'
-                    ? 'bg-[#2271b1] text-white shadow-2xs'
-                    : 'text-slate-700 hover:bg-white'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Thống kê theo mã nhân viên</span>
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#eef3fa] text-[#17263e] border border-[#dce5ef]">
-                <Tag className="w-3.5 h-3.5 text-[#2271b1]" />
-                <span>
-                  Tài khoản: <strong>{currentUser?.name}</strong> · Mã nhân viên Web:{' '}
-                  <strong className="text-[#2271b1]">
-                    {viewerEmployeeCode || 'Chưa gán mã'}
-                  </strong>
-                </span>
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+            <button
+              type="button"
+              onClick={() => setViewSection('all')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                viewSection === 'all'
+                  ? 'bg-[#2271b1] text-white shadow-2xs'
+                  : 'text-slate-700 hover:bg-white'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>
+                {canSeeAllEmployeesRanking
+                  ? 'Tất cả (Lưu lượng + Xếp hạng Mã NV)'
+                  : 'Tất cả (Tổng thể Web & Mã của tôi)'}
               </span>
-            </div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewSection('traffic')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                viewSection === 'traffic'
+                  ? 'bg-[#2271b1] text-white shadow-2xs'
+                  : 'text-slate-700 hover:bg-white'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              <span>Lưu lượng truy cập</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewSection('employees')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors cursor-pointer flex items-center gap-1.5 ${
+                viewSection === 'employees'
+                  ? 'bg-[#2271b1] text-white shadow-2xs'
+                  : 'text-slate-700 hover:bg-white'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>
+                {canSeeAllEmployeesRanking
+                  ? 'Thống kê theo mã nhân viên'
+                  : `Bảng Mã NV & Tổng thể Web (${viewerEmployeeCode || 'Chưa gán'})`}
+              </span>
+            </button>
+          </div>
+
+          {!isAdmin && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-[#eef3fa] text-[#17263e] border border-[#dce5ef]">
+              <Tag className="w-3.5 h-3.5 text-[#2271b1]" />
+              <span>
+                Tài khoản: <strong>{currentUser?.name}</strong> · Mã NV Web:{' '}
+                <strong className="text-[#2271b1]">
+                  {viewerEmployeeCode || 'Chưa gán mã'}
+                </strong>
+              </span>
+            </span>
           )}
         </div>
 
@@ -865,7 +1002,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                 </span>
               </h3>
               <p className="text-xs text-slate-600 mt-1">
-                Mỗi nhân viên được gắn <strong>Mã nhân viên</strong> tương ứng trên web (VD:{' '}
+                Khi chọn <strong>Mã nhân viên</strong> cho nhân viên (VD:{' '}
                 <code className="bg-slate-100 px-1 rounded font-bold text-cyan-800">
                   MS.LY → M2001
                 </code>
@@ -881,7 +1018,8 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                 <code className="bg-slate-100 px-1 rounded font-bold text-cyan-800">
                   MS.NHI → A0005
                 </code>
-                ). Khi nhân viên đăng nhập vào app, họ sẽ xem đúng giao diện thống kê của mã nhân viên đó giống hệt trên web WordPress!
+                ), nhân viên sẽ xem được cả <strong>Tổng thể của Web (🌐 Toàn website)</strong> và{' '}
+                <strong>Số liệu Mã nhân viên của họ</strong> giống bảng trong Mã NV Web!
               </p>
             </div>
 
@@ -1044,7 +1182,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                           {[
                             {
                               key: 'MINE_AND_SITE' as const,
-                              label: 'Mã riêng + Toàn web (Như Web)',
+                              label: 'Mã riêng + Toàn web (Mặc định)',
                             },
                             {
                               key: 'MINE_ONLY' as const,
@@ -1209,6 +1347,160 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
             Toàn website gồm cả truy cập không mã. Tài khoản quản trị không được ghi nhận.
           </p>
 
+          {/* BẢNG TỔNG THỂ WEB & MÃ NHÂN VIÊN (Giống bảng trong Thống kê theo mã nhân viên)
+              Hiển thị ngay khi chọn Mã nhân viên hoặc khi nhân viên đăng nhập để đối chiếu trực tiếp */}
+          {(activeDisplayCode || !isAdmin) && canSeeSiteWide && siteRankRow && (
+            <div className="bg-white border-2 border-[#2271b1]/30 rounded-[12px] p-4 mb-3.5 shadow-2xs">
+              <div className="flex items-center justify-between gap-2 flex-wrap mb-2.5">
+                <h3 className="m-0 text-[15px] font-bold text-[#17263e] flex items-center gap-2">
+                  <span>📊 Bảng Tổng Thể Website & Mã Nhân Viên ({empDays} ngày gần nhất)</span>
+                  {selectedEmployeeRankRow && (
+                    <span className="bg-[#eef3fa] text-[#2271b1] text-[12px] font-bold px-2.5 py-0.5 rounded-md border border-[#c5d9ed]">
+                      Mã: {selectedEmployeeRankRow.code}
+                    </span>
+                  )}
+                </h3>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectEmpDays(7)}
+                    className={`px-2.5 py-1 rounded text-[12px] font-semibold border cursor-pointer ${
+                      empDays === 7
+                        ? 'bg-[#2271b1] border-[#2271b1] text-white'
+                        : 'bg-[#f6f7f7] border-[#2271b1] text-[#2271b1] hover:bg-[#f0f6fc]'
+                    }`}
+                  >
+                    7 ngày
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectEmpDays(30)}
+                    className={`px-2.5 py-1 rounded text-[12px] font-semibold border cursor-pointer ${
+                      empDays === 30
+                        ? 'bg-[#2271b1] border-[#2271b1] text-white'
+                        : 'bg-[#f6f7f7] border-[#2271b1] text-[#2271b1] hover:bg-[#f0f6fc]'
+                    }`}
+                  >
+                    30 ngày
+                  </button>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto border border-[#c3c4c7] rounded-lg">
+                <table className="w-full border-collapse text-[13px]">
+                  <thead>
+                    <tr className="bg-[#f5f7fa] border-b border-[#c3c4c7]">
+                      <th className="text-left py-2.5 px-3 font-semibold text-[#2c3338]">
+                        Mã nhân viên / Phạm vi
+                      </th>
+                      <th className="text-left py-2.5 px-3 font-semibold text-[#2c3338]">
+                        Tài khoản
+                      </th>
+                      <th className="text-left py-2.5 px-3 font-semibold text-[#2c3338]">
+                        Lượt xem
+                      </th>
+                      <th className="text-left py-2.5 px-3 font-semibold text-[#2c3338]">
+                        Khách duy nhất
+                      </th>
+                      <th className="text-left py-2.5 px-3 font-semibold text-[#2c3338]">
+                        Khách mới
+                      </th>
+                      <th className="text-left py-2.5 px-3 font-semibold text-[#2c3338]">
+                        Khách quay lại
+                      </th>
+                      <th className="text-left py-2.5 px-3 font-semibold text-[#2c3338]">
+                        Online (5 phút)
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {/* Dòng 1: Tổng thể của Web (Toàn website) */}
+                    <tr
+                      className={`border-b border-[#e4ebf3] transition-colors ${
+                        scope === 'site'
+                          ? 'bg-[#eef6ff] ring-1 ring-inset ring-[#2271b1]'
+                          : 'bg-[#f8fbff] hover:bg-[#f0f6fc]'
+                      }`}
+                    >
+                      <td className="py-2.5 px-3 font-bold text-[#1d2327]">
+                        <button
+                          type="button"
+                          onClick={() => handleChangeScope('site')}
+                          className="text-[#2271b1] hover:text-[#135e96] font-bold underline cursor-pointer flex items-center gap-1"
+                        >
+                          <span>🌐 Toàn website</span>
+                        </button>
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold text-[#1d2327]">
+                        Tổng thể toàn website (celeb24h.com)
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-[#17263e]">
+                        {fmt(siteRankRow.views)}
+                      </td>
+                      <td className="py-2.5 px-3 font-semibold text-[#17263e]">
+                        {fmt(siteRankRow.visitors)}
+                      </td>
+                      <td className="py-2.5 px-3 text-[#50575e]">
+                        {fmt(siteRankRow.newVisitors)}
+                      </td>
+                      <td className="py-2.5 px-3 text-[#50575e]">
+                        {fmt(siteRankRow.returningVisitors)}
+                      </td>
+                      <td className="py-2.5 px-3 font-bold text-[#1cc865]">
+                        {fmt(siteRankRow.online)}
+                      </td>
+                    </tr>
+
+                    {/* Dòng 2: Mã nhân viên đang chọn hoặc của nhân viên đang đăng nhập */}
+                    {selectedEmployeeRankRow && (
+                      <tr
+                        className={`transition-colors ${
+                          scope !== 'site'
+                            ? 'bg-[#eef6ff] ring-1 ring-inset ring-[#2271b1]'
+                            : 'bg-white hover:bg-[#f0f6fc]'
+                        }`}
+                      >
+                        <td className="py-2.5 px-3 font-bold">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isAdmin) {
+                                handleChangeEmployeeDropdown(selectedEmployeeRankRow.code);
+                              } else {
+                                handleChangeScope('mine');
+                              }
+                            }}
+                            className="text-[#2271b1] hover:text-[#135e96] font-bold underline cursor-pointer"
+                          >
+                            {selectedEmployeeRankRow.code}
+                          </button>
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-[#2c3338]">
+                          {selectedEmployeeRankRow.account}
+                        </td>
+                        <td className="py-2.5 px-3 font-bold text-[#2271b1]">
+                          {fmt(selectedEmployeeRankRow.views)}
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-[#2c3338]">
+                          {fmt(selectedEmployeeRankRow.visitors)}
+                        </td>
+                        <td className="py-2.5 px-3 text-[#50575e]">
+                          {fmt(selectedEmployeeRankRow.newVisitors)}
+                        </td>
+                        <td className="py-2.5 px-3 text-[#50575e]">
+                          {fmt(selectedEmployeeRankRow.returningVisitors)}
+                        </td>
+                        <td className="py-2.5 px-3 font-bold text-[#1cc865]">
+                          {fmt(selectedEmployeeRankRow.online)}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {/* Khu vực 🟢 Realtime (.tkw-realtime v3.4) */}
           <section className="bg-white border border-[#dfe6ef] rounded-[12px] p-[18px]">
             <div className="flex justify-between items-center gap-3 flex-wrap pb-3.5 border-b border-[#edf1f5]">
@@ -1216,9 +1508,22 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                 <span>🟢 Realtime</span>
               </h2>
 
-              <span className="bg-[#eef3fa] text-[#385270] font-semibold text-[11px] px-2.5 py-1 rounded-md">
-                {activeDisplayCode ? `Mã: ${activeDisplayCode}` : 'Toàn website'}
-              </span>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="bg-[#eef3fa] text-[#385270] font-semibold text-[11px] px-2.5 py-1 rounded-md">
+                  {scope === 'site'
+                    ? 'Toàn website'
+                    : activeDisplayCode
+                    ? `Mã: ${activeDisplayCode}`
+                    : 'Toàn website'}
+                </span>
+                {scope !== 'site' && data?.siteRealtime && canSeeSiteWide && (
+                  <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-semibold text-[11px] px-2.5 py-1 rounded-md">
+                    🌐 Toàn web đang online: {fmt(data.siteRealtime.online)} · Hôm nay:{' '}
+                    {fmt(data.siteRealtime.today_views)} xem /{' '}
+                    {fmt(data.siteRealtime.today_visitors)} khách
+                  </span>
+                )}
+              </div>
 
               <span className="bg-[#f6f9fc] text-[#5d6b82] text-[12px] px-2.5 py-1 rounded-md">
                 cập nhật lúc {data?.realtime?.updated || '--:--:--'} · mỗi 15 giây
@@ -1459,46 +1764,138 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
           {/* KHU VỰC DƯỚI (.tkw-below v3.4): Tổng hợp truy cập + Top 10 chính + Top 10 phụ + Theo ngày */}
           <div className="grid grid-cols-1 gap-3.5 mt-3.5">
             {/* 1. Tổng hợp truy cập (.tkw-whitepanel.tkw-summary) */}
-            <div className="bg-white border border-[#dde5f0] rounded-[12px] p-[18px]">
-              <div className="flex items-center justify-between gap-2.5 flex-wrap mb-[15px]">
-                <h3 className="m-0 text-[15px] tracking-[-0.2px] font-bold text-[#17263e]">
-                  Tổng hợp truy cập
-                </h3>
-                <span className="text-[12px] text-[#64748b]">
-                  {data?.from || ''} – {data?.to || ''}
-                </span>
+            <div className="bg-white border border-[#dde5f0] rounded-[12px] p-[18px] space-y-4">
+              <div>
+                <div className="flex items-center justify-between gap-2.5 flex-wrap mb-[15px]">
+                  <h3 className="m-0 text-[15px] tracking-[-0.2px] font-bold text-[#17263e]">
+                    {scope !== 'site' && activeDisplayCode
+                      ? `Tổng hợp truy cập · Mã nhân viên ${activeDisplayCode}`
+                      : 'Tổng hợp truy cập · Toàn website'}
+                  </h3>
+                  <span className="text-[12px] text-[#64748b]">
+                    {data?.from || ''} – {data?.to || ''}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                  <div className="flex flex-col gap-2 border border-[#e5eaf1] rounded-[10px] px-4 py-[13px] bg-[#f8fafc]">
+                    <span className="text-[15px]">👁</span>
+                    <span className="text-[12px] text-[#526781]">Lượt xem</span>
+                    <strong className="text-[24px] tracking-[-0.5px] leading-[1.3] text-[#162943]">
+                      {fmt(data?.summary?.views)}
+                    </strong>
+                  </div>
+                  <div className="flex flex-col gap-2 border border-[#e5eaf1] rounded-[10px] px-4 py-[13px] bg-[#f8fafc]">
+                    <span className="text-[15px]">👥</span>
+                    <span className="text-[12px] text-[#526781]">Khách duy nhất</span>
+                    <strong className="text-[24px] tracking-[-0.5px] leading-[1.3] text-[#162943]">
+                      {fmt(data?.summary?.visitors)}
+                    </strong>
+                  </div>
+                  <div className="flex flex-col gap-2 border border-[#e5eaf1] rounded-[10px] px-4 py-[13px] bg-[#f8fafc]">
+                    <span className="text-[15px]">✦</span>
+                    <span className="text-[12px] text-[#526781]">Khách mới</span>
+                    <strong className="text-[24px] tracking-[-0.5px] leading-[1.3] text-[#162943]">
+                      {fmt(data?.summary?.newcomers)}
+                    </strong>
+                  </div>
+                  <div className="flex flex-col gap-2 border border-[#e5eaf1] rounded-[10px] px-4 py-[13px] bg-[#f8fafc]">
+                    <span className="text-[15px]">↩</span>
+                    <span className="text-[12px] text-[#526781]">Quay lại</span>
+                    <strong className="text-[24px] tracking-[-0.5px] leading-[1.3] text-[#162943]">
+                      {fmt(data?.summary?.returning)}
+                    </strong>
+                  </div>
+                </div>
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <div className="flex flex-col gap-2 border border-[#e5eaf1] rounded-[10px] px-4 py-[13px] bg-[#f8fafc]">
-                  <span className="text-[15px]">👁</span>
-                  <span className="text-[12px] text-[#526781]">Lượt xem</span>
-                  <strong className="text-[24px] tracking-[-0.5px] leading-[1.3] text-[#162943]">
-                    {fmt(data?.summary?.views)}
-                  </strong>
+              {/* Khi đang xem theo Mã nhân viên, hiển thị thêm Tổng hợp truy cập của Toàn Website ngay bên dưới để thấy cả 2 */}
+              {scope !== 'site' && canSeeSiteWide && data?.siteSummary && (
+                <div className="pt-3.5 border-t border-[#e5eaf1]">
+                  <div className="flex items-center justify-between gap-2.5 flex-wrap mb-3">
+                    <h4 className="m-0 text-[14px] font-bold text-[#2271b1]">
+                      🌐 Tổng hợp truy cập · Toàn website (Cùng kỳ)
+                    </h4>
+                    <span className="text-[12px] text-[#64748b]">
+                      {data?.from || ''} – {data?.to || ''}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
+                      <span className="text-[12px] text-[#526781]">Lượt xem toàn web</span>
+                      <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
+                        {fmt(data.siteSummary.views)}
+                      </strong>
+                    </div>
+                    <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
+                      <span className="text-[12px] text-[#526781]">Khách duy nhất toàn web</span>
+                      <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
+                        {fmt(data.siteSummary.visitors)}
+                      </strong>
+                    </div>
+                    <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
+                      <span className="text-[12px] text-[#526781]">Khách mới toàn web</span>
+                      <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
+                        {fmt(data.siteSummary.newcomers)}
+                      </strong>
+                    </div>
+                    <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
+                      <span className="text-[12px] text-[#526781]">Quay lại toàn web</span>
+                      <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
+                        {fmt(data.siteSummary.returning)}
+                      </strong>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2 border border-[#e5eaf1] rounded-[10px] px-4 py-[13px] bg-[#f8fafc]">
-                  <span className="text-[15px]">👥</span>
-                  <span className="text-[12px] text-[#526781]">Khách duy nhất</span>
-                  <strong className="text-[24px] tracking-[-0.5px] leading-[1.3] text-[#162943]">
-                    {fmt(data?.summary?.visitors)}
-                  </strong>
+              )}
+
+              {/* Ngược lại, khi đang chọn Toàn website mà có Mã nhân viên cá nhân thì hiện thêm Tổng hợp của Mã nhân viên đó */}
+              {scope === 'site' && activeDisplayCode && data?.empSummary && (
+                <div className="pt-3.5 border-t border-[#e5eaf1]">
+                  <div className="flex items-center justify-between gap-2.5 flex-wrap mb-3">
+                    <h4 className="m-0 text-[14px] font-bold text-[#2271b1]">
+                      👤 Tổng hợp truy cập · Mã nhân viên {activeDisplayCode} (Cùng kỳ)
+                    </h4>
+                    <span className="text-[12px] text-[#64748b]">
+                      {data?.from || ''} – {data?.to || ''}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
+                      <span className="text-[12px] text-[#526781]">
+                        Lượt xem ({activeDisplayCode})
+                      </span>
+                      <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
+                        {fmt(data.empSummary.views)}
+                      </strong>
+                    </div>
+                    <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
+                      <span className="text-[12px] text-[#526781]">
+                        Khách duy nhất ({activeDisplayCode})
+                      </span>
+                      <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
+                        {fmt(data.empSummary.visitors)}
+                      </strong>
+                    </div>
+                    <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
+                      <span className="text-[12px] text-[#526781]">
+                        Khách mới ({activeDisplayCode})
+                      </span>
+                      <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
+                        {fmt(data.empSummary.newcomers)}
+                      </strong>
+                    </div>
+                    <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
+                      <span className="text-[12px] text-[#526781]">
+                        Quay lại ({activeDisplayCode})
+                      </span>
+                      <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
+                        {fmt(data.empSummary.returning)}
+                      </strong>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-2 border border-[#e5eaf1] rounded-[10px] px-4 py-[13px] bg-[#f8fafc]">
-                  <span className="text-[15px]">✦</span>
-                  <span className="text-[12px] text-[#526781]">Khách mới</span>
-                  <strong className="text-[24px] tracking-[-0.5px] leading-[1.3] text-[#162943]">
-                    {fmt(data?.summary?.newcomers)}
-                  </strong>
-                </div>
-                <div className="flex flex-col gap-2 border border-[#e5eaf1] rounded-[10px] px-4 py-[13px] bg-[#f8fafc]">
-                  <span className="text-[15px]">↩</span>
-                  <span className="text-[12px] text-[#526781]">Quay lại</span>
-                  <strong className="text-[24px] tracking-[-0.5px] leading-[1.3] text-[#162943]">
-                    {fmt(data?.summary?.returning)}
-                  </strong>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* 2. Bảng Top 10 chính (.tkw-whitepanel.tkw-top10) */}
@@ -1593,28 +1990,32 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
             </div>
 
             {/* 3. Bảng Top 10 phụ (.tkw-whitepanel.tkw-top10.tkw-top-secondary) - Luôn hiển thị để thấy đủ cả bài của nhân viên & bài tổng thể toàn website */}
-            {data?.secondaryTopPanel && (
+            {canSeeSiteWide && (data?.secondaryTopPanel || data?.siteTopPanel) && (
               <div
                 className="bg-white border border-[#dde5f0] rounded-[12px] p-[18px]"
                 style={{ borderLeft: '3px solid #3b82f6' }}
               >
                 <div className="flex items-center justify-between gap-2.5 flex-wrap mb-2">
                   <h3 className="m-0 text-[15px] tracking-[-0.2px] font-bold text-[#17263e]">
-                    {data.secondaryTopPanel.heading}
+                    {data?.secondaryTopPanel?.heading ||
+                      data?.siteTopPanel?.heading ||
+                      'Top 10 bài viết / trang toàn website'}
                   </h3>
                   <span className="text-[12px] text-[#64748b]">
-                    {data.secondaryTopPanel.subtitle}
+                    {data?.secondaryTopPanel?.subtitle ||
+                      data?.siteTopPanel?.subtitle ||
+                      `Cùng kỳ · ${data?.topFrom || ''} – ${data?.topTo || ''}`}
                   </span>
                 </div>
 
-                {data.secondaryTopPanel.mutedText && (
-                  <p className="text-[#5d6b82] text-[12px] mt-0 mb-3">
-                    {data.secondaryTopPanel.mutedText}
-                  </p>
-                )}
+                <p className="text-[#5d6b82] text-[12px] mt-0 mb-3">
+                  {data?.secondaryTopPanel?.mutedText ||
+                    data?.siteTopPanel?.mutedText ||
+                    'Tất cả lượt truy cập ở domain gốc và các subdomain của website.'}
+                </p>
 
                 {renderTop10Table(
-                  data.secondaryTopPanel.rows,
+                  data?.secondaryTopPanel?.rows || data?.siteTopPanel?.rows || [],
                   'secondary-top10',
                   'Chưa có dữ liệu trong khoảng thời gian này.'
                 )}
@@ -1720,9 +2121,9 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
 
       {/* =====================================================================
           PHẦN 2: GIAO DIỆN NGUYÊN BẢN "THỐNG KÊ THEO MÃ NHÂN VIÊN" (tkw-employees v2.9+)
-          (Chỉ hiển thị cho Admin hoặc nhân viên được cấp quyền xem tất cả mã)
+          Hiển thị cho cả Admin VÀ Nhân viên (Nhân viên thấy dòng Tổng thể của Web + Mã của họ)
          ===================================================================== */}
-      {canSeeAllEmployeesRanking && (viewSection === 'all' || viewSection === 'employees') && (
+      {(viewSection === 'all' || viewSection === 'employees') && (
         <div className="bg-[#f0f0f1] border border-[#c3c4c7] rounded-[14px] p-5 text-[#1d2327]">
           <h1 className="text-[23px] font-normal m-0 mb-2 text-[#1d2327]">
             Thống kê theo mã nhân viên
@@ -1730,14 +2131,14 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
           <p className="text-[13px] text-[#3c434a] my-2">
             Link mẫu:{' '}
             <code className="bg-white px-1.5 py-0.5 rounded border border-[#dcdcde] text-[12px]">
-              https://celeb24h.com/phim-a?A001
+              https://celeb24h.com/phim-a?{personalShareCode || 'A001'}
             </code>
             . Mã ở sau dấu ? được ghi nhận và tiếp tục gắn với khách trong phiên trình duyệt. Mã bắt
             đầu bằng một chữ cái A-Z, sau đó có thể là chữ, số, dấu gạch ngang hoặc gạch dưới (tối
             đa 31 ký tự).
           </p>
 
-          <div className="flex items-center gap-2 my-3">
+          <div className="flex items-center gap-2 my-3 flex-wrap">
             <button
               type="button"
               onClick={() => handleSelectEmpDays(7)}
@@ -1767,14 +2168,33 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
             >
               Làm mới online
             </button>
+
+            {canSeeAllEmployeesRanking && (
+              <button
+                type="button"
+                onClick={() => setOnlyShowSelectedInRankTable((prev) => !prev)}
+                className={`px-3 py-1 rounded text-[13px] border cursor-pointer ${
+                  onlyShowSelectedInRankTable
+                    ? 'bg-emerald-600 border-emerald-600 text-white font-semibold'
+                    : 'bg-white border-[#8c8f94] text-[#2c3338] hover:bg-[#f0f6fc]'
+                }`}
+              >
+                {onlyShowSelectedInRankTable
+                  ? `Đang lọc: Toàn web & Mã ${activeDisplayCode || empDetailCode}`
+                  : 'Chỉ hiện Toàn web & Mã đang chọn'}
+              </button>
+            )}
           </div>
 
           <h2 className="text-[18px] font-semibold mt-4 mb-1 text-[#1d2327]">
-            Bảng xếp hạng nhân viên
+            {canSeeAllEmployeesRanking
+              ? 'Bảng xếp hạng nhân viên & Tổng thể Website'
+              : `Bảng Thống kê Tổng thể Website & Mã nhân viên (${viewerEmployeeCode || 'Chưa gán'})`}
           </h2>
           <p className="text-[13px] text-[#3c434a] mb-3">
-            Gán/sửa mã tại Users → Edit User. User mới được cấp mã tự động; user cũ được cấp khi
-            đăng nhập hoặc mở trang thống kê. (Bấm vào mã nhân viên để xem chi tiết bên dưới)
+            {canSeeAllEmployeesRanking
+              ? 'Dòng đầu tiên là Tổng thể của toàn Website (celeb24h.com), bên dưới là số liệu của từng Mã nhân viên. Bấm vào mã nhân viên để xem chi tiết bên dưới.'
+              : 'Hiển thị trực tiếp số liệu Tổng thể của Website (🌐 Toàn website) và số liệu của Mã nhân viên của bạn.'}
           </p>
 
           <div className="overflow-x-auto max-w-[1150px] bg-white border border-[#c3c4c7] shadow-2xs">
@@ -1799,17 +2219,50 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                 </tr>
               </thead>
               <tbody>
-                {(data?.employeeRanking?.rows || []).length === 0 ? (
+                {/* Dòng 1 cố định: 🌐 Toàn website (Tổng thể của web) */}
+                {canSeeSiteWide && siteRankRow && (
+                  <tr className="bg-[#eef6ff] border-b border-[#bfd6f2] hover:bg-[#e3f0ff] transition-colors">
+                    <td className="py-2.5 px-3 font-bold">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectEmpDetail('SITE')}
+                        className="text-[#2271b1] hover:text-[#135e96] font-bold underline cursor-pointer"
+                      >
+                        🌐 Toàn website
+                      </button>
+                    </td>
+                    <td className="py-2.5 px-3 font-bold text-[#1d2327]">
+                      Tổng thể toàn website (celeb24h.com)
+                    </td>
+                    <td className="py-2.5 px-3 font-bold text-[#1d2327]">
+                      {fmt(siteRankRow.views)}
+                    </td>
+                    <td className="py-2.5 px-3 font-semibold text-[#1d2327]">
+                      {fmt(siteRankRow.visitors)}
+                    </td>
+                    <td className="py-2.5 px-3 text-[#2c3338]">{fmt(siteRankRow.newVisitors)}</td>
+                    <td className="py-2.5 px-3 text-[#2c3338]">
+                      {fmt(siteRankRow.returningVisitors)}
+                    </td>
+                    <td className="py-2.5 px-3 font-bold text-[#1cc865]">
+                      {fmt(siteRankRow.online)}
+                    </td>
+                  </tr>
+                )}
+
+                {visibleEmployeeRankRows.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-3 px-3 text-[#50575e]">
                       Chưa có lượt truy cập gắn mã nhân viên.
                     </td>
                   </tr>
                 ) : (
-                  (data?.employeeRanking?.rows || []).map((row, idx) => {
+                  visibleEmployeeRankRows.map((row, idx) => {
                     const isSelected =
+                      empDetailCode === row.code ||
+                      activeDisplayCode === row.code ||
                       data?.employeeRanking?.selectedEmployee === row.code ||
-                      (row.code === '(Không mã)' && data?.employeeRanking?.selectedEmployee === '');
+                      (row.code === '(Không mã)' && empDetailCode === '');
                     return (
                       <tr
                         key={`${row.code}-${idx}`}
@@ -1828,8 +2281,8 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                             {row.code}
                           </button>
                         </td>
-                        <td className="py-2 px-3 text-[#50575e]">{row.account}</td>
-                        <td className="py-2 px-3 text-[#50575e] font-medium">{fmt(row.views)}</td>
+                        <td className="py-2 px-3 text-[#50575e] font-medium">{row.account}</td>
+                        <td className="py-2 px-3 text-[#1d2327] font-bold">{fmt(row.views)}</td>
                         <td className="py-2 px-3 text-[#50575e]">{fmt(row.visitors)}</td>
                         <td className="py-2 px-3 text-[#50575e]">{fmt(row.newVisitors)}</td>
                         <td className="py-2 px-3 text-[#50575e]">{fmt(row.returningVisitors)}</td>
@@ -1845,31 +2298,33 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
           </div>
 
           {/* Bộ lọc chọn nhanh Top 10 bài viết theo nhân viên (.tkw-staff-top-filter) */}
-          <div className="bg-white p-4 my-4 rounded-[10px] max-w-[1150px] flex flex-wrap items-center gap-2.5 border border-[#dce5ef]">
-            <label htmlFor="tkw-staff-picker" className="text-[13px] font-bold text-[#1d2327]">
-              Top 10 bài viết theo nhân viên:
-            </label>
-            <select
-              id="tkw-staff-picker"
-              value={empDetailCode}
-              onChange={(e) => handleSelectEmpDetail(e.target.value)}
-              className="min-h-[34px] px-2.5 py-1 text-[13px] border border-[#8c8f94] rounded bg-white text-[#2c3338] cursor-pointer"
-            >
-              <option value="">Chọn nhân viên</option>
-              {allEmployeeOptions.map((opt) => (
-                <option key={opt.code} value={opt.code}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => void fetchDashboard({ empDetailCode })}
-              className="px-3 py-1.5 rounded text-[13px] font-semibold bg-[#2271b1] hover:bg-[#135e96] text-white cursor-pointer"
-            >
-              Xem thống kê
-            </button>
-          </div>
+          {canSeeAllEmployeesRanking && (
+            <div className="bg-white p-4 my-4 rounded-[10px] max-w-[1150px] flex flex-wrap items-center gap-2.5 border border-[#dce5ef]">
+              <label htmlFor="tkw-staff-picker" className="text-[13px] font-bold text-[#1d2327]">
+                Chọn mã nhân viên để xem Tổng thể Web & Mã đó:
+              </label>
+              <select
+                id="tkw-staff-picker"
+                value={empDetailCode}
+                onChange={(e) => handleSelectEmpDetail(e.target.value)}
+                className="min-h-[34px] px-2.5 py-1 text-[13px] border border-[#8c8f94] rounded bg-white text-[#2c3338] cursor-pointer"
+              >
+                <option value="">Chọn nhân viên</option>
+                {allEmployeeOptions.map((opt) => (
+                  <option key={opt.code} value={opt.code}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={() => void fetchDashboard({ empDetailCode })}
+                className="px-3 py-1.5 rounded text-[13px] font-semibold bg-[#2271b1] hover:bg-[#135e96] text-white cursor-pointer"
+              >
+                Xem thống kê
+              </button>
+            </div>
+          )}
 
           {/* Chi tiết mã nhân viên (khi chọn 1 mã nhân viên) */}
           {data?.employeeRanking?.detail && (
@@ -1882,7 +2337,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                 {/* Theo ngày */}
                 <div className="bg-white p-4 min-w-[260px] border border-[#c3c4c7] flex-1">
                   <h3 className="text-[14px] font-semibold mt-0 mb-2.5 text-[#1d2327]">
-                    Theo ngày
+                    Theo ngày ({data.employeeRanking.detail.code})
                   </h3>
                   <table className="w-full border-collapse text-[13px] border border-[#c3c4c7]">
                     <thead>
@@ -2120,7 +2575,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
               </div>
 
               {/* Bảng Top 10 bài viết / trang tổng thể toàn website ngay bên dưới phần Chi tiết nhân viên để đối chiếu */}
-              {data?.siteTopPanel && (
+              {canSeeSiteWide && data?.siteTopPanel && (
                 <div
                   className="bg-white border border-[#dce5ef] rounded-[12px] p-[18px] my-[18px] max-w-[1200px]"
                   style={{ borderLeft: '3px solid #3b82f6' }}
@@ -2134,7 +2589,8 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                     </span>
                   </div>
                   <p className="text-[13px] text-[#64748b] mb-3">
-                    Tất cả lượt truy cập tổng thể ở domain gốc và các subdomain trên toàn website celeb24h.com.
+                    Tất cả lượt truy cập tổng thể ở domain gốc và các subdomain trên toàn website
+                    celeb24h.com.
                   </p>
                   {renderTop10Table(
                     data.siteTopPanel.rows,
