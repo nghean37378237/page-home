@@ -7,6 +7,7 @@ import {
   AppUser,
   TabKey,
   ALL_TAB_KEYS,
+  STAFF_ASSIGNABLE_TABS,
   TAB_DEFINITIONS,
 } from '../types';
 import {
@@ -501,10 +502,12 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   // Handlers for Table Permissions Modal
   const handleOpenPermissionModal = (account: UserAccount) => {
     setPermissionModalAccount(account);
-    const existing =
+    const existing: TabKey[] =
       account.allowedTabs && account.allowedTabs.length > 0
-        ? account.allowedTabs
-        : ALL_TAB_KEYS;
+        ? (account.allowedTabs.filter((t) => t !== 'staff_management' && t !== 'revenue') as TabKey[])
+        : ['fanpage', 'fullvia', 'staff_info', 'image_studio'];
+    if (!existing.includes('staff_info')) existing.push('staff_info');
+    if (!existing.includes('image_studio')) existing.push('image_studio');
     setSelectedAllowedTabs(existing);
     setPermissionNotice(null);
   };
@@ -520,25 +523,30 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     });
   };
 
-  const handleQuickPresetTabs = (preset: 'all' | 'fanpage_only' | 'fanpage_via' | 'fanpage_group' | 'photo_editor' | 'minimal') => {
+  const handleQuickPresetTabs = (
+    preset: 'all' | 'with_view_stats' | 'fanpage_only' | 'fanpage_via' | 'fanpage_group' | 'photo_editor' | 'minimal'
+  ) => {
     switch (preset) {
       case 'all':
-        setSelectedAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts', 'staff_info', 'image_studio']);
+        setSelectedAllowedTabs([...STAFF_ASSIGNABLE_TABS]);
+        break;
+      case 'with_view_stats':
+        setSelectedAllowedTabs(['fanpage', 'fullvia', 'staff_info', 'image_studio', 'view_stats']);
         break;
       case 'photo_editor':
-        setSelectedAllowedTabs(['fanpage', 'image_studio']);
+        setSelectedAllowedTabs(['fanpage', 'staff_info', 'image_studio']);
         break;
       case 'fanpage_only':
-        setSelectedAllowedTabs(['fanpage']);
+        setSelectedAllowedTabs(['fanpage', 'staff_info', 'image_studio']);
         break;
       case 'fanpage_via':
-        setSelectedAllowedTabs(['fanpage', 'fullvia']);
+        setSelectedAllowedTabs(['fanpage', 'fullvia', 'staff_info', 'image_studio']);
         break;
       case 'fanpage_group':
-        setSelectedAllowedTabs(['fanpage', 'group']);
+        setSelectedAllowedTabs(['fanpage', 'group', 'staff_info', 'image_studio']);
         break;
       case 'minimal':
-        setSelectedAllowedTabs(['fanpage']);
+        setSelectedAllowedTabs(['fanpage', 'staff_info']);
         break;
     }
   };
@@ -1746,9 +1754,10 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   const allowedTabsList = ALL_TAB_KEYS.filter((tabKey) => {
                     if (acc.role === 'admin') return true;
                     if (tabKey === 'staff_management' || tabKey === 'revenue') return false;
+                    if (tabKey === 'staff_info' || tabKey === 'image_studio') return true;
                     return acc.allowedTabs && acc.allowedTabs.length > 0
                       ? acc.allowedTabs.includes(tabKey)
-                      : ALL_TAB_KEYS.includes(tabKey);
+                      : ['fanpage', 'fullvia'].includes(tabKey);
                   });
 
                   return (
@@ -1878,6 +1887,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                   else if (tabDef.color === 'blue') colorClass = 'bg-blue-50 text-blue-800 border-blue-300';
                                   else if (tabDef.color === 'purple') colorClass = 'bg-purple-50 text-purple-800 border-purple-300';
                                   else if (tabDef.color === 'rose') colorClass = 'bg-rose-50 text-rose-800 border-rose-300';
+                                  else if (tabDef.color === 'cyan') colorClass = 'bg-cyan-50 text-cyan-800 border-cyan-300';
 
                                   return (
                                     <span
@@ -1892,19 +1902,48 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                               </div>
 
                               {isAdmin && (
-                                <div className="flex items-center justify-between pt-0.5">
+                                <div className="flex flex-wrap items-center justify-between gap-1 pt-0.5">
                                   <span className="text-[10px] text-slate-500 font-semibold">
                                     Được xem: {allowedTabsList.length} Bảng
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenPermissionModal(acc)}
-                                    className="inline-flex items-center space-x-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold rounded-md border border-blue-200 transition-colors cursor-pointer"
-                                    title={`Chỉnh sửa phân quyền các bảng cho ${acc.username}`}
-                                  >
-                                    <SlidersHorizontal className="w-2.5 h-2.5" />
-                                    <span>Sửa Quyền</span>
-                                  </button>
+                                  <div className="flex items-center gap-1">
+                                    {onUpdateAccountPermissions && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const hasViewStats = allowedTabsList.includes('view_stats');
+                                          const nextTabs: TabKey[] = hasViewStats
+                                            ? allowedTabsList.filter((t) => t !== 'view_stats')
+                                            : [...allowedTabsList, 'view_stats'];
+                                          void onUpdateAccountPermissions(acc.id, nextTabs);
+                                        }}
+                                        className={`inline-flex items-center space-x-1 px-2 py-0.5 text-[10px] font-bold rounded-md border transition-colors cursor-pointer ${
+                                          allowedTabsList.includes('view_stats')
+                                            ? 'bg-cyan-100 hover:bg-cyan-200 text-cyan-900 border-cyan-400'
+                                            : 'bg-slate-50 hover:bg-cyan-50 text-slate-600 hover:text-cyan-800 border-slate-200 hover:border-cyan-300'
+                                        }`}
+                                        title={
+                                          allowedTabsList.includes('view_stats')
+                                            ? `Đang cho phép ${acc.username} xem Bảng 10: Thống Kê View (Bấm để thu hồi)`
+                                            : `Bấm để cấp quyền cho ${acc.username} xem Bảng 10: Thống Kê View`
+                                        }
+                                      >
+                                        <BarChart3 className="w-2.5 h-2.5" />
+                                        <span>
+                                          {allowedTabsList.includes('view_stats') ? '✓ B10 TK View' : '+ Cấp TK View'}
+                                        </span>
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenPermissionModal(acc)}
+                                      className="inline-flex items-center space-x-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold rounded-md border border-blue-200 transition-colors cursor-pointer"
+                                      title={`Chỉnh sửa phân quyền các bảng cho ${acc.username}`}
+                                    >
+                                      <SlidersHorizontal className="w-2.5 h-2.5" />
+                                      <span>Sửa Quyền</span>
+                                    </button>
+                                  </div>
                                 </div>
                               )}
                             </>
@@ -2219,19 +2258,26 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-bold text-slate-700">
-                      Phân Quyền Bảng Hiển Thị (1..6)
+                      Phân Quyền Bảng Hiển Thị
                     </label>
                     <span className="text-[11px] text-blue-600 font-semibold">
-                      Đã chọn {addAllowedTabs.filter((t) => t !== 'staff_management').length}/5 bảng
+                      Đã chọn {addAllowedTabs.filter((t) => t !== 'staff_management' && t !== 'revenue').length}/{STAFF_ASSIGNABLE_TABS.length} bảng
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-1 mb-2">
                     <button
                       type="button"
-                      onClick={() => setAddAllowedTabs(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'])}
+                      onClick={() => setAddAllowedTabs([...STAFF_ASSIGNABLE_TABS])}
                       className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                     >
-                      Tất cả (5 bảng)
+                      Tất cả ({STAFF_ASSIGNABLE_TABS.length} bảng)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddAllowedTabs(['fanpage', 'fullvia', 'staff_info', 'image_studio', 'view_stats'])}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 cursor-pointer"
+                    >
+                      📊 Kèm Thống Kê View (B10)
                     </button>
                     <button
                       type="button"
@@ -2247,16 +2293,9 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                     >
                       Fanpage + Via
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setAddAllowedTabs(['fanpage', 'group'])}
-                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-50 hover:bg-red-100 text-red-700 cursor-pointer"
-                    >
-                      Fanpage + Group
-                    </button>
                   </div>
                   <div className="grid grid-cols-2 gap-1.5">
-                    {(['fanpage', 'group', 'proxy', 'fullvia', 'shared_accounts'] as TabKey[]).map((tabKey) => {
+                    {STAFF_ASSIGNABLE_TABS.map((tabKey) => {
                       const tabDef = TAB_DEFINITIONS[tabKey];
                       const isChecked = addAllowedTabs.includes(tabKey);
                       return (
@@ -2640,7 +2679,14 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                     onClick={() => handleQuickPresetTabs('all')}
                     className="px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-800 border border-blue-200 hover:bg-blue-100 transition-all cursor-pointer"
                   >
-                    ⚡ Cấp 5 Bảng Nghiệp Vụ (B1..B4, B6)
+                    ⚡ Cấp Tất Cả Bảng NV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickPresetTabs('with_view_stats')}
+                    className="px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-50 text-cyan-800 border border-cyan-300 hover:bg-cyan-100 transition-all cursor-pointer"
+                  >
+                    📊 Fanpage + Via + Thống Kê View (B10)
                   </button>
                   <button
                     type="button"

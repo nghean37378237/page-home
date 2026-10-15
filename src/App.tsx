@@ -224,10 +224,7 @@ export default function App() {
     if (!filteredTabs.includes('image_studio')) {
       filteredTabs.push('image_studio');
     }
-    // Tab Thống Kê View cho phép truy cập để theo dõi số liệu view từ celeb24h.com
-    if (!filteredTabs.includes('view_stats')) {
-      filteredTabs.push('view_stats');
-    }
+    // Bảng 10: Thống Kê View (view_stats) chỉ hiển thị cho nhân viên nào được Admin tích chọn phân quyền trong allowedTabs
     return filteredTabs;
   }, [currentUser, accounts]);
 
@@ -4240,7 +4237,13 @@ export default function App() {
             allPageNames={Array.from(new Set(records.map((r) => r.pageName).filter(Boolean)))}
           />
         ) : activeTab === 'view_stats' ? (
-          <WordPressStatsTab />
+          <WordPressStatsTab
+            currentUser={currentUser}
+            accounts={accounts}
+            onUpdateAccountPermissions={async (accountId, allowedTabs) => {
+              await handleUpdateAccountInfo(accountId, { allowedTabs });
+            }}
+          />
         ) : (
           <SharedAccountsTable
             accounts={sharedAccounts}

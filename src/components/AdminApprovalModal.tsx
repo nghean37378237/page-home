@@ -1449,6 +1449,10 @@ export function AdminApprovalModal({
                                           email: acc.email || '',
                                           pin: acc.pin,
                                           adminNote: acc.adminNote || '',
+                                          allowedTabs:
+                                            acc.allowedTabs && acc.allowedTabs.length > 0
+                                              ? acc.allowedTabs
+                                              : ['fanpage', 'fullvia', 'staff_info', 'image_studio'],
                                         })
                                       }
                                       className="text-[10px] text-indigo-600 hover:text-indigo-800 font-semibold underline cursor-pointer ml-1"
@@ -1704,7 +1708,7 @@ export function AdminApprovalModal({
                                       allowedTabs:
                                         acc.allowedTabs && acc.allowedTabs.length > 0
                                           ? acc.allowedTabs
-                                          : ALL_TAB_KEYS,
+                                          : ['fanpage', 'fullvia', 'staff_info', 'image_studio'],
                                     })
                                   }
                                   className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors cursor-pointer border border-transparent hover:border-indigo-200"
@@ -3519,6 +3523,18 @@ export function AdminApprovalModal({
                     className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
                   >
                     Tất cả ({STAFF_ASSIGNABLE_TABS.length} bảng)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setEditStaffModalData({
+                        ...editStaffModalData,
+                        allowedTabs: ['fanpage', 'fullvia', 'staff_info', 'image_studio', 'view_stats'],
+                      })
+                    }
+                    className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 cursor-pointer"
+                  >
+                    📊 Kèm Thống Kê View (B10)
                   </button>
                   <button
                     type="button"

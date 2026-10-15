@@ -1,15 +1,90 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { RefreshCw, ExternalLink, AlertCircle, BarChart3, Users, Activity } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { RefreshCw, ExternalLink, AlertCircle, BarChart3, Users, Activity, Shield, Check, Lock } from 'lucide-react';
 import type {
   WpStatsDashboardPayload,
   WpRealtimeMinute,
 } from '../server/wpStatsService';
+import type { AppUser, UserAccount, TabKey } from '../types';
 
-export const WordPressStatsTab: React.FC = () => {
+interface WordPressStatsTabProps {
+  currentUser?: AppUser;
+  accounts?: UserAccount[];
+  onUpdateAccountPermissions?: (accountId: string, allowedTabs: TabKey[]) => Promise<void> | void;
+}
+
+export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
+  currentUser,
+  accounts = [],
+  onUpdateAccountPermissions,
+}) => {
+  const isAdmin = currentUser?.role === 'admin';
   const [data, setData] = useState<WpStatsDashboardPayload | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshingLive, setRefreshingLive] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Panel phân quyền nhân viên xem Bảng Thống Kê View (Dành cho Admin)
+  const [showPermissionPanel, setShowPermissionPanel] = useState<boolean>(false);
+  const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
+
+  const staffAccounts = useMemo(
+    () =>
+      accounts
+        .filter((a) => a.role === 'staff')
+        .sort((a, b) => a.username.localeCompare(b.username, 'vi')),
+    [accounts]
+  );
+
+  const getStaffTabs = (acc: UserAccount): TabKey[] => {
+    const base: TabKey[] =
+      Array.isArray(acc.allowedTabs) && acc.allowedTabs.length > 0
+        ? (acc.allowedTabs.filter((t) => t !== 'staff_management' && t !== 'revenue') as TabKey[])
+        : ['fanpage', 'fullvia', 'staff_info', 'image_studio'];
+    if (!base.includes('staff_info')) base.push('staff_info');
+    if (!base.includes('image_studio')) base.push('image_studio');
+    return base;
+  };
+
+  const allowedViewStatsCount = useMemo(
+    () => staffAccounts.filter((acc) => getStaffTabs(acc).includes('view_stats')).length,
+    [staffAccounts]
+  );
+
+  const handleToggleStaffViewStats = async (acc: UserAccount) => {
+    if (!isAdmin || !onUpdateAccountPermissions) return;
+    setSavingStaffId(acc.id);
+    try {
+      const currentTabs = getStaffTabs(acc);
+      const hasAccess = currentTabs.includes('view_stats');
+      const nextTabs: TabKey[] = hasAccess
+        ? currentTabs.filter((t) => t !== 'view_stats')
+        : [...currentTabs, 'view_stats'];
+      await onUpdateAccountPermissions(acc.id, nextTabs);
+    } finally {
+      setSavingStaffId(null);
+    }
+  };
+
+  const handleBatchViewStatsAccess = async (grant: boolean) => {
+    if (!isAdmin || !onUpdateAccountPermissions) return;
+    setSavingStaffId('ALL');
+    try {
+      for (const acc of staffAccounts) {
+        const currentTabs = getStaffTabs(acc);
+        const hasAccess = currentTabs.includes('view_stats');
+        if (grant && !hasAccess) {
+          await onUpdateAccountPermissions(acc.id, [...currentTabs, 'view_stats']);
+        } else if (!grant && hasAccess) {
+          await onUpdateAccountPermissions(
+            acc.id,
+            currentTabs.filter((t) => t !== 'view_stats')
+          );
+        }
+      }
+    } finally {
+      setSavingStaffId(null);
+    }
+  };
 
   // Chế độ hiển thị: 'all' (Gộp cả Lưu lượng truy cập + Theo mã nhân viên) | 'traffic' | 'employees'
   const [viewSection, setViewSection] = useState<'all' | 'traffic' | 'employees'>('all');
@@ -314,7 +389,25 @@ export const WordPressStatsTab: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          {isAdmin && onUpdateAccountPermissions && (
+            <button
+              type="button"
+              onClick={() => setShowPermissionPanel((prev) => !prev)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors cursor-pointer ${
+                showPermissionPanel
+                  ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-2xs'
+                  : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+              }`}
+              title="Chọn nhân viên nào được phép nhìn thấy Bảng 10: Thống Kê View"
+            >
+              <Shield className="w-3.5 h-3.5" />
+              <span>
+                Phân Quyền NV Xem Bảng ({allowedViewStatsCount}/{staffAccounts.length} NV)
+              </span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => void fetchDashboard()}
@@ -324,17 +417,111 @@ export const WordPressStatsTab: React.FC = () => {
             <RefreshCw className={`w-3.5 h-3.5 ${loading || refreshingLive ? 'animate-spin' : ''}`} />
             <span>{loading ? 'Đang đồng bộ...' : 'Làm mới dữ liệu'}</span>
           </button>
-          <a
-            href="https://celeb24h.com/wp-admin/admin.php?page=tkw-stats"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#2271b1] bg-[#f0f6fc] hover:bg-[#e5f0fa] border border-[#c5d9ed] transition-colors"
-          >
-            <span>WP Admin</span>
-            <ExternalLink className="w-3 h-3" />
-          </a>
+
+          {isAdmin && (
+            <a
+              href="https://celeb24h.com/wp-admin/admin.php?page=tkw-stats"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-[#2271b1] bg-[#f0f6fc] hover:bg-[#e5f0fa] border border-[#c5d9ed] transition-colors"
+            >
+              <span>WP Admin</span>
+              <ExternalLink className="w-3 h-3" />
+            </a>
+          )}
         </div>
       </div>
+
+      {/* BẢNG PHÂN QUYỀN NHÂN VIÊN ĐƯỢC PHÉP XEM BẢNG THỐNG KÊ VIEW (CHỈ ADMIN) */}
+      {isAdmin && showPermissionPanel && (
+        <div className="bg-white border-2 border-amber-300 rounded-xl p-4 shadow-xs space-y-3 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Shield className="w-4 h-4 text-amber-600" />
+                <span>Phân Quyền Nhân Viên Xem Bảng 10: Thống Kê View</span>
+                <span className="text-[11px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200 px-2 py-0.5 rounded-full">
+                  Đang cấp quyền: {allowedViewStatsCount}/{staffAccounts.length} nhân viên
+                </span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Bấm vào tên nhân viên bên dưới để <strong>Bật / Tắt</strong> quyền nhìn thấy tab <strong>Thống Kê View</strong> trên màn hình của nhân viên đó. Nhân viên không được chọn sẽ tự động ẩn tab này.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                disabled={savingStaffId !== null}
+                onClick={() => void handleBatchViewStatsAccess(true)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer disabled:opacity-50"
+              >
+                ✓ Cho phép tất cả NV
+              </button>
+              <button
+                type="button"
+                disabled={savingStaffId !== null}
+                onClick={() => void handleBatchViewStatsAccess(false)}
+                className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer disabled:opacity-50"
+              >
+                ✕ Ẩn khỏi tất cả NV
+              </button>
+            </div>
+          </div>
+
+          {staffAccounts.length === 0 ? (
+            <p className="text-xs text-slate-400 italic">Chưa có tài khoản nhân viên nào.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+              {staffAccounts.map((acc) => {
+                const hasAccess = getStaffTabs(acc).includes('view_stats');
+                const isSavingThis = savingStaffId === acc.id || savingStaffId === 'ALL';
+                return (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    disabled={isSavingThis}
+                    onClick={() => void handleToggleStaffViewStats(acc)}
+                    className={`flex items-center justify-between p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                      hasAccess
+                        ? 'bg-cyan-50/90 border-cyan-400 text-cyan-950 shadow-2xs'
+                        : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100'
+                    }`}
+                  >
+                    <div className="min-w-0 pr-2">
+                      <div className="font-bold text-xs truncate flex items-center gap-1.5">
+                        <span>{acc.username}</span>
+                      </div>
+                      <div className="text-[10px] truncate opacity-75">
+                        {acc.email || 'Chưa gán Gmail'}
+                      </div>
+                    </div>
+                    <span
+                      className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-black shrink-0 ${
+                        hasAccess
+                          ? 'bg-emerald-600 text-white'
+                          : 'bg-slate-200 text-slate-600'
+                      }`}
+                    >
+                      {hasAccess ? (
+                        <>
+                          <Check className="w-3 h-3" />
+                          <span>Được xem</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3 h-3" />
+                          <span>Đang ẩn</span>
+                        </>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {error && (
         <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-center justify-between text-rose-800 text-sm">
