@@ -121,8 +121,9 @@ import { RevenueManagementTable } from './components/RevenueManagementTable';
 import { StaffInfoTable } from './components/StaffInfoTable';
 import { ImageStudioTab } from './components/ImageStudioTab';
 import { WordPressStatsTab } from './components/WordPressStatsTab';
+import { WebPublishStudioTab } from './components/WebPublishStudioTab';
 import { getCleanBmName } from './utils/helpers';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon, BarChart3 } from 'lucide-react';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon, BarChart3, PenTool } from 'lucide-react';
 
 // Helper chuẩn hóa UID để so khớp chính xác giữa Quản Lý Page và Quản Lý Full Via
 function normalizeViaUidKey(raw?: string): string {
@@ -233,6 +234,10 @@ export default function App() {
     );
     if (hasAssignedWpCode && !filteredTabs.includes('view_stats')) {
       filteredTabs.push('view_stats');
+    }
+    // Bảng 11: Viết Bài & Đẩy Web (WebPublish Studio) cho phép nhân viên truy cập để soạn thảo và đẩy bài lên website
+    if (!filteredTabs.includes('web_publish')) {
+      filteredTabs.push('web_publish');
     }
     return filteredTabs;
   }, [currentUser, accounts]);
@@ -1009,6 +1014,22 @@ export default function App() {
       accentColor: 'text-cyan-700',
       description: 'Số liệu thống kê Realtime, Top 10 bài viết, lượt xem theo ngày và bảng xếp hạng mã nhân viên từ celeb24h.com',
       visible: userAllowedTabs.includes('view_stats'),
+    },
+    {
+      id: 'web_publish' as TabKey,
+      num: currentUser.role === 'admin' ? 11 : (userAllowedTabs.indexOf('web_publish') !== -1 ? userAllowedTabs.indexOf('web_publish') + 1 : 8),
+      title: 'Viết Bài Web',
+      fullTitle: 'Bảng 11: WebPublish Studio - Soạn Thảo & Đẩy Bài Lên Website (celeb24h.com)',
+      icon: PenTool,
+      count: 'WP',
+      newCount: 0,
+      unit: 'Bài',
+      activeClass: 'bg-emerald-700 text-white shadow-xs ring-2 ring-emerald-500/25',
+      activeNumClass: 'bg-white/20 text-white',
+      dotColor: 'bg-emerald-500',
+      accentColor: 'text-emerald-700',
+      description: 'Soạn thảo bài viết chuẩn SEO, viết bài AI, tải ảnh đại diện và đẩy trực tiếp lên website celeb24h.com kèm mã nhân viên',
+      visible: userAllowedTabs.includes('web_publish'),
     },
   ].filter((t) => t.visible), [userAllowedTabs, currentUser, userScopedRecords, groupRecords, proxies, viaList, accounts, sharedAccounts, finances, imageTasks]);
 
@@ -4304,6 +4325,12 @@ export default function App() {
               await handleUpdateAccountInfo(accountId, { allowedTabs });
             }}
             onUpdateAccountInfo={handleUpdateAccountInfo}
+          />
+        ) : activeTab === 'web_publish' ? (
+          <WebPublishStudioTab
+            currentUser={currentUser}
+            accounts={accounts}
+            onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
           />
         ) : (
           <SharedAccountsTable

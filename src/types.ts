@@ -212,7 +212,8 @@ export type TabKey =
   | 'revenue'
   | 'staff_info'
   | 'image_studio'
-  | 'view_stats';
+  | 'view_stats'
+  | 'web_publish';
 
 export interface TabPermissionConfig {
   id: TabKey;
@@ -235,6 +236,7 @@ export const ALL_TAB_KEYS: TabKey[] = [
   'staff_info',
   'image_studio',
   'view_stats',
+  'web_publish',
 ];
 
 // Các bảng phân quyền cho nhân viên (Bảng 5 Quản Trị NV & Bảng 7 Quản Lý Doanh Thu chỉ dành riêng cho Admin quản lý)
@@ -247,6 +249,7 @@ export const STAFF_ASSIGNABLE_TABS: TabKey[] = [
   'staff_info',
   'image_studio',
   'view_stats',
+  'web_publish',
 ];
 
 export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
@@ -339,6 +342,15 @@ export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
     badgeName: 'TK View',
     color: 'cyan',
     description: 'Bảng thống kê lượt xem Realtime, Top 10 bài viết và xếp hạng mã nhân viên lấy trực tiếp từ web celeb24h.com',
+  },
+  web_publish: {
+    id: 'web_publish',
+    tabNumber: 11,
+    label: 'Bảng 11: Viết Bài & Đẩy Web',
+    shortLabel: 'B11 Viết Bài Web',
+    badgeName: 'Viết Bài',
+    color: 'emerald',
+    description: 'WebPublish Studio — Soạn thảo bài viết chuẩn SEO & tự động đẩy bài trực tiếp lên WordPress (celeb24h.com) kèm mã nhân viên.',
   },
 };
 

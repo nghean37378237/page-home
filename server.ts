@@ -2,12 +2,92 @@ import express from 'express';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { fetchWpStatsDashboard, fetchWpLivePanelOnly } from './src/server/wpStatsService';
+import {
+  fetchWpPublishInitData,
+  publishArticleToTarget,
+  uploadMediaToWordPress,
+  generateSeoArticleWithAi,
+} from './src/server/wpPublishService';
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '25mb' }));
+
+  // API Route: WebPublish Studio - Soạn thảo & Đẩy bài lên Website (celeb24h.com, WordPress, Webhook API)
+  app.get('/api/wp-publish', async (_req, res) => {
+    try {
+      const data = await fetchWpPublishInitData();
+      res.json(data);
+    } catch (error: any) {
+      console.error('[/api/wp-publish GET] Error:', error);
+      res.status(500).json({
+        ok: false,
+        error: error?.message || 'Không thể tải danh mục và bài viết từ website',
+      });
+    }
+  });
+
+  app.post('/api/wp-publish', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const action = String(body.action || 'publish');
+
+      if (action === 'upload_media') {
+        const uploaded = await uploadMediaToWordPress({
+          base64Data: body.base64Data,
+          imageUrl: body.imageUrl,
+          fileName: body.fileName,
+          altText: body.altText,
+        });
+        res.json({ ok: true, ...uploaded });
+        return;
+      }
+
+      if (action === 'ai_write') {
+        const result = await generateSeoArticleWithAi({
+          topic: String(body.topic || ''),
+          keyword: body.keyword ? String(body.keyword) : undefined,
+          language: body.language === 'vi' ? 'vi' : 'en',
+          categoryName: body.categoryName ? String(body.categoryName) : undefined,
+          existingContent: body.existingContent ? String(body.existingContent) : undefined,
+        });
+        res.json(result);
+        return;
+      }
+
+      const published = await publishArticleToTarget({
+        postId: body.postId ? Number(body.postId) : undefined,
+        title: String(body.title || ''),
+        content: String(body.content || ''),
+        excerpt: body.excerpt ? String(body.excerpt) : '',
+        slug: body.slug ? String(body.slug) : undefined,
+        status: body.status || 'publish',
+        categories: Array.isArray(body.categories) ? body.categories.map(Number) : undefined,
+        tags: Array.isArray(body.tags) ? body.tags.map(String) : undefined,
+        employeeCode: body.employeeCode ? String(body.employeeCode) : undefined,
+        featuredMediaId: body.featuredMediaId ? Number(body.featuredMediaId) : undefined,
+        featuredImageBase64: body.featuredImageBase64 ? String(body.featuredImageBase64) : undefined,
+        featuredImageUrl: body.featuredImageUrl ? String(body.featuredImageUrl) : undefined,
+        featuredImageAlt: body.featuredImageAlt ? String(body.featuredImageAlt) : undefined,
+        targetMode: body.targetMode || 'default_wp',
+        customWpUrl: body.customWpUrl,
+        customWpUser: body.customWpUser,
+        customWpAppPassword: body.customWpAppPassword,
+        webhookUrl: body.webhookUrl,
+        webhookSecret: body.webhookSecret,
+      });
+
+      res.json(published);
+    } catch (error: any) {
+      console.error('[/api/wp-publish POST] Error:', error);
+      res.status(500).json({
+        ok: false,
+        error: error?.message || 'Lỗi khi đẩy bài viết lên website',
+      });
+    }
+  });
 
   // API Route: Lấy dữ liệu bảng thống kê trực tiếp từ WordPress celeb24h.com
   app.get('/api/wp-stats', async (req, res) => {
