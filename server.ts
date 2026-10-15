@@ -15,22 +15,33 @@ async function startServer() {
       const mode = String(req.query.mode || 'dashboard');
       if (mode === 'live') {
         const liveEmployee = String(req.query.live_employee || '');
-        const realtime = await fetchWpLivePanelOnly(liveEmployee);
+        const scope = String(req.query.scope || '');
+        const realtime = await fetchWpLivePanelOnly(liveEmployee, scope);
         res.json({ ok: true, realtime });
         return;
       }
+
+      const rawScope = String(req.query.scope || '');
+      const validScope: 'site' | 'mine' | 'employee' | undefined =
+        rawScope === 'site' || rawScope === 'mine' || rawScope === 'employee'
+          ? rawScope
+          : undefined;
 
       const payload = await fetchWpStatsDashboard({
         range: req.query.range ? String(req.query.range) : '7',
         from: req.query.from ? String(req.query.from) : undefined,
         to: req.query.to ? String(req.query.to) : undefined,
+        scope: validScope,
         employee: req.query.employee ? String(req.query.employee) : '',
-        liveEmployee: req.query.live_employee ? String(req.query.live_employee) : '',
+        viewerEmployeeCode: req.query.viewer_employee ? String(req.query.viewer_employee) : '',
+        liveEmployee:
+          req.query.live_employee !== undefined ? String(req.query.live_employee) : undefined,
         topRange: req.query.top_range ? String(req.query.top_range) : '7',
         topFrom: req.query.top_from ? String(req.query.top_from) : undefined,
         topTo: req.query.top_to ? String(req.query.top_to) : undefined,
         empDays: req.query.emp_days ? String(req.query.emp_days) : '7',
         empDetailCode: req.query.emp_detail ? String(req.query.emp_detail) : undefined,
+        staffTopPeriod: req.query.staff_top_period ? String(req.query.staff_top_period) : '7',
       });
 
       res.json(payload);

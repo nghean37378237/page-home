@@ -9,6 +9,8 @@ import {
   ALL_TAB_KEYS,
   STAFF_ASSIGNABLE_TABS,
   TAB_DEFINITIONS,
+  DEFAULT_WP_EMPLOYEE_OPTIONS,
+  resolveAccountWpEmployeeCode,
 } from '../types';
 import {
   Users,
@@ -74,6 +76,7 @@ interface StaffManagementTableProps {
   onApproveAccount: (accountId: string) => Promise<void> | void;
   onRejectAccount: (accountId: string) => Promise<void> | void;
   onUpdateAccountPermissions?: (accountId: string, allowedTabs: TabKey[]) => Promise<void> | void;
+  onUpdateAccountInfo?: (accountId: string, updates: Partial<UserAccount>) => Promise<void> | void;
   onUpdateEmail?: (accountId: string, newEmail: string) => Promise<void> | void;
   onSwitchToStaffView?: (staffName: string) => void;
   onOpenAdminModal?: (tab?: 'staff' | 'pending' | 'blocked' | 'admin_pin' | 'security_db') => void;
@@ -100,6 +103,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   onApproveAccount,
   onRejectAccount,
   onUpdateAccountPermissions,
+  onUpdateAccountInfo,
   onUpdateEmail,
   onSwitchToStaffView,
   onOpenAdminModal,
@@ -116,6 +120,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   // Table Permissions Modal State (Admin only)
   const [permissionModalAccount, setPermissionModalAccount] = useState<UserAccount | null>(null);
   const [selectedAllowedTabs, setSelectedAllowedTabs] = useState<TabKey[]>(ALL_TAB_KEYS);
+  const [selectedWpEmployeeCode, setSelectedWpEmployeeCode] = useState<string>('');
   const [isSavingPermissions, setIsSavingPermissions] = useState(false);
   const [permissionNotice, setPermissionNotice] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -151,6 +156,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   const [pinModalAccount, setPinModalAccount] = useState<UserAccount | null>(null);
   const [newEmailValue, setNewEmailValue] = useState('');
   const [newPinValue, setNewPinValue] = useState('');
+  const [newWpCodeValue, setNewWpCodeValue] = useState('');
   const [confirmPinValue, setConfirmPinValue] = useState('');
   const [pinChangeError, setPinChangeError] = useState<string | null>(null);
   const [pinChangeSuccess, setPinChangeSuccess] = useState<string | null>(null);
@@ -509,6 +515,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     if (!existing.includes('staff_info')) existing.push('staff_info');
     if (!existing.includes('image_studio')) existing.push('image_studio');
     setSelectedAllowedTabs(existing);
+    setSelectedWpEmployeeCode(resolveAccountWpEmployeeCode(account, account.username));
     setPermissionNotice(null);
   };
 
@@ -556,12 +563,18 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     setIsSavingPermissions(true);
     setPermissionNotice(null);
     try {
-      if (onUpdateAccountPermissions) {
+      const cleanWpCode = selectedWpEmployeeCode.trim().toUpperCase();
+      if (onUpdateAccountInfo) {
+        await onUpdateAccountInfo(permissionModalAccount.id, {
+          allowedTabs: selectedAllowedTabs,
+          wpEmployeeCode: cleanWpCode || 'NONE',
+        });
+      } else if (onUpdateAccountPermissions) {
         await onUpdateAccountPermissions(permissionModalAccount.id, selectedAllowedTabs);
       }
       setPermissionNotice({
         success: true,
-        message: `Đã cập nhật phân quyền (${selectedAllowedTabs.length} bảng) cho "${permissionModalAccount.username}" thành công!`,
+        message: `Đã cập nhật phân quyền (${selectedAllowedTabs.length} bảng${cleanWpCode ? `, Mã NV Web: ${cleanWpCode}` : ''}) cho "${permissionModalAccount.username}" thành công!`,
       });
       setTimeout(() => {
         setPermissionModalAccount(null);
@@ -581,6 +594,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
     if (!pinModalAccount) return;
     const cleanPin = newPinValue.trim() || '123456';
     const cleanEmail = newEmailValue.trim().toLowerCase();
+    const cleanWpCode = newWpCodeValue.trim().toUpperCase();
 
     setIsSubmittingPin(true);
     try {
@@ -588,9 +602,15 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
       if (onUpdateEmail && cleanEmail !== (pinModalAccount.email || '').trim().toLowerCase()) {
         await onUpdateEmail(pinModalAccount.id, cleanEmail);
       }
+      if (onUpdateAccountInfo) {
+        await onUpdateAccountInfo(pinModalAccount.id, {
+          wpEmployeeCode: cleanWpCode || 'NONE',
+        });
+      }
       setPinModalAccount(null);
       setNewPinValue('');
       setNewEmailValue('');
+      setNewWpCodeValue('');
     } catch (err) {
       console.error('Lỗi khi cập nhật Gmail / PIN:', err);
     } finally {
@@ -1938,7 +1958,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                       type="button"
                                       onClick={() => handleOpenPermissionModal(acc)}
                                       className="inline-flex items-center space-x-1 px-2 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-[10px] font-bold rounded-md border border-blue-200 transition-colors cursor-pointer"
-                                      title={`Chỉnh sửa phân quyền các bảng cho ${acc.username}`}
+                                      title={`Chỉnh sửa phân quyền các bảng & Mã nhân viên Web cho ${acc.username}`}
                                     >
                                       <SlidersHorizontal className="w-2.5 h-2.5" />
                                       <span>Sửa Quyền</span>
@@ -1946,6 +1966,50 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                   </div>
                                 </div>
                               )}
+
+                              {/* Mã Nhân Viên Web (celeb24h.com) trực tiếp trong Bảng 5 */}
+                              {(() => {
+                                const resolvedWpCode = resolveAccountWpEmployeeCode(acc, acc.username);
+                                return (
+                                  <div className="pt-1 border-t border-slate-100 flex flex-wrap items-center justify-between gap-1.5">
+                                    <span className="text-[10px] font-bold text-slate-500">
+                                      Mã NV Web:
+                                    </span>
+                                    {isAdmin && onUpdateAccountInfo ? (
+                                      <select
+                                        value={resolvedWpCode || 'NONE'}
+                                        onChange={(e) => {
+                                          const val = e.target.value;
+                                          void onUpdateAccountInfo(acc.id, {
+                                            wpEmployeeCode: val === 'NONE' ? 'NONE' : val,
+                                          });
+                                        }}
+                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold border cursor-pointer focus:outline-hidden ${
+                                          resolvedWpCode
+                                            ? 'bg-cyan-50 text-cyan-900 border-cyan-300'
+                                            : 'bg-slate-50 text-slate-600 border-slate-200'
+                                        }`}
+                                        title="Chọn Mã nhân viên trên web celeb24h.com để phân quyền Bảng 10 Thống Kê View"
+                                      >
+                                        <option value="NONE">-- Chưa gán mã --</option>
+                                        {DEFAULT_WP_EMPLOYEE_OPTIONS.map((opt) => (
+                                          <option key={opt.code} value={opt.code}>
+                                            {opt.label}
+                                          </option>
+                                        ))}
+                                        {resolvedWpCode &&
+                                          !DEFAULT_WP_EMPLOYEE_OPTIONS.some((o) => o.code === resolvedWpCode) && (
+                                            <option value={resolvedWpCode}>{resolvedWpCode}</option>
+                                          )}
+                                      </select>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded bg-cyan-50 text-cyan-900 border border-cyan-200 text-[10px] font-mono font-bold">
+                                        {resolvedWpCode || 'Chưa gán'}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })()}
                             </>
                           )}
                         </div>
@@ -2065,12 +2129,13 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                 setPinModalAccount(acc);
                                 setNewEmailValue(acc.email || '');
                                 setNewPinValue(acc.pin || '123456');
+                                setNewWpCodeValue(resolveAccountWpEmployeeCode(acc, acc.username));
                                 setConfirmPinValue(acc.pin || '123456');
                                 setPinChangeError(null);
                                 setPinChangeSuccess(null);
                               }}
                               className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 transition-colors cursor-pointer"
-                              title="Cập nhật Gmail đăng nhập / Mã PIN cho nhân viên"
+                              title="Cập nhật Gmail đăng nhập / Mã PIN / Mã nhân viên Web"
                             >
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
@@ -2411,6 +2476,33 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                   className="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm font-mono font-bold text-slate-800 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-hidden"
                 />
               </div>
+
+              {isAdmin && (
+                <div className="p-3 bg-cyan-50/70 border border-cyan-300 rounded-xl space-y-2">
+                  <label className="block text-xs font-black text-cyan-900">
+                    🏷️ Mã Nhân Viên Web (celeb24h.com - Bảng 10)
+                  </label>
+                  <select
+                    value={newWpCodeValue || ''}
+                    onChange={(e) => setNewWpCodeValue(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-cyan-300 rounded-lg text-xs font-bold text-slate-800"
+                  >
+                    <option value="">-- Không gán mã (Chỉ xem toàn site) --</option>
+                    {DEFAULT_WP_EMPLOYEE_OPTIONS.map((opt) => (
+                      <option key={opt.code} value={opt.code}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={newWpCodeValue}
+                    onChange={(e) => setNewWpCodeValue(e.target.value.toUpperCase())}
+                    placeholder="Hoặc tự nhập mã NV mới trên web (VD: M2001, H2000...)"
+                    className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800"
+                  />
+                </div>
+              )}
 
               <div className="flex items-center justify-end space-x-2 pt-2">
                 <button
@@ -2799,6 +2891,42 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Mã Nhân Viên Web (celeb24h.com) trong Modal Phân Quyền */}
+              <div className="p-3.5 bg-cyan-50/70 border border-cyan-300 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-cyan-950">
+                    🏷️ Gán Mã Nhân Viên Web (celeb24h.com - Bảng 10 Thống Kê View)
+                  </label>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-white border border-cyan-200 text-cyan-800">
+                    {selectedWpEmployeeCode || 'Chưa gán'}
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <select
+                    value={selectedWpEmployeeCode}
+                    onChange={(e) => setSelectedWpEmployeeCode(e.target.value)}
+                    className="w-full px-3 py-2 bg-white border border-cyan-300 rounded-lg text-xs font-bold text-slate-800 cursor-pointer"
+                  >
+                    <option value="">-- Chọn mã nhân viên có sẵn trên web --</option>
+                    {DEFAULT_WP_EMPLOYEE_OPTIONS.map((opt) => (
+                      <option key={opt.code} value={opt.code}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={selectedWpEmployeeCode}
+                    onChange={(e) => setSelectedWpEmployeeCode(e.target.value.toUpperCase())}
+                    placeholder="Hoặc nhập mã NV bất kỳ (VD: M2001)..."
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-800"
+                  />
+                </div>
+                <p className="text-[11px] text-cyan-800">
+                  Khi nhân viên vào Bảng 10 (Thống Kê View), hệ thống sẽ hiển thị đúng <strong>Số liệu của tôi ({selectedWpEmployeeCode || 'Mã NV'})</strong> + <strong>Toàn website</strong> và link chia sẻ tự động gắn mã <code>?nv={selectedWpEmployeeCode || 'MÃ_NV'}</code> y hệt trên web.
+                </p>
               </div>
 
               {/* Action Buttons */}

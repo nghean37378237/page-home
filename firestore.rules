@@ -91,7 +91,9 @@ service cloud.firestore {
              (!('approvedAt' in data) || (data.approvedAt is string && data.approvedAt.size() <= 50)) &&
              (!('requestNote' in data) || (data.requestNote is string && data.requestNote.size() <= 500)) &&
              (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 500)) &&
-             (!('allowedTabs' in data) || (data.allowedTabs is list && data.allowedTabs.size() <= 20));
+             (!('allowedTabs' in data) || (data.allowedTabs is list && data.allowedTabs.size() <= 20)) &&
+             (!('wpEmployeeCode' in data) || (data.wpEmployeeCode is string && data.wpEmployeeCode.size() <= 50)) &&
+             (!('wpAllowedEmployeeCodes' in data) || (data.wpAllowedEmployeeCodes is list && data.wpAllowedEmployeeCodes.size() <= 50));
     }
 
     function isValidSetting(data) {

@@ -4153,6 +4153,7 @@ export default function App() {
             onUpdateAccountPermissions={async (accountId, allowedTabs) => {
               await handleUpdateAccountInfo(accountId, { allowedTabs });
             }}
+            onUpdateAccountInfo={handleUpdateAccountInfo}
             onUpdateEmail={handleUpdateAccountEmail}
             onOpenDeleteStaffModal={handleOpenDeleteStaffModal}
             onSwitchToStaffView={(staffName) => {
@@ -4243,6 +4244,7 @@ export default function App() {
             onUpdateAccountPermissions={async (accountId, allowedTabs) => {
               await handleUpdateAccountInfo(accountId, { allowedTabs });
             }}
+            onUpdateAccountInfo={handleUpdateAccountInfo}
           />
         ) : (
           <SharedAccountsTable

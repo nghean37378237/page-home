@@ -404,6 +404,10 @@ export interface UserAccount {
   adminNote?: string; // Ghi chú của Admin
   allowedTabs?: TabKey[]; // Danh sách Bảng/Tab được phân quyền thấy: ['fanpage', 'fullvia', ...]
 
+  // Phân quyền Mã nhân viên thống kê WordPress (celeb24h.com)
+  wpEmployeeCode?: string; // Mã nhân viên trên web (VD: 'M2001', 'H2000', 'H0088', 'A0005', 'A0006', 'H0082'...)
+  wpAllowedEmployeeCodes?: string[]; // Phạm vi mã nhân viên được phép xem: ['MINE_AND_SITE'] (mặc định như web: mã cá nhân + toàn web), ['MINE_ONLY'] (chỉ mã cá nhân), ['ALL'] (tất cả mã & bảng xếp hạng), hoặc danh sách mã cụ thể
+
   // Thông tin nhân sự hồ sơ
   dateOfBirth?: string; // Ngày tháng năm sinh
   citizenId?: string; // Số CCCD / CMND
@@ -411,6 +415,83 @@ export interface UserAccount {
   bankName?: string;
   bankAccountNumber?: string;
   bankAccountHolder?: string;
+}
+
+export const DEFAULT_WP_EMPLOYEE_OPTIONS: { code: string; label: string; staffHint: string }[] = [
+  { code: 'M2001', label: 'M2001 · Ms Ly', staffHint: 'MS.LY' },
+  { code: 'H2000', label: 'H2000 · Ms Huyen', staffHint: 'MS.HUYEN' },
+  { code: 'H0088', label: 'H0088 · Hiep MS', staffHint: 'MSHIEP' },
+  { code: 'A0005', label: 'A0005 · Ms Nhi', staffHint: 'MS.NHI' },
+  { code: 'A0006', label: 'A0006 · Mr Google', staffHint: 'Quản Lý (Admin)' },
+  { code: 'H0082', label: 'H0082 · admin', staffHint: 'Admin' },
+];
+
+export function resolveAccountWpEmployeeCode(
+  acc?: Partial<UserAccount> | null,
+  nameHint?: string
+): string {
+  const explicit = (acc?.wpEmployeeCode || '').trim();
+  if (explicit === 'NONE') return '';
+  if (explicit) return explicit;
+
+  const rawName = (acc?.username || nameHint || '').trim().toLowerCase();
+  const rawEmail = (acc?.email || '').trim().toLowerCase();
+
+  if (
+    rawName === 'ms.ly' ||
+    rawName === 'ms ly' ||
+    rawName === 'ly' ||
+    rawName.includes('trà ly') ||
+    rawName.includes('tra ly') ||
+    rawEmail === 'ly@gmail.com' ||
+    rawEmail === 'nghean3737@gmail.com'
+  ) {
+    return 'M2001';
+  }
+  if (
+    rawName === 'ms.huyen' ||
+    rawName === 'ms huyen' ||
+    rawName === 'huyen' ||
+    rawName.includes('thị huyền') ||
+    rawName.includes('thi huyen') ||
+    rawEmail === 'huyen@gmail.com' ||
+    rawEmail === 'xunghe3737@gmail.com'
+  ) {
+    return 'H2000';
+  }
+  if (
+    rawName === 'mshiep' ||
+    rawName === 'ms.hiep' ||
+    rawName === 'ms hiep' ||
+    rawName === 'hiep' ||
+    rawName === 'hiep ms' ||
+    rawName.includes('thị hiệp') ||
+    rawName.includes('thi hiep') ||
+    rawEmail === 'hiep@gmail.com' ||
+    rawEmail === 'nghean@gmail.com'
+  ) {
+    return 'H0088';
+  }
+  if (
+    rawName === 'ms.nhi' ||
+    rawName === 'ms nhi' ||
+    rawName === 'nhi' ||
+    rawEmail === 'ms.nhi@gmail.com' ||
+    rawEmail === 'pronhi@gmail.com'
+  ) {
+    return 'A0005';
+  }
+  if (
+    acc?.role === 'admin' ||
+    rawName.includes('admin') ||
+    rawName === 'adgoole' ||
+    rawName === 'mr google' ||
+    rawEmail === 'cualokhachsan@gmail.com' ||
+    rawEmail === 'anyen7910@gmail.com'
+  ) {
+    return 'A0006';
+  }
+  return '';
 }
 
 export interface AppUser {
@@ -421,6 +502,8 @@ export interface AppUser {
   status?: StaffAccountStatus;
   isAuthenticated: boolean;
   allowedTabs?: TabKey[]; // Danh sách Bảng/Tab được cấp quyền
+  wpEmployeeCode?: string;
+  wpAllowedEmployeeCodes?: string[];
 }
 
 export type ViaPageUpdateStatus = 'none' | 'pending' | 'updated';

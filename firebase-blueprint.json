@@ -68,7 +68,9 @@
         "approvedAt": { "type": "string", "maxLength": 50 },
         "requestNote": { "type": "string", "maxLength": 500 },
         "adminNote": { "type": "string", "maxLength": 500 },
-        "allowedTabs": { "type": "array" }
+        "allowedTabs": { "type": "array" },
+        "wpEmployeeCode": { "type": "string", "maxLength": 50 },
+        "wpAllowedEmployeeCodes": { "type": "array" }
       },
       "required": ["id", "username", "role", "status"]
     },
