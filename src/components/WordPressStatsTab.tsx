@@ -457,9 +457,17 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
   }, [scope, employee, viewerEmployeeCode]);
 
   useEffect(() => {
+    const defaultScope: 'site' | 'mine' = isAdmin ? 'site' : viewerEmployeeCode ? 'mine' : 'site';
+    const defaultEmp = isAdmin ? '' : viewerEmployeeCode || '';
+    const defaultDetailCode =
+      viewerEmployeeCode && viewerEmployeeCode !== 'A0006' ? viewerEmployeeCode : 'M2001';
+    setScope(defaultScope);
+    setEmployee(defaultEmp);
+    setEmpDetailCode(defaultDetailCode);
     void fetchDashboard({
-      scope: isAdmin ? 'site' : viewerEmployeeCode ? 'mine' : 'site',
-      employee: isAdmin ? '' : viewerEmployeeCode || '',
+      scope: defaultScope,
+      employee: defaultEmp,
+      empDetailCode: defaultDetailCode,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewerEmployeeCode, isAdmin]);
@@ -575,7 +583,12 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
     } else {
       setScope('employee');
       setEmployee(selectedCode);
-      void fetchDashboard({ scope: 'employee', employee: selectedCode });
+      setEmpDetailCode(selectedCode);
+      void fetchDashboard({
+        scope: 'employee',
+        employee: selectedCode,
+        empDetailCode: selectedCode,
+      });
     }
   };
 
@@ -602,7 +615,17 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
   const handleSelectEmpDetail = (code: string) => {
     const cleanCode = code === '(Không mã)' ? '' : code;
     setEmpDetailCode(cleanCode);
-    void fetchDashboard({ empDetailCode: cleanCode });
+    if (cleanCode && canSeeAllEmployeesRanking) {
+      setScope('employee');
+      setEmployee(cleanCode);
+      void fetchDashboard({
+        scope: 'employee',
+        employee: cleanCode,
+        empDetailCode: cleanCode,
+      });
+    } else {
+      void fetchDashboard({ empDetailCode: cleanCode });
+    }
   };
 
   const handleSelectStaffTopPeriod = (period: string) => {
@@ -1569,8 +1592,8 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
               )}
             </div>
 
-            {/* 3. Bảng Top 10 phụ (.tkw-whitepanel.tkw-top10.tkw-top-secondary) */}
-            {data?.secondaryTopPanel && canSeeSiteWide && (
+            {/* 3. Bảng Top 10 phụ (.tkw-whitepanel.tkw-top10.tkw-top-secondary) - Luôn hiển thị để thấy đủ cả bài của nhân viên & bài tổng thể toàn website */}
+            {data?.secondaryTopPanel && (
               <div
                 className="bg-white border border-[#dde5f0] rounded-[12px] p-[18px]"
                 style={{ borderLeft: '3px solid #3b82f6' }}
@@ -2095,6 +2118,31 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                   </table>
                 </div>
               </div>
+
+              {/* Bảng Top 10 bài viết / trang tổng thể toàn website ngay bên dưới phần Chi tiết nhân viên để đối chiếu */}
+              {data?.siteTopPanel && (
+                <div
+                  className="bg-white border border-[#dce5ef] rounded-[12px] p-[18px] my-[18px] max-w-[1200px]"
+                  style={{ borderLeft: '3px solid #3b82f6' }}
+                >
+                  <div className="flex items-center justify-between gap-2.5 flex-wrap mb-2">
+                    <h2 className="text-[18px] font-semibold m-0 text-[#1d2327]">
+                      {data.siteTopPanel.heading || 'Top 10 bài viết / trang toàn website'}
+                    </h2>
+                    <span className="text-[12px] text-[#64748b]">
+                      Cùng kỳ · {data.topFrom || data.from} – {data.topTo || data.to}
+                    </span>
+                  </div>
+                  <p className="text-[13px] text-[#64748b] mb-3">
+                    Tất cả lượt truy cập tổng thể ở domain gốc và các subdomain trên toàn website celeb24h.com.
+                  </p>
+                  {renderTop10Table(
+                    data.siteTopPanel.rows,
+                    'emp-section-site-top10',
+                    'Chưa có dữ liệu toàn website.'
+                  )}
+                </div>
+              )}
             </div>
           )}
 
