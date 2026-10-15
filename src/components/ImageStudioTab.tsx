@@ -178,13 +178,19 @@ export function ImageStudioTab({
   const [borderRadius, setBorderRadius] = useState<number>(12);
   const [selectedBackground, setSelectedBackground] = useState<BackgroundPreset>(COLLAGE_BACKGROUNDS[0]);
 
-  // Watermark & Headline
+  // Watermark & Copyright Embossed Logo
   const [showWatermark, setShowWatermark] = useState<boolean>(true);
-  const [watermarkText, setWatermarkText] = useState<string>('SWIPE UP ▶');
-  const [watermarkPosition, setWatermarkPosition] = useState<'top' | 'center' | 'bottom'>('top');
-  const [watermarkBgColor, setWatermarkBgColor] = useState<string>('rgba(225, 29, 72, 0.9)');
+  const [watermarkText, setWatermarkText] = useState<string>('© CELEB24H');
+  const [watermarkStyle, setWatermarkStyle] = useState<
+    'embossed_logo' | 'glass_badge' | 'diagonal_stamp' | 'solid_banner'
+  >('embossed_logo');
+  const [watermarkPosition, setWatermarkPosition] = useState<
+    'center' | 'bottom_right' | 'bottom_left' | 'bottom' | 'top' | 'top_right'
+  >('center');
+  const [watermarkOpacity, setWatermarkOpacity] = useState<number>(48);
+  const [watermarkBgColor, setWatermarkBgColor] = useState<string>('#e11d48');
   const [watermarkTextColor, setWatermarkTextColor] = useState<string>('#FFFFFF');
-  const [watermarkFontSize, setWatermarkFontSize] = useState<number>(24);
+  const [watermarkFontSize, setWatermarkFontSize] = useState<number>(30);
 
   // Per-slot photo assignments and transform states
   const [slotAssignments, setSlotAssignments] = useState<Record<number, string>>({
@@ -809,36 +815,135 @@ export function ImageStudioTab({
       }
     }
 
-    // 3. Draw Watermark / Banner
+    // 3. Draw Watermark / Embossed 3D Copyright Logo
     if (showWatermark && watermarkText.trim()) {
       ctx.save();
+      const text = watermarkText.trim();
+      const alpha = Math.max(0.1, Math.min(1, watermarkOpacity / 100));
       const scaledFontSize = Math.round((watermarkFontSize / 1080) * targetW);
-      ctx.font = `bold ${scaledFontSize}px sans-serif`;
-
-      let bannerY = targetH * 0.1;
-      if (watermarkPosition === 'center') bannerY = targetH / 2;
-      if (watermarkPosition === 'bottom') bannerY = targetH * 0.9;
-
-      const textMetrics = ctx.measureText(watermarkText);
-      const paddingX = scaledFontSize * 0.8;
-      const paddingY = scaledFontSize * 0.4;
-      const bannerW = textMetrics.width + paddingX * 2;
-      const bannerH = scaledFontSize + paddingY * 2;
-      const bannerX = (targetW - bannerW) / 2;
-
-      ctx.fillStyle = watermarkBgColor;
-      if (ctx.roundRect) {
-        ctx.beginPath();
-        ctx.roundRect(bannerX, bannerY - bannerH / 2, bannerW, bannerH, 8);
-        ctx.fill();
-      } else {
-        ctx.fillRect(bannerX, bannerY - bannerH / 2, bannerW, bannerH);
-      }
-
-      ctx.fillStyle = watermarkTextColor;
+      ctx.font = `900 ${scaledFontSize}px "Inter", "Segoe UI", Arial, sans-serif`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(watermarkText, targetW / 2, bannerY);
+
+      const textMetrics = ctx.measureText(text);
+      const paddingX = scaledFontSize * 0.75;
+      const paddingY = scaledFontSize * 0.38;
+      const boxW = textMetrics.width + paddingX * 2;
+      const boxH = scaledFontSize + paddingY * 2;
+
+      const edgeMargin = Math.max(24, targetW * 0.045);
+      let posX = targetW / 2;
+      let posY = targetH / 2;
+
+      if (watermarkPosition === 'top') {
+        posX = targetW / 2;
+        posY = Math.max(boxH / 2 + edgeMargin, targetH * 0.09);
+      } else if (watermarkPosition === 'bottom') {
+        posX = targetW / 2;
+        posY = Math.min(targetH - boxH / 2 - edgeMargin, targetH * 0.91);
+      } else if (watermarkPosition === 'bottom_right') {
+        posX = targetW - boxW / 2 - edgeMargin;
+        posY = targetH - boxH / 2 - edgeMargin;
+      } else if (watermarkPosition === 'bottom_left') {
+        posX = boxW / 2 + edgeMargin;
+        posY = targetH - boxH / 2 - edgeMargin;
+      } else if (watermarkPosition === 'top_right') {
+        posX = targetW - boxW / 2 - edgeMargin;
+        posY = boxH / 2 + edgeMargin;
+      }
+
+      ctx.translate(posX, posY);
+      if (watermarkStyle === 'diagonal_stamp') {
+        ctx.rotate((-18 * Math.PI) / 180);
+      }
+
+      if (watermarkStyle === 'embossed_logo' || watermarkStyle === 'diagonal_stamp') {
+        // Hiệu ứng Logo Nổi 3D Bán Trong Suốt (Mờ nhưng sắc nét trên mọi nền sáng/tối)
+        const bevelOffset = Math.max(1.5, scaledFontSize * 0.055);
+
+        // Lớp 1: Viền ngoài tối mỏng tạo độ tương phản trên nền ảnh trắng/sáng
+        ctx.globalAlpha = Math.min(1, alpha * 0.95);
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = Math.max(2.5, scaledFontSize * 0.14);
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.55)';
+        ctx.strokeText(text, 0, 0);
+
+        // Lớp 2: Bóng đổ khắc chìm phía dưới phải (3D Drop Emboss)
+        ctx.globalAlpha = Math.min(1, alpha * 0.85);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.65)';
+        ctx.fillText(text, bevelOffset, bevelOffset);
+
+        // Lớp 3: Ánh sáng gờ nổi phía trên trái (3D Top-Left Highlight)
+        ctx.globalAlpha = Math.min(1, alpha * 0.9);
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+        ctx.fillText(text, -bevelOffset * 0.6, -bevelOffset * 0.6);
+
+        // Lớp 4: Thân chữ Logo chính bán trong suốt
+        ctx.globalAlpha = alpha;
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.45)';
+        ctx.shadowBlur = Math.max(4, scaledFontSize * 0.2);
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = Math.max(1, scaledFontSize * 0.05);
+        ctx.fillStyle = watermarkTextColor;
+        ctx.fillText(text, 0, 0);
+
+        // Nếu là đóng dấu chéo: vẽ thêm khung viền con dấu mảnh nổi
+        if (watermarkStyle === 'diagonal_stamp') {
+          ctx.shadowBlur = 0;
+          ctx.globalAlpha = alpha * 0.85;
+          ctx.lineWidth = Math.max(2, scaledFontSize * 0.07);
+          ctx.strokeStyle = watermarkTextColor;
+          if (ctx.roundRect) {
+            ctx.beginPath();
+            ctx.roundRect(-boxW / 2, -boxH / 2, boxW, boxH, 10);
+            ctx.stroke();
+          } else {
+            ctx.strokeRect(-boxW / 2, -boxH / 2, boxW, boxH);
+          }
+        }
+      } else if (watermarkStyle === 'glass_badge') {
+        // Huy hiệu kính mờ bán trong suốt kèm viền sáng nổi
+        ctx.globalAlpha = alpha * 0.65;
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+        ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+        ctx.shadowBlur = 10;
+        ctx.shadowOffsetY = 3;
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(-boxW / 2, -boxH / 2, boxW, boxH, boxH / 2);
+          ctx.fill();
+        } else {
+          ctx.fillRect(-boxW / 2, -boxH / 2, boxW, boxH);
+        }
+
+        // Viền sáng khắc nổi quanh huy hiệu
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = Math.min(1, alpha * 0.9);
+        ctx.lineWidth = Math.max(1.5, scaledFontSize * 0.055);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+        ctx.stroke();
+
+        // Chữ nổi bên trong
+        ctx.globalAlpha = Math.min(1, alpha + 0.15);
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillText(text, 1.5, 1.5);
+        ctx.fillStyle = watermarkTextColor;
+        ctx.fillText(text, 0, 0);
+      } else {
+        // Banner Tiêu Đề Nổi truyền thống
+        ctx.globalAlpha = alpha;
+        ctx.fillStyle = watermarkBgColor;
+        if (ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(-boxW / 2, -boxH / 2, boxW, boxH, 10);
+          ctx.fill();
+        } else {
+          ctx.fillRect(-boxW / 2, -boxH / 2, boxW, boxH);
+        }
+        ctx.fillStyle = watermarkTextColor;
+        ctx.fillText(text, 0, 0);
+      }
+
       ctx.restore();
     }
 
@@ -1469,7 +1574,53 @@ export function ImageStudioTab({
                               );
                             })}
 
-                            <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                            {/* Hiển thị Watermark Logo Nổi Mờ trực tiếp trên từng khung nhỏ */}
+                            {showWatermark && watermarkText.trim() && (
+                              <div
+                                style={{
+                                  opacity: Math.max(0.18, Math.min(1, watermarkOpacity / 100)),
+                                  ...(watermarkPosition === 'center'
+                                    ? { top: '50%', left: '50%', transform: `translate(-50%, -50%) ${watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''}` }
+                                    : watermarkPosition === 'top'
+                                    ? { top: '10%', left: '50%', transform: 'translate(-50%, -50%)' }
+                                    : watermarkPosition === 'bottom'
+                                    ? { bottom: '6%', left: '50%', transform: 'translateX(-50%)' }
+                                    : watermarkPosition === 'bottom_right'
+                                    ? { bottom: '5%', right: '5%' }
+                                    : watermarkPosition === 'bottom_left'
+                                    ? { bottom: '5%', left: '5%' }
+                                    : { top: '5%', right: '5%' }),
+                                }}
+                                className="absolute z-20 pointer-events-none select-none"
+                              >
+                                <span
+                                  style={{
+                                    color: watermarkTextColor,
+                                    backgroundColor:
+                                      watermarkStyle === 'solid_banner'
+                                        ? watermarkBgColor
+                                        : watermarkStyle === 'glass_badge'
+                                        ? 'rgba(15,23,42,0.45)'
+                                        : 'transparent',
+                                    textShadow:
+                                      watermarkStyle === 'solid_banner'
+                                        ? 'none'
+                                        : '-0.5px -0.5px 0 rgba(255,255,255,0.85), 1px 1px 1.5px rgba(0,0,0,0.85), 0 0 4px rgba(0,0,0,0.55)',
+                                    border:
+                                      watermarkStyle === 'diagonal_stamp'
+                                        ? `1px solid ${watermarkTextColor}`
+                                        : watermarkStyle === 'glass_badge'
+                                        ? '1px solid rgba(255,255,255,0.55)'
+                                        : 'none',
+                                  }}
+                                  className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-wider whitespace-nowrap block"
+                                >
+                                  {watermarkText}
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-30">
                               <span className="px-2 py-1 rounded-md bg-white text-slate-900 font-black text-[10px] shadow">
                                 Chọn Khung Này
                               </span>
@@ -1935,27 +2086,84 @@ export function ImageStudioTab({
                     );
                   })}
 
-                  {/* OVERLAY WATERMARK / HEADLINE BANNER */}
+                  {/* OVERLAY WATERMARK / EMBOSSED 3D COPYRIGHT LOGO */}
                   {showWatermark && watermarkText.trim() && (
                     <div
                       style={{
-                        top:
-                          watermarkPosition === 'top'
-                            ? '8%'
-                            : watermarkPosition === 'center'
-                            ? '50%'
-                            : '88%',
-                        transform: 'translate(-50%, -50%)',
+                        opacity: Math.max(0.15, Math.min(1, watermarkOpacity / 100)),
+                        ...(watermarkPosition === 'center'
+                          ? {
+                              top: '50%',
+                              left: '50%',
+                              transform: `translate(-50%, -50%) ${
+                                watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
+                              }`,
+                            }
+                          : watermarkPosition === 'top'
+                          ? {
+                              top: '9%',
+                              left: '50%',
+                              transform: `translate(-50%, -50%) ${
+                                watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
+                              }`,
+                            }
+                          : watermarkPosition === 'bottom'
+                          ? {
+                              top: '91%',
+                              left: '50%',
+                              transform: `translate(-50%, -50%) ${
+                                watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
+                              }`,
+                            }
+                          : watermarkPosition === 'bottom_right'
+                          ? {
+                              bottom: '4.5%',
+                              right: '4.5%',
+                              transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
+                            }
+                          : watermarkPosition === 'bottom_left'
+                          ? {
+                              bottom: '4.5%',
+                              left: '4.5%',
+                              transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
+                            }
+                          : {
+                              top: '4.5%',
+                              right: '4.5%',
+                              transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
+                            }),
                       }}
-                      className="absolute left-1/2 z-30 pointer-events-none select-none"
+                      className="absolute z-30 pointer-events-none select-none transition-all"
                     >
                       <div
                         style={{
-                          backgroundColor: watermarkBgColor,
                           color: watermarkTextColor,
-                          fontSize: `${Math.round((watermarkFontSize / 1080) * 380)}px`,
+                          fontSize: `${Math.round((watermarkFontSize / 1080) * 420)}px`,
+                          backgroundColor:
+                            watermarkStyle === 'solid_banner'
+                              ? watermarkBgColor
+                              : watermarkStyle === 'glass_badge'
+                              ? 'rgba(15, 23, 42, 0.5)'
+                              : 'transparent',
+                          backdropFilter: watermarkStyle === 'glass_badge' ? 'blur(4px)' : 'none',
+                          border:
+                            watermarkStyle === 'diagonal_stamp'
+                              ? `2px solid ${watermarkTextColor}`
+                              : watermarkStyle === 'glass_badge'
+                              ? '1.5px solid rgba(255, 255, 255, 0.65)'
+                              : 'none',
+                          textShadow:
+                            watermarkStyle === 'solid_banner'
+                              ? 'none'
+                              : '-1px -1px 0px rgba(255,255,255,0.85), 1.5px 1.5px 0px rgba(0,0,0,0.75), 0px 2px 6px rgba(0,0,0,0.6)',
+                          WebkitTextStroke:
+                            watermarkStyle === 'embossed_logo' || watermarkStyle === 'diagonal_stamp'
+                              ? '0.6px rgba(0,0,0,0.45)'
+                              : 'none',
                         }}
-                        className="px-3.5 py-1.5 rounded-lg font-black tracking-wide shadow-lg whitespace-nowrap text-center"
+                        className={`px-3.5 py-1.5 font-black tracking-wider whitespace-nowrap text-center ${
+                          watermarkStyle === 'glass_badge' ? 'rounded-full shadow-lg' : 'rounded-lg'
+                        }`}
                       >
                         {watermarkText}
                       </div>
@@ -2140,12 +2348,12 @@ export function ImageStudioTab({
                   </div>
                 </div>
 
-                {/* 4. CHỮ VIRAL & WATERMARK ĐÓNG DẤU */}
+                {/* 4. LOGO NỔI BẢN QUYỀN MỜ (EMBOSSED WATERMARK) & TIÊU ĐỀ */}
                 <div className="pt-2 border-t border-slate-100 space-y-2.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       <Type className="w-3.5 h-3.5 text-rose-600" />
-                      Tiêu Đề / Watermark
+                      Logo Bản Quyền Nổi / Watermark
                     </label>
                     <label className="inline-flex items-center cursor-pointer">
                       <input
@@ -2159,44 +2367,118 @@ export function ImageStudioTab({
                   </div>
 
                   {showWatermark && (
-                    <div className="space-y-2">
-                      <input
-                        type="text"
-                        value={watermarkText}
-                        onChange={(e) => setWatermarkText(e.target.value)}
-                        placeholder="Nhập tiêu đề hoặc tên Fanpage..."
-                        className="w-full text-xs font-bold px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
-                      />
-
-                      <div className="grid grid-cols-3 gap-1 text-[11px] font-bold">
-                        {(['top', 'center', 'bottom'] as const).map((pos) => (
-                          <button
-                            key={pos}
-                            type="button"
-                            onClick={() => setWatermarkPosition(pos)}
-                            className={`py-1 rounded-md border text-center transition-colors cursor-pointer ${
-                              watermarkPosition === pos
-                                ? 'bg-rose-100 border-rose-300 text-rose-800'
-                                : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
-                            }`}
-                          >
-                            {pos === 'top' ? 'Trên (Story)' : pos === 'center' ? 'Giữa (Chìm)' : 'Dưới'}
-                          </button>
-                        ))}
+                    <div className="space-y-2.5">
+                      <div>
+                        <input
+                          type="text"
+                          value={watermarkText}
+                          onChange={(e) => setWatermarkText(e.target.value)}
+                          placeholder="VD: © CELEB24H hoặc Tên Fanpage..."
+                          className="w-full text-xs font-bold px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-rose-500"
+                        />
+                        {/* Gợi ý nhanh chữ đóng dấu bản quyền */}
+                        <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                          {[
+                            '© CELEB24H',
+                            '© CELEB24H.COM',
+                            ...(allPageNames.slice(0, 2).map((p) => `© ${p.toUpperCase()}`)),
+                            'SWIPE UP ▶',
+                          ].map((sample) => (
+                            <button
+                              key={sample}
+                              type="button"
+                              onClick={() => setWatermarkText(sample)}
+                              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition-colors cursor-pointer ${
+                                watermarkText === sample
+                                  ? 'bg-rose-600 text-white border-rose-600'
+                                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {sample}
+                            </button>
+                          ))}
+                        </div>
                       </div>
 
-                      <div className="flex items-center space-x-2 pt-1">
-                        <div className="flex items-center space-x-1">
-                          <span className="text-[10px] text-slate-500">Màu nền:</span>
-                          <input
-                            type="color"
-                            value={watermarkBgColor.startsWith('#') ? watermarkBgColor : '#e11d48'}
-                            onChange={(e) => setWatermarkBgColor(e.target.value)}
-                            className="w-6 h-6 rounded cursor-pointer border border-slate-300"
-                          />
+                      {/* Kiểu hiển thị: Logo Nổi 3D Mờ vs Kính Mờ vs Con Dấu Chéo vs Banner */}
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                          Kiểu đóng dấu bản quyền:
+                        </span>
+                        <div className="grid grid-cols-2 gap-1.5 text-[11px] font-bold">
+                          {[
+                            { id: 'embossed_logo', label: '✨ Logo Nổi 3D Mờ' },
+                            { id: 'glass_badge', label: '🛡️ Kính Mờ Bản Quyền' },
+                            { id: 'diagonal_stamp', label: '🔖 Đóng Dấu Chéo Giữa' },
+                            { id: 'solid_banner', label: '📢 Banner Tiêu Đề Đậm' },
+                          ].map((st) => (
+                            <button
+                              key={st.id}
+                              type="button"
+                              onClick={() => setWatermarkStyle(st.id as any)}
+                              className={`py-1.5 px-2 rounded-lg border text-left transition-all cursor-pointer truncate ${
+                                watermarkStyle === st.id
+                                  ? 'bg-rose-50 border-rose-500 text-rose-900 ring-1 ring-rose-500/30 font-black'
+                                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                              }`}
+                            >
+                              {st.label}
+                            </button>
+                          ))}
                         </div>
-                        <div className="flex items-center space-x-1">
-                          <span className="text-[10px] text-slate-500">Màu chữ:</span>
+                      </div>
+
+                      {/* Vị trí đóng dấu */}
+                      <div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">
+                          Vị trí trên khung ảnh:
+                        </span>
+                        <div className="grid grid-cols-3 gap-1 text-[10px] font-bold">
+                          {(
+                            [
+                              { id: 'center', label: 'Giữa Ảnh (Chìm)' },
+                              { id: 'bottom_right', label: 'Góc Dưới Phải' },
+                              { id: 'bottom_left', label: 'Góc Dưới Trái' },
+                              { id: 'bottom', label: 'Giữa Dưới' },
+                              { id: 'top', label: 'Giữa Trên' },
+                              { id: 'top_right', label: 'Góc Trên Phải' },
+                            ] as const
+                          ).map((pos) => (
+                            <button
+                              key={pos.id}
+                              type="button"
+                              onClick={() => setWatermarkPosition(pos.id)}
+                              className={`py-1 px-1.5 rounded-md border text-center transition-colors cursor-pointer ${
+                                watermarkPosition === pos.id
+                                  ? 'bg-rose-100 border-rose-400 text-rose-900 font-black'
+                                  : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+                              }`}
+                            >
+                              {pos.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Thanh trượt Độ Mờ / Nổi (Opacity) */}
+                      <div>
+                        <div className="flex justify-between text-[11px] text-slate-600 mb-0.5">
+                          <span>Độ rõ Logo nổi (Mờ xuyên thấu)</span>
+                          <span className="font-black text-rose-700">{watermarkOpacity}%</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="18"
+                          max="100"
+                          value={watermarkOpacity}
+                          onChange={(e) => setWatermarkOpacity(Number(e.target.value))}
+                          className="w-full accent-rose-600 cursor-pointer"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between gap-2 pt-1">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-[10px] text-slate-500 font-semibold">Màu chữ nổi:</span>
                           <input
                             type="color"
                             value={watermarkTextColor}
@@ -2204,15 +2486,26 @@ export function ImageStudioTab({
                             className="w-6 h-6 rounded cursor-pointer border border-slate-300"
                           />
                         </div>
-                        <div className="flex-1 flex items-center justify-end space-x-1">
-                          <span className="text-[10px] text-slate-500">Cỡ chữ:</span>
+                        {watermarkStyle === 'solid_banner' && (
+                          <div className="flex items-center space-x-1">
+                            <span className="text-[10px] text-slate-500 font-semibold">Nền:</span>
+                            <input
+                              type="color"
+                              value={watermarkBgColor.startsWith('#') ? watermarkBgColor : '#e11d48'}
+                              onChange={(e) => setWatermarkBgColor(e.target.value)}
+                              className="w-6 h-6 rounded cursor-pointer border border-slate-300"
+                            />
+                          </div>
+                        )}
+                        <div className="flex items-center space-x-1">
+                          <span className="text-[10px] text-slate-500 font-semibold">Cỡ Logo:</span>
                           <input
                             type="number"
                             min="14"
-                            max="48"
+                            max="72"
                             value={watermarkFontSize}
                             onChange={(e) => setWatermarkFontSize(Number(e.target.value))}
-                            className="w-12 text-xs font-bold px-1.5 py-0.5 border border-slate-300 rounded text-center"
+                            className="w-14 text-xs font-bold px-1.5 py-0.5 border border-slate-300 rounded text-center"
                           />
                         </div>
                       </div>
