@@ -295,7 +295,8 @@ export default async function handler(req, res) {
           { headers: { 'User-Agent': USER_AGENT } }
         );
         if (!wpRes.ok) return;
-        const postJson = await wpRes.json();
+        const rawJson = await wpRes.json();
+        const postJson = Array.isArray(rawJson) ? rawJson[0] : rawJson;
         if (postJson && postJson.id) {
           if (!title) title = decodeHtmlEntities(postJson.title?.rendered || '');
           if (!excerpt) {
@@ -324,6 +325,13 @@ export default async function handler(req, res) {
 
     if (numericIdMatch) {
       await tryFetchWpRestPost(`${origin}/wp-json/wp/v2/posts/${numericIdMatch}?_embed`);
+    } else if (pathSegments.length > 0) {
+      const lastSegment = pathSegments[pathSegments.length - 1].replace(/\.html?$/i, '');
+      if (lastSegment && lastSegment.length >= 3) {
+        await tryFetchWpRestPost(
+          `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSegment)}&_embed`
+        );
+      }
     }
 
     if (candidateImages.length === 0 || !title) {

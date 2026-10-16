@@ -535,9 +535,17 @@ export function ImageStudioTab({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: targetUrl }),
       });
-      const data = await res.json();
-      if (!res.ok || !data.ok || !Array.isArray(data.images) || data.images.length === 0) {
-        throw new Error(data.error || 'Không tìm thấy ảnh nào trong đường dẫn này!');
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        throw new Error(
+          'Máy chủ phản hồi quá thời gian hoặc đường dẫn chặn truy cập. Vui lòng thử lại!'
+        );
+      }
+      if (!res.ok || !data?.ok || !Array.isArray(data.images) || data.images.length === 0) {
+        throw new Error(data?.error || 'Không tìm thấy ảnh nào trong đường dẫn này!');
       }
 
       const extractedPhotos: string[] = data.images.map(

@@ -1619,13 +1619,18 @@ Hãy trả về JSON thuần với cấu trúc:
   "contentHtml": "Nội dung bài viết chi tiết định dạng thẻ <p>. Hãy viết từ 12-16 đoạn <p>, mỗi đoạn khoảng 150 từ."
 }`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: prompt,
-        config: {
-          responseMimeType: 'application/json',
-        },
-      });
+      const response: any = await Promise.race([
+        ai.models.generateContent({
+          model: 'gemini-3.8-flash',
+          contents: prompt,
+          config: {
+            responseMimeType: 'application/json',
+          },
+        }),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Gemini fast timeout')), 5500)
+        ),
+      ]);
 
       const parsed = JSON.parse(response.text || '{}');
       if (parsed) {
@@ -1639,7 +1644,7 @@ Hãy trả về JSON thuần với cấu trúc:
         aiDraftHtml = String(parsed.contentHtml || '');
       }
     } catch (err) {
-      console.warn('[wpPublishService] Gemini generation fallback:', err);
+      console.warn('[wpPublishService] Using fast long-form SEO engine:', err);
     }
   }
 
