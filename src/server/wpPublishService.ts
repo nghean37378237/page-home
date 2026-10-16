@@ -773,13 +773,127 @@ function collectImgsFromHtml(htmlChunk: string, baseUrl: string): { url: string;
   return list;
 }
 
+export interface ArticleContextProfile {
+  primaryPerson: string;
+  secondaryPerson: string;
+  eventWords: string[];
+  subjectDisplay: string;
+  combinedSearchQuery: string;
+}
+
 /**
- * Tìm thêm ảnh minh họa ngoài (External High-Res Images) liên quan đến tiêu đề / nhân vật
+ * Phân tích sâu nội dung bài viết để lấy chính xác:
+ * 1. Tên diễn viên / người nổi tiếng chính (primaryPerson)
+ * 2. Người đi cùng / bạn đời / đồng nghiệp nhắc tới trong bài (secondaryPerson)
+ * 3. Bối cảnh / sự kiện cụ thể đang diễn ra trong bài (eventWords: beach, yacht, bikini, Barbados, Saint-Tropez, pregnancy...)
  */
+export function analyzeArticleSubjectAndContext(
+  title: string,
+  text: string,
+  userKeyword?: string
+): ArticleContextProfile {
+  const fullText = String(text || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const sample = fullText.slice(0, 4500);
+
+  const stopWords = new Set([
+    'There', 'The', 'This', 'That', 'These', 'Those', 'When', 'While', 'Where',
+    'What', 'Who', 'Why', 'How', 'Proving', 'Looking', 'Taking', 'Channeling',
+    'Addressing', 'Stepping', 'Enjoying', 'Sharing', 'Showing', 'Making', 'Soaking',
+    'Confirming', 'Embracing', 'Walking', 'Strolling', 'Wearing', 'Smiling', 'Spotted',
+    'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South',
+    'East', 'United', 'States', 'America', 'British', 'English', 'American',
+    'French', 'Riviera', 'Mediterranean', 'German', 'Italian', 'Spanish', 'Mexican',
+    'Saint', 'Tropez', 'Cannes', 'Paris', 'Rome', 'Malibu', 'Hawaii', 'Florida',
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+    'September', 'October', 'November', 'December', 'Instagram', 'Twitter',
+    'Facebook', 'YouTube', 'TikTok', 'Daily', 'Mail', 'Page', 'Six', 'People',
+    'Notting', 'Hill', 'Los', 'Angeles', 'New', 'York', 'Miami', 'Beach', 'Sandy', 'Lane',
+    'Golden', 'Globes', 'Academy', 'Award', 'Awards', 'Oscar', 'Oscars', 'Emmy',
+    'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress',
+    'Actor', 'Singer', 'Partner', 'Candid', 'Photo', 'Recognize', 'Them', 'Her', 'Him',
+    'Bear', 'Blur', 'Gorillaz', 'Landman', 'City', 'Street', 'Streets', 'Turns', 'Heads'
+  ]);
+
+  const regex = /\b([A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g;
+  const stats = new Map<string, { count: number; firstIdx: number }>();
+  let m: RegExpExecArray | null;
+  while ((m = regex.exec(sample || title)) !== null) {
+    const rawName = m[1].trim();
+    const parts = rawName.split(/\s+/);
+    const cleanParts = parts.filter((p) => !stopWords.has(p));
+    if (cleanParts.length < 2) continue;
+    const candidate = cleanParts.join(' ');
+    const prev = stats.get(candidate) || { count: 0, firstIdx: m.index };
+    prev.count += 1;
+    stats.set(candidate, prev);
+  }
+
+  const rankedPeople = [...stats.entries()]
+    .sort((a, b) => {
+      const scoreA = a[1].count * 10 + (a[1].firstIdx < 550 ? 18 : 0);
+      const scoreB = b[1].count * 10 + (b[1].firstIdx < 550 ? 18 : 0);
+      return scoreB - scoreA;
+    })
+    .map((e) => e[0]);
+
+  const primaryPerson =
+    (userKeyword && userKeyword.trim()) ||
+    rankedPeople[0] ||
+    String(title || '').split(/[:–—|-]/)[0].trim();
+
+  const secondaryPerson =
+    rankedPeople.find(
+      (p) =>
+        p !== primaryPerson &&
+        !primaryPerson.toLowerCase().includes(p.toLowerCase()) &&
+        !p.toLowerCase().includes(primaryPerson.toLowerCase())
+    ) || '';
+
+  const topicSource = `${title || ''} ${fullText.slice(0, 600)}`.toLowerCase();
+  const topicGlossary = [
+    'yacht', 'beach', 'bikini', 'vacation', 'getaway', 'pregnant', 'pregnancy',
+    'rumors', 'baby', 'husband', 'wife', 'boyfriend', 'girlfriend', 'partner',
+    'romance', 'romantic', 'kiss', 'stroll', 'wedding', 'engaged', 'red carpet',
+    'premiere', 'family', 'barbados', 'saint-tropez', 'london', 'new york', 'malibu', 'miami'
+  ];
+  const eventWords: string[] = [];
+  for (const kw of topicGlossary) {
+    if (topicSource.includes(kw) && eventWords.length < 4) {
+      eventWords.push(kw);
+    }
+  }
+
+  const subjectDisplay = secondaryPerson
+    ? `${primaryPerson} and ${secondaryPerson}`
+    : primaryPerson;
+
+  const combinedSearchQuery = [
+    primaryPerson,
+    secondaryPerson,
+    eventWords.slice(0, 2).join(' '),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  return {
+    primaryPerson,
+    secondaryPerson,
+    eventWords,
+    subjectDisplay,
+    combinedSearchQuery: combinedSearchQuery || primaryPerson || title,
+  };
+}
+
 export async function searchExternalRelatedImages(
   rawQuery: string,
   limit = 6,
-  excludeKeys = new Set<string>()
+  excludeKeys = new Set<string>(),
+  contextProfile?: ArticleContextProfile
 ): Promise<ScrapedArticleImage[]> {
   const cleanQuery = String(rawQuery || '')
     .replace(/<[^>]*>/g, '')
@@ -787,80 +901,108 @@ export async function searchExternalRelatedImages(
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleanQuery) return [];
+  if (!cleanQuery && !contextProfile?.primaryPerson) return [];
 
-  const words = cleanQuery.split(' ').slice(0, 9).join(' ');
-  const results: ScrapedArticleImage[] = [];
+  const primaryPerson = (contextProfile?.primaryPerson || cleanQuery.split(/\s+/).slice(0, 3).join(' ')).trim();
+  const secondaryPerson = (contextProfile?.secondaryPerson || '').trim();
+  const eventWords = contextProfile?.eventWords || [];
+
+  const queries = [
+    [primaryPerson, secondaryPerson, eventWords.slice(0, 2).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, eventWords.slice(0, 3).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, secondaryPerson].filter(Boolean).join(' ').trim(),
+    cleanQuery.split(/\s+/).slice(0, 8).join(' '),
+  ].filter(Boolean);
+
+  const uniqueQueries = [...new Set(queries)];
+  const pTokens = primaryPerson
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const sTokens = secondaryPerson
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const eTokens = eventWords.map((w) => w.toLowerCase()).filter(Boolean);
+
+  const scoredCandidates: (ScrapedArticleImage & { score: number })[] = [];
   const seen = new Set<string>(excludeKeys);
 
-  const runBingImageSearch = async (q: string) => {
+  for (const q of uniqueQueries) {
+    if (scoredCandidates.length >= limit * 2) break;
     try {
-      const url = `https://www.bing.com/images/search?q=${encodeURIComponent(q)}&form=HDRSC2&first=1`;
+      const url = `https://www.bing.com/images/search?q=${encodeURIComponent(
+        q
+      )}&setmkt=en-US&setlang=en-US&cc=US&first=1`;
       const res = await fetch(url, {
         headers: {
           'User-Agent': SCRAPER_USER_AGENT,
           'Accept-Language': 'en-US,en;q=0.9',
+          Cookie: '_EDGE_S=mkt=en-us; SRCHHPGUSR=SRCHLANG=en&WLS=2',
         },
       });
-      if (!res.ok) return;
+      if (!res.ok) continue;
       const html = await res.text();
-      const itemRegex = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;[\s\S]{0,400}?t&quot;:&quot;([^&]*?)&quot;/gi;
-      let match: RegExpExecArray | null;
-      while ((match = itemRegex.exec(html)) !== null && results.length < limit) {
-        const imgUrl = decodeHtmlEntities(match[1]).trim();
-        const imgTitle = decodeHtmlEntities(match[2] || cleanQuery).replace(/\s+/g, ' ').trim();
-        if (!imgUrl || isIgnorableImage(imgUrl)) continue;
-        if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(imgUrl)) continue;
-        const normKey = imgUrl.split('?')[0].toLowerCase();
-        if (seen.has(normKey)) continue;
-        seen.add(normKey);
-        results.push({
-          url: imgUrl,
-          alt: imgTitle || cleanQuery,
-          isFeatured: false,
-          isExternal: true,
-        });
-      }
-
-      // Fallback nếu regex có title không khớp hết
-      if (results.length < limit) {
-        const simpleRegex = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;/gi;
-        let sm: RegExpExecArray | null;
-        while ((sm = simpleRegex.exec(html)) !== null && results.length < limit) {
-          const imgUrl = decodeHtmlEntities(sm[1]).trim();
+      const matches = html.matchAll(/m="(\{[^"]+\})"/g);
+      for (const m of matches) {
+        try {
+          const obj = JSON.parse(decodeHtmlEntities(m[1]));
+          const imgUrl = String(obj.murl || '').trim();
           if (!imgUrl || isIgnorableImage(imgUrl)) continue;
           if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(imgUrl)) continue;
+          if (imgUrl.includes('ido.org.tw') || imgUrl.includes('tiktok.com/api')) continue;
+
           const normKey = imgUrl.split('?')[0].toLowerCase();
           if (seen.has(normKey)) continue;
+
+          const titleText = decodeHtmlEntities(String(obj.t || obj.desc || '')).replace(/\s+/g, ' ').trim();
+          const hay = `${titleText} ${obj.purl || ''} ${imgUrl}`.toLowerCase();
+
+          // BẮT BUỘC ảnh phải chứa tên diễn viên / người nổi tiếng chính của bài viết
+          const matchesPrimary =
+            (primaryPerson && hay.includes(primaryPerson.toLowerCase())) ||
+            pTokens.some((tk) => hay.includes(tk));
+          if (!matchesPrimary) continue;
+
+          let score = 0;
+          if (primaryPerson && hay.includes(primaryPerson.toLowerCase())) score += 50;
+          else score += 25;
+
+          if (secondaryPerson && hay.includes(secondaryPerson.toLowerCase())) score += 45;
+          else if (sTokens.some((tk) => hay.includes(tk))) score += 20;
+
+          for (const ew of eTokens) {
+            if (hay.includes(ew)) score += 15;
+          }
+
           seen.add(normKey);
-          results.push({
+          scoredCandidates.push({
             url: imgUrl,
-            alt: `${cleanQuery} - Photo ${results.length + 1}`,
+            alt: titleText || `${primaryPerson} - ${eventWords.join(' ')}`.trim(),
             isFeatured: false,
             isExternal: true,
+            score,
           });
+        } catch {
+          // ignore malformed item
         }
       }
     } catch {
       // ignore search error
     }
-  };
-
-  await runBingImageSearch(words);
-  if (results.length < limit && cleanQuery.split(' ').length > 4) {
-    const shortQuery = `${cleanQuery.split(' ').slice(0, 5).join(' ')} celebrity photo`;
-    await runBingImageSearch(shortQuery);
   }
 
-  return results.slice(0, limit);
+  scoredCandidates.sort((a, b) => b.score - a.score);
+  return scoredCandidates.slice(0, limit).map(({ score: _s, ...rest }) => rest);
 }
 
 /**
- * Tìm 2 video YouTube liên quan thực tế theo chủ đề hoặc tên nhân vật
+ * Tìm 2 video YouTube liên quan SÁT NỘI DUNG NHẤT với diễn viên, người đi cùng và sự kiện trong bài
  */
 export async function searchRelatedYouTubeVideos(
   rawQuery: string,
-  limit = 2
+  limit = 2,
+  contextProfile?: ArticleContextProfile
 ): Promise<RelatedYouTubeVideo[]> {
   const cleanQuery = String(rawQuery || '')
     .replace(/<[^>]*>/g, '')
@@ -868,9 +1010,35 @@ export async function searchRelatedYouTubeVideos(
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleanQuery) return [];
+  if (!cleanQuery && !contextProfile?.primaryPerson) return [];
 
-  const runSingleSearch = async (q: string): Promise<RelatedYouTubeVideo[]> => {
+  const primaryPerson = (contextProfile?.primaryPerson || cleanQuery.split(/\s+/).slice(0, 3).join(' ')).trim();
+  const secondaryPerson = (contextProfile?.secondaryPerson || '').trim();
+  const eventWords = contextProfile?.eventWords || [];
+
+  const queries = [
+    [primaryPerson, secondaryPerson, eventWords.slice(0, 2).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, eventWords.slice(0, 3).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, secondaryPerson].filter(Boolean).join(' ').trim(),
+    cleanQuery.split(/\s+/).slice(0, 8).join(' '),
+  ].filter(Boolean);
+
+  const uniqueQueries = [...new Set(queries)];
+  const pTokens = primaryPerson
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const sTokens = secondaryPerson
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const eTokens = eventWords.map((w) => w.toLowerCase()).filter(Boolean);
+
+  const candidates: (RelatedYouTubeVideo & { score: number })[] = [];
+  const seen = new Set<string>();
+
+  for (const q of uniqueQueries) {
+    if (candidates.length >= 12) break;
     try {
       const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
       const res = await fetch(searchUrl, {
@@ -879,52 +1047,54 @@ export async function searchRelatedYouTubeVideos(
           'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
         },
       });
-      if (!res.ok) return [];
+      if (!res.ok) continue;
       const html = await res.text();
-      const found: RelatedYouTubeVideo[] = [];
-      const seen = new Set<string>();
 
       const rendererRegex =
         /"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]*?"title":\{"runs":\[\{"text":"([^"]+)"/g;
       let match: RegExpExecArray | null;
-      while ((match = rendererRegex.exec(html)) !== null && found.length < limit) {
+      while ((match = rendererRegex.exec(html)) !== null && candidates.length < 18) {
         const videoId = match[1];
-        const rawTitle = match[2]
-          .replace(/\\u0026/g, '&')
-          .replace(/\\"/g, '"')
-          .trim();
-        if (videoId && !seen.has(videoId)) {
-          seen.add(videoId);
-          found.push({
-            videoId,
-            title: decodeHtmlEntities(rawTitle),
-            watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
-            embedUrl: `https://www.youtube.com/embed/${videoId}`,
-            thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-          });
+        const rawTitle = decodeHtmlEntities(
+          match[2].replace(/\\u0026/g, '&').replace(/\\"/g, '"').trim()
+        );
+        if (!videoId || seen.has(videoId)) continue;
+
+        const lowerTitle = rawTitle.toLowerCase();
+        // Bắt buộc tiêu đề video phải nhắc tới tên diễn viên / nhân vật chính
+        const hasPerson =
+          (primaryPerson && lowerTitle.includes(primaryPerson.toLowerCase())) ||
+          pTokens.some((tk) => lowerTitle.includes(tk));
+        if (!hasPerson && candidates.length >= limit) continue;
+
+        let score = 0;
+        if (primaryPerson && lowerTitle.includes(primaryPerson.toLowerCase())) score += 50;
+        else if (hasPerson) score += 25;
+
+        if (secondaryPerson && lowerTitle.includes(secondaryPerson.toLowerCase())) score += 45;
+        else if (sTokens.some((tk) => lowerTitle.includes(tk))) score += 20;
+
+        for (const ew of eTokens) {
+          if (lowerTitle.includes(ew)) score += 15;
         }
+
+        seen.add(videoId);
+        candidates.push({
+          videoId,
+          title: rawTitle,
+          watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          embedUrl: `https://www.youtube.com/embed/${videoId}`,
+          thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          score,
+        });
       }
-      return found;
     } catch {
-      return [];
-    }
-  };
-
-  const words = cleanQuery.split(' ');
-  const primaryQuery = words.slice(0, 8).join(' ');
-  let videos = await runSingleSearch(primaryQuery);
-
-  if (videos.length < limit && words.length > 3) {
-    const fallbackQuery = `${words.slice(0, 4).join(' ')} interview story`;
-    const more = await runSingleSearch(fallbackQuery);
-    for (const v of more) {
-      if (!videos.some((existing) => existing.videoId === v.videoId) && videos.length < limit) {
-        videos.push(v);
-      }
+      // ignore single search error
     }
   }
 
-  return videos.slice(0, limit);
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, limit).map(({ score: _s, ...rest }) => rest);
 }
 
 function humanizeUrlSlugToTitle(pathname: string): string {
@@ -943,7 +1113,6 @@ function cleanScrapedTitle(rawTitle: string): string {
     .replace(/<[^>]*>/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  // Bỏ hậu tố tên trang báo ở cuối nếu có dạng " | SiteName" hoặc " - SiteName.com"
   return decoded.replace(/\s+[|–—-]\s+[^|–—-]{2,35}\.(com|net|org|fun|vn|info|us|co\.uk)$/i, '').trim();
 }
 
@@ -1066,9 +1235,26 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
     await tryFetchWpRestPost(
       `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSlugSeg)}&_embed`
     );
+    // Nếu người dùng dán link bị rút gọn slug, tự động tìm bài viết khớp qua WP REST search
+    if (images.length === 0 && paragraphs.length === 0) {
+      const searchQ = lastSlugSeg.replace(/[-_]+/g, ' ').trim();
+      if (searchQ.length >= 5) {
+        await tryFetchWpRestPost(
+          `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(searchQ)}&per_page=1&_embed`
+        );
+        if (images.length === 0 && paragraphs.length === 0) {
+          const shortQ = searchQ.split(/\s+/).slice(0, 5).join(' ');
+          if (shortQ && shortQ !== searchQ) {
+            await tryFetchWpRestPost(
+              `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(shortQ)}&per_page=1&_embed`
+            );
+          }
+        }
+      }
+    }
   }
 
-  // 2. Quét trực tiếp HTML trang web nếu chưa có đủ nội dung hoặc ảnh
+  // 2. Quét trực tiếp HTML trang web CHỈ KHI chưa lấy được bài viết từ WP REST API
   if (paragraphs.length === 0 || images.length === 0 || !originalTitle) {
     try {
       const pageRes = await fetch(cleanUrl, {
@@ -1082,64 +1268,68 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
       if (pageRes.ok) {
         const html = await pageRes.text();
 
-        if (!originalTitle) {
-          const h1Match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
-          const ogTitle =
-            html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
-            html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-          if (h1Match && stripHtmlTags(h1Match[1]).length > 10) {
-            originalTitle = cleanScrapedTitle(h1Match[1]);
-          } else if (ogTitle && ogTitle[1]) {
-            originalTitle = cleanScrapedTitle(ogTitle[1]);
-          }
-        }
-
-        if (!originalExcerpt) {
-          const ogDesc =
-            html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
-          if (ogDesc && ogDesc[1]) {
-            originalExcerpt = decodeHtmlEntities(ogDesc[1]);
-          }
-        }
-
         const wpJsonLink = html.match(
           /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
         );
-        if (wpJsonLink && wpJsonLink[1] && paragraphs.length === 0) {
+        if (wpJsonLink && wpJsonLink[1] && images.length === 0) {
           await tryFetchWpRestPost(resolveAbsUrl(wpJsonLink[1], cleanUrl));
         }
 
-        const ogImg =
-          html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-          html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
-          html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-        if (ogImg && ogImg[1]) {
-          addImage(ogImg[1], originalTitle, images.length === 0);
-        }
+        // Chỉ quét HTML nếu WP REST API vẫn chưa trả về ảnh bài viết
+        if (images.length === 0 || !originalTitle) {
+          if (!originalTitle) {
+            const h1Match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
+            const ogTitle =
+              html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
+              html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+            if (h1Match && stripHtmlTags(h1Match[1]).length > 10) {
+              originalTitle = cleanScrapedTitle(h1Match[1]);
+            } else if (ogTitle && ogTitle[1]) {
+              originalTitle = cleanScrapedTitle(ogTitle[1]);
+            }
+          }
 
-        const cleanBody = html
-          .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-          .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-          .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
-          .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
-          .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
-          .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '');
+          if (!originalExcerpt) {
+            const ogDesc =
+              html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+            if (ogDesc && ogDesc[1]) {
+              originalExcerpt = decodeHtmlEntities(ogDesc[1]);
+            }
+          }
 
-        const articleMatch =
-          cleanBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
-          cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+          const ogImg =
+            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+            html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+          if (ogImg && ogImg[1]) {
+            addImage(ogImg[1], originalTitle, images.length === 0);
+          }
 
-        const primaryZone = articleMatch && articleMatch[1] ? articleMatch[1] : cleanBody;
-        extractParagraphsFromHtml(primaryZone);
-        for (const img of collectImgsFromHtml(primaryZone, cleanUrl)) {
-          addImage(img.url, img.alt || originalTitle, false);
-        }
+          // Loại bỏ các khối bài liên quan (related posts), sidebar, widget, bình luận để KHÔNG lấy nhầm ảnh của bài khác trên trang
+          const cleanBody = html
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+            .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+            .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+            .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '')
+            .replace(
+              /<(div|section|ul)\b[^>]+(class|id)=["'][^"']*(related|yarpp|sharedaddy|jp-relatedposts|post-navigation|comments-area|sidebar|widget|more-posts|popular-posts|recent-posts)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,
+              ''
+            );
 
-        if (images.length < 6 && primaryZone !== cleanBody) {
-          for (const img of collectImgsFromHtml(cleanBody, cleanUrl)) {
+          const articleMatch =
+            cleanBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
+            cleanBody.match(/<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
+            cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+
+          const primaryZone =
+            articleMatch ? articleMatch[articleMatch.length - 1] || articleMatch[1] : cleanBody;
+          extractParagraphsFromHtml(primaryZone);
+          for (const img of collectImgsFromHtml(primaryZone, cleanUrl)) {
             addImage(img.url, img.alt || originalTitle, false);
           }
         }
@@ -1684,24 +1874,47 @@ Hãy trả về JSON thuần với cấu trúc:
     ];
   }
 
-  const searchTopicQuery = youtubeQuery || generatedKeyword || generatedTitle;
+  const contextProfile = analyzeArticleSubjectAndContext(
+    generatedTitle,
+    sourceArticleText || params.topic,
+    params.keyword
+  );
+  if (!params.keyword && contextProfile.primaryPerson) {
+    generatedKeyword = contextProfile.primaryPerson;
+  }
 
-  // BỔ SUNG THÊM ẢNH NGOÀI (External Related Images) + Tìm 2 Video YouTube song song
+  const searchTopicQuery =
+    contextProfile.combinedSearchQuery || youtubeQuery || generatedKeyword || generatedTitle;
+
+  // YÊU CẦU NGƯỜI DÙNG:
+  // Trước tiên lấy HẾT ảnh trong bài viết ở link bài (scrapedImages).
+  // - Nếu số ảnh trong bài >= 5 ảnh: ĐỦ 5 ẢNH RỒI THÌ THÔI, KHÔNG lấy thêm ảnh ngoài.
+  // - Nếu số ảnh trong bài < 5 ảnh: Chỉ lấy thêm ảnh ngoài ĐÚNG DIỄN VIÊN & SỰ KIỆN TRONG BÀI cho đủ 5 đến 7 ảnh (6 ảnh).
   const existingKeys = new Set(
     scrapedImages.map((img) => img.url.split('?')[0].toLowerCase())
   );
 
+  const neededExternalCount =
+    scrapedImages.length >= 5 ? 0 : Math.max(0, 6 - scrapedImages.length);
+
   const [externalImages, relatedVideos] = await Promise.all([
-    searchExternalRelatedImages(searchTopicQuery, 6, existingKeys),
-    searchRelatedYouTubeVideos(searchTopicQuery, 2),
+    neededExternalCount > 0
+      ? searchExternalRelatedImages(
+          searchTopicQuery,
+          neededExternalCount,
+          existingKeys,
+          contextProfile
+        )
+      : Promise.resolve([]),
+    searchRelatedYouTubeVideos(searchTopicQuery, 2, contextProfile),
   ]);
 
   const allCombinedImages: ScrapedArticleImage[] = [...scrapedImages, ...externalImages];
 
-  // Xây dựng bài viết dài 2.000 - 5.000 từ, chia đoạn ~150 từ / 1 đoạn và xuống dòng rõ ràng, chèn hết ảnh bài gốc + ảnh ngoài + 2 video YouTube
+  // Xây dựng bài viết dài 2.000 - 5.000 từ xoay quanh đúng diễn viên & nhân vật trong bài (subjectDisplay)
   const longFormResult = buildLongFormSeoArticle2000To5000Words({
     articleTitle: generatedTitle,
-    focusKeyword: generatedKeyword,
+    focusKeyword: contextProfile.subjectDisplay || generatedKeyword,
     sourceArticleText,
     aiDraftHtml,
     images: allCombinedImages,

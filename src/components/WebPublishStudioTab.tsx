@@ -1306,7 +1306,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       Ném 1 Link Web Bất Kỳ → Giữ Tiêu Đề Gốc & Viết Lại 2.000 – 5.000 Từ Chuẩn SEO
                     </div>
                     <div className="text-[11px] text-slate-600 mt-0.5">
-                      Lấy luôn tiêu đề bài link nhập vào + viết sâu 2.000–5.000 từ (~150 từ/đoạn, xuống dòng rõ) + lấy hết ảnh trong bài & bổ sung ảnh ngoài + 2 Video YouTube
+                      Lấy hết ảnh trong bài (nếu &lt; 5 ảnh mới lấy thêm ảnh ngoài cho đủ 5–7 ảnh, đủ 5 ảnh rồi thì thôi) + viết 2.000–5.000 từ (~150 từ/đoạn) + 2 Video YouTube
                     </div>
                   </div>
                 </button>
@@ -1334,7 +1334,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       Nhập Đoạn Nội Dung / Chủ Đề → Viết Bài Dài 2.000 – 5.000 Từ Chuẩn SEO
                     </div>
                     <div className="text-[11px] text-slate-600 mt-0.5">
-                      Viết thành bài báo dài 2.000–5.000 từ (~150 từ/đoạn, xuống dòng) + tự bổ sung bộ ảnh minh họa ngoài + gắn 2 Video YouTube cuối bài
+                      Viết thành bài báo dài 2.000–5.000 từ (~150 từ/đoạn, xuống dòng) + tự bổ sung 5–7 ảnh minh họa ngoài + gắn 2 Video YouTube cuối bài
                     </div>
                   </div>
                 </button>
@@ -1344,7 +1344,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               {aiMode === 'from_url' ? (
                 <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
                   <label className="text-xs font-black text-slate-800 block">
-                    🔗 Dán đường dẫn (URL) bài viết từ bất kỳ trang báo / website nào (Hệ thống tự lấy luôn tiêu đề bài gốc):
+                    🔗 Dán đường dẫn (URL) bài viết từ bất kỳ trang báo / website nào (Tự lấy hết ảnh bài gốc; nếu &lt; 5 ảnh sẽ tự bù ảnh ngoài cho đủ 5–7 ảnh):
                   </label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <input
@@ -1374,7 +1374,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          <span>Viết Lại 2.000–5.000 Từ + Lấy Hết Ảnh & Ảnh Ngoài + 2 Video YT</span>
+                          <span>Viết Lại 2.000–5.000 Từ + Lấy Ảnh Chuẩn & 2 Video YT</span>
                         </>
                       )}
                     </button>
@@ -1427,7 +1427,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       • {Number(aiArticleStats.paragraphCount || 18)} đoạn văn (~150 từ / 1 đoạn & xuống dòng rõ ràng)
                     </span>
                     <span>
-                      • {Number(aiArticleStats.originalImageCount || 0)} ảnh trong bài gốc + {Number(aiArticleStats.externalImageCount || 0)} ảnh bổ sung ngoài
+                      {Number(aiArticleStats.externalImageCount || 0) === 0
+                        ? `• Đã lấy đủ ${Number(aiArticleStats.originalImageCount || 0)} ảnh trong bài gốc (>= 5 ảnh nên giữ nguyên ảnh gốc)`
+                        : `• ${Number(aiArticleStats.originalImageCount || 0)} ảnh trong bài gốc + bù thêm ${Number(aiArticleStats.externalImageCount || 0)} ảnh ngoài (Tổng ${Number(aiArticleStats.originalImageCount || 0) + Number(aiArticleStats.externalImageCount || 0)} ảnh)`}
                     </span>
                   </div>
                   <span className="text-[11px] text-emerald-200">
@@ -1444,7 +1446,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     <div className="bg-white p-3 rounded-xl border border-emerald-200 space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
                         <span className="font-black text-emerald-900">
-                          🖼️ Đã chèn {extractedWebImages.length} ảnh (Ảnh bài gốc + Ảnh bổ sung ngoài):
+                          🖼️ Đã chèn {extractedWebImages.length} ảnh ({extractedWebImages.filter((x) => !x.isExternal).length} ảnh bài gốc{extractedWebImages.some((x) => x.isExternal) ? ` + ${extractedWebImages.filter((x) => x.isExternal).length} ảnh ngoài` : ''}):
                         </span>
                         <button
                           type="button"

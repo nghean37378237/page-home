@@ -308,6 +308,8 @@ export async function extractImagesFromWebUrl(
       ? pathSegments[pathSegments.length - 1].replace(/\.(html|htm|php)$/i, '')
       : '';
 
+  let articleBodySample = '';
+
   const tryFetchWpRestPost = async (apiEndpointUrl: string) => {
     try {
       const wpRes = await fetch(
@@ -336,6 +338,10 @@ export async function extractImagesFromWebUrl(
           addCandidate(featUrl, title || 'Ảnh đại diện bài viết', true);
         }
         const contentHtml = postJson.content?.rendered || '';
+        articleBodySample = decodeHtmlEntities(contentHtml.replace(/<[^>]+>/g, ' '))
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 1400);
         const contentImgs = extractImagesFromHtmlChunk(contentHtml, cleanUrl);
         for (const img of contentImgs) {
           addCandidate(img.url, img.alt || title, false);
@@ -352,9 +358,25 @@ export async function extractImagesFromWebUrl(
     await tryFetchWpRestPost(
       `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSlugSegment)}&_embed`
     );
+    if (candidateImages.length === 0) {
+      const searchQ = lastSlugSegment.replace(/[-_]+/g, ' ').trim();
+      if (searchQ.length >= 5) {
+        await tryFetchWpRestPost(
+          `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(searchQ)}&per_page=1&_embed`
+        );
+        if (candidateImages.length === 0) {
+          const shortQ = searchQ.split(/\s+/).slice(0, 5).join(' ');
+          if (shortQ && shortQ !== searchQ) {
+            await tryFetchWpRestPost(
+              `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(shortQ)}&per_page=1&_embed`
+            );
+          }
+        }
+      }
+    }
   }
 
-  // 2. Quét trực tiếp HTML trang web (hỗ trợ mọi báo điện tử, blog, WordPress dạng slug, trang tin quốc tế...)
+  // 2. Quét trực tiếp HTML trang web CHỈ KHI WP REST API chưa lấy được ảnh bài viết
   if (candidateImages.length === 0 || !title) {
     const pageRes = await fetch(cleanUrl, {
       headers: {
@@ -371,26 +393,6 @@ export async function extractImagesFromWebUrl(
     if (pageRes.ok) {
       const html = await pageRes.text();
 
-      if (!title) {
-        const ogTitle =
-          html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
-          html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
-          html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ||
-          html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-        if (ogTitle && ogTitle[1]) {
-          title = decodeHtmlEntities(ogTitle[1].replace(/<[^>]+>/g, ''));
-        }
-      }
-
-      if (!excerpt) {
-        const ogDesc =
-          html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
-          html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
-        if (ogDesc && ogDesc[1]) {
-          excerpt = decodeHtmlEntities(ogDesc[1]);
-        }
-      }
-
       // Kiểm tra xem trang web có phải WordPress dùng URL dạng chữ (slug) không thông qua thẻ <link rel="alternate" type="application/json" href=".../wp-json/wp/v2/posts/...">
       const wpJsonLinkMatch = html.match(
         /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
@@ -399,44 +401,128 @@ export async function extractImagesFromWebUrl(
         await tryFetchWpRestPost(resolveAbsoluteUrl(wpJsonLinkMatch[1], cleanUrl));
       }
 
-      // Lấy og:image / twitter:image (ảnh đại diện bài báo)
-      const ogImg =
-        html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
-        html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-      if (ogImg && ogImg[1]) {
-        addCandidate(ogImg[1], title || 'Ảnh đại diện', true);
-      }
+      if (candidateImages.length === 0 || !title) {
+        if (!title) {
+          const ogTitle =
+            html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
+            html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ||
+            html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+          if (ogTitle && ogTitle[1]) {
+            title = decodeHtmlEntities(ogTitle[1].replace(/<[^>]+>/g, ''));
+          }
+        }
 
-      // Lấy ảnh từ cấu trúc dữ liệu chuẩn SEO JSON-LD (nếu có)
-      const jsonLdUrls = extractImagesFromJsonLd(html, cleanUrl);
-      for (const jUrl of jsonLdUrls) {
-        addCandidate(jUrl, title, candidateImages.length === 0);
-      }
+        if (!excerpt) {
+          const ogDesc =
+            html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+          if (ogDesc && ogDesc[1]) {
+            excerpt = decodeHtmlEntities(ogDesc[1]);
+          }
+        }
 
-      // Ưu tiên vùng nội dung bài viết (<article> hoặc <main>) trước
-      const articleMatch =
-        html.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
-        html.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+        // Lấy og:image / twitter:image (ảnh đại diện bài báo)
+        const ogImg =
+          html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+          html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+          html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+        if (ogImg && ogImg[1]) {
+          addCandidate(ogImg[1], title || 'Ảnh đại diện', true);
+        }
 
-      if (articleMatch && articleMatch[1]) {
-        const articleImgs = extractImagesFromHtmlChunk(articleMatch[1], cleanUrl);
+        // Lấy ảnh từ cấu trúc dữ liệu chuẩn SEO JSON-LD (nếu có)
+        const jsonLdUrls = extractImagesFromJsonLd(html, cleanUrl);
+        for (const jUrl of jsonLdUrls) {
+          addCandidate(jUrl, title, candidateImages.length === 0);
+        }
+
+        // Loại bỏ các khối bài liên quan (related posts), sidebar, widget để chỉ lấy đúng ảnh trong bài viết
+        const cleanedBody = html
+          .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+          .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+          .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+          .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '')
+          .replace(
+            /<(div|section|ul)\b[^>]+(class|id)=["'][^"']*(related|yarpp|sharedaddy|jp-relatedposts|post-navigation|comments-area|sidebar|widget|more-posts|popular-posts|recent-posts)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,
+            ''
+          );
+
+        const articleMatch =
+          cleanedBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
+          cleanedBody.match(/<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
+          cleanedBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+
+        const primaryZone =
+          articleMatch ? articleMatch[articleMatch.length - 1] || articleMatch[1] : cleanedBody;
+        if (!articleBodySample) {
+          articleBodySample = decodeHtmlEntities(primaryZone.replace(/<[^>]+>/g, ' '))
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 1400);
+        }
+        const articleImgs = extractImagesFromHtmlChunk(primaryZone, cleanUrl);
         for (const img of articleImgs) {
           addCandidate(img.url, img.alt || title, false);
         }
       }
+    }
+  }
 
-      // Nếu trong <article> ít hơn 6 ảnh thì quét thêm body (đã lọc bỏ header/footer/nav)
-      if (candidateImages.length < 6) {
-        const cleanedBody = html
-          .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
-          .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
-          .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
-          .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '');
-        const allImgs = extractImagesFromHtmlChunk(cleanedBody, cleanUrl);
-        for (const img of allImgs) {
-          addCandidate(img.url, img.alt || title, false);
+  // 2.5. YÊU CẦU NGƯỜI DÙNG:
+  // Trước tiên lấy hết ảnh trong bài viết ở link bài.
+  // Nếu số ảnh trong bài < 5 ảnh thì lấy thêm ảnh ngoài cho đủ 5 đến 7 ảnh (6 ảnh); còn nếu đã đủ >= 5 ảnh rồi thì thôi!
+  if (candidateImages.length < 5) {
+    const neededCount = 6 - candidateImages.length;
+    const stopWords = new Set([
+      'There', 'The', 'This', 'That', 'These', 'Those', 'When', 'While', 'Where',
+      'What', 'Who', 'Why', 'How', 'Proving', 'Looking', 'Taking', 'Channeling',
+      'Addressing', 'Stepping', 'Enjoying', 'Sharing', 'Showing', 'Making',
+      'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South',
+      'East', 'United', 'States', 'America', 'British', 'English', 'American',
+      'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Actor'
+    ]);
+    const nameRegex = /\b([A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g;
+    const counts = new Map<string, number>();
+    let nm: RegExpExecArray | null;
+    const sampleText = `${title} ${articleBodySample}`;
+    while ((nm = nameRegex.exec(sampleText)) !== null) {
+      const cand = nm[1].trim();
+      if (cand.split(/\s+/).some((w) => stopWords.has(w))) continue;
+      counts.set(cand, (counts.get(cand) || 0) + 1);
+    }
+    let bestPerson = '';
+    let bestCount = 0;
+    for (const [k, v] of counts.entries()) {
+      if (v > bestCount) {
+        bestPerson = k;
+        bestCount = v;
+      }
+    }
+    const searchQuery = (bestPerson || title || '').replace(/[^\p{L}\p{N}\s-]/gu, ' ').trim();
+    if (searchQuery) {
+      try {
+        const bingUrl = `https://www.bing.com/images/search?q=${encodeURIComponent(
+          searchQuery.split(/\s+/).slice(0, 8).join(' ')
+        )}&form=HDRSC2&first=1`;
+        const bingRes = await fetch(bingUrl, { headers: { 'User-Agent': USER_AGENT } });
+        if (bingRes.ok) {
+          const bHtml = await bingRes.text();
+          const mRegex = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;/gi;
+          let bm: RegExpExecArray | null;
+          let addedExt = 0;
+          while ((bm = mRegex.exec(bHtml)) !== null && addedExt < neededCount) {
+            const extUrl = decodeHtmlEntities(bm[1]).trim();
+            if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(extUrl)) continue;
+            const beforeLen = candidateImages.length;
+            addCandidate(extUrl, `${bestPerson || title} (Ảnh bổ sung)`, false);
+            if (candidateImages.length > beforeLen) addedExt++;
+          }
         }
+      } catch {
+        // ignore external image supplement error
       }
     }
   }

@@ -214,94 +214,254 @@ function cleanScrapedTitle(rawTitle) {
     .trim();
 }
 
-async function searchExternalRelatedImages(rawQuery, limit = 6, excludeKeys = new Set()) {
+function analyzeArticleSubjectAndContext(title, text, userKeyword) {
+  const fullText = String(text || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const sample = fullText.slice(0, 4500);
+
+  const stopWords = new Set([
+    'There', 'The', 'This', 'That', 'These', 'Those', 'When', 'While', 'Where',
+    'What', 'Who', 'Why', 'How', 'Proving', 'Looking', 'Taking', 'Channeling',
+    'Addressing', 'Stepping', 'Enjoying', 'Sharing', 'Showing', 'Making', 'Soaking',
+    'Confirming', 'Embracing', 'Walking', 'Strolling', 'Wearing', 'Smiling', 'Spotted',
+    'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South',
+    'East', 'United', 'States', 'America', 'British', 'English', 'American',
+    'French', 'Riviera', 'Mediterranean', 'German', 'Italian', 'Spanish', 'Mexican',
+    'Saint', 'Tropez', 'Cannes', 'Paris', 'Rome', 'Malibu', 'Hawaii', 'Florida',
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+    'September', 'October', 'November', 'December', 'Instagram', 'Twitter',
+    'Facebook', 'YouTube', 'TikTok', 'Daily', 'Mail', 'Page', 'Six', 'People',
+    'Notting', 'Hill', 'Los', 'Angeles', 'New', 'York', 'Miami', 'Beach', 'Sandy', 'Lane',
+    'Golden', 'Globes', 'Academy', 'Award', 'Awards', 'Oscar', 'Oscars', 'Emmy',
+    'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress',
+    'Actor', 'Singer', 'Partner', 'Candid', 'Photo', 'Recognize', 'Them', 'Her', 'Him',
+    'Bear', 'Blur', 'Gorillaz', 'Landman', 'City', 'Street', 'Streets', 'Turns', 'Heads'
+  ]);
+
+  const regex = /\b([A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g;
+  const stats = new Map();
+  let m;
+  while ((m = regex.exec(sample || title)) !== null) {
+    const rawName = m[1].trim();
+    const parts = rawName.split(/\s+/);
+    const cleanParts = parts.filter((p) => !stopWords.has(p));
+    if (cleanParts.length < 2) continue;
+    const candidate = cleanParts.join(' ');
+    const prev = stats.get(candidate) || { count: 0, firstIdx: m.index };
+    prev.count += 1;
+    stats.set(candidate, prev);
+  }
+
+  const rankedPeople = [...stats.entries()]
+    .sort((a, b) => {
+      const scoreA = a[1].count * 10 + (a[1].firstIdx < 550 ? 18 : 0);
+      const scoreB = b[1].count * 10 + (b[1].firstIdx < 550 ? 18 : 0);
+      return scoreB - scoreA;
+    })
+    .map((e) => e[0]);
+
+  const primaryPerson =
+    (userKeyword && String(userKeyword).trim()) ||
+    rankedPeople[0] ||
+    String(title || '').split(/[:–—|-]/)[0].trim();
+
+  const secondaryPerson =
+    rankedPeople.find(
+      (p) =>
+        p !== primaryPerson &&
+        !primaryPerson.toLowerCase().includes(p.toLowerCase()) &&
+        !p.toLowerCase().includes(primaryPerson.toLowerCase())
+    ) || '';
+
+  const topicSource = `${title || ''} ${fullText.slice(0, 600)}`.toLowerCase();
+  const topicGlossary = [
+    'yacht', 'beach', 'bikini', 'vacation', 'getaway', 'pregnant', 'pregnancy',
+    'rumors', 'baby', 'husband', 'wife', 'boyfriend', 'girlfriend', 'partner',
+    'romance', 'romantic', 'kiss', 'stroll', 'wedding', 'engaged', 'red carpet',
+    'premiere', 'family', 'barbados', 'saint-tropez', 'london', 'new york', 'malibu', 'miami'
+  ];
+  const eventWords = [];
+  for (const kw of topicGlossary) {
+    if (topicSource.includes(kw) && eventWords.length < 4) {
+      eventWords.push(kw);
+    }
+  }
+
+  const subjectDisplay = secondaryPerson
+    ? `${primaryPerson} and ${secondaryPerson}`
+    : primaryPerson;
+
+  const combinedSearchQuery = [
+    primaryPerson,
+    secondaryPerson,
+    eventWords.slice(0, 2).join(' '),
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .trim();
+
+  return {
+    primaryPerson,
+    secondaryPerson,
+    eventWords,
+    subjectDisplay,
+    combinedSearchQuery: combinedSearchQuery || primaryPerson || title,
+  };
+}
+
+async function searchExternalRelatedImages(rawQuery, limit = 6, excludeKeys = new Set(), contextProfile) {
   const cleanQuery = String(rawQuery || '')
     .replace(/<[^>]*>/g, '')
     .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleanQuery) return [];
-  const words = cleanQuery.split(' ').slice(0, 9).join(' ');
-  const results = [];
+  if (!cleanQuery && !(contextProfile && contextProfile.primaryPerson)) return [];
+
+  const primaryPerson = (
+    (contextProfile && contextProfile.primaryPerson) ||
+    cleanQuery.split(/\s+/).slice(0, 3).join(' ')
+  ).trim();
+  const secondaryPerson = ((contextProfile && contextProfile.secondaryPerson) || '').trim();
+  const eventWords = (contextProfile && contextProfile.eventWords) || [];
+
+  const queries = [
+    [primaryPerson, secondaryPerson, eventWords.slice(0, 2).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, eventWords.slice(0, 3).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, secondaryPerson].filter(Boolean).join(' ').trim(),
+    cleanQuery.split(/\s+/).slice(0, 8).join(' '),
+  ].filter(Boolean);
+
+  const uniqueQueries = [...new Set(queries)];
+  const pTokens = primaryPerson
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const sTokens = secondaryPerson
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const eTokens = eventWords.map((w) => w.toLowerCase()).filter(Boolean);
+
+  const scoredCandidates = [];
   const seen = new Set(excludeKeys);
 
-  const runBingImageSearch = async (q) => {
+  for (const q of uniqueQueries) {
+    if (scoredCandidates.length >= limit * 2) break;
     try {
-      const url = `https://www.bing.com/images/search?q=${encodeURIComponent(q)}&form=HDRSC2&first=1`;
+      const url = `https://www.bing.com/images/search?q=${encodeURIComponent(
+        q
+      )}&setmkt=en-US&setlang=en-US&cc=US&first=1`;
       const res = await fetchWithTimeout(
         url,
         {
           headers: {
             'User-Agent': SCRAPER_USER_AGENT,
             'Accept-Language': 'en-US,en;q=0.9',
+            Cookie: '_EDGE_S=mkt=en-us; SRCHHPGUSR=SRCHLANG=en&WLS=2',
           },
         },
-        4000
+        4200
       );
-      if (!res.ok) return;
+      if (!res.ok) continue;
       const html = await res.text();
-      const itemRegex =
-        /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;[\s\S]{0,400}?t&quot;:&quot;([^&]*?)&quot;/gi;
-      let match;
-      while ((match = itemRegex.exec(html)) !== null && results.length < limit) {
-        const imgUrl = decodeHtmlEntities(match[1]).trim();
-        const imgTitle = decodeHtmlEntities(match[2] || cleanQuery).replace(/\s+/g, ' ').trim();
-        if (!imgUrl || isIgnorableImage(imgUrl)) continue;
-        if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(imgUrl)) continue;
-        const normKey = imgUrl.split('?')[0].toLowerCase();
-        if (seen.has(normKey)) continue;
-        seen.add(normKey);
-        results.push({
-          url: imgUrl,
-          alt: imgTitle || cleanQuery,
-          isFeatured: false,
-          isExternal: true,
-        });
-      }
-
-      if (results.length < limit) {
-        const simpleRegex = /murl&quot;:&quot;(https?:\/\/[^&]+?)&quot;/gi;
-        let sm;
-        while ((sm = simpleRegex.exec(html)) !== null && results.length < limit) {
-          const imgUrl = decodeHtmlEntities(sm[1]).trim();
+      const matches = html.matchAll(/m="(\{[^"]+\})"/g);
+      for (const m of matches) {
+        try {
+          const obj = JSON.parse(decodeHtmlEntities(m[1]));
+          const imgUrl = String(obj.murl || '').trim();
           if (!imgUrl || isIgnorableImage(imgUrl)) continue;
           if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(imgUrl)) continue;
+          if (imgUrl.includes('ido.org.tw') || imgUrl.includes('tiktok.com/api')) continue;
+
           const normKey = imgUrl.split('?')[0].toLowerCase();
           if (seen.has(normKey)) continue;
+
+          const titleText = decodeHtmlEntities(String(obj.t || obj.desc || ''))
+            .replace(/\s+/g, ' ')
+            .trim();
+          const hay = `${titleText} ${obj.purl || ''} ${imgUrl}`.toLowerCase();
+
+          // Bắt buộc ảnh phải chứa tên diễn viên / người nổi tiếng chính trong bài
+          const matchesPrimary =
+            (primaryPerson && hay.includes(primaryPerson.toLowerCase())) ||
+            pTokens.some((tk) => hay.includes(tk));
+          if (!matchesPrimary) continue;
+
+          let score = 0;
+          if (primaryPerson && hay.includes(primaryPerson.toLowerCase())) score += 50;
+          else score += 25;
+
+          if (secondaryPerson && hay.includes(secondaryPerson.toLowerCase())) score += 45;
+          else if (sTokens.some((tk) => hay.includes(tk))) score += 20;
+
+          for (const ew of eTokens) {
+            if (hay.includes(ew)) score += 15;
+          }
+
           seen.add(normKey);
-          results.push({
+          scoredCandidates.push({
             url: imgUrl,
-            alt: `${cleanQuery} - Photo ${results.length + 1}`,
+            alt: titleText || `${primaryPerson} - ${eventWords.join(' ')}`.trim(),
             isFeatured: false,
             isExternal: true,
+            score,
           });
+        } catch {
+          // ignore malformed item
         }
       }
     } catch {
       // ignore timeout/search errors
     }
-  };
-
-  await runBingImageSearch(words);
-  if (results.length < limit && cleanQuery.split(' ').length > 4) {
-    const shortQuery = `${cleanQuery.split(' ').slice(0, 5).join(' ')} celebrity photo`;
-    await runBingImageSearch(shortQuery);
   }
 
-  return results.slice(0, limit);
+  scoredCandidates.sort((a, b) => b.score - a.score);
+  return scoredCandidates.slice(0, limit).map(({ score: _s, ...rest }) => rest);
 }
 
-async function searchRelatedYouTubeVideos(rawQuery, limit = 2) {
+async function searchRelatedYouTubeVideos(rawQuery, limit = 2, contextProfile) {
   const cleanQuery = String(rawQuery || '')
     .replace(/<[^>]*>/g, '')
     .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleanQuery) return [];
+  if (!cleanQuery && !(contextProfile && contextProfile.primaryPerson)) return [];
 
-  const runSingleSearch = async (q) => {
+  const primaryPerson = (
+    (contextProfile && contextProfile.primaryPerson) ||
+    cleanQuery.split(/\s+/).slice(0, 3).join(' ')
+  ).trim();
+  const secondaryPerson = ((contextProfile && contextProfile.secondaryPerson) || '').trim();
+  const eventWords = (contextProfile && contextProfile.eventWords) || [];
+
+  const queries = [
+    [primaryPerson, secondaryPerson, eventWords.slice(0, 2).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, eventWords.slice(0, 3).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, secondaryPerson].filter(Boolean).join(' ').trim(),
+    cleanQuery.split(/\s+/).slice(0, 8).join(' '),
+  ].filter(Boolean);
+
+  const uniqueQueries = [...new Set(queries)];
+  const pTokens = primaryPerson
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const sTokens = secondaryPerson
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((t) => t.length >= 3);
+  const eTokens = eventWords.map((w) => w.toLowerCase()).filter(Boolean);
+
+  const candidates = [];
+  const seen = new Set();
+
+  for (const q of uniqueQueries) {
+    if (candidates.length >= 12) break;
     try {
       const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
       const res = await fetchWithTimeout(
@@ -312,54 +472,58 @@ async function searchRelatedYouTubeVideos(rawQuery, limit = 2) {
             'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
           },
         },
-        4000
+        4200
       );
-      if (!res.ok) return [];
+      if (!res.ok) continue;
       const html = await res.text();
-      const found = [];
-      const seen = new Set();
 
       const rendererRegex =
         /"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]*?"title":\{"runs":\[\{"text":"([^"]+)"/g;
       let match;
-      while ((match = rendererRegex.exec(html)) !== null && found.length < limit) {
+      while ((match = rendererRegex.exec(html)) !== null && candidates.length < 18) {
         const videoId = match[1];
-        const rawTitle = match[2]
-          .replace(/\\u0026/g, '&')
-          .replace(/\\"/g, '"')
-          .trim();
-        if (videoId && !seen.has(videoId)) {
-          seen.add(videoId);
-          found.push({
-            videoId,
-            title: decodeHtmlEntities(rawTitle),
-            watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
-            embedUrl: `https://www.youtube.com/embed/${videoId}`,
-            thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-          });
+        const rawTitle = decodeHtmlEntities(
+          match[2]
+            .replace(/\\u0026/g, '&')
+            .replace(/\\"/g, '"')
+            .trim()
+        );
+        if (!videoId || seen.has(videoId)) continue;
+
+        const lowerTitle = rawTitle.toLowerCase();
+        const hasPerson =
+          (primaryPerson && lowerTitle.includes(primaryPerson.toLowerCase())) ||
+          pTokens.some((tk) => lowerTitle.includes(tk));
+        if (!hasPerson && candidates.length >= limit) continue;
+
+        let score = 0;
+        if (primaryPerson && lowerTitle.includes(primaryPerson.toLowerCase())) score += 50;
+        else if (hasPerson) score += 25;
+
+        if (secondaryPerson && lowerTitle.includes(secondaryPerson.toLowerCase())) score += 45;
+        else if (sTokens.some((tk) => lowerTitle.includes(tk))) score += 20;
+
+        for (const ew of eTokens) {
+          if (lowerTitle.includes(ew)) score += 15;
         }
+
+        seen.add(videoId);
+        candidates.push({
+          videoId,
+          title: rawTitle,
+          watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+          embedUrl: `https://www.youtube.com/embed/${videoId}`,
+          thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          score,
+        });
       }
-      return found;
     } catch {
-      return [];
-    }
-  };
-
-  const words = cleanQuery.split(' ');
-  const primaryQuery = words.slice(0, 8).join(' ');
-  let videos = await runSingleSearch(primaryQuery);
-
-  if (videos.length < limit && words.length > 3) {
-    const fallbackQuery = `${words.slice(0, 4).join(' ')} interview story`;
-    const more = await runSingleSearch(fallbackQuery);
-    for (const v of more) {
-      if (!videos.some((existing) => existing.videoId === v.videoId) && videos.length < limit) {
-        videos.push(v);
-      }
+      // ignore timeout
     }
   }
 
-  return videos.slice(0, limit);
+  candidates.sort((a, b) => b.score - a.score);
+  return candidates.slice(0, limit).map(({ score: _s, ...rest }) => rest);
 }
 
 async function scrapeWebArticleForSeoRewrite(rawUrl) {
@@ -482,6 +646,22 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
     await tryFetchWpRestPost(
       `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSlugSeg)}&_embed`
     );
+    if (images.length === 0 && paragraphs.length === 0) {
+      const searchQ = lastSlugSeg.replace(/[-_]+/g, ' ').trim();
+      if (searchQ.length >= 5) {
+        await tryFetchWpRestPost(
+          `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(searchQ)}&per_page=1&_embed`
+        );
+        if (images.length === 0 && paragraphs.length === 0) {
+          const shortQ = searchQ.split(/\s+/).slice(0, 5).join(' ');
+          if (shortQ && shortQ !== searchQ) {
+            await tryFetchWpRestPost(
+              `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(shortQ)}&per_page=1&_embed`
+            );
+          }
+        }
+      }
+    }
   }
 
   if (paragraphs.length === 0 || images.length === 0 || !originalTitle) {
@@ -501,64 +681,66 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
       if (pageRes.ok) {
         const html = await pageRes.text();
 
-        if (!originalTitle) {
-          const h1Match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
-          const ogTitle =
-            html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
-            html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-          if (h1Match && stripHtmlTags(h1Match[1]).length > 10) {
-            originalTitle = cleanScrapedTitle(h1Match[1]);
-          } else if (ogTitle && ogTitle[1]) {
-            originalTitle = cleanScrapedTitle(ogTitle[1]);
-          }
-        }
-
-        if (!originalExcerpt) {
-          const ogDesc =
-            html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
-          if (ogDesc && ogDesc[1]) {
-            originalExcerpt = decodeHtmlEntities(ogDesc[1]);
-          }
-        }
-
         const wpJsonLink = html.match(
           /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
         );
-        if (wpJsonLink && wpJsonLink[1] && paragraphs.length === 0) {
+        if (wpJsonLink && wpJsonLink[1] && images.length === 0) {
           await tryFetchWpRestPost(resolveAbsUrl(wpJsonLink[1], cleanUrl));
         }
 
-        const ogImg =
-          html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-          html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
-          html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-        if (ogImg && ogImg[1]) {
-          addImage(ogImg[1], originalTitle, images.length === 0);
-        }
+        if (images.length === 0 || !originalTitle) {
+          if (!originalTitle) {
+            const h1Match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
+            const ogTitle =
+              html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
+              html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+            if (h1Match && stripHtmlTags(h1Match[1]).length > 10) {
+              originalTitle = cleanScrapedTitle(h1Match[1]);
+            } else if (ogTitle && ogTitle[1]) {
+              originalTitle = cleanScrapedTitle(ogTitle[1]);
+            }
+          }
 
-        const cleanBody = html
-          .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-          .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-          .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
-          .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
-          .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
-          .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '');
+          if (!originalExcerpt) {
+            const ogDesc =
+              html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+            if (ogDesc && ogDesc[1]) {
+              originalExcerpt = decodeHtmlEntities(ogDesc[1]);
+            }
+          }
 
-        const articleMatch =
-          cleanBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
-          cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+          const ogImg =
+            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+            html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+          if (ogImg && ogImg[1]) {
+            addImage(ogImg[1], originalTitle, images.length === 0);
+          }
 
-        const primaryZone = articleMatch && articleMatch[1] ? articleMatch[1] : cleanBody;
-        extractParagraphsFromHtml(primaryZone);
-        for (const img of collectImgsFromHtml(primaryZone, cleanUrl)) {
-          addImage(img.url, img.alt || originalTitle, false);
-        }
+          const cleanBody = html
+            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+            .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+            .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+            .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '')
+            .replace(
+              /<(div|section|ul)\b[^>]+(class|id)=["'][^"']*(related|yarpp|sharedaddy|jp-relatedposts|post-navigation|comments-area|sidebar|widget|more-posts|popular-posts|recent-posts)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,
+              ''
+            );
 
-        if (images.length < 6 && primaryZone !== cleanBody) {
-          for (const img of collectImgsFromHtml(cleanBody, cleanUrl)) {
+          const articleMatch =
+            cleanBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
+            cleanBody.match(/<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
+            cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+
+          const primaryZone =
+            articleMatch ? articleMatch[articleMatch.length - 1] || articleMatch[1] : cleanBody;
+          extractParagraphsFromHtml(primaryZone);
+          for (const img of collectImgsFromHtml(primaryZone, cleanUrl)) {
             addImage(img.url, img.alt || originalTitle, false);
           }
         }
@@ -938,27 +1120,47 @@ async function generateSeoArticleWithAiFast(params) {
       ? sourceArticleText.slice(0, 158)
       : `Read the full in-depth story on ${generatedTitle}.`);
 
-  const generatedKeyword = kw.slice(0, 55) || 'Celebrity';
+  const contextProfile = analyzeArticleSubjectAndContext(
+    generatedTitle,
+    sourceArticleText || params.topic,
+    params.keyword
+  );
+  const generatedKeyword =
+    (contextProfile.primaryPerson || kw).slice(0, 55) || 'Celebrity';
   const generatedTags = [
-    generatedKeyword,
+    contextProfile.primaryPerson || generatedKeyword,
+    ...(contextProfile.secondaryPerson ? [contextProfile.secondaryPerson] : []),
     params.categoryName || 'Showbiz',
     'Entertainment',
     'Celeb24h',
   ];
 
   const existingKeys = new Set(scrapedImages.map((img) => img.url.split('?')[0].toLowerCase()));
-  const searchTopicQuery = generatedKeyword || generatedTitle;
+  const searchTopicQuery =
+    contextProfile.combinedSearchQuery || generatedKeyword || generatedTitle;
+
+  // Trước tiên lấy HẾT ảnh trong bài viết ở link bài (scrapedImages).
+  // Nếu số ảnh < 5 thì mới lấy thêm ảnh ngoài ĐÚNG DIỄN VIÊN & SỰ KIỆN TRONG BÀI cho đủ 5 đến 7 ảnh (6 ảnh). Nếu đã >= 5 ảnh thì thôi!
+  const neededExternalCount =
+    scrapedImages.length >= 5 ? 0 : Math.max(0, 6 - scrapedImages.length);
 
   const [externalImages, relatedVideos] = await Promise.all([
-    searchExternalRelatedImages(searchTopicQuery, 6, existingKeys),
-    searchRelatedYouTubeVideos(searchTopicQuery, 2),
+    neededExternalCount > 0
+      ? searchExternalRelatedImages(
+          searchTopicQuery,
+          neededExternalCount,
+          existingKeys,
+          contextProfile
+        )
+      : Promise.resolve([]),
+    searchRelatedYouTubeVideos(searchTopicQuery, 2, contextProfile),
   ]);
 
   const allCombinedImages = [...scrapedImages, ...externalImages];
 
   const longFormResult = buildLongFormSeoArticle2000To5000Words({
     articleTitle: generatedTitle,
-    focusKeyword: generatedKeyword,
+    focusKeyword: contextProfile.subjectDisplay || generatedKeyword,
     sourceArticleText,
     images: allCombinedImages,
     youtubeVideos: relatedVideos,
