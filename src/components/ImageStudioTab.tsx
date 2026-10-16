@@ -169,7 +169,7 @@ export function ImageStudioTab({
   const [exportingPresetId, setExportingPresetId] = useState<string | null>(null);
 
   // --- 8 MẪU PHỔ BIẾN HAY DÙNG NHẤT CỦA NGƯỜI DÙNG (LƯU TRỮ RIÊNG THEO TÀI KHOẢN) ---
-  const favStorageKey = `celeb24h_fav8_presets_${currentUser?.username || 'default'}`;
+  const favStorageKey = `celeb24h_fav8_presets_${currentUser?.id || currentUser?.name || 'default'}`;
   const [favoritePresetIds, setFavoritePresetIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(favStorageKey);
