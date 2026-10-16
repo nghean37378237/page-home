@@ -592,7 +592,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           mode: activeMode,
           topic: rawTarget,
           sourceUrl: activeMode === 'from_url' ? rawTarget : undefined,
-          keyword: focusKeyword.trim() || undefined,
+          keyword: activeMode === 'from_url' ? undefined : focusKeyword.trim() || undefined,
           language: aiLanguage,
           categoryName: primaryCatName,
           existingContent: activeMode === 'from_text' ? content : undefined,
@@ -612,7 +612,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       if (data.excerpt) setExcerpt(data.excerpt);
       if (data.focusKeyword) {
         setFocusKeyword(data.focusKeyword);
-        setCustomYtQuery(data.focusKeyword);
+        setCustomYtQuery(String(data.searchQuery || data.focusKeyword));
       }
       if (Array.isArray(data.tags)) setTagsInput(data.tags.join(', '));
       if (data.contentHtml) setContent(data.contentHtml);
@@ -677,7 +677,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     }
   };
 
-  // Tìm và bổ sung thêm ảnh ngoài liên quan vào bài viết
+  // Tìm và bổ sung thêm ảnh ngoài liên quan vào bài viết (đối chiếu với ảnh đã có và nội dung bài đang viết)
   const handleFetchMoreExternalImages = async () => {
     const q = customYtQuery.trim() || focusKeyword.trim() || title.trim() || aiTopic.trim();
     if (!q) {
@@ -693,6 +693,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         body: JSON.stringify({
           action: 'search_external_images',
           query: q,
+          title: title.trim(),
+          articleText: content.slice(0, 6000),
+          existingImages: extractedWebImages,
           limit: 6,
         }),
       });
@@ -737,6 +740,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         body: JSON.stringify({
           action: 'search_youtube',
           query: q,
+          title: title.trim(),
+          articleText: content.slice(0, 6000),
+          existingImages: extractedWebImages,
           limit: 2,
         }),
       });

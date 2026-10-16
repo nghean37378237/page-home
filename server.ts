@@ -9,6 +9,7 @@ import {
   generateSeoArticleWithAi,
   searchRelatedYouTubeVideos,
   searchExternalRelatedImages,
+  analyzeArticleSubjectAndContext,
 } from './src/server/wpPublishService';
 import { extractImagesFromWebUrl } from './src/server/webImageExtractor';
 
@@ -79,14 +80,54 @@ async function startServer() {
 
       if (action === 'search_youtube') {
         const query = String(body.query || '');
-        const videos = await searchRelatedYouTubeVideos(query, Number(body.limit) || 2);
+        const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        const ctxProfile =
+          body.articleText || body.title
+            ? analyzeArticleSubjectAndContext(
+                String(body.title || query),
+                String(body.articleText || query),
+                query,
+                existingImgs
+              )
+            : undefined;
+        const videos = await searchRelatedYouTubeVideos(
+          ctxProfile?.combinedSearchQuery || query,
+          Number(body.limit) || 2,
+          ctxProfile
+        );
         res.json({ ok: true, videos });
         return;
       }
 
       if (action === 'search_external_images') {
         const query = String(body.query || '');
-        const images = await searchExternalRelatedImages(query, Number(body.limit) || 6);
+        const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        const excludeKeys = new Set<string>(
+          existingImgs
+            .map((im: any) =>
+              String(im?.url || '')
+                .split('?')[0]
+                .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+                .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+                .toLowerCase()
+            )
+            .filter(Boolean)
+        );
+        const ctxProfile =
+          body.articleText || body.title || existingImgs.length > 0
+            ? analyzeArticleSubjectAndContext(
+                String(body.title || query),
+                String(body.articleText || query),
+                query,
+                existingImgs
+              )
+            : undefined;
+        const images = await searchExternalRelatedImages(
+          ctxProfile?.combinedSearchQuery || query,
+          Number(body.limit) || 6,
+          excludeKeys,
+          ctxProfile
+        );
         res.json({ ok: true, images });
         return;
       }

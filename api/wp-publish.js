@@ -214,11 +214,18 @@ function cleanScrapedTitle(rawTitle) {
     .trim();
 }
 
-function analyzeArticleSubjectAndContext(title, text, userKeyword) {
-  const fullText = String(text || '')
+function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImages) {
+  const fullText = decodeHtmlEntities(String(text || ''))
     .replace(/<[^>]*>/g, ' ')
+    .replace(/&#8217;|&#8216;/g, "'")
+    .replace(/&#8220;|&#8221;/g, '"')
     .replace(/\s+/g, ' ')
     .trim();
+  const imgAltText = Array.isArray(existingImages)
+    ? existingImages
+        .map((im) => `${(im && im.alt) || ''} ${String((im && im.url) || '').split('/').pop() || ''}`)
+        .join(' ')
+    : '';
   const sample = fullText.slice(0, 4500);
 
   const stopWords = new Set([
@@ -226,69 +233,174 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword) {
     'What', 'Who', 'Why', 'How', 'Proving', 'Looking', 'Taking', 'Channeling',
     'Addressing', 'Stepping', 'Enjoying', 'Sharing', 'Showing', 'Making', 'Soaking',
     'Confirming', 'Embracing', 'Walking', 'Strolling', 'Wearing', 'Smiling', 'Spotted',
-    'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South',
-    'East', 'United', 'States', 'America', 'British', 'English', 'American',
+    'Showcasing', 'Exiting', 'Following', 'Among', 'At', 'In', 'On', 'By', 'With',
+    'From', 'For', 'After', 'Before', 'During', 'Despite', 'Between', 'Beyond',
+    'Within', 'Without', 'Through', 'Throughout', 'Against', 'Around', 'Behind',
+    'Inside', 'Outside', 'Under', 'Until', 'Upon', 'According', 'Speaking', 'Shielding',
+    'Completing', 'Expecting', 'Running', 'Visiting', 'Both', 'Holding', 'Wrapping',
+    'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South', 'East',
+    'Southern', 'Northern', 'Eastern', 'Western', 'Central', 'California', 'Florida',
+    'United', 'States', 'America', 'British', 'English', 'American', 'Great', 'Britain',
     'French', 'Riviera', 'Mediterranean', 'German', 'Italian', 'Spanish', 'Mexican',
-    'Saint', 'Tropez', 'Cannes', 'Paris', 'Rome', 'Malibu', 'Hawaii', 'Florida',
+    'Saint', 'Tropez', 'Cannes', 'Paris', 'Rome', 'Malibu', 'Hawaii', 'Manhattan',
     'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
     'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
     'September', 'October', 'November', 'December', 'Instagram', 'Twitter',
     'Facebook', 'YouTube', 'TikTok', 'Daily', 'Mail', 'Page', 'Six', 'People',
     'Notting', 'Hill', 'Los', 'Angeles', 'New', 'York', 'Miami', 'Beach', 'Sandy', 'Lane',
-    'Golden', 'Globes', 'Academy', 'Award', 'Awards', 'Oscar', 'Oscars', 'Emmy',
-    'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress',
+    'Golden', 'Globes', 'Academy', 'Award', 'Awards', 'Oscar', 'Oscars', 'Emmy', 'Grammy',
+    'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Supermodel',
     'Actor', 'Singer', 'Partner', 'Candid', 'Photo', 'Recognize', 'Them', 'Her', 'Him',
-    'Bear', 'Blur', 'Gorillaz', 'Landman', 'City', 'Street', 'Streets', 'Turns', 'Heads'
+    'Bear', 'Blur', 'Gorillaz', 'Landman', 'City', 'Street', 'Streets', 'Turns', 'Heads',
+    'Jimmy', 'Kimmel', 'Live', 'Coogies', 'Cafe', 'Big', 'Apple', 'Uncharted', 'Invasion',
+    'Beatles', 'Ted', 'Lasso', 'Succession', 'Beverly', 'Hilton', 'Hills', 'Santa', 'Monica',
+    'Stunning', 'Pregnant', 'Timeless', 'Beloved', 'Famous', 'Reality', 'Heartthrob', 'Icon',
+    'Real', 'Housewives', 'Brat', 'Pack', 'Night', 'Heat', 'Glad', 'All', 'Over', 'Mark', 'Twain',
+    'Morning', 'Show', 'France', 'Europe', 'European', 'Exclusive', 'Story', 'Highlights'
   ]);
 
-  const regex = /\b([A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g;
   const stats = new Map();
-  let m;
-  while ((m = regex.exec(sample || title)) !== null) {
-    const rawName = m[1].trim();
+
+  const companionRegex =
+    /\b(?:with|alongside|beside)\s+(?:her|his|their)?\s*(?:new\s+|longtime\s+)?(?:husband|wife|partner|boyfriend|girlfriend|fiance|fiancée|companion|model|actress|actor)?\s*,?\s*([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
+  const companionSet = new Set();
+  let cm;
+  while ((cm = companionRegex.exec(sample.slice(0, 800))) !== null) {
+    const cName = cm[1]
+      .trim()
+      .split(/\s+/)
+      .filter((p) => !stopWords.has(p))
+      .slice(0, 3)
+      .join(' ');
+    if (cName.split(/\s+/).length >= 2) {
+      companionSet.add(cName);
+    }
+  }
+
+  const bioRegex =
+    /(?:(\d{2}-year-old(?:\s+[a-z-]+){0,3})|(?:representative\s+for|breakout\s+star|actor|actress|singer|model|supermodel|star|frontman|mastermind|financier|husband|wife|partner|boyfriend|girlfriend|mother|father|icon|legend|winner|daughter|son)(?:\s+[a-z-]+){0,2})\s*,?\s+([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
+  let bm;
+  while ((bm = bioRegex.exec(sample)) !== null) {
+    const rawName = bm[2].trim();
     const parts = rawName.split(/\s+/);
     const cleanParts = parts.filter((p) => !stopWords.has(p));
     if (cleanParts.length < 2) continue;
-    const candidate = cleanParts.join(' ');
-    const prev = stats.get(candidate) || { count: 0, firstIdx: m.index };
-    prev.count += 1;
+    const candidate = cleanParts.slice(0, 3).join(' ');
+    const isComp = companionSet.has(candidate);
+    const prev = stats.get(candidate) || {
+      count: 0,
+      firstIdx: bm.index,
+      bioBoost: 0,
+      isCompanion: isComp,
+    };
+    prev.bioBoost += isComp ? 18 : 38;
+    if (isComp) prev.isCompanion = true;
     stats.set(candidate, prev);
   }
 
-  const rankedPeople = [...stats.entries()]
-    .sort((a, b) => {
-      const scoreA = a[1].count * 10 + (a[1].firstIdx < 550 ? 18 : 0);
-      const scoreB = b[1].count * 10 + (b[1].firstIdx < 550 ? 18 : 0);
-      return scoreB - scoreA;
-    })
-    .map((e) => e[0]);
+  const regex =
+    /\b([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}){1,2})\b/g;
+  let m;
+  const textToScan = sample || `${title || ''} ${imgAltText}`;
+  while ((m = regex.exec(textToScan)) !== null) {
+    const rawName = m[1].trim();
+    const parts = rawName.split(/\s+/);
+    if (parts.some((p) => stopWords.has(p))) continue;
+    if (parts.length < 2) continue;
+    const candidate = parts.join(' ');
+    const isComp = companionSet.has(candidate);
+    const prev = stats.get(candidate) || {
+      count: 0,
+      firstIdx: m.index,
+      bioBoost: 0,
+      isCompanion: isComp,
+    };
+    prev.count += 1;
+    if (isComp) prev.isCompanion = true;
+    stats.set(candidate, prev);
+  }
 
-  const primaryPerson =
-    (userKeyword && String(userKeyword).trim()) ||
-    rankedPeople[0] ||
-    String(title || '').split(/[:–—|-]/)[0].trim();
-
-  const secondaryPerson =
-    rankedPeople.find(
-      (p) =>
-        p !== primaryPerson &&
-        !primaryPerson.toLowerCase().includes(p.toLowerCase()) &&
-        !p.toLowerCase().includes(primaryPerson.toLowerCase())
-    ) || '';
-
-  const topicSource = `${title || ''} ${fullText.slice(0, 600)}`.toLowerCase();
-  const topicGlossary = [
-    'yacht', 'beach', 'bikini', 'vacation', 'getaway', 'pregnant', 'pregnancy',
-    'rumors', 'baby', 'husband', 'wife', 'boyfriend', 'girlfriend', 'partner',
-    'romance', 'romantic', 'kiss', 'stroll', 'wedding', 'engaged', 'red carpet',
-    'premiere', 'family', 'barbados', 'saint-tropez', 'london', 'new york', 'malibu', 'miami'
-  ];
-  const eventWords = [];
-  for (const kw of topicGlossary) {
-    if (topicSource.includes(kw) && eventWords.length < 4) {
-      eventWords.push(kw);
+  for (const [fullName, info] of stats.entries()) {
+    const tokens = fullName.split(/\s+/);
+    const lastName = tokens[tokens.length - 1];
+    if (lastName && lastName.length >= 4) {
+      const lastRegex = new RegExp(`\\b${lastName}\\b`, 'g');
+      const totalLastMentions = (sample.match(lastRegex) || []).length;
+      if (totalLastMentions > info.count) {
+        info.bioBoost += Math.min(24, (totalLastMentions - info.count) * 6);
+      }
     }
   }
+
+  const rankedEntries = [...stats.entries()].sort((a, b) => {
+    const leadBonusA = a[1].firstIdx < 260 ? 38 : a[1].firstIdx < 500 ? 22 : 0;
+    const leadBonusB = b[1].firstIdx < 260 ? 38 : b[1].firstIdx < 500 ? 22 : 0;
+    const compPenaltyA = a[1].isCompanion ? -25 : 0;
+    const compPenaltyB = b[1].isCompanion ? -25 : 0;
+    const scoreA = a[1].count * 12 + a[1].bioBoost + leadBonusA + compPenaltyA;
+    const scoreB = b[1].count * 12 + b[1].bioBoost + leadBonusB + compPenaltyB;
+    return scoreB - scoreA;
+  });
+
+  const rankedPeople = rankedEntries.map((e) => e[0]);
+
+  const primaryPerson =
+    rankedPeople[0] ||
+    (userKeyword && String(userKeyword).trim()) ||
+    String(title || '').split(/[:–—|-]/)[0].trim();
+
+  const secondaryEntry = rankedEntries.find(
+    ([p, info]) =>
+      p !== primaryPerson &&
+      info.firstIdx < 650 &&
+      (info.count >= 2 || info.bioBoost > 0) &&
+      !primaryPerson.toLowerCase().includes(p.toLowerCase()) &&
+      !p.toLowerCase().includes(primaryPerson.toLowerCase())
+  );
+  const secondaryPerson = secondaryEntry ? secondaryEntry[0] : '';
+
+  const visualSceneText = `${title || ''} ${imgAltText} ${sample.slice(0, 1100)}`.toLowerCase();
+  const outfitKeywords = [];
+  const outfitRegex =
+    /\b((?:all-white|snakeskin(?:-print)?|burgundy|white|black|red|blue|gold|shimmering\s+gold|glittering\s+gold|floral|striped|pink|green|yellow|navy|chic|skimpy|tiny|polka-dot|leopard(?:-print)?|animal-print|denim|leather|lace|sheer|sequin|silver)\s+(?:bikini|swimsuit|bathing\s+suit|swim\s+shorts|swim\s+trunks|shorts|trunks|dress|gown|mini\s+dress|summer\s+dress|tank\s+top|t-shirt|tee|shirt|top|jacket|coat|suit|jeans|trousers|pants|skirt|outfit|ensemble))\b/gi;
+  let om;
+  while ((om = outfitRegex.exec(visualSceneText)) !== null) {
+    const phrase = om[1].replace(/\s+/g, ' ').trim();
+    if (!outfitKeywords.includes(phrase) && outfitKeywords.length < 3) {
+      outfitKeywords.push(phrase);
+    }
+  }
+
+  const openingScene = `${title || ''} ${imgAltText} ${sample.slice(0, 750)}`.toLowerCase();
+  const locationGlossary = [
+    'sandy lane', 'barbados', 'saint-tropez', 'french riviera', 'notting hill',
+    'west hollywood', 'london', 'malibu', 'new york', 'manhattan', 'miami',
+    'bahamas', 'cabo', 'caribbean', 'cannes', 'paris', 'venice', 'beverly hills', 'los angeles'
+  ];
+  const locationKeywords = [];
+  for (const loc of locationGlossary) {
+    if (openingScene.includes(loc) && locationKeywords.length < 2) {
+      locationKeywords.push(loc);
+    }
+  }
+
+  const eventGlossary = [
+    'bikini', 'swimsuit', 'bathing suit', 'yacht', 'beach', 'boat', 'pregnant',
+    'pregnancy', 'baby bump', 'stroll', 'lunch', 'brunch', 'kiss', 'kisses',
+    'motorcycle', 'red carpet', 'vacation', 'getaway', 'holiday'
+  ];
+  const eventKeywords = [];
+  for (const ev of eventGlossary) {
+    if (
+      openingScene.includes(ev) &&
+      eventKeywords.length < 3 &&
+      !outfitKeywords.some((o) => o.includes(ev))
+    ) {
+      eventKeywords.push(ev);
+    }
+  }
+
+  const eventWords = [...outfitKeywords, ...locationKeywords, ...eventKeywords].slice(0, 6);
 
   const subjectDisplay = secondaryPerson
     ? `${primaryPerson} and ${secondaryPerson}`
@@ -297,7 +409,9 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword) {
   const combinedSearchQuery = [
     primaryPerson,
     secondaryPerson,
-    eventWords.slice(0, 2).join(' '),
+    outfitKeywords[0] || '',
+    locationKeywords[0] || '',
+    eventKeywords[0] || '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -306,6 +420,9 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword) {
   return {
     primaryPerson,
     secondaryPerson,
+    outfitKeywords,
+    locationKeywords,
+    eventKeywords,
     eventWords,
     subjectDisplay,
     combinedSearchQuery: combinedSearchQuery || primaryPerson || title,
@@ -319,20 +436,36 @@ async function searchExternalRelatedImages(rawQuery, limit = 6, excludeKeys = ne
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleanQuery && !(contextProfile && contextProfile.primaryPerson)) return [];
+  const effectiveProfile =
+    contextProfile || analyzeArticleSubjectAndContext(cleanQuery, cleanQuery);
 
   const primaryPerson = (
-    (contextProfile && contextProfile.primaryPerson) ||
+    effectiveProfile.primaryPerson ||
     cleanQuery.split(/\s+/).slice(0, 3).join(' ')
   ).trim();
-  const secondaryPerson = ((contextProfile && contextProfile.secondaryPerson) || '').trim();
-  const eventWords = (contextProfile && contextProfile.eventWords) || [];
+  const secondaryPerson = (effectiveProfile.secondaryPerson || '').trim();
+  const outfitKeywords = effectiveProfile.outfitKeywords || [];
+  const locationKeywords = effectiveProfile.locationKeywords || [];
+  const eventKeywords = effectiveProfile.eventKeywords || [];
+  const eventWords = effectiveProfile.eventWords || [];
+
+  if (!primaryPerson && !cleanQuery) return [];
 
   const queries = [
-    [primaryPerson, secondaryPerson, eventWords.slice(0, 2).join(' ')].filter(Boolean).join(' ').trim(),
-    [primaryPerson, eventWords.slice(0, 3).join(' ')].filter(Boolean).join(' ').trim(),
+    [primaryPerson, secondaryPerson, outfitKeywords[0], locationKeywords[0], eventKeywords[0]]
+      .filter(Boolean)
+      .join(' ')
+      .trim(),
+    [primaryPerson, outfitKeywords[0], locationKeywords[0], eventKeywords[0], 'dailymail']
+      .filter(Boolean)
+      .join(' ')
+      .trim(),
+    [primaryPerson, secondaryPerson, locationKeywords[0], eventKeywords[0]]
+      .filter(Boolean)
+      .join(' ')
+      .trim(),
+    [primaryPerson, outfitKeywords[0], eventKeywords[0]].filter(Boolean).join(' ').trim(),
     [primaryPerson, secondaryPerson].filter(Boolean).join(' ').trim(),
-    cleanQuery.split(/\s+/).slice(0, 8).join(' '),
   ].filter(Boolean);
 
   const uniqueQueries = [...new Set(queries)];
@@ -344,13 +477,18 @@ async function searchExternalRelatedImages(rawQuery, limit = 6, excludeKeys = ne
     .toLowerCase()
     .split(/\s+/)
     .filter((t) => t.length >= 3);
-  const eTokens = eventWords.map((w) => w.toLowerCase()).filter(Boolean);
+  const outfitTokens = outfitKeywords
+    .flatMap((w) => w.toLowerCase().split(/\s+/))
+    .filter((t) => t.length >= 3);
+  const locTokens = locationKeywords.map((w) => w.toLowerCase()).filter(Boolean);
+  const evTokens = eventKeywords.map((w) => w.toLowerCase()).filter(Boolean);
 
   const scoredCandidates = [];
   const seen = new Set(excludeKeys);
+  const seenMd5 = new Set();
 
   for (const q of uniqueQueries) {
-    if (scoredCandidates.length >= limit * 2) break;
+    if (scoredCandidates.length >= Math.max(limit * 3, 10)) break;
     try {
       const url = `https://www.bing.com/images/search?q=${encodeURIComponent(
         q
@@ -375,40 +513,66 @@ async function searchExternalRelatedImages(rawQuery, limit = 6, excludeKeys = ne
           const imgUrl = String(obj.murl || '').trim();
           if (!imgUrl || isIgnorableImage(imgUrl)) continue;
           if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(imgUrl)) continue;
-          if (imgUrl.includes('ido.org.tw') || imgUrl.includes('tiktok.com/api')) continue;
+          if (
+            /gettyimages\.|alamy\.|shutterstock\.|istockphoto\.|dreamstime\.|depositphotos\.|123rf\.|pond5\.|prettylittlething\.|shein\.|ido\.org\.tw|tiktok\.com\/api/i.test(
+              imgUrl
+            )
+          ) {
+            continue;
+          }
 
-          const normKey = imgUrl.split('?')[0].toLowerCase();
+          const normKey = imgUrl
+            .split('?')[0]
+            .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+            .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+            .toLowerCase();
           if (seen.has(normKey)) continue;
+          if (obj.md5 && seenMd5.has(String(obj.md5))) continue;
 
           const titleText = decodeHtmlEntities(String(obj.t || obj.desc || ''))
+            .replace(/[\uE000-\uF8FF]/g, '')
             .replace(/\s+/g, ' ')
             .trim();
-          const hay = `${titleText} ${obj.purl || ''} ${imgUrl}`.toLowerCase();
+          const purl = String(obj.purl || '');
+          const hay = `${titleText} ${purl} ${imgUrl}`.toLowerCase();
 
-          // Bắt buộc ảnh phải chứa tên diễn viên / người nổi tiếng chính trong bài
-          const matchesPrimary =
-            (primaryPerson && hay.includes(primaryPerson.toLowerCase())) ||
-            pTokens.some((tk) => hay.includes(tk));
-          if (!matchesPrimary) continue;
+          const hasFullPrimary =
+            Boolean(primaryPerson) && hay.includes(primaryPerson.toLowerCase());
+          const hasAllPTokens = pTokens.length > 0 && pTokens.every((tk) => hay.includes(tk));
+          if (!hasFullPrimary && !hasAllPTokens) continue;
 
-          let score = 0;
-          if (primaryPerson && hay.includes(primaryPerson.toLowerCase())) score += 50;
-          else score += 25;
+          let score = hasFullPrimary ? 60 : 45;
 
-          if (secondaryPerson && hay.includes(secondaryPerson.toLowerCase())) score += 45;
-          else if (sTokens.some((tk) => hay.includes(tk))) score += 20;
+          if (secondaryPerson && hay.includes(secondaryPerson.toLowerCase())) score += 50;
+          else if (sTokens.length > 0 && sTokens.every((tk) => hay.includes(tk))) score += 35;
 
-          for (const ew of eTokens) {
-            if (hay.includes(ew)) score += 15;
+          for (const ot of outfitTokens) {
+            if (hay.includes(ot)) score += 22;
+          }
+          for (const lt of locTokens) {
+            if (hay.includes(lt)) score += 25;
+          }
+          for (const et of evTokens) {
+            if (hay.includes(et)) score += 15;
+          }
+          if (
+            /dailymail\.|justjared\.|hawtcelebs\.|celebmafia\.|pagesix\.|usmagazine\.|people\.com|thesun\.|mirror\.co\.uk|backgrid/i.test(
+              hay
+            )
+          ) {
+            score += 30;
           }
 
           seen.add(normKey);
+          if (obj.md5) seenMd5.add(String(obj.md5));
+
           scoredCandidates.push({
             url: imgUrl,
             alt: titleText || `${primaryPerson} - ${eventWords.join(' ')}`.trim(),
             isFeatured: false,
             isExternal: true,
             score,
+            purl,
           });
         } catch {
           // ignore malformed item
@@ -420,7 +584,17 @@ async function searchExternalRelatedImages(rawQuery, limit = 6, excludeKeys = ne
   }
 
   scoredCandidates.sort((a, b) => b.score - a.score);
-  return scoredCandidates.slice(0, limit).map(({ score: _s, ...rest }) => rest);
+  const topPurl = scoredCandidates[0] && scoredCandidates[0].purl;
+  if (topPurl) {
+    for (const item of scoredCandidates) {
+      if (item.purl && item.purl === topPurl) {
+        item.score += 25;
+      }
+    }
+    scoredCandidates.sort((a, b) => b.score - a.score);
+  }
+
+  return scoredCandidates.slice(0, limit).map(({ score: _s, purl: _p, ...rest }) => rest);
 }
 
 async function searchRelatedYouTubeVideos(rawQuery, limit = 2, contextProfile) {
@@ -580,6 +754,13 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
     if (postJson.excerpt && postJson.excerpt.rendered) {
       originalExcerpt = stripHtmlTags(postJson.excerpt.rendered);
     }
+    const contentHtml = String((postJson.content && postJson.content.rendered) || '');
+    extractParagraphsFromHtml(contentHtml);
+    const contentImgs = collectImgsFromHtml(contentHtml, cleanUrl);
+    for (const img of contentImgs) {
+      addImage(img.url, img.alt || originalTitle, images.length === 0);
+    }
+
     const embeddedMedia =
       postJson._embedded &&
       postJson._embedded['wp:featuredmedia'] &&
@@ -597,12 +778,8 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
         embeddedMedia.media_details.sizes.large.source_url) ||
       (embeddedMedia && embeddedMedia.source_url) ||
       '';
-    if (featUrl) addImage(featUrl, originalTitle, true);
-
-    const contentHtml = String((postJson.content && postJson.content.rendered) || '');
-    extractParagraphsFromHtml(contentHtml);
-    for (const img of collectImgsFromHtml(contentHtml, cleanUrl)) {
-      addImage(img.url, img.alt || originalTitle, false);
+    if (featUrl && (contentImgs.length === 0 || !/\bcollage[-_\d]/i.test(featUrl))) {
+      addImage(featUrl, originalTitle, images.length === 0);
     }
   };
 
@@ -1123,7 +1300,8 @@ async function generateSeoArticleWithAiFast(params) {
   const contextProfile = analyzeArticleSubjectAndContext(
     generatedTitle,
     sourceArticleText || params.topic,
-    params.keyword
+    params.keyword,
+    scrapedImages
   );
   const generatedKeyword =
     (contextProfile.primaryPerson || kw).slice(0, 55) || 'Celebrity';
@@ -1175,6 +1353,7 @@ async function generateSeoArticleWithAiFast(params) {
     slug: generatedSlug,
     excerpt: generatedExcerpt,
     focusKeyword: generatedKeyword,
+    searchQuery: searchTopicQuery,
     tags: generatedTags,
     contentHtml: longFormResult.html,
     wordCount: longFormResult.wordCount,
@@ -1367,18 +1546,54 @@ export default async function handler(req, res) {
 
       // 2. Xử lý tìm 2 Video YouTube liên quan
       if (action === 'search_youtube') {
+        const query = String(body.query || '');
+        const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        const ctxProfile =
+          body.articleText || body.title
+            ? analyzeArticleSubjectAndContext(
+                String(body.title || query),
+                String(body.articleText || query),
+                query,
+                existingImgs
+              )
+            : undefined;
         const videos = await searchRelatedYouTubeVideos(
-          String(body.query || ''),
-          Number(body.limit || 2)
+          (ctxProfile && ctxProfile.combinedSearchQuery) || query,
+          Number(body.limit || 2),
+          ctxProfile
         );
         return res.status(200).json({ ok: true, videos });
       }
 
       // 3. Xử lý tìm thêm ảnh ngoài
       if (action === 'search_external_images') {
+        const query = String(body.query || '');
+        const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        const excludeKeys = new Set(
+          existingImgs
+            .map((im) =>
+              String((im && im.url) || '')
+                .split('?')[0]
+                .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+                .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+                .toLowerCase()
+            )
+            .filter(Boolean)
+        );
+        const ctxProfile =
+          body.articleText || body.title || existingImgs.length > 0
+            ? analyzeArticleSubjectAndContext(
+                String(body.title || query),
+                String(body.articleText || query),
+                query,
+                existingImgs
+              )
+            : undefined;
         const images = await searchExternalRelatedImages(
-          String(body.query || ''),
-          Number(body.limit || 6)
+          (ctxProfile && ctxProfile.combinedSearchQuery) || query,
+          Number(body.limit || 6),
+          excludeKeys,
+          ctxProfile
         );
         return res.status(200).json({ ok: true, images });
       }
