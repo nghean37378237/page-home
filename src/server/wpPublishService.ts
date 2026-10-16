@@ -626,37 +626,609 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
   };
 }
 
+export interface RelatedYouTubeVideo {
+  videoId: string;
+  title: string;
+  watchUrl: string;
+  embedUrl: string;
+  thumbnailUrl: string;
+}
+
+export interface ScrapedArticleImage {
+  url: string;
+  alt: string;
+  isFeatured?: boolean;
+}
+
+const SCRAPER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+
+function resolveAbsUrl(rawUrl: string, baseUrl: string): string {
+  const cleaned = String(rawUrl || '')
+    .trim()
+    .replace(/^['"]|['"]$/g, '');
+  if (!cleaned || cleaned.startsWith('data:') || cleaned.startsWith('blob:')) return '';
+  try {
+    return new URL(cleaned, baseUrl).href;
+  } catch {
+    return '';
+  }
+}
+
+function isIgnorableImage(url: string): boolean {
+  const lower = url.toLowerCase();
+  if (
+    lower.endsWith('.svg') ||
+    lower.endsWith('.gif') ||
+    lower.endsWith('.ico') ||
+    lower.includes('gravatar.com') ||
+    lower.includes('/plugins/') ||
+    lower.includes('/themes/') ||
+    lower.includes('emoji') ||
+    lower.includes('smilies') ||
+    lower.includes('avatar') ||
+    lower.includes('favicon') ||
+    lower.includes('logo') ||
+    lower.includes('icon') ||
+    lower.includes('pixel') ||
+    lower.includes('analytics') ||
+    lower.includes('doubleclick') ||
+    lower.includes('facebook.com/tr') ||
+    lower.includes('google-analytics') ||
+    lower.includes('1x1') ||
+    lower.includes('spacer') ||
+    lower.includes('blank.') ||
+    lower.includes('lazyload') ||
+    lower.includes('placeholder')
+  ) {
+    return true;
+  }
+  const tinyMatch = lower.match(/-(\d+)x(\d+)\.(jpg|jpeg|png|webp|avif)/);
+  if (tinyMatch) {
+    const w = Number(tinyMatch[1]);
+    const h = Number(tinyMatch[2]);
+    if (w < 160 && h < 160) return true;
+  }
+  return false;
+}
+
+function pickBestSrcFromSrcset(srcset: string, baseUrl: string): string {
+  if (!srcset) return '';
+  const candidates: { url: string; width: number }[] = [];
+  for (const part of srcset.split(',')) {
+    const tokens = part.trim().split(/\s+/);
+    if (!tokens[0]) continue;
+    const u = resolveAbsUrl(tokens[0], baseUrl);
+    if (!u) continue;
+    let width = 0;
+    if (tokens[1]?.endsWith('w')) {
+      width = parseInt(tokens[1].slice(0, -1), 10) || 0;
+    } else if (tokens[1]?.endsWith('x')) {
+      width = (parseFloat(tokens[1].slice(0, -1)) || 1) * 600;
+    }
+    candidates.push({ url: u, width });
+  }
+  if (candidates.length === 0) return '';
+  candidates.sort((a, b) => {
+    const scoreA = a.width >= 600 && a.width <= 1600 ? a.width + 2000 : a.width;
+    const scoreB = b.width >= 600 && b.width <= 1600 ? b.width + 2000 : b.width;
+    return scoreB - scoreA;
+  });
+  return candidates[0].url;
+}
+
+function collectImgsFromHtml(htmlChunk: string, baseUrl: string): { url: string; alt: string }[] {
+  const list: { url: string; alt: string }[] = [];
+
+  const sourceRegex = /<source\b[^>]*>/gi;
+  let sm: RegExpExecArray | null;
+  while ((sm = sourceRegex.exec(htmlChunk)) !== null) {
+    const tag = sm[0];
+    const ss =
+      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bsrcset=["']([^"']+)["']/i);
+    if (ss && ss[1]) {
+      const best = pickBestSrcFromSrcset(ss[1], baseUrl);
+      if (best && !isIgnorableImage(best)) {
+        list.push({ url: best, alt: '' });
+      }
+    }
+  }
+
+  const imgRegex = /<img\b[^>]*>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = imgRegex.exec(htmlChunk)) !== null) {
+    const tag = m[0];
+    const wMatch = tag.match(/\bwidth=["']?(\d+)/i);
+    const hMatch = tag.match(/\bheight=["']?(\d+)/i);
+    if (wMatch && hMatch) {
+      const w = Number(wMatch[1]);
+      const h = Number(hMatch[1]);
+      if (w > 0 && h > 0 && w < 120 && h < 120) continue;
+    }
+    const ss =
+      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bsrcset=["']([^"']+)["']/i);
+    let chosen = ss && ss[1] ? pickBestSrcFromSrcset(ss[1], baseUrl) : '';
+    if (!chosen) {
+      const srcAttr =
+        tag.match(/\bdata-lazy-src=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-src=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-original=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-full-url=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-hi-res-src=["']([^"']+)["']/i) ||
+        tag.match(/\bsrc=["']([^"']+)["']/i);
+      if (srcAttr && srcAttr[1]) {
+        chosen = resolveAbsUrl(srcAttr[1], baseUrl);
+      }
+    }
+    if (!chosen || isIgnorableImage(chosen)) continue;
+    const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
+    const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
+    list.push({ url: chosen, alt });
+  }
+  return list;
+}
+
+/**
+ * Tìm 2 video YouTube liên quan thực tế theo chủ đề hoặc tên nhân vật
+ */
+export async function searchRelatedYouTubeVideos(
+  rawQuery: string,
+  limit = 2
+): Promise<RelatedYouTubeVideo[]> {
+  const cleanQuery = String(rawQuery || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!cleanQuery) return [];
+
+  const runSingleSearch = async (q: string): Promise<RelatedYouTubeVideo[]> => {
+    try {
+      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+      const res = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': SCRAPER_USER_AGENT,
+          'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+        },
+      });
+      if (!res.ok) return [];
+      const html = await res.text();
+      const found: RelatedYouTubeVideo[] = [];
+      const seen = new Set<string>();
+
+      const rendererRegex =
+        /"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]*?"title":\{"runs":\[\{"text":"([^"]+)"/g;
+      let match: RegExpExecArray | null;
+      while ((match = rendererRegex.exec(html)) !== null && found.length < limit) {
+        const videoId = match[1];
+        const rawTitle = match[2]
+          .replace(/\\u0026/g, '&')
+          .replace(/\\"/g, '"')
+          .trim();
+        if (videoId && !seen.has(videoId)) {
+          seen.add(videoId);
+          found.push({
+            videoId,
+            title: decodeHtmlEntities(rawTitle),
+            watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+            embedUrl: `https://www.youtube.com/embed/${videoId}`,
+            thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+          });
+        }
+      }
+      return found;
+    } catch {
+      return [];
+    }
+  };
+
+  // Thử tìm kiếm chính xác theo cụm từ (tối đa 8 từ đầu để sát nhân vật & sự kiện nhất)
+  const words = cleanQuery.split(' ');
+  const primaryQuery = words.slice(0, 8).join(' ');
+  let videos = await runSingleSearch(primaryQuery);
+
+  // Nếu chưa đủ 2 video, mở rộng tìm theo 3-4 từ khóa đầu (tên nhân vật chính)
+  if (videos.length < limit && words.length > 3) {
+    const fallbackQuery = `${words.slice(0, 4).join(' ')} interview story`;
+    const more = await runSingleSearch(fallbackQuery);
+    for (const v of more) {
+      if (!videos.some((existing) => existing.videoId === v.videoId) && videos.length < limit) {
+        videos.push(v);
+      }
+    }
+  }
+
+  return videos.slice(0, limit);
+}
+
+/**
+ * Cào toàn bộ nội dung văn bản + toàn bộ ảnh minh họa từ 1 link bài viết web bất kỳ
+ */
+export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
+  sourceUrl: string;
+  siteName: string;
+  originalTitle: string;
+  originalExcerpt: string;
+  articleText: string;
+  images: ScrapedArticleImage[];
+}> {
+  let cleanUrl = String(rawUrl || '').trim();
+  if (!cleanUrl) {
+    throw new Error('Vui lòng nhập đường dẫn (URL) bài viết web!');
+  }
+  if (!/^https?:\/\//i.test(cleanUrl)) {
+    cleanUrl = `https://${cleanUrl}`;
+  }
+
+  const parsedUrl = new URL(cleanUrl);
+  const origin = parsedUrl.origin;
+
+  let originalTitle = '';
+  let originalExcerpt = '';
+  const paragraphs: string[] = [];
+  const images: ScrapedArticleImage[] = [];
+  const seenImgKeys = new Set<string>();
+
+  const addImage = (url: string, alt = '', isFeatured = false) => {
+    const resolved = resolveAbsUrl(url, cleanUrl);
+    if (!resolved || isIgnorableImage(resolved)) return;
+    const key = resolved
+      .split('?')[0]
+      .replace(/-\d+x\d+(?=\.(jpg|jpeg|png|webp|avif)$)/i, '')
+      .toLowerCase();
+    if (seenImgKeys.has(key)) return;
+    seenImgKeys.add(key);
+    images.push({ url: resolved, alt: alt || originalTitle, isFeatured });
+  };
+
+  const extractParagraphsFromHtml = (htmlChunk: string) => {
+    const pRegex = /<(p|h2|h3|blockquote)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = pRegex.exec(htmlChunk)) !== null) {
+      const txt = stripHtmlTags(m[2]).replace(/\s+/g, ' ').trim();
+      if (txt.length >= 35 && !paragraphs.includes(txt)) {
+        paragraphs.push(txt);
+      }
+    }
+  };
+
+  // 1. Kiểm tra nếu là WordPress có post ID dạng /{id} hoặc ?p={id}
+  const pathSegs = parsedUrl.pathname.split('/').filter(Boolean);
+  const numericId =
+    pathSegs.length > 0 && /^\d+$/.test(pathSegs[0])
+      ? Number(pathSegs[0])
+      : parsedUrl.searchParams.get('p') && /^\d+$/.test(parsedUrl.searchParams.get('p')!)
+      ? Number(parsedUrl.searchParams.get('p'))
+      : null;
+
+  const tryFetchWpRestPost = async (apiEndpoint: string) => {
+    try {
+      const wpRes = await fetch(
+        apiEndpoint.includes('_embed')
+          ? apiEndpoint
+          : `${apiEndpoint}${apiEndpoint.includes('?') ? '&' : '?'}_embed`,
+        { headers: { 'User-Agent': SCRAPER_USER_AGENT } }
+      );
+      if (!wpRes.ok) return;
+      const postJson: any = await wpRes.json();
+      if (postJson && postJson.id) {
+        originalTitle = decodeHtmlEntities(postJson.title?.rendered || '');
+        originalExcerpt = stripHtmlTags(postJson.excerpt?.rendered || '');
+        const embeddedMedia = postJson._embedded?.['wp:featuredmedia']?.[0];
+        const featUrl =
+          embeddedMedia?.media_details?.sizes?.large?.source_url ||
+          embeddedMedia?.source_url ||
+          '';
+        if (featUrl) addImage(featUrl, originalTitle, true);
+
+        const contentHtml = String(postJson.content?.rendered || '');
+        extractParagraphsFromHtml(contentHtml);
+        for (const img of collectImgsFromHtml(contentHtml, cleanUrl)) {
+          addImage(img.url, img.alt || originalTitle, false);
+        }
+      }
+    } catch {
+      // Fallback sang quét HTML
+    }
+  };
+
+  if (numericId) {
+    await tryFetchWpRestPost(`${origin}/wp-json/wp/v2/posts/${numericId}?_embed`);
+  }
+
+  // 2. Quét trực tiếp HTML trang web nếu chưa có đủ nội dung hoặc ảnh
+  if (paragraphs.length === 0 || images.length === 0 || !originalTitle) {
+    const pageRes = await fetch(cleanUrl, {
+      headers: {
+        'User-Agent': SCRAPER_USER_AGENT,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+      },
+    });
+
+    if (!pageRes.ok && paragraphs.length === 0) {
+      throw new Error(`Không thể truy cập đường dẫn (${pageRes.status}). Vui lòng kiểm tra lại link!`);
+    }
+
+    if (pageRes.ok) {
+      const html = await pageRes.text();
+
+      if (!originalTitle) {
+        const ogTitle =
+          html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+          html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
+          html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ||
+          html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (ogTitle && ogTitle[1]) {
+          originalTitle = stripHtmlTags(ogTitle[1]);
+        }
+      }
+
+      if (!originalExcerpt) {
+        const ogDesc =
+          html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+          html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+        if (ogDesc && ogDesc[1]) {
+          originalExcerpt = decodeHtmlEntities(ogDesc[1]);
+        }
+      }
+
+      // Kiểm tra link WP REST JSON nếu bài viết dùng đường dẫn chữ (slug)
+      const wpJsonLink = html.match(
+        /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
+      );
+      if (wpJsonLink && wpJsonLink[1] && paragraphs.length === 0) {
+        await tryFetchWpRestPost(resolveAbsUrl(wpJsonLink[1], cleanUrl));
+      }
+
+      // Lấy og:image
+      const ogImg =
+        html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+        html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+      if (ogImg && ogImg[1]) {
+        addImage(ogImg[1], originalTitle, images.length === 0);
+      }
+
+      // Lọc bỏ script/style/header/footer/nav trước khi lấy nội dung & ảnh
+      const cleanBody = html
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+        .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+        .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+        .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+        .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '');
+
+      const articleMatch =
+        cleanBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
+        cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+
+      const primaryZone = articleMatch && articleMatch[1] ? articleMatch[1] : cleanBody;
+      extractParagraphsFromHtml(primaryZone);
+      for (const img of collectImgsFromHtml(primaryZone, cleanUrl)) {
+        addImage(img.url, img.alt || originalTitle, false);
+      }
+
+      if (images.length < 4 && primaryZone !== cleanBody) {
+        for (const img of collectImgsFromHtml(cleanBody, cleanUrl)) {
+          addImage(img.url, img.alt || originalTitle, false);
+        }
+      }
+    }
+  }
+
+  return {
+    sourceUrl: cleanUrl,
+    siteName: parsedUrl.hostname.replace(/^www\./, ''),
+    originalTitle: originalTitle || 'Bài viết từ Website',
+    originalExcerpt,
+    articleText: paragraphs.join('\n\n'),
+    images: images.slice(0, 15),
+  };
+}
+
+/**
+ * Chèn toàn bộ ảnh minh họa xen kẽ vào giữa các đoạn bài viết và gắn 2 video YouTube liên quan ở cuối bài
+ */
+function enrichArticleWithImagesAndYouTube(params: {
+  baseHtml: string;
+  articleTitle: string;
+  images: ScrapedArticleImage[];
+  youtubeVideos: RelatedYouTubeVideo[];
+  language: 'en' | 'vi';
+}): string {
+  const { baseHtml, articleTitle, images, youtubeVideos, language } = params;
+
+  // 1. Tách bài viết thành các khối đoạn (<p>, <h2>, <h3>, <blockquote>, <ul>) để chèn xen kẽ toàn bộ ảnh minh họa
+  let enrichedHtml = baseHtml.trim();
+
+  if (images.length > 0) {
+    // Loại bỏ các thẻ <img> cũ nếu có để tránh lặp rồi phân bổ toàn bộ ảnh lấy từ bài gốc
+    const withoutOldFigures = enrichedHtml.replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, '');
+    const blockRegex = /<(h2|h3|p|blockquote|ul)\b[^>]*>[\s\S]*?<\/\1>/gi;
+    const blocks = withoutOldFigures.match(blockRegex);
+
+    if (blocks && blocks.length >= 2) {
+      const resultBlocks: string[] = [];
+      // Tính bước nhảy để rải đều toàn bộ ảnh minh họa trong bài
+      const step = Math.max(1, Math.floor(blocks.length / (images.length + 1)));
+      let imgIdx = 0;
+
+      blocks.forEach((block, idx) => {
+        resultBlocks.push(block);
+        if (
+          imgIdx < images.length &&
+          idx > 0 &&
+          (idx % step === 0 || idx === blocks.length - 2)
+        ) {
+          const img = images[imgIdx];
+          const altText = (img.alt || articleTitle).replace(/"/g, '&quot;');
+          resultBlocks.push(
+            `<figure class="wp-block-image size-large" style="margin: 22px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" style="width: 100%; max-width: 820px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 6px; font-style: italic;">${altText}</figcaption>
+</figure>`
+          );
+          imgIdx++;
+        }
+      });
+
+      // Nếu vẫn còn ảnh chưa chèn hết thì chèn nốt trước đoạn kết bài
+      while (imgIdx < images.length) {
+        const img = images[imgIdx];
+        const altText = (img.alt || articleTitle).replace(/"/g, '&quot;');
+        resultBlocks.push(
+          `<figure class="wp-block-image size-large" style="margin: 22px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" style="width: 100%; max-width: 820px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 6px; font-style: italic;">${altText}</figcaption>
+</figure>`
+        );
+        imgIdx++;
+      }
+
+      enrichedHtml = resultBlocks.join('\n\n');
+    } else {
+      // Nếu bài ngắn hoặc không tách được block thì chèn ảnh nối tiếp
+      const figuresHtml = images
+        .map((img) => {
+          const altText = (img.alt || articleTitle).replace(/"/g, '&quot;');
+          return `<figure class="wp-block-image size-large" style="margin: 22px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" style="width: 100%; max-width: 820px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 6px; font-style: italic;">${altText}</figcaption>
+</figure>`;
+        })
+        .join('\n\n');
+      enrichedHtml = `${enrichedHtml}\n\n${figuresHtml}`;
+    }
+  }
+
+  // 2. Cuối bài tự động gắn thêm 2 Video YouTube liên quan đến nội dung hoặc nhân vật
+  if (youtubeVideos.length > 0) {
+    const headingText =
+      language === 'vi'
+        ? '🎬 Video Liên Quan Đáng Chú Ý'
+        : '🎬 Related Videos & Exclusive Moments';
+
+    const videoBlocks = youtubeVideos
+      .map((v, idx) => {
+        const safeTitle = v.title.replace(/"/g, '&quot;');
+        return `<div class="wp-youtube-embed-box" style="margin: 20px 0 28px 0;">
+  <p><strong>Video #${idx + 1}: ${v.title}</strong></p>
+  <figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio" style="margin: 12px 0;">
+    <div class="wp-block-embed__wrapper" style="position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000;">
+      <iframe src="https://www.youtube.com/embed/${v.videoId}" title="${safeTitle}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    </div>
+  </figure>
+  <p style="font-size: 13px; color: #475569;">👉 <a href="${v.watchUrl}" target="_blank" rel="noopener noreferrer">${
+          language === 'vi' ? 'Xem trực tiếp trên YouTube' : 'Watch on YouTube'
+        }: ${v.title}</a></p>
+</div>`;
+      })
+      .join('\n');
+
+    enrichedHtml = `${enrichedHtml}\n\n<h2>${headingText}</h2>\n${videoBlocks}`;
+  }
+
+  return enrichedHtml;
+}
+
 export async function generateSeoArticleWithAi(params: {
   topic: string;
   keyword?: string;
   language?: 'en' | 'vi';
   tone?: string;
   categoryName?: string;
-  mode?: 'full_article' | 'outline' | 'rewrite' | 'seo_meta';
+  mode?: 'from_text' | 'from_url' | 'full_article' | 'outline' | 'rewrite' | 'seo_meta';
+  sourceUrl?: string;
   existingContent?: string;
 }) {
   const apiKey = process.env.GEMINI_API_KEY;
-  const langLabel = params.language === 'vi' ? 'Tiếng Việt' : 'English (US Showbiz/Entertainment style)';
-  const kw = params.keyword || params.topic;
+  const language: 'en' | 'vi' = params.language === 'vi' ? 'vi' : 'en';
+  const langLabel =
+    language === 'vi' ? 'Tiếng Việt' : 'English (US Showbiz/Entertainment magazine style)';
+
+  let scrapedImages: ScrapedArticleImage[] = [];
+  let sourceTitle = '';
+  let sourceExcerpt = '';
+  let sourceArticleText = '';
+  let resolvedSourceUrl = '';
+
+  // Nếu là Chức năng 2 (Nhập 1 link web bất kỳ) -> Cào toàn bộ nội dung bài gốc + toàn bộ ảnh trong bài đó
+  if (params.mode === 'from_url' || (params.sourceUrl && params.sourceUrl.trim())) {
+    const scraped = await scrapeWebArticleForSeoRewrite(params.sourceUrl || params.topic);
+    scrapedImages = scraped.images;
+    sourceTitle = scraped.originalTitle;
+    sourceExcerpt = scraped.originalExcerpt;
+    sourceArticleText = scraped.articleText;
+    resolvedSourceUrl = scraped.sourceUrl;
+  }
+
+  const effectiveTopic =
+    sourceTitle || params.topic.trim() || (params.existingContent || '').slice(0, 120);
+  const kw = params.keyword?.trim() || effectiveTopic.split(/[:–—|-]/)[0].trim();
+
+  let generatedTitle = '';
+  let generatedSlug = '';
+  let generatedExcerpt = '';
+  let generatedKeyword = kw;
+  let generatedTags: string[] = [];
+  let generatedHtml = '';
+  let youtubeQuery = '';
 
   if (apiKey) {
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = `Bạn là biên tập viên SEO chuyên nghiệp cho trang tin giải trí & đời sống celeb24h.com.
-Ngôn ngữ viết: ${langLabel}.
-Chuyên mục: ${params.categoryName || 'Showbiz / Story / Film'}.
-Chủ đề / Yêu cầu: ${params.topic}
-Từ khóa SEO chính: ${kw}
-${params.existingContent ? `Nội dung gốc tham khảo:\n${params.existingContent.slice(0, 3000)}\n` : ''}
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
 
-Hãy trả về kết quả ở định dạng JSON thuần (không bọc markdown) với cấu trúc:
+      const isFromUrl = Boolean(resolvedSourceUrl);
+      const prompt = isFromUrl
+        ? `Bạn là biên tập viên SEO chuyên nghiệp cho chuyên trang giải trí & đời sống celeb24h.com.
+Nhiệm vụ: Hãy VIẾT LẠI (Rewrite 100% mới chuẩn SEO, cuốn hút, tuyệt đối không copy nguyên xi câu chữ cũ) từ bài viết gốc dưới đây.
+Ngôn ngữ đầu ra bắt buộc: ${langLabel}.
+Chuyên mục: ${params.categoryName || 'Showbiz / Story / Film'}.
+Tiêu đề bài gốc: ${sourceTitle}
+Mô tả bài gốc: ${sourceExcerpt}
+Nội dung bài gốc:
+${sourceArticleText.slice(0, 6500)}
+
+Hãy trả về JSON thuần với cấu trúc:
 {
-  "title": "Tiêu đề bài viết hấp dẫn chuẩn SEO (55-70 ký tự)",
-  "slug": "duong-dan-url-chuan-seo",
-  "excerpt": "Đoạn mô tả Meta Description chuẩn SEO (140-160 ký tự) kích thích lượt click",
-  "focusKeyword": "từ khóa chính",
-  "tags": ["tag1", "tag2", "tag3", "tag4"],
-  "contentHtml": "Nội dung bài viết chi tiết định dạng HTML sạch sử dụng các thẻ <p>, <h2>, <h3>, <ul>, <li>, <blockquote>, <strong>. Bài viết dài tối thiểu 500-800 từ, chia rõ các đoạn và thẻ H2/H3 hấp dẫn."
+  "title": "Tiêu đề bài viết mới chuẩn SEO, hấp dẫn, kích thích click (55-75 ký tự)",
+  "slug": "duong-dan-url-chuan-seo-khong-dau",
+  "excerpt": "Đoạn mô tả Meta Description chuẩn SEO (140-165 ký tự)",
+  "focusKeyword": "tên nhân vật chính hoặc từ khóa SEO chính",
+  "youtubeSearchQuery": "tên nhân vật chính + từ khóa sự kiện ngắn gọn (3-6 từ) để tìm 2 video YouTube liên quan nhất",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "contentHtml": "Nội dung bài viết mới hoàn chỉnh định dạng HTML sạch sử dụng các thẻ <p>, <h2>, <h3>, <blockquote>, <ul>, <li>, <strong>. Độ dài tối thiểu 650-950 từ, chia thành 6-8 đoạn văn (<p>) và 3-4 tiêu đề phụ (<h2>) sâu sắc, giữ đúng toàn bộ sự kiện và tên nhân vật của bài gốc."
+}`
+        : `Bạn là biên tập viên SEO chuyên nghiệp cho chuyên trang giải trí & đời sống celeb24h.com.
+Nhiệm vụ: Dựa vào đoạn nội dung / chủ đề dưới đây, hãy phát triển và viết thành 1 bài báo hoàn chỉnh chuẩn SEO.
+Ngôn ngữ đầu ra bắt buộc: ${langLabel}.
+Chuyên mục: ${params.categoryName || 'Showbiz / Story / Film'}.
+Đoạn nội dung / Yêu cầu đầu vào:
+${params.topic}
+${params.existingContent ? `\nNội dung bổ sung:\n${params.existingContent.slice(0, 4000)}` : ''}
+
+Hãy trả về JSON thuần với cấu trúc:
+{
+  "title": "Tiêu đề bài viết chuẩn SEO, cuốn hút (55-75 ký tự)",
+  "slug": "duong-dan-url-chuan-seo-khong-dau",
+  "excerpt": "Đoạn mô tả Meta Description chuẩn SEO (140-165 ký tự)",
+  "focusKeyword": "tên nhân vật chính hoặc từ khóa SEO chính",
+  "youtubeSearchQuery": "tên nhân vật chính hoặc chủ đề (3-6 từ) để tìm 2 video YouTube liên quan nhất",
+  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+  "contentHtml": "Nội dung bài viết chi tiết định dạng HTML sạch sử dụng các thẻ <p>, <h2>, <h3>, <blockquote>, <ul>, <li>, <strong>. Độ dài tối thiểu 650-900 từ, chia rõ các đoạn <p> và thẻ <h2> hấp dẫn."
 }`;
 
       const response = await ai.models.generateContent({
@@ -667,74 +1239,139 @@ Hãy trả về kết quả ở định dạng JSON thuần (không bọc markdo
         },
       });
 
-      const rawText = response.text || '';
-      const parsed = JSON.parse(rawText);
+      const parsed = JSON.parse(response.text || '{}');
       if (parsed && parsed.title && parsed.contentHtml) {
-        return {
-          ok: true,
-          ...parsed,
-        };
+        generatedTitle = String(parsed.title);
+        generatedSlug = String(parsed.slug || '');
+        generatedExcerpt = String(parsed.excerpt || '');
+        generatedKeyword = String(parsed.focusKeyword || kw);
+        youtubeQuery = String(parsed.youtubeSearchQuery || generatedKeyword || effectiveTopic);
+        generatedTags = Array.isArray(parsed.tags) ? parsed.tags.map(String) : [generatedKeyword];
+        generatedHtml = String(parsed.contentHtml);
       }
     } catch (err) {
       console.warn('[wpPublishService] Gemini generation fallback:', err);
     }
   }
 
-  // Fallback thông minh khi chưa cấu hình GEMINI_API_KEY hoặc ngoại tuyến
-  const isVi = params.language === 'vi';
-  const cleanTopic = params.topic.trim();
-  const slug = cleanTopic
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D')
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .slice(0, 75);
+  // Fallback thông minh nếu không có Gemini hoặc lỗi mạng
+  if (!generatedHtml) {
+    const isVi = language === 'vi';
+    const baseHeading = (sourceTitle || params.topic.split('\n')[0] || 'Exclusive Story').slice(
+      0,
+      85
+    );
+    generatedSlug = baseHeading
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .slice(0, 75);
 
-  if (isVi) {
-    return {
-      ok: true,
-      title: `${cleanTopic}: Những tình tiết đáng chú ý khiến khán giả xôn xao`,
-      slug,
-      excerpt: `Khám phá chi tiết câu chuyện xoay quanh ${cleanTopic} cùng những góc khuất hậu trường và phản ứng bất ngờ từ công chúng.`,
-      focusKeyword: kw,
-      tags: [kw, params.categoryName || 'Showbiz', 'Tin tức giải trí', 'Celeb24h'],
-      contentHtml: `<p><strong>${cleanTopic}</strong> đang trở thành tâm điểm chú ý của đông đảo khán giả và người hâm mộ trong những ngày gần đây với nhiều tình tiết bất ngờ.</p>
-<h2>1. Toàn cảnh câu chuyện xoay quanh ${cleanTopic}</h2>
-<p>Ngay sau khi những hình ảnh và thông tin đầu tiên về <strong>${kw}</strong> được chia sẻ, cộng đồng mạng đã nhanh chóng dành sự quan tâm đặc biệt. Nhiều khán giả bày tỏ sự bất ngờ trước những khoảnh khắc đời thường hiếm hoi nhưng đầy cảm xúc này.</p>
-<blockquote><p>"Đôi khi chính những khoảnh khắc giản dị phía sau ánh hào quang lại là điều chạm đến trái tim khán giả sâu sắc nhất."</p></blockquote>
+    youtubeQuery = kw || baseHeading;
+    generatedKeyword = kw.slice(0, 50);
+    generatedTags = [
+      generatedKeyword,
+      params.categoryName || 'Showbiz',
+      isVi ? 'Tin giải trí' : 'Celebrity News',
+      'Celeb24h',
+    ];
+
+    if (sourceArticleText) {
+      // Xây dựng bài viết chuẩn SEO từ các đoạn văn của bài gốc
+      const srcParas = sourceArticleText
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter((p) => p.length > 30);
+
+      generatedTitle = isVi
+        ? `${baseHeading}: Toàn cảnh câu chuyện khiến khán giả xôn xao`
+        : `${baseHeading}: Inside the Story Everyone Is Talking About`;
+      generatedExcerpt =
+        sourceExcerpt ||
+        (srcParas[0] ? srcParas[0].slice(0, 155) : `Explore the full story around ${baseHeading}.`);
+
+      const pBlocks: string[] = [];
+      srcParas.slice(0, 12).forEach((para, idx) => {
+        if (idx === 1) {
+          pBlocks.push(
+            `<h2>${isVi ? 'Chi tiết câu chuyện đáng chú ý' : 'The Full Story & Key Moments'}</h2>`
+          );
+        } else if (idx === Math.floor(srcParas.length / 2) && idx > 2) {
+          pBlocks.push(
+            `<h2>${
+              isVi ? 'Phản ứng từ công chúng và người hâm mộ' : 'Why Fans Everywhere Are Reacting'
+            }</h2>`
+          );
+        }
+        pBlocks.push(`<p>${para}</p>`);
+      });
+      generatedHtml = pBlocks.join('\n\n');
+    } else {
+      const inputLines = params.topic
+        .split(/\n+/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+      const shortTopic = inputLines[0]?.slice(0, 75) || 'Celebrity Spotlight';
+
+      if (isVi) {
+        generatedTitle = `${shortTopic}: Những tình tiết đáng chú ý khiến khán giả xôn xao`;
+        generatedExcerpt = `Khám phá chi tiết câu chuyện xoay quanh ${shortTopic} cùng những góc khuất hậu trường và phản ứng bất ngờ từ công chúng.`;
+        generatedHtml = `<p><strong>${shortTopic}</strong> đang trở thành tâm điểm chú ý của đông đảo khán giả và người hâm mộ với nhiều chi tiết đầy cảm xúc.</p>
+${inputLines.map((line) => `<p>${line}</p>`).join('\n')}
+<h2>1. Toàn cảnh câu chuyện xoay quanh ${shortTopic}</h2>
+<p>Ngay sau khi những thông tin và khoảnh khắc về <strong>${generatedKeyword}</strong> được chia sẻ, cộng đồng mạng đã nhanh chóng dành sự quan tâm đặc biệt.</p>
+<blockquote><p>"Đôi khi chính những khoảnh khắc chân thực phía sau ánh hào quang lại là điều chạm đến trái tim khán giả sâu sắc nhất."</p></blockquote>
 <h2>2. Những điểm nhấn đáng chú ý</h2>
-<ul>
-  <li><strong>Sự thay đổi mới mẻ:</strong> Hình ảnh gần gũi, khác biệt hoàn toàn so với vẻ ngoài lộng lẫy thường thấy trên sân khấu.</li>
-  <li><strong>Phản ứng tích cực từ công chúng:</strong> Hàng loạt bình luận chia sẻ và gửi lời chúc tốt đẹp từ người hâm mộ.</li>
-  <li><strong>Dấu ấn riêng biệt:</strong> Khẳng định sức hút bền bỉ của ${kw} qua nhiều năm hoạt động nghệ thuật.</li>
-</ul>
-<h2>3. Lời kết</h2>
-<p>Câu chuyện về <strong>${cleanTopic}</strong> một lần nữa cho thấy sức hút mạnh mẽ đối với truyền thông và công chúng. Hãy tiếp tục theo dõi những cập nhật mới nhất trên hệ thống.</p>`,
-    };
+<p>Không chỉ thu hút bởi câu chuyện hậu trường, <strong>${generatedKeyword}</strong> còn nhận được hàng loạt bình luận chia sẻ từ người hâm mộ.</p>`;
+      } else {
+        generatedTitle = `${shortTopic}: Inside the Rare Moment Everyone Is Talking About`;
+        generatedExcerpt = `Take a closer look at ${shortTopic}, the heartfelt behind-the-scenes story, and why fans everywhere are sharing their reactions.`;
+        generatedHtml = `<p><strong>${shortTopic}</strong> has quickly captured the attention of fans and viewers alike, sparking widespread conversation across social media.</p>
+${inputLines.map((line) => `<p>${line}</p>`).join('\n')}
+<h2>The Story Behind ${shortTopic}</h2>
+<p>When new details surrounding <strong>${generatedKeyword}</strong> surfaced, admirers were quick to notice the genuine, unfiltered nature of the moment.</p>
+<blockquote><p>"It is often the quietest, most unexpected chapters off-camera that leave the strongest impression on fans."</p></blockquote>
+<h2>Why Fans Are Still Talking About It</h2>
+<p>As discussions around <strong>${shortTopic}</strong> continue to grow, audiences everywhere have shared warm memories and reactions.</p>`;
+      }
+    }
   }
+
+  // Tìm tự động 2 Video YouTube liên quan đến nội dung hoặc nhân vật đó
+  const relatedVideos = await searchRelatedYouTubeVideos(
+    youtubeQuery || generatedKeyword || generatedTitle,
+    2
+  );
+
+  // Chèn toàn bộ ảnh minh họa từ bài gốc (nếu có) + gắn 2 Video YouTube vào cuối bài
+  const finalContentHtml = enrichArticleWithImagesAndYouTube({
+    baseHtml: generatedHtml,
+    articleTitle: generatedTitle,
+    images: scrapedImages,
+    youtubeVideos: relatedVideos,
+    language,
+  });
+
+  const primaryFeaturedImage = scrapedImages[0]?.url || '';
 
   return {
     ok: true,
-    title: `${cleanTopic}: Inside the Rare Moment Everyone Is Talking About`,
-    slug,
-    excerpt: `Take a closer look at ${cleanTopic}, the heartfelt behind-the-scenes story, and why fans everywhere are sharing their reactions.`,
-    focusKeyword: kw,
-    tags: [kw, params.categoryName || 'Showbiz', 'Celebrity News', 'Exclusive Story'],
-    contentHtml: `<p><strong>${cleanTopic}</strong> has quickly captured the attention of fans and viewers alike, sparking widespread conversation across social media.</p>
-<h2>The Story Behind ${cleanTopic}</h2>
-<p>When new details surrounding <strong>${kw}</strong> first surfaced, longtime admirers were quick to notice the genuine, unfiltered nature of the moment. Stepping away from the spotlight often reveals a side of public figures that audiences rarely get to witness.</p>
-<blockquote><p>"It is often the quietest, most unexpected chapters off-camera that leave the strongest impression on fans."</p></blockquote>
-<h2>Key Highlights Fans Noticed</h2>
-<ul>
-  <li><strong>A Rare Glimpse Behind the Scenes:</strong> An authentic look far removed from the usual red-carpet appearances.</li>
-  <li><strong>Overwhelming Fan Support:</strong> Thousands of readers and followers shared warm messages and memories.</li>
-  <li><strong>Lasting Legacy:</strong> A reminder of why ${kw} continues to resonate with audiences after all these years.</li>
-</ul>
-<h2>Final Thoughts</h2>
-<p>As discussions around <strong>${cleanTopic}</strong> continue to grow, one thing remains clear: authentic stories and timeless moments never go out of style.</p>`,
+    mode: resolvedSourceUrl ? 'from_url' : 'from_text',
+    sourceUrl: resolvedSourceUrl || undefined,
+    title: generatedTitle,
+    slug: generatedSlug,
+    excerpt: generatedExcerpt,
+    focusKeyword: generatedKeyword,
+    tags: generatedTags,
+    contentHtml: finalContentHtml,
+    featuredImageUrl: primaryFeaturedImage,
+    extractedImages: scrapedImages,
+    youtubeVideos: relatedVideos,
   };
 }
+

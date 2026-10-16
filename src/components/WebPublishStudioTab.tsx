@@ -183,10 +183,20 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   // Chế độ hiển thị khung soạn thảo: 'visual' (Soạn thảo + Thanh công cụ) | 'preview' (Xem trước)
   const [editorViewMode, setEditorViewMode] = useState<'visual' | 'preview'>('visual');
 
-  // Trợ lý viết bài chuẩn SEO
+  // Trợ lý viết bài chuẩn SEO (2 Chức năng chính: Từ đoạn nội dung HOẶC Từ link web bất kỳ + Ảnh + 2 Video YouTube)
+  const [aiMode, setAiMode] = useState<'from_text' | 'from_url'>('from_url');
   const [aiTopic, setAiTopic] = useState('');
+  const [aiSourceUrl, setAiSourceUrl] = useState('');
   const [aiLanguage, setAiLanguage] = useState<'en' | 'vi'>('en');
   const [aiLoading, setAiLoading] = useState(false);
+  const [extractedWebImages, setExtractedWebImages] = useState<
+    { url: string; alt: string; isFeatured?: boolean }[]
+  >([]);
+  const [attachedYoutubeVideos, setAttachedYoutubeVideos] = useState<
+    { videoId: string; title: string; watchUrl: string; embedUrl: string; thumbnailUrl: string }[]
+  >([]);
+  const [customYtQuery, setCustomYtQuery] = useState('');
+  const [searchingYt, setSearchingYt] = useState(false);
 
   // Trạng thái đang đẩy bài & kết quả trả về
   const [isPublishing, setIsPublishing] = useState(false);
@@ -377,13 +387,22 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     reader.readAsDataURL(file);
   };
 
-  // Tạo nội dung chuẩn SEO bằng AI / Smart Generator
-  const handleGenerateSeoArticle = async () => {
-    const topicToUse = aiTopic.trim() || title.trim();
-    if (!topicToUse) {
-      setPublishError('Vui lòng nhập chủ đề hoặc tiêu đề bài viết để hệ thống tự động soạn thảo!');
-      return;
+  // Tạo nội dung chuẩn SEO theo 2 Chức năng chính (Từ đoạn nội dung HOẶC Từ 1 link web bất kỳ + Lấy hết ảnh + 2 Video YouTube cuối bài)
+  const handleGenerateSeoArticle = async (overrideMode?: 'from_text' | 'from_url') => {
+    const activeMode = overrideMode || aiMode;
+    if (activeMode === 'from_url') {
+      if (!aiSourceUrl.trim()) {
+        setPublishError('Vui lòng dán 1 đường dẫn (Link) bài viết web bất kỳ để viết lại chuẩn SEO và lấy toàn bộ ảnh!');
+        return;
+      }
+    } else {
+      const topicToUse = aiTopic.trim() || title.trim();
+      if (!topicToUse) {
+        setPublishError('Vui lòng nhập đoạn nội dung hoặc chủ đề để hệ thống viết chuẩn SEO!');
+        return;
+      }
     }
+
     setAiLoading(true);
     setPublishError(null);
     try {
@@ -394,16 +413,18 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'ai_write',
-          topic: topicToUse,
-          keyword: focusKeyword.trim() || topicToUse,
+          mode: activeMode,
+          topic: activeMode === 'from_url' ? aiSourceUrl.trim() : aiTopic.trim() || title.trim(),
+          sourceUrl: activeMode === 'from_url' ? aiSourceUrl.trim() : undefined,
+          keyword: focusKeyword.trim() || undefined,
           language: aiLanguage,
           categoryName: primaryCatName,
-          existingContent: content,
+          existingContent: activeMode === 'from_text' ? content : undefined,
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Không thể khởi tạo nội dung');
+        throw new Error(data.error || 'Không thể khởi tạo nội dung chuẩn SEO');
       }
       if (data.title) setTitle(data.title);
       if (data.slug) {
@@ -411,13 +432,87 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         setAutoSlug(false);
       }
       if (data.excerpt) setExcerpt(data.excerpt);
-      if (data.focusKeyword) setFocusKeyword(data.focusKeyword);
+      if (data.focusKeyword) {
+        setFocusKeyword(data.focusKeyword);
+        setCustomYtQuery(data.focusKeyword);
+      }
       if (Array.isArray(data.tags)) setTagsInput(data.tags.join(', '));
       if (data.contentHtml) setContent(data.contentHtml);
+
+      if (Array.isArray(data.extractedImages) && data.extractedImages.length > 0) {
+        setExtractedWebImages(data.extractedImages);
+      }
+      if (data.featuredImageUrl) {
+        setFeaturedImageUrl(data.featuredImageUrl);
+        setFeaturedMediaId(0);
+        setFeaturedImageBase64('');
+      }
+      if (Array.isArray(data.youtubeVideos)) {
+        setAttachedYoutubeVideos(data.youtubeVideos);
+      }
     } catch (err: any) {
-      setPublishError(err?.message || 'Lỗi khi tạo bài viết tự động');
+      setPublishError(err?.message || 'Lỗi khi tạo bài viết chuẩn SEO tự động');
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  // Tìm và thay thế 2 video YouTube liên quan ở cuối bài viết theo từ khóa / tên nhân vật
+  const handleRefreshYoutubeVideos = async () => {
+    const q = customYtQuery.trim() || focusKeyword.trim() || title.trim();
+    if (!q) {
+      setPublishError('Vui lòng nhập tên nhân vật hoặc chủ đề để tìm 2 video YouTube liên quan!');
+      return;
+    }
+    setSearchingYt(true);
+    setPublishError(null);
+    try {
+      const res = await fetch('/api/wp-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'search_youtube',
+          query: q,
+          limit: 2,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok && Array.isArray(data.videos) && data.videos.length > 0) {
+        setAttachedYoutubeVideos(data.videos);
+        const headingText =
+          aiLanguage === 'vi'
+            ? '🎬 Video Liên Quan Đáng Chú Ý'
+            : '🎬 Related Videos & Exclusive Moments';
+        const videoBlocks = data.videos
+          .map((v: any, idx: number) => {
+            const safeTitle = String(v.title || '').replace(/"/g, '&quot;');
+            return `<div class="wp-youtube-embed-box" style="margin: 20px 0 28px 0;">
+  <p><strong>Video #${idx + 1}: ${v.title}</strong></p>
+  <figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio" style="margin: 12px 0;">
+    <div class="wp-block-embed__wrapper" style="position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000;">
+      <iframe src="https://www.youtube.com/embed/${v.videoId}" title="${safeTitle}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    </div>
+  </figure>
+  <p style="font-size: 13px; color: #475569;">👉 <a href="${v.watchUrl}" target="_blank" rel="noopener noreferrer">${
+              aiLanguage === 'vi' ? 'Xem trực tiếp trên YouTube' : 'Watch on YouTube'
+            }: ${v.title}</a></p>
+</div>`;
+          })
+          .join('\n');
+
+        setContent((prev) => {
+          // Xóa khối video cũ ở cuối bài nếu có rồi gắn 2 video mới
+          const cleaned = prev.replace(
+            /<h2>🎬 (Video Liên Quan Đáng Chú Ý|Related Videos & Exclusive Moments)<\/h2>[\s\S]*$/i,
+            ''
+          ).trim();
+          return `${cleaned}\n\n<h2>${headingText}</h2>\n${videoBlocks}`;
+        });
+      }
+    } catch (err: any) {
+      setPublishError(err?.message || 'Không thể tìm video YouTube');
+    } finally {
+      setSearchingYt(false);
     }
   };
 
@@ -861,22 +956,29 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* CỘT TRÁI (2/3): SOẠN THẢO BÀI VIẾT & TRỢ LÝ AI SEO */}
           <div className="lg:col-span-2 space-y-5">
-            {/* KHUNG TRỢ LÝ SOẠN BÀI NHANH CHUẨN SEO */}
-            <div className="bg-gradient-to-r from-emerald-50/90 via-teal-50/80 to-sky-50/80 border border-emerald-200 rounded-2xl p-4 space-y-3">
+            {/* KHUNG 2 CHỨC NĂNG CHÍNH: VIẾT BÀI TỪ NỘI DUNG HOẶC TỪ LINK WEB BẤT KỲ + LẤY HẾT ẢNH + 2 VIDEO YOUTUBE */}
+            <div className="bg-gradient-to-r from-emerald-50/95 via-teal-50/90 to-sky-50/90 border-2 border-emerald-300/80 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center space-x-2">
-                  <Sparkles className="w-4 h-4 text-emerald-600" />
-                  <span className="text-xs sm:text-sm font-black text-slate-900">
-                    Hỗ Trợ Khởi Tạo Nhanh Nội Dung Chuẩn SEO (Showbiz · Story · Film)
-                  </span>
+                  <Sparkles className="w-5 h-5 text-emerald-600" />
+                  <div>
+                    <span className="text-xs sm:text-sm font-black text-slate-900 block">
+                      Trợ Lý Viết Bài Chuẩn SEO Tự Động + Minh Họa Ảnh & 2 Video YouTube Cuối Bài
+                    </span>
+                    <span className="text-[11px] text-slate-600">
+                      Chọn 1 trong 2 chế độ bên dưới để tự động viết bài, chèn ảnh minh họa và gắn 2 video YouTube liên quan
+                    </span>
+                  </div>
                 </div>
+
+                {/* Chọn ngôn ngữ bài viết */}
                 <div className="flex items-center space-x-1.5 text-xs">
                   <button
                     type="button"
                     onClick={() => setAiLanguage('en')}
-                    className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg font-bold cursor-pointer ${
                       aiLanguage === 'en'
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'bg-white text-slate-700 border border-slate-200'
                     }`}
                   >
@@ -885,9 +987,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   <button
                     type="button"
                     onClick={() => setAiLanguage('vi')}
-                    className={`px-2.5 py-1 rounded-lg font-bold cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg font-bold cursor-pointer ${
                       aiLanguage === 'vi'
-                        ? 'bg-emerald-600 text-white'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'bg-white text-slate-700 border border-slate-200'
                     }`}
                   >
@@ -896,33 +998,241 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  type="text"
-                  value={aiTopic}
-                  onChange={(e) => setAiTopic(e.target.value)}
-                  placeholder="Nhập chủ đề, tên nhân vật hoặc ý chính (VD: Beloved TV Host Enjoying a Rare Beachside Escape...)"
-                  className="flex-1 px-3.5 py-2 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                />
+              {/* 2 NÚT CHUYỂN CHỨC NĂNG CHÍNH */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <button
                   type="button"
-                  disabled={aiLoading}
-                  onClick={handleGenerateSeoArticle}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-xs"
+                  onClick={() => setAiMode('from_url')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start space-x-2.5 ${
+                    aiMode === 'from_url'
+                      ? 'bg-white border-emerald-600 ring-2 ring-emerald-500/20 shadow-xs'
+                      : 'bg-white/60 border-slate-200 hover:bg-white'
+                  }`}
                 >
-                  {aiLoading ? (
-                    <>
-                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>Đang soạn bài...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>Tạo Dàn Ý & Bài Viết SEO</span>
-                    </>
-                  )}
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs shrink-0 ${
+                      aiMode === 'from_url'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    1
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-slate-900">
+                      Ném 1 Link Web Bất Kỳ → Viết Lại Chuẩn SEO
+                    </div>
+                    <div className="text-[11px] text-slate-600 mt-0.5">
+                      Tự lấy nội dung viết lại chuẩn SEO + lấy hết ảnh bài đó làm minh họa + gắn 2 Video YouTube cuối bài
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setAiMode('from_text')}
+                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start space-x-2.5 ${
+                    aiMode === 'from_text'
+                      ? 'bg-white border-emerald-600 ring-2 ring-emerald-500/20 shadow-xs'
+                      : 'bg-white/60 border-slate-200 hover:bg-white'
+                  }`}
+                >
+                  <div
+                    className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs shrink-0 ${
+                      aiMode === 'from_text'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    2
+                  </div>
+                  <div>
+                    <div className="text-xs font-black text-slate-900">
+                      Nhập Đoạn Nội Dung / Chủ Đề → Viết Chuẩn SEO
+                    </div>
+                    <div className="text-[11px] text-slate-600 mt-0.5">
+                      Dán đoạn tóm tắt hoặc ý chính để viết thành bài báo chuẩn SEO + gắn 2 Video YouTube cuối bài
+                    </div>
+                  </div>
                 </button>
               </div>
+
+              {/* GIAO DIỆN CHỨC NĂNG 1: NHẬP LINK WEB BẤT KỲ */}
+              {aiMode === 'from_url' ? (
+                <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
+                  <label className="text-xs font-black text-slate-800 block">
+                    🔗 Dán đường dẫn (URL) bài viết từ bất kỳ trang báo / website nào:
+                  </label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <input
+                      type="text"
+                      value={aiSourceUrl}
+                      onChange={(e) => setAiSourceUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleGenerateSeoArticle('from_url');
+                        }
+                      }}
+                      placeholder="VD: https://people.com/... hoặc https://vnexpress.net/... hoặc https://celeb24h.com/1159"
+                      className="flex-1 px-3.5 py-2.5 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={aiLoading}
+                      onClick={() => void handleGenerateSeoArticle('from_url')}
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
+                    >
+                      {aiLoading ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Đang lấy ảnh, viết lại SEO & tìm 2 Video...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          <span>Viết Lại Chuẩn SEO + Lấy Hết Ảnh & 2 Video YT</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                /* GIAO DIỆN CHỨC NĂNG 2: NHẬP ĐOẠN NỘI DUNG THÔ */
+                <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
+                  <label className="text-xs font-black text-slate-800 block">
+                    📝 Nhập đoạn nội dung thô, bản tóm tắt hoặc tên nhân vật / sự kiện:
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={aiTopic}
+                    onChange={(e) => setAiTopic(e.target.value)}
+                    placeholder="Dán đoạn nội dung hoặc ý chính bạn muốn viết chuẩn SEO vào đây (VD: Keanu Reeves spotted enjoying a quiet beach day, sharing warm moments with fans...)"
+                    className="w-full px-3.5 py-2 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      disabled={aiLoading}
+                      onClick={() => void handleGenerateSeoArticle('from_text')}
+                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
+                    >
+                      {aiLoading ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                          <span>Đang viết bài chuẩn SEO & gắn 2 Video YouTube...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4" />
+                          <span>Viết Bài Chuẩn SEO Từ Nội Dung Này + Gắn 2 Video YT</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* HIỂN THỊ DANH SÁCH ẢNH ĐÃ LẤY TỪ BÀI GỐC & 2 VIDEO YOUTUBE ĐÃ GẮN Ở CUỐI BÀI */}
+              {(extractedWebImages.length > 0 || attachedYoutubeVideos.length > 0) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  {/* Danh sách ảnh minh họa đã lấy từ link web */}
+                  {extractedWebImages.length > 0 && (
+                    <div className="bg-white p-3 rounded-xl border border-emerald-200 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-black text-emerald-900">
+                          🖼️ Đã lấy & chèn {extractedWebImages.length} ảnh minh họa từ bài gốc:
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-semibold">
+                          Bấm ảnh để đặt làm Ảnh Đại Diện
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                        {extractedWebImages.map((img, i) => {
+                          const isCurrentFeatured = featuredImageUrl === img.url;
+                          return (
+                            <div
+                              key={i}
+                              onClick={() => {
+                                setFeaturedImageUrl(img.url);
+                                setFeaturedMediaId(0);
+                                setFeaturedImageBase64('');
+                              }}
+                              className={`relative shrink-0 w-16 h-14 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                                isCurrentFeatured
+                                  ? 'border-emerald-600 ring-2 ring-emerald-500/30'
+                                  : 'border-slate-200 hover:border-emerald-400'
+                              }`}
+                              title="Bấm để chọn ảnh này làm Ảnh Đại Diện (Featured Image)"
+                            >
+                              <img src={img.url} alt={img.alt} className="w-full h-full object-cover" />
+                              <span className="absolute bottom-0.5 right-0.5 bg-black/70 text-white text-[9px] font-bold px-1 rounded">
+                                #{i + 1}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2 Video YouTube liên quan đã gắn ở cuối bài */}
+                  <div className="bg-white p-3 rounded-xl border border-rose-200 space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-black text-rose-900">
+                        🎬 2 Video YouTube liên quan gắn ở cuối bài ({attachedYoutubeVideos.length} video):
+                      </span>
+                    </div>
+
+                    {attachedYoutubeVideos.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2">
+                        {attachedYoutubeVideos.map((v, idx) => (
+                          <a
+                            key={v.videoId}
+                            href={v.watchUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center space-x-2 p-1.5 rounded-lg bg-slate-50 hover:bg-rose-50 border border-slate-200 transition-colors group"
+                          >
+                            <img
+                              src={v.thumbnailUrl}
+                              alt={v.title}
+                              className="w-14 h-10 object-cover rounded shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-black text-rose-700">
+                                Video #{idx + 1}
+                              </div>
+                              <div className="text-[11px] font-bold text-slate-800 truncate group-hover:text-rose-700">
+                                {v.title}
+                              </div>
+                            </div>
+                          </a>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Tìm đổi 2 video YouTube khác theo tên nhân vật */}
+                    <div className="flex items-center gap-1.5 pt-0.5">
+                      <input
+                        type="text"
+                        value={customYtQuery}
+                        onChange={(e) => setCustomYtQuery(e.target.value)}
+                        placeholder="Nhập tên nhân vật để đổi 2 video YT khác..."
+                        className="flex-1 px-2.5 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500"
+                      />
+                      <button
+                        type="button"
+                        disabled={searchingYt}
+                        onClick={handleRefreshYoutubeVideos}
+                        className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold cursor-pointer shrink-0"
+                      >
+                        {searchingYt ? 'Đang tìm...' : 'Đổi 2 Video YT'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* KHUNG SOẠN THẢO CHÍNH */}

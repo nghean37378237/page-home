@@ -7,6 +7,7 @@ import {
   publishArticleToTarget,
   uploadMediaToWordPress,
   generateSeoArticleWithAi,
+  searchRelatedYouTubeVideos,
 } from './src/server/wpPublishService';
 import { extractImagesFromWebUrl } from './src/server/webImageExtractor';
 
@@ -75,12 +76,21 @@ async function startServer() {
         return;
       }
 
+      if (action === 'search_youtube') {
+        const query = String(body.query || '');
+        const videos = await searchRelatedYouTubeVideos(query, Number(body.limit) || 2);
+        res.json({ ok: true, videos });
+        return;
+      }
+
       if (action === 'ai_write') {
         const result = await generateSeoArticleWithAi({
           topic: String(body.topic || ''),
           keyword: body.keyword ? String(body.keyword) : undefined,
           language: body.language === 'vi' ? 'vi' : 'en',
           categoryName: body.categoryName ? String(body.categoryName) : undefined,
+          mode: body.mode || undefined,
+          sourceUrl: body.sourceUrl ? String(body.sourceUrl) : undefined,
           existingContent: body.existingContent ? String(body.existingContent) : undefined,
         });
         res.json(result);
