@@ -287,7 +287,17 @@ export async function uploadMediaToWordPress(params: {
       buffer = Buffer.from(params.base64Data, 'base64');
     }
   } else if (params.imageUrl) {
-    const imgRes = await fetch(params.imageUrl);
+    let refererOrigin = DEFAULT_WP_SITE;
+    try {
+      refererOrigin = `${new URL(params.imageUrl).origin}/`;
+    } catch {}
+    const imgRes = await fetch(params.imageUrl, {
+      headers: {
+        'User-Agent': SCRAPER_USER_AGENT,
+        Referer: refererOrigin,
+        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+      },
+    });
     if (!imgRes.ok) {
       throw new Error(`Không thể tải ảnh từ URL: ${params.imageUrl}`);
     }
@@ -400,6 +410,8 @@ export interface PublishArticleInput {
   featuredImageBase64?: string;
   featuredImageUrl?: string;
   featuredImageAlt?: string;
+  sourceUrl?: string;
+  extractedImages?: { url: string; alt?: string; isFeatured?: boolean; isExternal?: boolean }[];
   // Tùy chọn đích đẩy bài khác (Custom WordPress hoặc Webhook)
   targetMode?: 'default_wp' | 'custom_wp' | 'webhook';
   customWpUrl?: string;
@@ -409,8 +421,104 @@ export interface PublishArticleInput {
   webhookSecret?: string;
 }
 
+function injectImagesIntoHtmlContent(
+  rawHtml: string,
+  images: { url: string; alt?: string; isExternal?: boolean }[],
+  articleTitle: string
+): string {
+  if (!images || images.length === 0) return rawHtml;
+  const figureBlocks = images.map((img) => {
+    const altText = (img.alt || articleTitle).replace(/"/g, '&quot;');
+    const sourceBadge = img.isExternal ? 'Editorial Visual Highlight' : 'Featured Story Moment';
+    return `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
+</figure>`;
+  });
+
+  const pParts = rawHtml.split(/(<\/p>\s*(?:<br\s*\/?>)?)/i);
+  if (pParts.length < 3) {
+    return `${figureBlocks[0]}\n\n${rawHtml}\n\n${figureBlocks.slice(1).join('\n\n')}`;
+  }
+
+  const totalParas = Math.floor(pParts.length / 2);
+  const step = Math.max(1, Math.floor(totalParas / (figureBlocks.length + 1)));
+  let figIdx = 0;
+  let paraCount = 0;
+  const out: string[] = [];
+
+  for (let i = 0; i < pParts.length; i++) {
+    out.push(pParts[i]);
+    if (i % 2 === 1) {
+      paraCount++;
+      if (figIdx < figureBlocks.length && (paraCount % step === 0 || paraCount === totalParas - 1)) {
+        out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+      }
+    }
+  }
+  while (figIdx < figureBlocks.length) {
+    out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+  }
+  return out.join('');
+}
+
 export async function publishArticleToTarget(input: PublishArticleInput) {
   const targetMode = input.targetMode || 'default_wp';
+
+  // Đảm bảo luôn có ảnh gắn trong bài viết trước khi đẩy lên web
+  let finalContent = input.content || '';
+  let candidateImgs = Array.isArray(input.extractedImages)
+    ? input.extractedImages.filter((im) => im && im.url)
+    : [];
+
+  if (!/<img\b/i.test(finalContent)) {
+    if (candidateImgs.length === 0 && input.sourceUrl) {
+      try {
+        const scraped = await scrapeWebArticleForSeoRewrite(input.sourceUrl);
+        candidateImgs = [...scraped.images];
+      } catch {}
+    }
+    if (candidateImgs.length < 5) {
+      try {
+        const ctxProfile = analyzeArticleSubjectAndContext(
+          input.title,
+          finalContent,
+          input.tags?.[0],
+          candidateImgs
+        );
+        const excludeKeys = new Set(
+          candidateImgs.map((im) =>
+            im.url
+              .split('?')[0]
+              .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+              .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+              .toLowerCase()
+          )
+        );
+        const needed = Math.max(0, 6 - candidateImgs.length);
+        if (needed > 0) {
+          const ext = await searchExternalRelatedImages(
+            ctxProfile.combinedSearchQuery || input.title,
+            needed,
+            excludeKeys,
+            ctxProfile
+          );
+          candidateImgs = [...candidateImgs, ...ext];
+        }
+      } catch {}
+    }
+    if (candidateImgs.length === 0 && input.featuredImageUrl) {
+      candidateImgs = [{ url: input.featuredImageUrl, alt: input.title }];
+    }
+    if (candidateImgs.length > 0) {
+      finalContent = injectImagesIntoHtmlContent(finalContent, candidateImgs, input.title);
+    }
+  }
+
+  if (!input.featuredImageUrl && candidateImgs.length > 0) {
+    input.featuredImageUrl = candidateImgs[0].url;
+  }
+  input.content = finalContent;
 
   // 1. Chế độ đẩy qua Webhook API
   if (targetMode === 'webhook' && input.webhookUrl) {
@@ -659,18 +767,26 @@ function resolveAbsUrl(rawUrl: string, baseUrl: string): string {
 function isIgnorableImage(url: string): boolean {
   const lower = url.toLowerCase();
   if (
+    !lower ||
+    lower.startsWith('data:') ||
+    lower.startsWith('blob:') ||
     lower.endsWith('.svg') ||
     lower.endsWith('.gif') ||
     lower.endsWith('.ico') ||
     lower.includes('gravatar.com') ||
+    lower.includes('/wp-includes/') ||
     lower.includes('/plugins/') ||
     lower.includes('/themes/') ||
-    lower.includes('emoji') ||
-    lower.includes('smilies') ||
-    lower.includes('avatar') ||
+    lower.includes('s.w.org/images/core/emoji') ||
+    lower.includes('/emoji/') ||
+    lower.includes('/smilies/') ||
     lower.includes('favicon') ||
-    lower.includes('logo') ||
-    lower.includes('icon') ||
+    lower.includes('site-logo') ||
+    lower.includes('header-logo') ||
+    lower.includes('footer-logo') ||
+    lower.includes('/logo.') ||
+    lower.includes('-logo.') ||
+    lower.includes('_logo.') ||
     lower.includes('pixel') ||
     lower.includes('analytics') ||
     lower.includes('doubleclick') ||
@@ -688,19 +804,22 @@ function isIgnorableImage(url: string): boolean {
   if (tinyMatch) {
     const w = Number(tinyMatch[1]);
     const h = Number(tinyMatch[2]);
-    if (w < 160 && h < 160) return true;
+    if (w < 150 && h < 150) return true;
   }
   return false;
 }
 
 function pickBestSrcFromSrcset(srcset: string, baseUrl: string): string {
-  if (!srcset) return '';
+  const trimmed = String(srcset || '').trim();
+  if (!trimmed || trimmed.startsWith('data:')) return '';
   const candidates: { url: string; width: number }[] = [];
-  for (const part of srcset.split(',')) {
+  // Tách các phần tử trong srcset mà không làm đứt các URL chứa dấu phẩy (VD: Cloudinary c_crop,x_0,y_0...)
+  const parts = trimmed.split(/,\s+(?=(?:https?:\/\/|\/\/|\/|[a-zA-Z0-9_-]+\/))/);
+  for (const part of parts) {
     const tokens = part.trim().split(/\s+/);
-    if (!tokens[0]) continue;
+    if (!tokens[0] || tokens[0].startsWith('data:')) continue;
     const u = resolveAbsUrl(tokens[0], baseUrl);
-    if (!u) continue;
+    if (!u || isIgnorableImage(u)) continue;
     let width = 0;
     if (tokens[1]?.endsWith('w')) {
       width = parseInt(tokens[1].slice(0, -1), 10) || 0;
@@ -711,8 +830,8 @@ function pickBestSrcFromSrcset(srcset: string, baseUrl: string): string {
   }
   if (candidates.length === 0) return '';
   candidates.sort((a, b) => {
-    const scoreA = a.width >= 600 && a.width <= 1600 ? a.width + 2000 : a.width;
-    const scoreB = b.width >= 600 && b.width <= 1600 ? b.width + 2000 : b.width;
+    const scoreA = a.width >= 600 && a.width <= 1800 ? a.width + 2000 : a.width;
+    const scoreB = b.width >= 600 && b.width <= 1800 ? b.width + 2000 : b.width;
     return scoreB - scoreA;
   });
   return candidates[0].url;
@@ -729,7 +848,7 @@ function collectImgsFromHtml(htmlChunk: string, baseUrl: string): { url: string;
       tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
       tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
       tag.match(/\bsrcset=["']([^"']+)["']/i);
-    if (ss && ss[1]) {
+    if (ss && ss[1] && !ss[1].trim().startsWith('data:')) {
       const best = pickBestSrcFromSrcset(ss[1], baseUrl);
       if (best && !isIgnorableImage(best)) {
         list.push({ url: best, alt: '' });
@@ -746,26 +865,55 @@ function collectImgsFromHtml(htmlChunk: string, baseUrl: string): { url: string;
     if (wMatch && hMatch) {
       const w = Number(wMatch[1]);
       const h = Number(hMatch[1]);
-      if (w > 0 && h > 0 && w < 120 && h < 120) continue;
+      if (w > 0 && h > 0 && w < 110 && h < 110) continue;
     }
-    const ss =
-      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
-      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
-      tag.match(/\bsrcset=["']([^"']+)["']/i);
-    let chosen = ss && ss[1] ? pickBestSrcFromSrcset(ss[1], baseUrl) : '';
+
+    let chosen = '';
+    const attrNames = [
+      'data-orig-file',
+      'data-large-file',
+      'data-full-url',
+      'data-hi-res-src',
+      'data-original',
+      'data-lazy-src',
+      'data-src',
+      'data-url',
+      'data-img-url',
+      'data-lazy',
+    ];
+    for (const attr of attrNames) {
+      const matchAttr = tag.match(new RegExp(`\\b${attr}=["']([^"']+)["']`, 'i'));
+      if (matchAttr && matchAttr[1] && !matchAttr[1].trim().startsWith('data:')) {
+        const candidate = resolveAbsUrl(matchAttr[1], baseUrl);
+        if (candidate && !isIgnorableImage(candidate)) {
+          chosen = candidate;
+          break;
+        }
+      }
+    }
+
     if (!chosen) {
-      const srcAttr =
-        tag.match(/\bdata-lazy-src=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-src=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-original=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-full-url=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-hi-res-src=["']([^"']+)["']/i) ||
-        tag.match(/\bsrc=["']([^"']+)["']/i);
-      if (srcAttr && srcAttr[1]) {
+      const ss =
+        tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
+        tag.match(/\bsrcset=["']([^"']+)["']/i);
+      if (ss && ss[1] && !ss[1].trim().startsWith('data:')) {
+        chosen = pickBestSrcFromSrcset(ss[1], baseUrl);
+      }
+    }
+
+    if (!chosen) {
+      const srcAttr = tag.match(/\bsrc=["']([^"']+)["']/i);
+      if (srcAttr && srcAttr[1] && !srcAttr[1].trim().startsWith('data:')) {
         chosen = resolveAbsUrl(srcAttr[1], baseUrl);
       }
     }
+
     if (!chosen || isIgnorableImage(chosen)) continue;
+    // Tự động chuyển URL ảnh thumbnail cắt nhỏ của WordPress (-300x169.jpg, -678x381.webp...) về ảnh gốc chất lượng cao nếu nằm trong /wp-content/uploads/
+    if (chosen.includes('/wp-content/uploads/')) {
+      chosen = chosen.replace(/-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i, '');
+    }
     const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
     const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
     list.push({ url: chosen, alt });
@@ -1380,30 +1528,34 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
     }
   };
 
+  let matchedWpPostId = 0;
+
   const parseWpPostObject = (postJson: any) => {
     if (!postJson || !postJson.id) return;
+    matchedWpPostId = Number(postJson.id) || 0;
     if (postJson.title?.rendered) {
       originalTitle = cleanScrapedTitle(postJson.title.rendered);
     }
     if (postJson.excerpt?.rendered) {
       originalExcerpt = stripHtmlTags(postJson.excerpt.rendered);
     }
-    const contentHtml = String(postJson.content?.rendered || '');
-    extractParagraphsFromHtml(contentHtml);
-    const contentImgs = collectImgsFromHtml(contentHtml, cleanUrl);
-    for (const img of contentImgs) {
-      addImage(img.url, img.alt || originalTitle, images.length === 0);
-    }
 
+    // Lấy cả ảnh đại diện (featuredmedia) VÀ toàn bộ ảnh trong nội dung bài viết (content.rendered)
     const embeddedMedia = postJson._embedded?.['wp:featuredmedia']?.[0];
     const featUrl =
       embeddedMedia?.media_details?.sizes?.full?.source_url ||
       embeddedMedia?.media_details?.sizes?.large?.source_url ||
       embeddedMedia?.source_url ||
       '';
-    // Chỉ thêm featured image nếu không phải ảnh ghép collage clickbait (khi trong bài đã có ảnh thật)
-    if (featUrl && (contentImgs.length === 0 || !/\bcollage[-_\d]/i.test(featUrl))) {
-      addImage(featUrl, originalTitle, images.length === 0);
+    if (featUrl) {
+      addImage(featUrl, originalTitle, true);
+    }
+
+    const contentHtml = String(postJson.content?.rendered || '');
+    extractParagraphsFromHtml(contentHtml);
+    const contentImgs = collectImgsFromHtml(contentHtml, cleanUrl);
+    for (const img of contentImgs) {
+      addImage(img.url, img.alt || originalTitle, images.length === 0);
     }
   };
 
@@ -1416,10 +1568,22 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
       ? Number(parsedUrl.searchParams.get('p'))
       : null;
 
+  // Chọn segment slug dài và chuẩn nhất (bỏ qua các hậu tố ngắn như /vn1/, /en/, /amp/, /feed/...)
+  const slugCandidates = pathSegs
+    .map((s) => s.replace(/\.(html|htm|php|aspx)$/i, ''))
+    .filter(
+      (s) =>
+        s &&
+        !/^\d+$/.test(s) &&
+        !/^(vn\d*|en|vi|amp|feed|page|index|category|tag|author|news|post|posts|article|articles)$/i.test(
+          s
+        )
+    );
   const lastSlugSeg =
-    pathSegs.length > 0 && !/^\d+$/.test(pathSegs[pathSegs.length - 1])
+    slugCandidates.sort((a, b) => b.length - a.length)[0] ||
+    (pathSegs.length > 0 && !/^\d+$/.test(pathSegs[pathSegs.length - 1])
       ? pathSegs[pathSegs.length - 1].replace(/\.(html|htm|php)$/i, '')
-      : '';
+      : '');
 
   const tryFetchWpRestPost = async (apiEndpoint: string) => {
     try {
@@ -1466,8 +1630,34 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
     }
   }
 
-  // 2. Quét trực tiếp HTML trang web CHỈ KHI chưa lấy được bài viết từ WP REST API
-  if (paragraphs.length === 0 || images.length === 0 || !originalTitle) {
+  // Nếu là bài viết WordPress và mới lấy được ít ảnh, kiểm tra thêm kho media đính kèm trực tiếp vào post ID đó (/wp-json/wp/v2/media?parent=ID)
+  if (matchedWpPostId > 0 && images.length < 4) {
+    try {
+      const mediaRes = await fetch(
+        `${origin}/wp-json/wp/v2/media?parent=${matchedWpPostId}&per_page=20`,
+        { headers: { 'User-Agent': SCRAPER_USER_AGENT } }
+      );
+      if (mediaRes.ok) {
+        const mediaItems: any = await mediaRes.json();
+        if (Array.isArray(mediaItems)) {
+          for (const mItem of mediaItems) {
+            const mUrl =
+              mItem?.media_details?.sizes?.full?.source_url ||
+              mItem?.media_details?.sizes?.large?.source_url ||
+              mItem?.source_url ||
+              '';
+            const mAlt = decodeHtmlEntities(mItem?.alt_text || mItem?.title?.rendered || originalTitle);
+            if (mUrl) addImage(mUrl, mAlt, images.length === 0);
+          }
+        }
+      }
+    } catch {
+      // ignore media parent error
+    }
+  }
+
+  // 2. Quét trực tiếp HTML trang web khi chưa lấy đủ đoạn văn hoặc chưa lấy được ảnh trong bài
+  if (paragraphs.length === 0 || images.length < 2 || !originalTitle) {
     try {
       const pageRes = await fetch(cleanUrl, {
         headers: {
@@ -1487,8 +1677,7 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
           await tryFetchWpRestPost(resolveAbsUrl(wpJsonLink[1], cleanUrl));
         }
 
-        // Chỉ quét HTML nếu WP REST API vẫn chưa trả về ảnh bài viết
-        if (images.length === 0 || !originalTitle) {
+        if (images.length < 2 || !originalTitle || paragraphs.length === 0) {
           if (!originalTitle) {
             const h1Match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
             const ogTitle =
@@ -1512,39 +1701,51 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
             }
           }
 
+          const ogImg =
+            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+            html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+          if (ogImg && ogImg[1]) {
+            addImage(ogImg[1], originalTitle, images.length === 0);
+          }
+
           const cleanBody = html
             .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
             .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
             .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
             .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
             .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
-            .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '')
-            .replace(
-              /<(div|section|ul)\b[^>]+(class|id)=["'][^"']*(related|yarpp|sharedaddy|jp-relatedposts|post-navigation|comments-area|sidebar|widget|more-posts|popular-posts|recent-posts)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,
-              ''
-            );
+            .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '');
 
-          const articleMatch =
-            cleanBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
-            cleanBody.match(/<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
-            cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
-
-          const primaryZone =
-            articleMatch ? articleMatch[articleMatch.length - 1] || articleMatch[1] : cleanBody;
-          extractParagraphsFromHtml(primaryZone);
-          const bodyImgs = collectImgsFromHtml(primaryZone, cleanUrl).filter(
-            (img) => !/\bcollage[-_\d]/i.test(img.url)
+          // Tìm vùng nội dung bài viết chính xác (tránh cắt cụt ở thẻ </div> con đầu tiên)
+          const articleBlocks = [...cleanBody.matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi)].map(
+            (m) => m[1]
           );
-          for (const img of bodyImgs) {
-            addImage(img.url, img.alt || originalTitle, images.length === 0);
+          let primaryZone = '';
+          if (articleBlocks.length > 0) {
+            primaryZone = articleBlocks.sort((a, b) => b.length - a.length)[0];
+          } else {
+            const contentStartMatch = cleanBody.match(
+              /<div\b[^>]+class=["'][^"']*\b(entry-content|post-content|article-content|td-post-content|single-content|the-content|article-body)\b[^"']*["'][^>]*>/i
+            );
+            if (contentStartMatch && contentStartMatch.index !== undefined) {
+              const afterStart = cleanBody.slice(contentStartMatch.index);
+              const stopMatch = afterStart.match(
+                /<(div|section|aside|footer)\b[^>]+(id|class)=["'][^"']*\b(related-posts|yarpp|jp-relatedposts|comments-area|post-navigation|site-footer|sidebar)\b[^"']*["']/i
+              );
+              primaryZone = stopMatch && stopMatch.index ? afterStart.slice(0, stopMatch.index) : afterStart;
+            } else {
+              const mainMatch = cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+              primaryZone = mainMatch ? mainMatch[1] : cleanBody;
+            }
           }
 
-          const ogImg =
-            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
-            html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-          if (ogImg && ogImg[1] && (images.length === 0 || !/\bcollage[-_\d]/i.test(ogImg[1]))) {
-            addImage(ogImg[1], originalTitle, images.length === 0);
+          if (paragraphs.length === 0) {
+            extractParagraphsFromHtml(primaryZone);
+          }
+          const bodyImgs = collectImgsFromHtml(primaryZone, cleanUrl);
+          for (const img of bodyImgs) {
+            addImage(img.url, img.alt || originalTitle, images.length === 0);
           }
         }
       }
@@ -1838,12 +2039,34 @@ function buildLongFormSeoArticle2000To5000Words(params: {
     finalParagraphs150Words.push({ text: normalized150 });
   }
 
-  // Bây giờ lắp ghép HTML: mỗi đoạn ~150 từ đều có khoảng cách xuống dòng rõ ràng, và chèn xen kẽ TOÀN BỘ ảnh (ảnh bài gốc + ảnh bổ sung ngoài)
+  // Bây giờ lắp ghép HTML: gắn ảnh #1 ngay phần mở đầu bài viết, sau đó chèn xen kẽ TOÀN BỘ ảnh trong bài + ảnh bổ sung ngoài xuyên suốt các đoạn ~150 từ
   const htmlBlocks: string[] = [];
   const totalParas = finalParagraphs150Words.length;
-  const imgStep =
-    images.length > 0 ? Math.max(1, Math.floor(totalParas / (images.length + 1))) : 999;
   let imgIdx = 0;
+
+  const renderFigureBlock = (img: ScrapedArticleImage, displayNum: number) => {
+    const altText = (img.alt || articleTitle).replace(/"/g, '&quot;');
+    const sourceBadge = img.isExternal
+      ? isVi
+        ? `Ảnh bổ sung #${displayNum}`
+        : `Supplemental Photo #${displayNum}`
+      : isVi
+      ? `Ảnh trong bài #${displayNum}`
+      : `Article Photo #${displayNum}`;
+    return `<figure class="wp-block-image size-large article-image-block" style="margin: 24px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" loading="lazy" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
+</figure>`;
+  };
+
+  // Gắn ngay bức ảnh đầu tiên ở đầu bài viết (như chuẩn bài mẫu trên celeb24h.com)
+  if (images.length > 0) {
+    htmlBlocks.push(renderFigureBlock(images[imgIdx++], imgIdx));
+  }
+
+  const remainingImgs = Math.max(0, images.length - imgIdx);
+  const imgStep =
+    remainingImgs > 0 ? Math.max(1, Math.floor(totalParas / (remainingImgs + 1))) : 999;
 
   finalParagraphs150Words.forEach((item, idx) => {
     if (item.h2) {
@@ -1860,36 +2083,15 @@ function buildLongFormSeoArticle2000To5000Words(params: {
     // Chèn ảnh minh họa sau mỗi cụm đoạn
     if (
       imgIdx < images.length &&
-      ((idx + 1) % imgStep === 0 || idx === totalParas - 2)
+      ((idx + 1) % imgStep === 0 || idx >= totalParas - (images.length - imgIdx))
     ) {
-      const img = images[imgIdx++];
-      const altText = (img.alt || articleTitle).replace(/"/g, '&quot;');
-      const sourceBadge = img.isExternal
-        ? isVi
-          ? 'Ảnh tư liệu mở rộng'
-          : 'Editorial Visual Highlight'
-        : isVi
-        ? 'Hình ảnh trong bài'
-        : 'Featured Story Moment';
-      htmlBlocks.push(
-        `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
-  <img src="${img.url}" alt="${altText}" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
-</figure>`
-      );
+      htmlBlocks.push(renderFigureBlock(images[imgIdx++], imgIdx));
     }
   });
 
-  // Nếu còn ảnh nào chưa chèn hết (cả ảnh gốc lẫn ảnh bổ sung ngoài) thì chèn hết vào phần Bộ sưu tập ảnh trước video YouTube
+  // Nếu còn ảnh nào chưa chèn hết (cả ảnh gốc lẫn ảnh bổ sung ngoài) thì chèn hết vào bài trước video YouTube
   while (imgIdx < images.length) {
-    const img = images[imgIdx++];
-    const altText = (img.alt || articleTitle).replace(/"/g, '&quot;');
-    htmlBlocks.push(
-      `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
-  <img src="${img.url}" alt="${altText}" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
-</figure>`
-    );
+    htmlBlocks.push(renderFigureBlock(images[imgIdx++], imgIdx));
   }
 
   // Cuối bài tự động gắn 2 Video YouTube liên quan
@@ -1951,9 +2153,15 @@ export async function generateSeoArticleWithAi(params: {
   let sourceArticleText = '';
   let resolvedSourceUrl = '';
 
-  // Nếu là Chức năng 1 (Nhập 1 link web bất kỳ) -> Cào tiêu đề gốc + nội dung + toàn bộ ảnh trong bài đó
-  if (params.mode === 'from_url' || (params.sourceUrl && params.sourceUrl.trim())) {
-    const scraped = await scrapeWebArticleForSeoRewrite(params.sourceUrl || params.topic);
+  const candidateUrl =
+    (params.sourceUrl && params.sourceUrl.trim()) ||
+    (/^https?:\/\/\S+$/i.test(String(params.topic || '').trim())
+      ? String(params.topic || '').trim()
+      : '');
+
+  // Nếu là Chức năng 1 (Nhập 1 link web bất kỳ hoặc dán link vào ô nội dung) -> Cào tiêu đề gốc + nội dung + toàn bộ ảnh trong bài đó
+  if (params.mode === 'from_url' || candidateUrl) {
+    const scraped = await scrapeWebArticleForSeoRewrite(candidateUrl || params.topic);
     scrapedImages = scraped.images;
     sourceTitle = scraped.originalTitle;
     sourceExcerpt = scraped.originalExcerpt;
@@ -2032,13 +2240,12 @@ Hãy trả về JSON thuần với cấu trúc:
           },
         }),
         new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Gemini fast timeout')), 5500)
+          setTimeout(() => reject(new Error('Gemini fast timeout')), 3200)
         ),
       ]);
 
       const parsed = JSON.parse(response.text || '{}');
       if (parsed) {
-        // Nếu lấy từ link web thì luôn ưu tiên giữ nguyên tiêu đề gốc của bài link đó
         generatedTitle = sourceTitle || String(parsed.title || effectiveTopic);
         generatedSlug = String(parsed.slug || '');
         generatedExcerpt = String(parsed.excerpt || sourceExcerpt || '');
@@ -2052,7 +2259,6 @@ Hãy trả về JSON thuần với cấu trúc:
     }
   }
 
-  // Đảm bảo luôn có tiêu đề chuẩn (Giữ đúng tiêu đề bài link nhập vào nếu có)
   if (!generatedTitle) {
     generatedTitle =
       sourceTitle ||
@@ -2102,15 +2308,26 @@ Hãy trả về JSON thuần với cấu trúc:
     contextProfile.combinedSearchQuery || youtubeQuery || generatedKeyword || generatedTitle;
 
   // YÊU CẦU NGƯỜI DÙNG:
-  // Trước tiên lấy HẾT ảnh trong bài viết ở link bài (scrapedImages).
-  // - Nếu số ảnh trong bài >= 5 ảnh: ĐỦ 5 ẢNH RỒI THÌ THÔI, KHÔNG lấy thêm ảnh ngoài.
-  // - Nếu số ảnh trong bài < 5 ảnh: Chỉ lấy thêm ảnh ngoài ĐÚNG DIỄN VIÊN & SỰ KIỆN TRONG BÀI cho đủ 5 đến 7 ảnh (6 ảnh).
+  // Trước tiên lấy HẾT ảnh trong bài viết ở link bài (scrapedImages) và gắn vào bài.
+  // Đếm số ảnh nội dung thực (không tính ảnh ghép collage thumbnail nếu có):
+  // - Nếu đã đủ >= 5 ảnh thực trong bài: giữ nguyên toàn bộ ảnh trong bài, không lấy thêm ảnh ngoài.
+  // - Nếu < 5 ảnh thực trong bài: lấy thêm ảnh ngoài tương tự (cùng diễn viên + trang phục + bối cảnh) để tổng ảnh đạt 5 đến 7 ảnh.
   const existingKeys = new Set(
-    scrapedImages.map((img) => img.url.split('?')[0].toLowerCase())
+    scrapedImages.map((img) =>
+      img.url
+        .split('?')[0]
+        .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+        .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+        .toLowerCase()
+    )
   );
 
+  const realContentImgCount = scrapedImages.filter(
+    (img) => !/\bcollage[-_\d]/i.test(img.url)
+  ).length;
+
   const neededExternalCount =
-    scrapedImages.length >= 5 ? 0 : Math.max(0, 6 - scrapedImages.length);
+    realContentImgCount >= 5 ? 0 : Math.max(2, 6 - realContentImgCount);
 
   const [externalImages, relatedVideos] = await Promise.all([
     neededExternalCount > 0

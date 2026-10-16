@@ -32,8 +32,11 @@ function resolveAbsoluteUrl(rawUrl, baseUrl) {
 }
 
 function isJunkImageUrl(url) {
-  const lower = url.toLowerCase();
+  const lower = String(url || '').toLowerCase();
   if (
+    !lower ||
+    lower.startsWith('data:') ||
+    lower.startsWith('blob:') ||
     lower.endsWith('.svg') ||
     lower.endsWith('.gif') ||
     lower.endsWith('.ico') ||
@@ -42,10 +45,9 @@ function isJunkImageUrl(url) {
     lower.includes('/themes/') ||
     lower.includes('emoji') ||
     lower.includes('smilies') ||
-    lower.includes('avatar') ||
     lower.includes('favicon') ||
-    lower.includes('logo') ||
-    lower.includes('icon') ||
+    lower.includes('site-logo') ||
+    lower.includes('custom-logo') ||
     lower.includes('pixel') ||
     lower.includes('analytics') ||
     lower.includes('doubleclick') ||
@@ -64,20 +66,21 @@ function isJunkImageUrl(url) {
   if (tinyWpMatch) {
     const w = Number(tinyWpMatch[1]);
     const h = Number(tinyWpMatch[2]);
-    if (w < 160 && h < 160) return true;
+    if (w < 150 && h < 150) return true;
   }
   return false;
 }
 
 function pickBestUrlFromSrcset(srcset, baseUrl) {
   if (!srcset) return '';
+  const cleanedSrcset = String(srcset).replace(/data:image\/[^,\s]+,[^\s,]+/gi, '');
   const candidates = [];
-  const parts = srcset.split(',');
+  const parts = cleanedSrcset.split(',');
   for (const part of parts) {
     const tokens = part.trim().split(/\s+/);
-    if (tokens.length === 0) continue;
+    if (tokens.length === 0 || !tokens[0] || tokens[0].startsWith('data:')) continue;
     const u = resolveAbsoluteUrl(tokens[0], baseUrl);
-    if (!u) continue;
+    if (!u || isJunkImageUrl(u)) continue;
     let width = 0;
     if (tokens[1] && tokens[1].endsWith('w')) {
       width = parseInt(tokens[1].slice(0, -1), 10) || 0;
@@ -88,8 +91,8 @@ function pickBestUrlFromSrcset(srcset, baseUrl) {
   }
   if (candidates.length === 0) return '';
   candidates.sort((a, b) => {
-    const scoreA = a.width >= 600 && a.width <= 1600 ? a.width + 2000 : a.width;
-    const scoreB = b.width >= 600 && b.width <= 1600 ? b.width + 2000 : b.width;
+    const scoreA = a.width >= 500 && a.width <= 1800 ? a.width + 2000 : a.width;
+    const scoreB = b.width >= 500 && b.width <= 1800 ? b.width + 2000 : b.width;
     return scoreB - scoreA;
   });
   return candidates[0].url;
@@ -333,7 +336,11 @@ export default async function handler(req, res) {
     if (numericIdMatch) {
       await tryFetchWpRestPost(`${origin}/wp-json/wp/v2/posts/${numericIdMatch}?_embed`);
     } else if (pathSegments.length > 0) {
-      const lastSegment = pathSegments[pathSegments.length - 1].replace(/\.html?$/i, '');
+      const slugCandidates = pathSegments
+        .map((s) => s.replace(/\.(html|htm|php|aspx)$/i, '').trim())
+        .filter((s) => s && !/^\d+$/.test(s) && !/^(vn\d*|en\d*|us\d*|uk\d*|amp|feed|print|page)$/i.test(s) && !(s.length <= 4 && /^[a-z]{1,3}\d{1,2}$/i.test(s)))
+        .sort((a, b) => b.length - a.length);
+      const lastSegment = slugCandidates[0] || '';
       if (lastSegment && lastSegment.length >= 3) {
         await tryFetchWpRestPost(
           `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSegment)}&_embed`
@@ -408,7 +415,7 @@ export default async function handler(req, res) {
             html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
             html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
             html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-          if (ogImg && ogImg[1]) {
+          if (ogImg && ogImg[1] && !/\bcollage[-_\d]/i.test(ogImg[1])) {
             addCandidate(ogImg[1], title || 'Ảnh đại diện', true);
           }
 
@@ -429,13 +436,22 @@ export default async function handler(req, res) {
               ''
             );
 
-          const articleMatch =
-            cleanedBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
-            cleanedBody.match(/<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
-            cleanedBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+          let primaryZone = cleanedBody;
+          const articleTagMatch = cleanedBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+          if (articleTagMatch && articleTagMatch[1]) {
+            primaryZone = articleTagMatch[1];
+          } else {
+            const contentDivStart = cleanedBody.search(
+              /<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content|article-body|story-body)[^"']*["'][^>]*>/i
+            );
+            if (contentDivStart !== -1) {
+              primaryZone = cleanedBody.slice(contentDivStart, contentDivStart + 120000);
+            } else {
+              const mainMatch = cleanedBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+              if (mainMatch && mainMatch[1]) primaryZone = mainMatch[1];
+            }
+          }
 
-          const primaryZone =
-            articleMatch ? articleMatch[articleMatch.length - 1] || articleMatch[1] : cleanedBody;
           if (!articleBodySample) {
             articleBodySample = decodeHtmlEntities(primaryZone.replace(/<[^>]+>/g, ' '))
               .replace(/\s+/g, ' ')
@@ -444,7 +460,7 @@ export default async function handler(req, res) {
           }
           const articleImgs = extractImagesFromHtmlChunk(primaryZone, cleanUrl);
           for (const img of articleImgs) {
-            addCandidate(img.url, img.alt || title, false);
+            addCandidate(img.url, img.alt || title, candidateImages.length === 0);
           }
         }
       }

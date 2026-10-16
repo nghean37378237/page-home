@@ -180,8 +180,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   const [featuredImageAlt, setFeaturedImageAlt] = useState<string>('');
   const [uploadingMedia, setUploadingMedia] = useState(false);
 
-  // Chế độ hiển thị khung soạn thảo: 'visual' (Soạn thảo + Thanh công cụ) | 'preview' (Xem trước)
-  const [editorViewMode, setEditorViewMode] = useState<'visual' | 'preview'>('visual');
+  // Chế độ hiển thị khung soạn thảo: 'preview' (Xem Trực Quan Có Ảnh & Video) | 'split' (Soạn Thảo + Xem Ảnh Song Song) | 'visual' (Mã HTML / Văn Bản)
+  const [editorViewMode, setEditorViewMode] = useState<'visual' | 'preview' | 'split'>('preview');
 
   // Trợ lý viết bài chuẩn SEO (2 Chức năng chính: Từ đoạn nội dung HOẶC Từ link web bất kỳ + Ảnh + 2 Video YouTube)
   const [aiMode, setAiMode] = useState<'from_text' | 'from_url'>('from_url');
@@ -279,6 +279,60 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     }
   };
 
+  // Hàm phân bổ và gắn toàn bộ danh sách ảnh xen kẽ đều vào giữa các đoạn văn trong bài viết HTML
+  const distributeAndAttachImagesToHtml = (
+    rawHtml: string,
+    imgs: { url: string; alt?: string; isFeatured?: boolean; isExternal?: boolean }[],
+    articleTitle: string
+  ): string => {
+    if (!imgs || imgs.length === 0) return rawHtml;
+    const isVi = aiLanguage === 'vi';
+    const figureBlocks = imgs.map((img) => {
+      const altText = String(img.alt || articleTitle || 'Story Image').replace(/"/g, '&quot;');
+      const sourceBadge = img.isExternal
+        ? isVi
+          ? 'Ảnh tư liệu mở rộng'
+          : 'Editorial Visual Highlight'
+        : isVi
+        ? 'Hình ảnh trong bài'
+        : 'Featured Story Moment';
+      return `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
+</figure>`;
+    });
+
+    // Xóa các thẻ figure/img cũ nếu người dùng bấm "Gắn lại bộ ảnh vào bài" để tránh nhân đôi
+    const cleanedHtml = rawHtml
+      .replace(/<figure\b[^>]*class=["'][^"']*wp-block-image[^"']*["'][^>]*>[\s\S]*?<\/figure>/gi, '')
+      .trim();
+
+    const pParts = cleanedHtml.split(/(<\/p>\s*(?:<br\s*\/?>)?)/i);
+    if (pParts.length < 3) {
+      return `${figureBlocks[0]}\n\n${cleanedHtml}\n\n${figureBlocks.slice(1).join('\n\n')}`;
+    }
+
+    const totalParas = Math.floor(pParts.length / 2);
+    const step = Math.max(1, Math.floor(totalParas / (figureBlocks.length + 1)));
+    let figIdx = 0;
+    let paraCount = 0;
+    const out: string[] = [];
+
+    for (let i = 0; i < pParts.length; i++) {
+      out.push(pParts[i]);
+      if (i % 2 === 1) {
+        paraCount++;
+        if (figIdx < figureBlocks.length && (paraCount % step === 0 || paraCount === totalParas - 1)) {
+          out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+        }
+      }
+    }
+    while (figIdx < figureBlocks.length) {
+      out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+    }
+    return out.join('');
+  };
+
   // Bộ khởi tạo dự phòng trực tiếp trên trình duyệt (Đảm bảo 100% không bao giờ lỗi ngay cả khi mạng hoặc serverless bị nghẽn)
   const buildClientFallbackSeoArticle = async (
     activeMode: 'from_text' | 'from_url',
@@ -286,21 +340,24 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     lang: 'en' | 'vi'
   ) => {
     let extractedTitle = '';
-    let extractedImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+    let origImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+    let extImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
 
-    if (activeMode === 'from_url') {
-      // Thử lấy tiêu đề và toàn bộ ảnh qua /api/extract-web-images
+    const urlMatch = rawInput.match(/https?:\/\/[^\s"'<>]+/i);
+    const targetUrl = activeMode === 'from_url' ? rawInput : urlMatch ? urlMatch[0] : '';
+
+    if (targetUrl) {
       try {
         const imgRes = await fetch('/api/extract-web-images', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: rawInput }),
+          body: JSON.stringify({ url: targetUrl }),
         });
         const imgData = await safeParseApiJson(imgRes);
         if (imgRes.ok && imgData.ok) {
           if (imgData.title) extractedTitle = String(imgData.title).trim();
           if (Array.isArray(imgData.images)) {
-            extractedImgs = imgData.images.map((im: any, idx: number) => ({
+            origImgs = imgData.images.map((im: any, idx: number) => ({
               url: String(im.url || im.dataUrl || ''),
               alt: String(im.alt || imgData.title || `Photo ${idx + 1}`),
               isFeatured: idx === 0,
@@ -314,12 +371,13 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
       if (!extractedTitle) {
         try {
-          const u = new URL(rawInput.startsWith('http') ? rawInput : `https://${rawInput}`);
-          const segs = u.pathname.split('/').filter(Boolean);
-          const last = (segs[segs.length - 1] || '')
-            .replace(/\.(html|htm|php|aspx)$/i, '')
-            .replace(/[-_]+/g, ' ')
-            .trim();
+          const u = new URL(targetUrl.startsWith('http') ? targetUrl : `https://${targetUrl}`);
+          const segs = u.pathname
+            .split('/')
+            .map((s) => s.replace(/\.(html|htm|php|aspx)$/i, '').trim())
+            .filter((s) => s && !/^\d+$/.test(s) && !/^(vn\d*|en\d*|us\d*|uk\d*|amp|feed|page)$/i.test(s))
+            .sort((a, b) => b.length - a.length);
+          const last = (segs[0] || '').replace(/[-_]+/g, ' ').trim();
           if (last && !/^\d+$/.test(last)) {
             extractedTitle = last.replace(/\b\w/g, (c) => c.toUpperCase());
           }
@@ -334,6 +392,36 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       rawInput.split('\n')[0]?.trim().slice(0, 95) ||
       'Exclusive Celebrity Story & Highlights';
     const subject = focusKeyword.trim() || finalTitle.split(/[:–—|-]/)[0].trim() || 'the star';
+
+    // Nếu số ảnh bài gốc < 5, tự động lấy thêm ảnh ngoài cho đủ 6 ảnh (5-7 ảnh)
+    if (origImgs.length < 5) {
+      try {
+        const needed = Math.max(0, 6 - origImgs.length);
+        const extRes = await fetch('/api/wp-publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'search_external_images',
+            query: subject || finalTitle,
+            title: finalTitle,
+            articleText: rawInput,
+            existingImages: origImgs,
+            limit: needed,
+          }),
+        });
+        const extData = await safeParseApiJson(extRes);
+        if (extRes.ok && extData.ok && Array.isArray(extData.images)) {
+          extImgs = extData.images.map((im: any) => ({
+            url: String(im.url || ''),
+            alt: String(im.alt || finalTitle),
+            isFeatured: false,
+            isExternal: true,
+          }));
+        }
+      } catch {}
+    }
+
+    const extractedImgs = [...origImgs, ...extImgs];
     const isVi = lang === 'vi';
 
     const sections = isVi
@@ -361,7 +449,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         ];
 
     const paragraphs150: { h2?: string; text: string }[] = [];
-    sections.forEach((h2Text, sIdx) => {
+    sections.forEach((h2Text) => {
       for (let p = 0; p < 2; p++) {
         const text = isVi
           ? `Câu chuyện xoay quanh "${finalTitle}" đang nhanh chóng trở thành một trong những chủ đề tâm điểm thu hút sự quan tâm lớn từ công chúng và người hâm mộ. Ngay từ những hình ảnh và thông tin đầu tiên xuất hiện, ${subject} đã gây ấn tượng mạnh mẽ bởi thần thái tự nhiên, cuốn hút cùng những khoảnh khắc đời thường đầy cảm xúc. Nhìn lại toàn bộ những diễn biến xoay quanh ${subject}, đông đảo khán giả và giới quan sát giải trí đều nhận thấy sự chân thực, gần gũi hiếm có trong từng khung hình. Từng cử chỉ tự nhiên và thần thái rạng rỡ trong câu chuyện "${finalTitle}" đã tạo nên sức hút mạnh mẽ trên khắp các diễn đàn mạng xã hội, chứng minh rằng chính những giá trị cảm xúc đời thường mới là điều chạm đến trái tim người hâm mộ một cách bền vững nhất.`
@@ -389,16 +477,31 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       htmlBlocks.push(
         `<p style="margin: 0 0 22px 0; line-height: 1.85; font-size: 17px;">${item.text}</p>\n<br />`
       );
-      if (imgIdx < extractedImgs.length && (idx + 1) % imgStep === 0) {
+      if (
+        imgIdx < extractedImgs.length &&
+        ((idx + 1) % imgStep === 0 || idx === paragraphs150.length - 2)
+      ) {
         const im = extractedImgs[imgIdx++];
+        const altText = String(im.alt || finalTitle).replace(/"/g, '&quot;');
         htmlBlocks.push(
           `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
-  <img src="${im.url}" alt="${finalTitle.replace(/"/g, '&quot;')}" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${finalTitle}</figcaption>
+  <img src="${im.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
 </figure>`
         );
       }
     });
+
+    while (imgIdx < extractedImgs.length) {
+      const im = extractedImgs[imgIdx++];
+      const altText = String(im.alt || finalTitle).replace(/"/g, '&quot;');
+      htmlBlocks.push(
+        `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
+  <img src="${im.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
+</figure>`
+      );
+    }
 
     const finalHtml = htmlBlocks.join('\n\n');
     const wordCount = finalHtml.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
@@ -413,10 +516,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       contentHtml: finalHtml,
       wordCount,
       paragraphCount: paragraphs150.length,
-      featuredImageUrl: extractedImgs[0]?.url || '',
+      featuredImageUrl: origImgs[0]?.url || extractedImgs[0]?.url || '',
       extractedImages: extractedImgs,
-      originalImageCount: extractedImgs.length,
-      externalImageCount: 0,
+      originalImageCount: origImgs.length,
+      externalImageCount: extImgs.length,
       youtubeVideos: [],
     };
   };
@@ -617,14 +720,32 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       if (Array.isArray(data.tags)) setTagsInput(data.tags.join(', '));
       if (data.contentHtml) setContent(data.contentHtml);
 
-      if (Array.isArray(data.extractedImages) && data.extractedImages.length > 0) {
-        setExtractedWebImages(data.extractedImages);
+      const imgsList = Array.isArray(data.extractedImages) ? data.extractedImages : [];
+      if (imgsList.length > 0) {
+        setExtractedWebImages(imgsList);
       }
       if (data.featuredImageUrl) {
         setFeaturedImageUrl(data.featuredImageUrl);
         setFeaturedMediaId(0);
         setFeaturedImageBase64('');
+      } else if (imgsList[0]?.url) {
+        setFeaturedImageUrl(imgsList[0].url);
+        setFeaturedMediaId(0);
+        setFeaturedImageBase64('');
       }
+
+      let finalArticleHtml = String(data.contentHtml || content);
+      if (imgsList.length > 0 && !/<img\b/i.test(finalArticleHtml)) {
+        finalArticleHtml = distributeAndAttachImagesToHtml(
+          finalArticleHtml,
+          imgsList,
+          String(data.title || title)
+        );
+      }
+      if (finalArticleHtml) {
+        setContent(finalArticleHtml);
+      }
+
       if (Array.isArray(data.youtubeVideos)) {
         setAttachedYoutubeVideos(data.youtubeVideos);
       }
@@ -635,12 +756,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         externalImageCount: Number(data.externalImageCount || 0),
       });
 
+      // Tự động chuyển sang chế độ Xem Trực Quan Có Ảnh để người dùng thấy toàn bộ ảnh đã gắn trong bài ngay lập tức
+      setEditorViewMode('preview');
+
       return {
         title: String(data.title || title),
-        contentHtml: String(data.contentHtml || content),
+        contentHtml: finalArticleHtml,
         excerpt: String(data.excerpt || excerpt),
         slug: String(data.slug || slug),
-        featuredImageUrl: String(data.featuredImageUrl || featuredImageUrl),
+        featuredImageUrl: String(data.featuredImageUrl || imgsList[0]?.url || featuredImageUrl),
         tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
       };
     } catch (err: any) {
@@ -667,6 +791,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           originalImageCount: fallbackData.originalImageCount,
           externalImageCount: fallbackData.externalImageCount,
         });
+        setEditorViewMode('preview');
         return fallbackData;
       } catch {
         setPublishError(err?.message || 'Lỗi khi tạo bài viết chuẩn SEO tự động');
@@ -674,6 +799,113 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       }
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  // Nút chuyên biệt: Lấy toàn bộ ảnh từ Link bài viết (cộng thêm ảnh ngoài nếu < 5 ảnh) và gắn trực tiếp vào bài viết hiện tại
+  const handleExtractAndAttachArticleImages = async () => {
+    const sourceLink = aiSourceUrl.trim();
+    const currentTitle = title.trim() || aiTopic.trim();
+    if (!sourceLink && !currentTitle) {
+      setPublishError('Vui lòng dán Link bài viết hoặc nhập Tiêu đề bài viết để hệ thống lấy ảnh và gắn vào bài!');
+      return;
+    }
+
+    setSearchingExtImages(true);
+    setPublishError(null);
+    try {
+      let origImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+      let resolvedTitle = currentTitle;
+
+      if (sourceLink) {
+        try {
+          const imgRes = await fetch('/api/extract-web-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: sourceLink }),
+          });
+          const imgData = await safeParseApiJson(imgRes);
+          if (imgRes.ok && imgData.ok && Array.isArray(imgData.images)) {
+            if (!resolvedTitle && imgData.title) {
+              resolvedTitle = String(imgData.title).trim();
+              setTitle(resolvedTitle);
+            }
+            origImgs = imgData.images.map((im: any, idx: number) => ({
+              url: String(im.url || im.dataUrl || ''),
+              alt: String(im.alt || resolvedTitle || `Photo ${idx + 1}`),
+              isFeatured: idx === 0,
+              isExternal: false,
+            }));
+          }
+        } catch {}
+      } else {
+        origImgs = extractedWebImages.filter((im) => !im.isExternal);
+      }
+
+      let extImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+      if (origImgs.length < 5) {
+        const needed = Math.max(0, 6 - origImgs.length);
+        const q = customYtQuery.trim() || focusKeyword.trim() || resolvedTitle;
+        if (q && needed > 0) {
+          const extRes = await fetch('/api/wp-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'search_external_images',
+              query: q,
+              title: resolvedTitle,
+              articleText: content.slice(0, 6000) || aiTopic,
+              existingImages: origImgs,
+              limit: needed,
+            }),
+          });
+          const extData = await safeParseApiJson(extRes);
+          if (extRes.ok && extData.ok && Array.isArray(extData.images)) {
+            extImgs = extData.images.map((im: any) => ({
+              url: String(im.url || ''),
+              alt: String(im.alt || resolvedTitle),
+              isFeatured: false,
+              isExternal: true,
+            }));
+          }
+        }
+      }
+
+      const combined = [...origImgs, ...extImgs];
+      if (combined.length === 0) {
+        setPublishError('Không tìm thấy ảnh nào từ link/chủ đề này. Hãy thử kiểm tra lại đường dẫn!');
+        return;
+      }
+
+      setExtractedWebImages(combined);
+      if (combined[0]?.url) {
+        setFeaturedImageUrl(combined[0].url);
+        setFeaturedMediaId(0);
+        setFeaturedImageBase64('');
+      }
+
+      if (content.trim()) {
+        const updatedHtml = distributeAndAttachImagesToHtml(
+          content,
+          combined,
+          resolvedTitle || 'Exclusive Story'
+        );
+        setContent(updatedHtml);
+      } else {
+        await handleGenerateSeoArticle(sourceLink ? 'from_url' : 'from_text');
+      }
+
+      setAiArticleStats((prev) => ({
+        wordCount: prev?.wordCount || seoAnalysis.words || 2750,
+        paragraphCount: prev?.paragraphCount || 18,
+        originalImageCount: origImgs.length,
+        externalImageCount: extImgs.length,
+      }));
+      setEditorViewMode('preview');
+    } catch (err: any) {
+      setPublishError(err?.message || 'Lỗi khi lấy và gắn ảnh vào bài viết');
+    } finally {
+      setSearchingExtImages(false);
     }
   };
 
@@ -853,6 +1085,34 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     setPublishStatus(post.status === 'draft' ? 'draft' : 'publish');
     setPublishResult(null);
     setPublishError(null);
+
+    // Tự động trích xuất toàn bộ ảnh đang có trong nội dung bài viết để hiển thị lên khay quản lý ảnh
+    const parsedImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+    const seen = new Set<string>();
+    const imgTagRegex = /<img\b[^>]+src=["']([^"']+)["'][^>]*>/gi;
+    let m: RegExpExecArray | null;
+    while ((m = imgTagRegex.exec(post.content || '')) !== null) {
+      const u = m[1].trim();
+      if (!u || seen.has(u)) continue;
+      seen.add(u);
+      const altM = m[0].match(/\balt=["']([^"']*)["']/i);
+      parsedImgs.push({
+        url: u,
+        alt: altM ? altM[1] : post.title,
+        isFeatured: parsedImgs.length === 0,
+        isExternal: false,
+      });
+    }
+    if (post.featuredImageUrl && !seen.has(post.featuredImageUrl)) {
+      parsedImgs.unshift({
+        url: post.featuredImageUrl,
+        alt: post.title,
+        isFeatured: true,
+        isExternal: false,
+      });
+    }
+    setExtractedWebImages(parsedImgs);
+    setEditorViewMode('preview');
     setActiveSubTab('editor');
   };
 
@@ -893,13 +1153,23 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
     try {
       // Chuẩn hóa nội dung: nếu người dùng gõ văn bản thuần không có thẻ <p>, tự động bọc đoạn
-      const formattedContent =
+      let formattedContent =
         pubContent.includes('<p') || pubContent.includes('<h') || pubContent.includes('<div')
           ? pubContent
           : pubContent
               .split(/\n\s*\n/)
               .map((para) => `<p style="margin: 0 0 22px 0; line-height: 1.85;">${para.trim().replace(/\n/g, '<br />')}</p>`)
               .join('\n\n');
+
+      // Nếu trong bài viết chưa có thẻ <img mà đã có danh sách ảnh lấy được, tự động gắn toàn bộ ảnh vào giữa các đoạn bài viết!
+      if (!/<img\b/i.test(formattedContent) && extractedWebImages.length > 0) {
+        formattedContent = distributeAndAttachImagesToHtml(
+          formattedContent,
+          extractedWebImages,
+          pubTitle
+        );
+        setContent(formattedContent);
+      }
 
       const tagList = tagsInput
         .split(',')
@@ -925,8 +1195,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           featuredImageUrl:
             !featuredImageBase64 && pubFeaturedUrl && !pubFeaturedUrl.startsWith('data:')
               ? pubFeaturedUrl
-              : undefined,
+              : extractedWebImages[0]?.url || undefined,
           featuredImageAlt: featuredImageAlt.trim() || pubTitle,
+          sourceUrl: aiSourceUrl.trim() || undefined,
+          extractedImages: extractedWebImages,
           targetMode: targetConfig.targetMode,
           customWpUrl: targetConfig.customWpUrl,
           customWpUser: targetConfig.customWpUser,
@@ -1350,7 +1622,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               {aiMode === 'from_url' ? (
                 <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
                   <label className="text-xs font-black text-slate-800 block">
-                    🔗 Dán đường dẫn (URL) bài viết từ bất kỳ trang báo / website nào (Tự lấy hết ảnh bài gốc; nếu &lt; 5 ảnh sẽ tự bù ảnh ngoài cho đủ 5–7 ảnh):
+                    🔗 Dán đường dẫn (URL) bài viết từ bất kỳ trang báo / website nào (Tự lấy hết ảnh bài gốc; nếu &lt; 5 ảnh sẽ tự bù ảnh ngoài cho đủ 5–7 ảnh &amp; gắn thẳng vào bài):
                   </label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <input
@@ -1363,24 +1635,43 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                           void handleGenerateSeoArticle('from_url');
                         }
                       }}
-                      placeholder="VD: https://beaware.fun/... hoặc https://people.com/... hoặc https://celeb24h.com/1159"
+                      placeholder="VD: https://tvus.info/... hoặc https://beaware.fun/... hoặc https://celeb24h.com/1159"
                       className="flex-1 px-3.5 py-2.5 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                     <button
                       type="button"
-                      disabled={aiLoading}
+                      disabled={aiLoading || searchingExtImages}
                       onClick={() => void handleGenerateSeoArticle('from_url')}
                       className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
                     >
                       {aiLoading ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang viết bài 2000-5000 từ, lấy ảnh & 2 Video...</span>
+                          <span>Đang viết bài, lấy ảnh trong bài &amp; gắn vào bài...</span>
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          <span>Viết Lại 2.000–5.000 Từ + Lấy Ảnh Chuẩn & 2 Video YT</span>
+                          <span>Viết Lại 2.000–5.000 Từ + Lấy Ảnh Trong Bài &amp; Gắn Vào Bài</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={searchingExtImages || aiLoading}
+                      onClick={() => void handleExtractAndAttachArticleImages()}
+                      className="px-3.5 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
+                      title="Lấy toàn bộ ảnh trong bài viết từ Link (cộng thêm ảnh ngoài nếu < 5 ảnh) và gắn xen kẽ vào bài viết ngay"
+                    >
+                      {searchingExtImages ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Đang lấy &amp; gắn ảnh...</span>
+                        </>
+                      ) : (
+                        <>
+                          <ImageIcon className="w-3.5 h-3.5" />
+                          <span>Chỉ Lấy Ảnh Trong Bài &amp; Gắn Vào Bài</span>
                         </>
                       )}
                     </button>
@@ -1390,7 +1681,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 /* GIAO DIỆN CHỨC NĂNG 2: NHẬP ĐOẠN NỘI DUNG THÔ */
                 <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
                   <label className="text-xs font-black text-slate-800 block">
-                    📝 Nhập đoạn nội dung thô, bản tóm tắt hoặc tên nhân vật / sự kiện:
+                    📝 Nhập đoạn nội dung thô, bản tóm tắt hoặc tên nhân vật / sự kiện (hoặc dán kèm link bài):
                   </label>
                   <textarea
                     rows={3}
@@ -1399,7 +1690,16 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     placeholder="Dán đoạn nội dung hoặc ý chính bạn muốn viết chuẩn SEO 2.000 - 5.000 từ vào đây..."
                     className="w-full px-3.5 py-2 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
-                  <div className="flex justify-end">
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <button
+                      type="button"
+                      disabled={searchingExtImages || aiLoading}
+                      onClick={() => void handleExtractAndAttachArticleImages()}
+                      className="px-3.5 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>Lấy 5–7 Ảnh Theo Nội Dung &amp; Gắn Vào Bài</span>
+                    </button>
                     <button
                       type="button"
                       disabled={aiLoading}
@@ -1409,12 +1709,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       {aiLoading ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang viết bài 2000-5000 từ, tìm ảnh ngoài & 2 Video...</span>
+                          <span>Đang viết bài 2000-5000 từ, tìm ảnh &amp; 2 Video...</span>
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          <span>Viết Bài 2.000–5.000 Từ Chuẩn SEO + Ảnh Ngoài & 2 Video YT</span>
+                          <span>Viết Bài 2.000–5.000 Từ Chuẩn SEO + Gắn Ảnh &amp; 2 Video YT</span>
                         </>
                       )}
                     </button>
@@ -1430,16 +1730,16 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       ✅ ĐÃ VIẾT {Number(aiArticleStats.wordCount || 2750).toLocaleString('vi-VN')} TỪ CHUẨN SEO
                     </span>
                     <span>
-                      • {Number(aiArticleStats.paragraphCount || 18)} đoạn văn (~150 từ / 1 đoạn & xuống dòng rõ ràng)
+                      • {Number(aiArticleStats.paragraphCount || 18)} đoạn văn (~150 từ / 1 đoạn &amp; xuống dòng rõ ràng)
                     </span>
                     <span>
                       {Number(aiArticleStats.externalImageCount || 0) === 0
-                        ? `• Đã lấy đủ ${Number(aiArticleStats.originalImageCount || 0)} ảnh trong bài gốc (>= 5 ảnh nên giữ nguyên ảnh gốc)`
-                        : `• ${Number(aiArticleStats.originalImageCount || 0)} ảnh trong bài gốc + bù thêm ${Number(aiArticleStats.externalImageCount || 0)} ảnh ngoài (Tổng ${Number(aiArticleStats.originalImageCount || 0) + Number(aiArticleStats.externalImageCount || 0)} ảnh)`}
+                        ? `• Đã lấy đủ ${Number(aiArticleStats.originalImageCount || 0)} ảnh trong bài gốc & gắn vào bài (>= 5 ảnh nên giữ nguyên ảnh gốc)`
+                        : `• Đã lấy ${Number(aiArticleStats.originalImageCount || 0)} ảnh trong bài gốc + bù thêm ${Number(aiArticleStats.externalImageCount || 0)} ảnh ngoài = gắn đủ ${Number(aiArticleStats.originalImageCount || 0) + Number(aiArticleStats.externalImageCount || 0)} ảnh vào bài`}
                     </span>
                   </div>
                   <span className="text-[11px] text-emerald-200">
-                    Đã giữ nguyên tiêu đề bài gốc
+                    Đã giữ nguyên tiêu đề &amp; gắn ảnh vào bài
                   </span>
                 </div>
               )}
@@ -1452,20 +1752,39 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     <div className="bg-white p-3 rounded-xl border border-emerald-200 space-y-2">
                       <div className="flex flex-wrap items-center justify-between gap-1 text-xs">
                         <span className="font-black text-emerald-900">
-                          🖼️ Đã chèn {extractedWebImages.length} ảnh ({extractedWebImages.filter((x) => !x.isExternal).length} ảnh bài gốc{extractedWebImages.some((x) => x.isExternal) ? ` + ${extractedWebImages.filter((x) => x.isExternal).length} ảnh ngoài` : ''}):
+                          🖼️ Đã lấy &amp; gắn {extractedWebImages.length} ảnh vào bài ({extractedWebImages.filter((x) => !x.isExternal).length} ảnh trong bài gốc{extractedWebImages.some((x) => x.isExternal) ? ` + ${extractedWebImages.filter((x) => x.isExternal).length} ảnh ngoài` : ''}):
                         </span>
-                        <button
-                          type="button"
-                          disabled={searchingExtImages}
-                          onClick={() => void handleFetchMoreExternalImages()}
-                          className="px-2 py-0.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[10px] cursor-pointer"
-                        >
-                          {searchingExtImages ? 'Đang tìm thêm...' : '+ Bổ sung thêm ảnh ngoài'}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextHtml = distributeAndAttachImagesToHtml(
+                                content,
+                                extractedWebImages,
+                                title || 'Exclusive Story'
+                              );
+                              setContent(nextHtml);
+                              setEditorViewMode('preview');
+                            }}
+                            className="px-2 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[10px] cursor-pointer"
+                            title="Phân bổ và gắn lại toàn bộ danh sách ảnh này xen kẽ vào giữa các đoạn trong bài viết"
+                          >
+                            Gắn lại vào bài
+                          </button>
+                          <button
+                            type="button"
+                            disabled={searchingExtImages}
+                            onClick={() => void handleFetchMoreExternalImages()}
+                            className="px-2 py-0.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[10px] cursor-pointer"
+                          >
+                            {searchingExtImages ? 'Đang tìm...' : '+ Bổ sung ảnh ngoài'}
+                          </button>
+                        </div>
                       </div>
                       <div className="flex items-center gap-2 overflow-x-auto pb-1">
                         {extractedWebImages.map((img, i) => {
                           const isCurrentFeatured = featuredImageUrl === img.url;
+                          const isAttachedInContent = content.includes(img.url);
                           return (
                             <div
                               key={i}
@@ -1474,14 +1793,19 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                                 setFeaturedMediaId(0);
                                 setFeaturedImageBase64('');
                               }}
-                              className={`relative shrink-0 w-18 h-14 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
+                              className={`relative shrink-0 w-20 h-16 rounded-lg overflow-hidden border-2 cursor-pointer transition-all ${
                                 isCurrentFeatured
                                   ? 'border-emerald-600 ring-2 ring-emerald-500/30'
                                   : 'border-slate-200 hover:border-emerald-400'
                               }`}
                               title="Bấm để chọn ảnh này làm Ảnh Đại Diện (Featured Image)"
                             >
-                              <img src={img.url} alt={img.alt} className="w-full h-full object-cover" />
+                              <img
+                                src={img.url}
+                                alt={img.alt}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                              />
                               <span
                                 className={`absolute top-0.5 left-0.5 text-[8px] font-black px-1 rounded ${
                                   img.isExternal
@@ -1489,7 +1813,16 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                                     : 'bg-emerald-600/90 text-white'
                                 }`}
                               >
-                                {img.isExternal ? '+Ngoài' : 'Gốc'}
+                                {img.isExternal ? '+Ngoài' : 'Ảnh Gốc'}
+                              </span>
+                              <span
+                                className={`absolute bottom-0.5 left-0.5 text-[8px] font-black px-1 rounded ${
+                                  isAttachedInContent
+                                    ? 'bg-emerald-950/85 text-emerald-300'
+                                    : 'bg-amber-600/90 text-white'
+                                }`}
+                              >
+                                {isAttachedInContent ? '✓ Đã gắn' : 'Chưa gắn'}
                               </span>
                               <span className="absolute bottom-0.5 right-0.5 bg-black/70 text-white text-[9px] font-bold px-1 rounded">
                                 #{i + 1}
@@ -1522,6 +1855,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                             <img
                               src={v.thumbnailUrl}
                               alt={v.title}
+                              referrerPolicy="no-referrer"
                               className="w-14 h-10 object-cover rounded shrink-0"
                             />
                             <div className="min-w-0">
@@ -1572,7 +1906,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     onClick={handleResetEditor}
                     className="text-blue-700 underline cursor-pointer"
                   >
-                    Hủy sửa & Viết bài mới
+                    Hủy sửa &amp; Viết bài mới
                   </button>
                 </div>
               )}
@@ -1611,6 +1945,145 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   placeholder="duong-dan-bai-viet"
                   className="flex-1 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs text-slate-800"
                 />
+              </div>
+
+              {/* KHAY QUẢN LÝ & GẮN ẢNH TRONG BÀI VIẾT TRỰC TIẾP TRONG TRÌNH SOẠN THẢO */}
+              <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center space-x-2">
+                    <ImageIcon className="w-4 h-4 text-emerald-700 shrink-0" />
+                    <span className="text-xs font-black text-emerald-950">
+                      Phần Ảnh Trong Bài Viết ({seoAnalysis.imageCount} ảnh đang gắn trong nội dung bài · {extractedWebImages.filter((x) => !x.isExternal).length} ảnh bài gốc + {extractedWebImages.filter((x) => x.isExternal).length} ảnh ngoài)
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      disabled={searchingExtImages || aiLoading}
+                      onClick={() => void handleExtractAndAttachArticleImages()}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-black cursor-pointer flex items-center space-x-1 shadow-2xs"
+                    >
+                      <RefreshCw className={`w-3 h-3 ${searchingExtImages ? 'animate-spin' : ''}`} />
+                      <span>
+                        {searchingExtImages
+                          ? 'Đang lấy & gắn ảnh...'
+                          : 'Lấy Ảnh Trong Bài & Gắn Tự Động Vào Bài (5–7 Ảnh)'}
+                      </span>
+                    </button>
+                    {extractedWebImages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = distributeAndAttachImagesToHtml(
+                            content,
+                            extractedWebImages,
+                            title || 'Exclusive Story'
+                          );
+                          setContent(updated);
+                          setEditorViewMode('preview');
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-[11px] font-bold cursor-pointer"
+                      >
+                        Gắn đều {extractedWebImages.length} ảnh vào giữa các đoạn
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={searchingExtImages}
+                      onClick={() => void handleFetchMoreExternalImages()}
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-bold cursor-pointer"
+                    >
+                      + Tìm thêm ảnh ngoài tương tự
+                    </button>
+                  </div>
+                </div>
+
+                {extractedWebImages.length > 0 ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-1">
+                    {extractedWebImages.map((img, idx) => {
+                      const isFeatured = featuredImageUrl === img.url;
+                      const isEmbedded = content.includes(img.url);
+                      return (
+                        <div
+                          key={`${img.url}-${idx}`}
+                          className={`group relative rounded-xl overflow-hidden border-2 bg-white shadow-2xs transition-all ${
+                            isFeatured
+                              ? 'border-emerald-600 ring-2 ring-emerald-500/20'
+                              : 'border-slate-200 hover:border-emerald-400'
+                          }`}
+                        >
+                          <div className="relative h-20 w-full bg-slate-100">
+                            <img
+                              src={img.url}
+                              alt={img.alt || `Ảnh #${idx + 1}`}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover"
+                            />
+                            <span
+                              className={`absolute top-1 left-1 text-[9px] font-black px-1.5 py-0.5 rounded shadow-2xs ${
+                                img.isExternal
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'bg-emerald-600 text-white'
+                              }`}
+                            >
+                              {img.isExternal ? `+Ảnh Ngoài #${idx + 1}` : `Ảnh Bài Gốc #${idx + 1}`}
+                            </span>
+                            <span
+                              className={`absolute bottom-1 left-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                                isEmbedded
+                                  ? 'bg-emerald-950/85 text-emerald-300'
+                                  : 'bg-amber-600 text-white'
+                              }`}
+                            >
+                              {isEmbedded ? '✓ Đã gắn vào bài' : 'Chưa gắn'}
+                            </span>
+                          </div>
+                          <div className="p-1.5 flex items-center justify-between gap-1 bg-white text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFeaturedImageUrl(img.url);
+                                setFeaturedMediaId(0);
+                                setFeaturedImageBase64('');
+                              }}
+                              className={`flex-1 py-0.5 px-1 rounded font-bold truncate cursor-pointer ${
+                                isFeatured
+                                  ? 'bg-emerald-100 text-emerald-900'
+                                  : 'bg-slate-100 hover:bg-emerald-50 text-slate-700'
+                              }`}
+                            >
+                              {isFeatured ? '⭐ Ảnh đại diện' : 'Đặt đại diện'}
+                            </button>
+                            {!isEmbedded && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const altText = String(img.alt || title || 'Story Image').replace(
+                                    /"/g,
+                                    '&quot;'
+                                  );
+                                  const figHtml = `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">\n  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />\n  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>\n</figure>`;
+                                  setContent((prev) => `${prev}\n\n${figHtml}`);
+                                }}
+                                className="py-0.5 px-1.5 rounded bg-emerald-600 text-white font-bold cursor-pointer shrink-0"
+                                title="Gắn ảnh này vào nội dung bài viết"
+                              >
+                                + Gắn
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-xs text-emerald-900 bg-white/80 rounded-lg px-3 py-2 border border-emerald-200 flex flex-wrap items-center justify-between gap-2">
+                    <span>
+                      💡 Chưa có ảnh trong bài viết. Hãy dán Link bài báo ở trên rồi bấm{' '}
+                      <strong>&ldquo;Lấy Ảnh Trong Bài &amp; Gắn Tự Động Vào Bài (5–7 Ảnh)&rdquo;</strong> để hệ thống lấy toàn bộ ảnh bài gốc (và bù thêm ảnh ngoài nếu &lt; 5 ảnh) gắn thẳng vào bài viết!
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* THANH CÔNG CỤ ĐỊNH DẠNG (TOOLBAR) */}
@@ -1688,7 +2161,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       title="Tải ảnh từ máy tính lên WordPress và chèn vào bài viết"
                     >
                       <ImageIcon className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>+ Chèn Ảnh Vào Bài</span>
+                      <span>+ Tải Ảnh Máy Tính Chèn Vào Bài</span>
                     </button>
                     <input
                       ref={inlineImageInputRef}
@@ -1699,31 +2172,43 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     />
                   </div>
 
-                  {/* Nút chuyển chế độ Soạn thảo / Xem trước */}
+                  {/* Nút chuyển chế độ Xem Trực Quan Có Ảnh / Song Song / Mã HTML */}
                   <div className="flex items-center space-x-1 bg-slate-200/70 p-0.5 rounded-lg text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setEditorViewMode('preview')}
+                      className={`px-2.5 py-1 rounded-md font-bold cursor-pointer flex items-center space-x-1 ${
+                        editorViewMode === 'preview'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-slate-700 hover:bg-white/60'
+                      }`}
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Xem Bài &amp; Ảnh Đã Gắn</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditorViewMode('split')}
+                      className={`px-2.5 py-1 rounded-md font-bold cursor-pointer flex items-center space-x-1 ${
+                        editorViewMode === 'split'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-slate-700 hover:bg-white/60'
+                      }`}
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>Sửa + Xem Ảnh Song Song</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setEditorViewMode('visual')}
                       className={`px-2.5 py-1 rounded-md font-bold cursor-pointer flex items-center space-x-1 ${
                         editorViewMode === 'visual'
                           ? 'bg-white text-slate-900 shadow-2xs'
-                          : 'text-slate-600'
+                          : 'text-slate-700 hover:bg-white/60'
                       }`}
                     >
                       <Code className="w-3.5 h-3.5" />
-                      <span>Soạn Thảo</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditorViewMode('preview')}
-                      className={`px-2.5 py-1 rounded-md font-bold cursor-pointer flex items-center space-x-1 ${
-                        editorViewMode === 'preview'
-                          ? 'bg-white text-slate-900 shadow-2xs'
-                          : 'text-slate-600'
-                      }`}
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>Xem Trước</span>
+                      <span>Sửa Mã HTML</span>
                     </button>
                   </div>
                 </div>
@@ -1731,30 +2216,73 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 {editorViewMode === 'visual' ? (
                   <textarea
                     ref={contentTextareaRef}
-                    rows={16}
+                    rows={18}
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
                     placeholder="Nhập nội dung bài viết tại đây (hỗ trợ cả văn bản thường lẫn thẻ HTML <p>, <h2>, <h3>, <img>...)..."
                     className="w-full p-4 text-sm text-slate-800 font-sans leading-relaxed focus:outline-none resize-y"
                   />
+                ) : editorViewMode === 'split' ? (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+                    <textarea
+                      ref={contentTextareaRef}
+                      rows={20}
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      placeholder="Sửa nội dung bài viết tại đây..."
+                      className="w-full p-4 text-xs sm:text-sm text-slate-800 font-sans leading-relaxed focus:outline-none resize-y"
+                    />
+                    <div className="p-4 max-h-[600px] overflow-y-auto bg-white">
+                      <h1 className="text-lg sm:text-xl font-black text-slate-900 mb-3">
+                        {title || 'Tiêu đề bài viết'}
+                      </h1>
+                      {featuredImageUrl && (
+                        <div className="mb-4">
+                          <span className="inline-block text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded mb-1">
+                            Ảnh Đại Diện (Featured Image)
+                          </span>
+                          <img
+                            src={featuredImageUrl}
+                            alt={title}
+                            referrerPolicy="no-referrer"
+                            className="w-full max-h-64 object-cover rounded-xl border border-slate-200"
+                          />
+                        </div>
+                      )}
+                      <div
+                        className="text-sm text-slate-800 space-y-3 leading-relaxed"
+                        dangerouslySetInnerHTML={{
+                          __html:
+                            content ||
+                            '<p class="text-slate-400 italic">Chưa có nội dung bài viết...</p>',
+                        }}
+                      />
+                    </div>
+                  </div>
                 ) : (
-                  <div className="p-5 min-h-[360px] prose prose-slate max-w-none bg-white overflow-y-auto">
+                  <div className="p-5 max-h-[680px] prose prose-slate max-w-none bg-white overflow-y-auto">
                     <h1 className="text-xl sm:text-2xl font-black text-slate-900 mb-3">
                       {title || 'Tiêu đề bài viết xem trước'}
                     </h1>
                     {featuredImageUrl && (
-                      <img
-                        src={featuredImageUrl}
-                        alt={title}
-                        className="w-full max-h-80 object-cover rounded-xl mb-4 border border-slate-200"
-                      />
+                      <div className="mb-5">
+                        <span className="inline-block text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded mb-1.5">
+                          ⭐ Ảnh Đại Diện Bài Viết (Featured Image)
+                        </span>
+                        <img
+                          src={featuredImageUrl}
+                          alt={title}
+                          referrerPolicy="no-referrer"
+                          className="w-full max-h-96 object-cover rounded-xl border border-slate-200"
+                        />
+                      </div>
                     )}
                     <div
                       className="text-sm text-slate-800 space-y-3 leading-relaxed"
                       dangerouslySetInnerHTML={{
                         __html:
                           content ||
-                          '<p class="text-slate-400 italic">Chưa có nội dung bài viết...</p>',
+                          '<p class="text-slate-400 italic">Chưa có nội dung bài viết... Hãy dán Link bài báo ở mục 1 rồi bấm "Viết Lại 2.000–5.000 Từ + Lấy Ảnh Trong Bài & Gắn Vào Bài" để hệ thống tự động viết và gắn đầy đủ 5–7 ảnh vào bài.</p>',
                       }}
                     />
                   </div>
@@ -1762,9 +2290,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
                 <div className="bg-slate-50 border-t border-slate-200 px-4 py-2 flex flex-wrap items-center justify-between text-xs text-slate-500">
                   <span>
-                    Số từ: <strong className="text-slate-800">{seoAnalysis.words}</strong> từ · Thời
-                    gian đọc: ~<strong className="text-slate-800">{seoAnalysis.readingMinutes}</strong>{' '}
-                    phút
+                    Số từ: <strong className="text-slate-800">{seoAnalysis.words}</strong> từ · Ảnh gắn trong bài:{' '}
+                    <strong className="text-emerald-700">{seoAnalysis.imageCount} ảnh</strong> · Thời gian đọc: ~
+                    <strong className="text-slate-800">{seoAnalysis.readingMinutes}</strong> phút
                   </span>
                   <button
                     type="button"
@@ -1975,6 +2503,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     <img
                       src={featuredImageUrl}
                       alt="Featured preview"
+                      referrerPolicy="no-referrer"
                       className="w-full h-40 object-cover"
                     />
                     <button

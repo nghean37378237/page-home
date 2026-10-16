@@ -80,6 +80,9 @@ function resolveAbsUrl(rawUrl, baseUrl) {
 function isIgnorableImage(url) {
   const lower = String(url || '').toLowerCase();
   if (
+    !lower ||
+    lower.startsWith('data:') ||
+    lower.startsWith('blob:') ||
     lower.endsWith('.svg') ||
     lower.endsWith('.gif') ||
     lower.endsWith('.ico') ||
@@ -88,10 +91,9 @@ function isIgnorableImage(url) {
     lower.includes('/themes/') ||
     lower.includes('emoji') ||
     lower.includes('smilies') ||
-    lower.includes('avatar') ||
     lower.includes('favicon') ||
-    lower.includes('logo') ||
-    lower.includes('icon') ||
+    lower.includes('site-logo') ||
+    lower.includes('custom-logo') ||
     lower.includes('pixel') ||
     lower.includes('analytics') ||
     lower.includes('doubleclick') ||
@@ -109,19 +111,20 @@ function isIgnorableImage(url) {
   if (tinyMatch) {
     const w = Number(tinyMatch[1]);
     const h = Number(tinyMatch[2]);
-    if (w < 160 && h < 160) return true;
+    if (w < 150 && h < 150) return true;
   }
   return false;
 }
 
 function pickBestSrcFromSrcset(srcset, baseUrl) {
   if (!srcset) return '';
+  const cleanedSrcset = String(srcset).replace(/data:image\/[^,\s]+,[^\s,]+/gi, '');
   const candidates = [];
-  for (const part of String(srcset).split(',')) {
+  for (const part of cleanedSrcset.split(',')) {
     const tokens = part.trim().split(/\s+/);
-    if (!tokens[0]) continue;
+    if (!tokens[0] || tokens[0].startsWith('data:')) continue;
     const u = resolveAbsUrl(tokens[0], baseUrl);
-    if (!u) continue;
+    if (!u || isIgnorableImage(u)) continue;
     let width = 0;
     if (tokens[1] && tokens[1].endsWith('w')) {
       width = parseInt(tokens[1].slice(0, -1), 10) || 0;
@@ -132,8 +135,8 @@ function pickBestSrcFromSrcset(srcset, baseUrl) {
   }
   if (candidates.length === 0) return '';
   candidates.sort((a, b) => {
-    const scoreA = a.width >= 600 && a.width <= 1600 ? a.width + 2000 : a.width;
-    const scoreB = b.width >= 600 && b.width <= 1600 ? b.width + 2000 : b.width;
+    const scoreA = a.width >= 500 && a.width <= 1800 ? a.width + 2000 : a.width;
+    const scoreB = b.width >= 500 && b.width <= 1800 ? b.width + 2000 : b.width;
     return scoreB - scoreA;
   });
   return candidates[0].url;
@@ -146,8 +149,8 @@ function collectImgsFromHtml(htmlChunk, baseUrl) {
   while ((sm = sourceRegex.exec(htmlChunk)) !== null) {
     const tag = sm[0];
     const ss =
-      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
       tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
       tag.match(/\bsrcset=["']([^"']+)["']/i);
     if (ss && ss[1]) {
       const best = pickBestSrcFromSrcset(ss[1], baseUrl);
@@ -166,23 +169,46 @@ function collectImgsFromHtml(htmlChunk, baseUrl) {
     if (wMatch && hMatch) {
       const w = Number(wMatch[1]);
       const h = Number(hMatch[1]);
-      if (w > 0 && h > 0 && w < 120 && h < 120) continue;
+      if (w > 10 && h > 10 && w < 110 && h < 110) continue;
     }
-    const ss =
-      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
-      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
-      tag.match(/\bsrcset=["']([^"']+)["']/i);
-    let chosen = ss && ss[1] ? pickBestSrcFromSrcset(ss[1], baseUrl) : '';
+
+    const ssMatches = [
+      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i),
+      tag.match(/\bdata-srcset=["']([^"']+)["']/i),
+      tag.match(/\bsrcset=["']([^"']+)["']/i),
+    ];
+    let chosen = '';
+    for (const ss of ssMatches) {
+      if (ss && ss[1]) {
+        const cand = pickBestSrcFromSrcset(ss[1], baseUrl);
+        if (cand && !isIgnorableImage(cand)) {
+          chosen = cand;
+          break;
+        }
+      }
+    }
+
     if (!chosen) {
-      const srcAttr =
-        tag.match(/\bdata-lazy-src=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-src=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-original=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-full-url=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-hi-res-src=["']([^"']+)["']/i) ||
-        tag.match(/\bsrc=["']([^"']+)["']/i);
-      if (srcAttr && srcAttr[1]) {
-        chosen = resolveAbsUrl(srcAttr[1], baseUrl);
+      const srcCandidates = [
+        tag.match(/\bdata-lazy-src=["']([^"']+)["']/i),
+        tag.match(/\bdata-src=["']([^"']+)["']/i),
+        tag.match(/\bdata-original=["']([^"']+)["']/i),
+        tag.match(/\bdata-full-url=["']([^"']+)["']/i),
+        tag.match(/\bdata-large_image=["']([^"']+)["']/i),
+        tag.match(/\bdata-hi-res-src=["']([^"']+)["']/i),
+        tag.match(/\bdata-orig-file=["']([^"']+)["']/i),
+        tag.match(/\bdata-ezsrc=["']([^"']+)["']/i),
+        tag.match(/\bdata-url=["']([^"']+)["']/i),
+        tag.match(/\bsrc=["']([^"']+)["']/i),
+      ];
+      for (const sc of srcCandidates) {
+        if (sc && sc[1] && !sc[1].trim().startsWith('data:')) {
+          const resolved = resolveAbsUrl(sc[1], baseUrl);
+          if (resolved && !isIgnorableImage(resolved)) {
+            chosen = resolved;
+            break;
+          }
+        }
       }
     }
     if (!chosen || isIgnorableImage(chosen)) continue;
@@ -190,16 +216,41 @@ function collectImgsFromHtml(htmlChunk, baseUrl) {
     const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
     list.push({ url: chosen, alt });
   }
+
+  const figLinkRegex =
+    /<(?:figure|div)\b[^>]*class=["'][^"']*(?:wp-block-image|wp-caption|gallery-item|post-thumbnail|featured-image)[^"']*["'][^>]*>[\s\S]*?<a\b[^>]+href=["']([^"']+\.(?:jpg|jpeg|png|webp)(?:\?[^"']*)?)["'][^>]*>/gi;
+  let flm;
+  while ((flm = figLinkRegex.exec(htmlChunk)) !== null) {
+    const resolved = resolveAbsUrl(flm[1], baseUrl);
+    if (resolved && !isIgnorableImage(resolved)) {
+      list.push({ url: resolved, alt: '' });
+    }
+  }
+
   return list;
 }
 
+function isTrackingOrLocalePathSegment(seg) {
+  const s = String(seg || '').toLowerCase().trim();
+  if (!s) return true;
+  if (/^\d+$/.test(s)) return true;
+  if (/^(vn\d*|en\d*|us\d*|uk\d*|au\d*|ca\d*|amp|feed|print|page|embed|track)$/i.test(s)) {
+    return true;
+  }
+  if (s.length <= 4 && /^[a-z]{1,3}\d{1,2}$/i.test(s)) return true;
+  return false;
+}
+
 function humanizeUrlSlugToTitle(pathname) {
-  const segs = String(pathname || '').split('/').filter(Boolean);
-  const last = segs[segs.length - 1] || '';
-  const cleaned = last
-    .replace(/\.(html|htm|php|aspx)$/i, '')
-    .replace(/[-_]+/g, ' ')
-    .trim();
+  const segs = String(pathname || '')
+    .split('/')
+    .map((s) => s.replace(/\.(html|htm|php|aspx)$/i, '').trim())
+    .filter((s) => s && !isTrackingOrLocalePathSegment(s));
+  const best =
+    segs.sort((a, b) => b.length - a.length)[0] ||
+    String(pathname || '').split('/').filter(Boolean).pop() ||
+    '';
+  const cleaned = best.replace(/[-_]+/g, ' ').trim();
   if (!cleaned || /^\d+$/.test(cleaned)) return '';
   return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -746,7 +797,7 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
     }
   };
 
-  const parseWpPostObject = (postJson) => {
+  const parseWpPostObject = async (postJson) => {
     if (!postJson || !postJson.id) return;
     if (postJson.title && postJson.title.rendered) {
       originalTitle = cleanScrapedTitle(postJson.title.rendered);
@@ -781,6 +832,43 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
     if (featUrl && (contentImgs.length === 0 || !/\bcollage[-_\d]/i.test(featUrl))) {
       addImage(featUrl, originalTitle, images.length === 0);
     }
+
+    if (images.length < 5 && postJson.id) {
+      try {
+        const mediaRes = await fetchWithTimeout(
+          `${origin}/wp-json/wp/v2/media?parent=${postJson.id}&per_page=20`,
+          { headers: { 'User-Agent': SCRAPER_USER_AGENT } },
+          3500
+        );
+        if (mediaRes.ok) {
+          const mediaList = await mediaRes.json();
+          if (Array.isArray(mediaList)) {
+            for (const mItem of mediaList) {
+              const mUrl =
+                (mItem &&
+                  mItem.media_details &&
+                  mItem.media_details.sizes &&
+                  mItem.media_details.sizes.full &&
+                  mItem.media_details.sizes.full.source_url) ||
+                (mItem &&
+                  mItem.media_details &&
+                  mItem.media_details.sizes &&
+                  mItem.media_details.sizes.large &&
+                  mItem.media_details.sizes.large.source_url) ||
+                (mItem && mItem.source_url) ||
+                '';
+              if (mUrl && !/\bcollage[-_\d]/i.test(mUrl)) {
+                addImage(
+                  mUrl,
+                  decodeHtmlEntities((mItem && mItem.alt_text) || (mItem && mItem.title && mItem.title.rendered) || originalTitle),
+                  images.length === 0
+                );
+              }
+            }
+          }
+        }
+      } catch {}
+    }
   };
 
   const pathSegs = parsedUrl.pathname.split('/').filter(Boolean);
@@ -791,10 +879,11 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
       ? Number(parsedUrl.searchParams.get('p'))
       : null;
 
-  const lastSlugSeg =
-    pathSegs.length > 0 && !/^\d+$/.test(pathSegs[pathSegs.length - 1])
-      ? pathSegs[pathSegs.length - 1].replace(/\.(html|htm|php)$/i, '')
-      : '';
+  const slugCandidates = pathSegs
+    .map((s) => s.replace(/\.(html|htm|php|aspx)$/i, '').trim())
+    .filter((s) => s && !isTrackingOrLocalePathSegment(s))
+    .sort((a, b) => b.length - a.length);
+  const lastSlugSeg = slugCandidates[0] || '';
 
   const tryFetchWpRestPost = async (apiEndpoint) => {
     try {
@@ -808,9 +897,9 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
       if (!wpRes.ok) return;
       const data = await wpRes.json();
       if (Array.isArray(data) && data.length > 0) {
-        parseWpPostObject(data[0]);
+        await parseWpPostObject(data[0]);
       } else if (data && data.id) {
-        parseWpPostObject(data);
+        await parseWpPostObject(data);
       }
     } catch {
       // fallback to HTML
@@ -861,11 +950,19 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
         const wpJsonLink = html.match(
           /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
         );
-        if (wpJsonLink && wpJsonLink[1] && images.length === 0) {
-          await tryFetchWpRestPost(resolveAbsUrl(wpJsonLink[1], cleanUrl));
+        const shortlinkId = html.match(/<link[^>]+rel=["']shortlink["'][^>]+href=["'][^"']*\?p=(\d+)["']/i);
+        const postClassId = html.match(/\bpostid-(\d+)\b/i);
+
+        if (images.length === 0) {
+          if (wpJsonLink && wpJsonLink[1]) {
+            await tryFetchWpRestPost(resolveAbsUrl(wpJsonLink[1], cleanUrl));
+          } else if ((shortlinkId && shortlinkId[1]) || (postClassId && postClassId[1])) {
+            const pid = (shortlinkId && shortlinkId[1]) || (postClassId && postClassId[1]);
+            await tryFetchWpRestPost(`${origin}/wp-json/wp/v2/posts/${pid}?_embed`);
+          }
         }
 
-        if (images.length === 0 || !originalTitle) {
+        if (images.length === 0 || paragraphs.length === 0 || !originalTitle) {
           if (!originalTitle) {
             const h1Match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
             const ogTitle =
@@ -893,7 +990,7 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
             html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
             html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
             html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-          if (ogImg && ogImg[1]) {
+          if (ogImg && ogImg[1] && !/\bcollage[-_\d]/i.test(ogImg[1])) {
             addImage(ogImg[1], originalTitle, images.length === 0);
           }
 
@@ -909,16 +1006,30 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
               ''
             );
 
-          const articleMatch =
-            cleanBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i) ||
-            cleanBody.match(/<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content)[^"']*["'][^>]*>([\s\S]*?)<\/div>/i) ||
-            cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+          let primaryZone = cleanBody;
+          const articleTagMatch = cleanBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+          if (articleTagMatch && articleTagMatch[1]) {
+            primaryZone = articleTagMatch[1];
+          } else {
+            const contentDivStart = cleanBody.search(
+              /<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content|article-body|story-body)[^"']*["'][^>]*>/i
+            );
+            if (contentDivStart !== -1) {
+              primaryZone = cleanBody.slice(contentDivStart, contentDivStart + 120000);
+            } else {
+              const mainMatch = cleanBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+              if (mainMatch && mainMatch[1]) primaryZone = mainMatch[1];
+            }
+          }
 
-          const primaryZone =
-            articleMatch ? articleMatch[articleMatch.length - 1] || articleMatch[1] : cleanBody;
           extractParagraphsFromHtml(primaryZone);
           for (const img of collectImgsFromHtml(primaryZone, cleanUrl)) {
-            addImage(img.url, img.alt || originalTitle, false);
+            addImage(img.url, img.alt || originalTitle, images.length === 0);
+          }
+          if (images.length < 2) {
+            for (const img of collectImgsFromHtml(cleanBody, cleanUrl)) {
+              addImage(img.url, img.alt || originalTitle, images.length === 0);
+            }
           }
         }
       }
@@ -1201,7 +1312,7 @@ function buildLongFormSeoArticle2000To5000Words({
         : 'Featured Story Moment';
       htmlBlocks.push(
         `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
-  <img src="${img.url}" alt="${altText}" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
   <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
 </figure>`
       );
@@ -1213,7 +1324,7 @@ function buildLongFormSeoArticle2000To5000Words({
     const altText = String(img.alt || articleTitle).replace(/"/g, '&quot;');
     htmlBlocks.push(
       `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
-  <img src="${img.url}" alt="${altText}" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
   <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
 </figure>`
     );
@@ -1262,13 +1373,39 @@ async function generateSeoArticleWithAiFast(params) {
   let sourceArticleText = '';
   let resolvedSourceUrl = '';
 
-  if (params.mode === 'from_url' || (params.sourceUrl && String(params.sourceUrl).trim())) {
-    const scraped = await scrapeWebArticleForSeoRewrite(params.sourceUrl || params.topic);
+  const rawUrlCandidate = String(params.sourceUrl || '').trim() || String(params.topic || '').trim();
+  const detectedUrlMatch = rawUrlCandidate.match(/https?:\/\/[^\s"'<>]+/i);
+  const urlToScrape =
+    params.mode === 'from_url'
+      ? rawUrlCandidate
+      : detectedUrlMatch
+      ? detectedUrlMatch[0]
+      : '';
+
+  if (urlToScrape) {
+    const scraped = await scrapeWebArticleForSeoRewrite(urlToScrape);
     scrapedImages = scraped.images;
     sourceTitle = scraped.originalTitle;
     sourceExcerpt = scraped.originalExcerpt;
     sourceArticleText = scraped.articleText;
     resolvedSourceUrl = scraped.sourceUrl;
+  }
+
+  if (params.existingContent) {
+    const existingImgs = collectImgsFromHtml(String(params.existingContent), resolvedSourceUrl || DEFAULT_WP_SITE);
+    const seen = new Set(scrapedImages.map((im) => im.url.split('?')[0].toLowerCase()));
+    for (const ex of existingImgs) {
+      const k = ex.url.split('?')[0].toLowerCase();
+      if (!seen.has(k)) {
+        seen.add(k);
+        scrapedImages.push({
+          url: ex.url,
+          alt: ex.alt || sourceTitle || 'Article Image',
+          isFeatured: scrapedImages.length === 0,
+          isExternal: false,
+        });
+      }
+    }
   }
 
   const effectiveTopic =
@@ -1358,8 +1495,13 @@ async function generateSeoArticleWithAiFast(params) {
     contentHtml: longFormResult.html,
     wordCount: longFormResult.wordCount,
     paragraphCount: longFormResult.paragraphCount,
-    featuredImageUrl: (allCombinedImages[0] && allCombinedImages[0].url) || '',
+    featuredImageUrl:
+      (scrapedImages[0] && scrapedImages[0].url) ||
+      (allCombinedImages[0] && allCombinedImages[0].url) ||
+      '',
     extractedImages: allCombinedImages,
+    sourceImages: scrapedImages,
+    externalImages,
     originalImageCount: scrapedImages.length,
     externalImageCount: externalImages.length,
     youtubeVideos: relatedVideos,
@@ -1616,9 +1758,19 @@ export default async function handler(req, res) {
             buffer = Buffer.from(body.base64Data, 'base64');
           }
         } else if (body.imageUrl) {
+          let refererOrigin = DEFAULT_WP_SITE;
+          try {
+            refererOrigin = `${new URL(String(body.imageUrl)).origin}/`;
+          } catch {}
           const imgRes = await fetchWithTimeout(
             body.imageUrl,
-            { headers: { 'User-Agent': SCRAPER_USER_AGENT } },
+            {
+              headers: {
+                'User-Agent': SCRAPER_USER_AGENT,
+                Referer: refererOrigin,
+                Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+              },
+            },
             5000
           );
           const arr = await imgRes.arrayBuffer();
@@ -1649,9 +1801,91 @@ export default async function handler(req, res) {
       // 5. Đẩy bài viết lên WordPress
       const empCode = String(body.employeeCode || 'A0006').trim().toUpperCase();
       const wpAuthorId = resolveWpUserIdByEmployeeCode(empCode);
+      const pubTitle = String(body.title || '').trim();
+      let pubContent = String(body.content || '').trim();
+      let candidateImgs = Array.isArray(body.extractedImages)
+        ? body.extractedImages.filter((im) => im && im.url)
+        : [];
+
+      if (!/<img\b/i.test(pubContent)) {
+        if (candidateImgs.length === 0 && body.sourceUrl) {
+          try {
+            const scraped = await scrapeWebArticleForSeoRewrite(String(body.sourceUrl));
+            candidateImgs = [...scraped.images];
+          } catch {}
+        }
+        if (candidateImgs.length < 5) {
+          try {
+            const ctxProfile = analyzeArticleSubjectAndContext(
+              pubTitle,
+              pubContent,
+              Array.isArray(body.tags) ? body.tags[0] : undefined,
+              candidateImgs
+            );
+            const excludeKeys = new Set(
+              candidateImgs.map((im) =>
+                String(im.url || '')
+                  .split('?')[0]
+                  .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+                  .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+                  .toLowerCase()
+              )
+            );
+            const needed = Math.max(0, 6 - candidateImgs.length);
+            if (needed > 0) {
+              const ext = await searchExternalRelatedImages(
+                ctxProfile.combinedSearchQuery || pubTitle,
+                needed,
+                excludeKeys,
+                ctxProfile
+              );
+              candidateImgs = [...candidateImgs, ...ext];
+            }
+          } catch {}
+        }
+        if (candidateImgs.length === 0 && body.featuredImageUrl) {
+          candidateImgs = [{ url: String(body.featuredImageUrl), alt: pubTitle }];
+        }
+        if (candidateImgs.length > 0) {
+          const figureBlocks = candidateImgs.map((img) => {
+            const altText = String(img.alt || pubTitle).replace(/"/g, '&quot;');
+            const sourceBadge = img.isExternal ? 'Editorial Visual Highlight' : 'Featured Story Moment';
+            return `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
+</figure>`;
+          });
+          const pParts = pubContent.split(/(<\/p>\s*(?:<br\s*\/?>)?)/i);
+          if (pParts.length < 3) {
+            pubContent = `${figureBlocks[0]}\n\n${pubContent}\n\n${figureBlocks.slice(1).join('\n\n')}`;
+          } else {
+            const totalParas = Math.floor(pParts.length / 2);
+            const step = Math.max(1, Math.floor(totalParas / (figureBlocks.length + 1)));
+            let figIdx = 0;
+            let paraCount = 0;
+            const out = [];
+            for (let i = 0; i < pParts.length; i++) {
+              out.push(pParts[i]);
+              if (i % 2 === 1) {
+                paraCount++;
+                if (figIdx < figureBlocks.length && (paraCount % step === 0 || paraCount === totalParas - 1)) {
+                  out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+                }
+              }
+            }
+            while (figIdx < figureBlocks.length) {
+              out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+            }
+            pubContent = out.join('');
+          }
+        }
+      }
+
+      const effectiveFeaturedUrl =
+        body.featuredImageUrl || (candidateImgs[0] && candidateImgs[0].url) || '';
 
       let featuredMediaId = Number(body.featuredMediaId || 0);
-      if (!featuredMediaId && (body.featuredImageBase64 || body.featuredImageUrl)) {
+      if (!featuredMediaId && (body.featuredImageBase64 || effectiveFeaturedUrl)) {
         try {
           let buffer = null;
           let mimeType = 'image/jpeg';
@@ -1663,10 +1897,20 @@ export default async function handler(req, res) {
               mimeType = m[1];
               buffer = Buffer.from(m[2], 'base64');
             }
-          } else if (body.featuredImageUrl) {
+          } else if (effectiveFeaturedUrl) {
+            let refererOrigin = DEFAULT_WP_SITE;
+            try {
+              refererOrigin = `${new URL(String(effectiveFeaturedUrl)).origin}/`;
+            } catch {}
             const imgRes = await fetchWithTimeout(
-              String(body.featuredImageUrl),
-              { headers: { 'User-Agent': SCRAPER_USER_AGENT } },
+              String(effectiveFeaturedUrl),
+              {
+                headers: {
+                  'User-Agent': SCRAPER_USER_AGENT,
+                  Referer: refererOrigin,
+                  Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                },
+              },
               4500
             );
             if (imgRes.ok) {
@@ -1702,8 +1946,8 @@ export default async function handler(req, res) {
       }
 
       const postPayload = {
-        title: String(body.title || '').trim(),
-        content: String(body.content || '').trim(),
+        title: pubTitle,
+        content: pubContent,
         excerpt: String(body.excerpt || '').trim(),
         status: body.status || 'publish',
         author: wpAuthorId,
