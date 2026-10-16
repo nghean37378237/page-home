@@ -8,6 +8,7 @@ import {
   uploadMediaToWordPress,
   generateSeoArticleWithAi,
   searchRelatedYouTubeVideos,
+  searchExternalRelatedImages,
 } from './src/server/wpPublishService';
 import { extractImagesFromWebUrl } from './src/server/webImageExtractor';
 
@@ -83,7 +84,14 @@ async function startServer() {
         return;
       }
 
-      if (action === 'ai_write') {
+      if (action === 'search_external_images') {
+        const query = String(body.query || '');
+        const images = await searchExternalRelatedImages(query, Number(body.limit) || 6);
+        res.json({ ok: true, images });
+        return;
+      }
+
+      if (action === 'ai_write' || action === 'ai_generate') {
         const result = await generateSeoArticleWithAi({
           topic: String(body.topic || ''),
           keyword: body.keyword ? String(body.keyword) : undefined,

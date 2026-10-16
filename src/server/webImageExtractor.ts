@@ -294,7 +294,7 @@ export async function extractImagesFromWebUrl(
     candidateImages.push({ url: resolved, alt, isFeatured });
   };
 
-  // 1. Kiểm tra nếu là bài viết WordPress dạng /{postId} hoặc ?p={postId}
+  // 1. Kiểm tra nếu là bài viết WordPress dạng /{postId}, ?p={postId} hoặc /{slug}
   const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
   const numericIdMatch =
     pathSegments.length > 0 && /^\d+$/.test(pathSegments[0])
@@ -302,6 +302,11 @@ export async function extractImagesFromWebUrl(
       : parsedUrl.searchParams.get('p') && /^\d+$/.test(parsedUrl.searchParams.get('p')!)
       ? Number(parsedUrl.searchParams.get('p'))
       : null;
+
+  const lastSlugSegment =
+    pathSegments.length > 0 && !/^\d+$/.test(pathSegments[pathSegments.length - 1])
+      ? pathSegments[pathSegments.length - 1].replace(/\.(html|htm|php)$/i, '')
+      : '';
 
   const tryFetchWpRestPost = async (apiEndpointUrl: string) => {
     try {
@@ -312,7 +317,8 @@ export async function extractImagesFromWebUrl(
         { headers: { 'User-Agent': USER_AGENT } }
       );
       if (!wpRes.ok) return;
-      const postJson: any = await wpRes.json();
+      const rawJson: any = await wpRes.json();
+      const postJson = Array.isArray(rawJson) ? rawJson[0] : rawJson;
       if (postJson && postJson.id) {
         if (!title) title = decodeHtmlEntities(postJson.title?.rendered || '');
         if (!excerpt) {
@@ -322,6 +328,7 @@ export async function extractImagesFromWebUrl(
         }
         const embeddedMedia = postJson._embedded?.['wp:featuredmedia']?.[0];
         const featUrl =
+          embeddedMedia?.media_details?.sizes?.full?.source_url ||
           embeddedMedia?.media_details?.sizes?.large?.source_url ||
           embeddedMedia?.source_url ||
           '';
@@ -341,6 +348,10 @@ export async function extractImagesFromWebUrl(
 
   if (numericIdMatch) {
     await tryFetchWpRestPost(`${origin}/wp-json/wp/v2/posts/${numericIdMatch}?_embed`);
+  } else if (lastSlugSegment) {
+    await tryFetchWpRestPost(
+      `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSlugSegment)}&_embed`
+    );
   }
 
   // 2. Quét trực tiếp HTML trang web (hỗ trợ mọi báo điện tử, blog, WordPress dạng slug, trang tin quốc tế...)
