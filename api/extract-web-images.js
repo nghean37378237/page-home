@@ -290,6 +290,23 @@ export default async function handler(req, res) {
         : null;
 
     let articleBodySample = '';
+    const extractedParagraphs = [];
+
+    const collectParagraphsFromHtml = (htmlChunk) => {
+      const pRegex = /<(p|h2|h3|blockquote|li)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+      let m;
+      while ((m = pRegex.exec(htmlChunk)) !== null) {
+        const text = decodeHtmlEntities(m[2].replace(/<[^>]+>/g, ' '))
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (
+          text.length >= 35 &&
+          !/^(read more|related|share this|follow us|copyright|all rights reserved|photo:|credit:|source:|advertisement|subscribe|sign up|click here|see also)/i.test(text)
+        ) {
+          extractedParagraphs.push(text);
+        }
+      }
+    };
 
     const tryFetchWpRestPost = async (apiEndpointUrl) => {
       try {
@@ -315,10 +332,11 @@ export default async function handler(req, res) {
             embeddedMedia?.media_details?.sizes?.large?.source_url ||
             embeddedMedia?.source_url ||
             '';
-          if (featUrl) {
+          if (featUrl && !/\bcollage[-_\d]/i.test(featUrl)) {
             addCandidate(featUrl, title || 'Ảnh đại diện bài viết', true);
           }
           const contentHtml = postJson.content?.rendered || '';
+          collectParagraphsFromHtml(contentHtml);
           articleBodySample = decodeHtmlEntities(contentHtml.replace(/<[^>]+>/g, ' '))
             .replace(/\s+/g, ' ')
             .trim()
@@ -452,6 +470,9 @@ export default async function handler(req, res) {
             }
           }
 
+          if (extractedParagraphs.length === 0) {
+            collectParagraphsFromHtml(primaryZone);
+          }
           if (!articleBodySample) {
             articleBodySample = decodeHtmlEntities(primaryZone.replace(/<[^>]+>/g, ' '))
               .replace(/\s+/g, ' ')
@@ -549,6 +570,7 @@ export default async function handler(req, res) {
       sourceUrl: cleanUrl,
       title: title || 'Bài viết từ Website',
       excerpt,
+      articleText: extractedParagraphs.join('\n\n').slice(0, 16000) || articleBodySample,
       siteName: parsedUrl.hostname.replace(/^www\./, ''),
       images: validImages,
     });

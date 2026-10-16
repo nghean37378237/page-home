@@ -260,9 +260,15 @@ function cleanScrapedTitle(rawTitle) {
     .replace(/<[^>]*>/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  return decoded
+  const strippedSite = decoded
     .replace(/\s+[|–—-]\s+[^|–—-]{2,35}\.(com|net|org|fun|vn|info|us|co\.uk)$/i, '')
     .trim();
+  if (strippedSite && strippedSite === strippedSite.toLowerCase()) {
+    return strippedSite.replace(/(^\w|\.\s+\w|\b[a-z]{4,})/g, (m) =>
+      m.charAt(0).toUpperCase() + m.slice(1)
+    );
+  }
+  return strippedSite;
 }
 
 function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImages) {
@@ -272,51 +278,125 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     .replace(/&#8220;|&#8221;/g, '"')
     .replace(/\s+/g, ' ')
     .trim();
+
   const imgAltText = Array.isArray(existingImages)
     ? existingImages
         .map((im) => `${(im && im.alt) || ''} ${String((im && im.url) || '').split('/').pop() || ''}`)
         .join(' ')
     : '';
-  const sample = fullText.slice(0, 4500);
+  const sample = fullText.slice(0, 6000);
 
   const stopWords = new Set([
     'There', 'The', 'This', 'That', 'These', 'Those', 'When', 'While', 'Where',
     'What', 'Who', 'Why', 'How', 'Proving', 'Looking', 'Taking', 'Channeling',
     'Addressing', 'Stepping', 'Enjoying', 'Sharing', 'Showing', 'Making', 'Soaking',
     'Confirming', 'Embracing', 'Walking', 'Strolling', 'Wearing', 'Smiling', 'Spotted',
-    'Showcasing', 'Exiting', 'Following', 'Among', 'At', 'In', 'On', 'By', 'With',
-    'From', 'For', 'After', 'Before', 'During', 'Despite', 'Between', 'Beyond',
-    'Within', 'Without', 'Through', 'Throughout', 'Against', 'Around', 'Behind',
-    'Inside', 'Outside', 'Under', 'Until', 'Upon', 'According', 'Speaking', 'Shielding',
-    'Completing', 'Expecting', 'Running', 'Visiting', 'Both', 'Holding', 'Wrapping',
+    'Showcasing', 'Exiting', 'Following', 'Considering', 'Because', 'Although', 'Though',
+    'Whether', 'Unless', 'Since', 'Once', 'Whereas', 'Whenever', 'Wherever', 'However',
+    'Meanwhile', 'Furthermore', 'Moreover', 'Nevertheless', 'Nonetheless', 'Instead',
+    'Otherwise', 'Therefore', 'Thus', 'Hence', 'Accordingly', 'Consequently', 'Subsequently',
+    'Previously', 'Recently', 'Currently', 'Finally', 'Ultimately', 'Initially', 'Originally',
+    'Fortunately', 'Unfortunately', 'Thankfully', 'Luckily', 'Sadly', 'Happily',
+    'Reportedly', 'Allegedly', 'Apparently', 'Obviously', 'Clearly', 'Certainly', 'Surely',
+    'Indeed', 'Actually', 'Naturally', 'Typically', 'Usually', 'Generally', 'Normally',
+    'Frequently', 'Occasionally', 'Sometimes', 'Often', 'Rarely', 'Seldom', 'Never', 'Always',
+    'Perhaps', 'Maybe', 'Possibly', 'Probably', 'Likely', 'Unlikely', 'Doubtless', 'Undoubtedly',
+    'As', 'If', 'So', 'Yet', 'Nor', 'Or', 'And', 'But', 'For', 'To', 'Of', 'In', 'On', 'At', 'By',
+    'With', 'From', 'Into', 'Onto', 'Upon', 'Out', 'Off', 'Over', 'Under', 'Above', 'Below',
+    'Up', 'Down', 'Across', 'Along', 'Around', 'Through', 'Throughout', 'During', 'Before',
+    'After', 'Until', 'Till', 'Between', 'Among', 'Amidst', 'Within', 'Without',
+    'Inside', 'Outside', 'Behind', 'Beyond', 'Beside', 'Besides', 'Near', 'Next', 'Toward',
+    'Towards', 'Against', 'Despite', 'Concerning', 'According', 'Speaking',
+    'Shielding', 'Completing', 'Expecting', 'Running', 'Visiting', 'Both', 'Holding', 'Wrapping',
+    'Turning', 'Adding', 'Bringing', 'Giving', 'Getting', 'Keeping', 'Leaving', 'Letting',
+    'Putting', 'Setting', 'Standing', 'Sitting', 'Lying', 'Going', 'Coming', 'Being', 'Having',
+    'Doing', 'Saying', 'Telling', 'Asking', 'Thinking', 'Knowing', 'Seeing', 'Hearing', 'Feeling',
+    'Finding', 'Calling', 'Trying', 'Working', 'Playing', 'Living', 'Moving', 'Starting',
+    'Stopping', 'Beginning', 'Ending', 'Continuing', 'Growing', 'Changing', 'Leading',
+    'Understanding', 'Watching', 'Creating', 'Spending', 'Opening', 'Closing',
+    'Winning', 'Losing', 'Falling', 'Rising', 'Building', 'Breaking', 'Carrying', 'Catching',
+    'Choosing', 'Drawing', 'Driving', 'Eating', 'Fighting', 'Flying', 'Forgetting', 'Forgiving',
+    'Freezing', 'Hanging', 'Hiding', 'Hitting', 'Hurting', 'Laying', 'Learning', 'Lending',
+    'Meaning', 'Meeting', 'Paying', 'Reading', 'Riding', 'Ringing', 'Seeking', 'Selling', 'Sending',
+    'Shaking', 'Shining', 'Shooting', 'Shutting', 'Singing', 'Sinking', 'Sleeping', 'Sliding',
+    'Stealing', 'Sticking', 'Stinging', 'Striking', 'Swearing', 'Sweeping', 'Swimming', 'Swinging',
+    'Teaching', 'Tearing', 'Throwing', 'Waking', 'Weaving', 'Weeping', 'Winding', 'Withdrawing', 'Writing',
+    'His', 'Her', 'Their', 'Our', 'Your', 'My', 'Its', 'Hers', 'Theirs', 'Ours', 'Yours', 'Mine',
+    'He', 'She', 'They', 'We', 'You', 'It', 'One', 'Someone', 'Anyone', 'Everyone', 'No', 'None',
+    'Nothing', 'Something', 'Anything', 'Everything', 'Some', 'Any', 'All', 'Many', 'Much',
+    'More', 'Most', 'Few', 'Fewer', 'Fewest', 'Little', 'Less', 'Least', 'Several', 'Enough',
+    'Each', 'Every', 'Either', 'Neither', 'Other', 'Another', 'Such', 'Same', 'Different',
+    'Various', 'Certain', 'Numerous', 'Countless', 'Multiple', 'Single', 'Double', 'Triple',
+    'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Last', 'Previous', 'Former', 'Latter',
     'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South', 'East',
     'Southern', 'Northern', 'Eastern', 'Western', 'Central', 'California', 'Florida',
     'United', 'States', 'America', 'British', 'English', 'American', 'Great', 'Britain',
     'French', 'Riviera', 'Mediterranean', 'German', 'Italian', 'Spanish', 'Mexican',
     'Saint', 'Tropez', 'Cannes', 'Paris', 'Rome', 'Malibu', 'Hawaii', 'Manhattan',
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    'Monday', 'Tuesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
     'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
     'September', 'October', 'November', 'December', 'Instagram', 'Twitter',
     'Facebook', 'YouTube', 'TikTok', 'Daily', 'Mail', 'Page', 'Six', 'People',
     'Notting', 'Hill', 'Los', 'Angeles', 'New', 'York', 'Miami', 'Beach', 'Sandy', 'Lane',
     'Golden', 'Globes', 'Academy', 'Award', 'Awards', 'Oscar', 'Oscars', 'Emmy', 'Grammy',
-    'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Supermodel',
-    'Actor', 'Singer', 'Partner', 'Candid', 'Photo', 'Recognize', 'Them', 'Her', 'Him',
+    'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Supermodel',
+    'Actor', 'Singer', 'Partner', 'Candid', 'Photo', 'Recognize', 'Them',
     'Bear', 'Blur', 'Gorillaz', 'Landman', 'City', 'Street', 'Streets', 'Turns', 'Heads',
     'Jimmy', 'Kimmel', 'Live', 'Coogies', 'Cafe', 'Big', 'Apple', 'Uncharted', 'Invasion',
     'Beatles', 'Ted', 'Lasso', 'Succession', 'Beverly', 'Hilton', 'Hills', 'Santa', 'Monica',
     'Stunning', 'Pregnant', 'Timeless', 'Beloved', 'Famous', 'Reality', 'Heartthrob', 'Icon',
-    'Real', 'Housewives', 'Brat', 'Pack', 'Night', 'Heat', 'Glad', 'All', 'Over', 'Mark', 'Twain',
-    'Morning', 'Show', 'France', 'Europe', 'European', 'Exclusive', 'Story', 'Highlights'
+    'Real', 'Housewives', 'Brat', 'Pack', 'Night', 'Heat', 'Glad', 'Mark', 'Twain',
+    'Morning', 'Show', 'France', 'Europe', 'European', 'Exclusive', 'Story', 'Highlights',
+    'Season', 'Episode', 'Episodes', 'Series', 'Netflix', 'Prime', 'Video', 'Disney',
+    'Max', 'Hulu', 'Paramount', 'Peacock', 'Nevermore', 'School',
+    'Part', 'Balance', 'Horror', 'Dark', 'Comedy', 'Viewers', 'Fans', 'Audience', 'Audiences',
+    'Showrunners', 'Executive', 'Producers', 'Production', 'Official', 'Trailer', 'Teaser',
+    'Premiere', 'Release', 'Date', 'Cast', 'Characters', 'Character', 'Mystery', 'Supernatural',
+    'Gothic', 'Visual', 'Style', 'Identity', 'History', 'Hidden', 'Change', 'World', 'Life',
+    'Love', 'Family', 'Friends', 'Couple', 'Romance', 'Relationship', 'Marriage', 'Wedding',
+    'Divorce', 'Split', 'Breakup', 'Children', 'Kids', 'Son', 'Daughter', 'Mother', 'Father',
+    'Parents', 'Sister', 'Brother', 'Siblings', 'Cousin', 'Aunt', 'Uncle', 'Niece', 'Nephew',
+    'Grandmother', 'Grandfather', 'Grandparents', 'Grandson', 'Granddaughter', 'Grandchildren',
+    'Boyfriend', 'Girlfriend', 'Fiance', 'Fiancee', 'Husband', 'Wife', 'Spouse', 'Ex',
+    'Late', 'Young', 'Old', 'Older', 'Younger', 'Eldest', 'Youngest', 'Middle', 'Only',
+    'Small', 'Large', 'Good', 'Best', 'Better', 'Bad', 'Worst', 'Worse',
+    'High', 'Low', 'Long', 'Short', 'Tall', 'Wide', 'Narrow', 'Deep', 'Shallow', 'Thick', 'Thin',
+    'Heavy', 'Light', 'Strong', 'Weak', 'Hard', 'Soft', 'Fast', 'Slow', 'Quick', 'Early',
+    'Modern', 'Ancient', 'Classic', 'Traditional', 'Contemporary', 'Future', 'Past', 'Present',
+    'Current', 'Recent', 'Upcoming', 'Ongoing', 'Final', 'Initial', 'Original', 'Main', 'Major',
+    'Minor', 'Primary', 'Secondary', 'Central', 'Key', 'Important', 'Significant', 'Special',
+    'Specific', 'Particular', 'General', 'Common', 'Usual', 'Normal', 'Regular', 'Standard',
+    'Rare', 'Unique', 'Unusual', 'Strange', 'Odd', 'Weird', 'Mysterious', 'Secret', 'Private',
+    'Public', 'Personal', 'Professional', 'Unofficial', 'Formal', 'Informal',
+    'True', 'False', 'Real', 'Fake', 'Actual', 'Possible', 'Impossible',
+    'Uncertain', 'Sure', 'Unsure', 'Clear', 'Unclear', 'Obvious', 'Apparent',
+    'Visible', 'Invisible', 'Known', 'Unknown', 'Popular', 'Favorite',
+    'Successful', 'Rich', 'Wealthy', 'Poor', 'Free', 'Busy', 'Ready', 'Able', 'Unable',
+    'Happy', 'Sad', 'Angry', 'Afraid', 'Scared', 'Proud', 'Sorry', 'Fond',
+    'Full', 'Empty', 'Open', 'Closed', 'Shut', 'Clean', 'Dirty', 'Bright',
+    'Warm', 'Cool', 'Cold', 'Hot', 'Dry', 'Wet', 'Sweet', 'Sour', 'Bitter', 'Salty', 'Fresh',
+    'White', 'Black', 'Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Pink', 'Orange', 'Brown',
+    'Gray', 'Grey', 'Silver', 'Gold', 'Blonde', 'Brunette', 'Bald',
+    'Legally', 'Lies', 'Walk', 'Line', 'Home', 'Alabama',
+    'Cruel', 'Intentions', 'Election', 'Wild', 'Hello', 'Sunshine', 'Book', 'Club', 'Thing',
+    'Writers', 'Creators', 'Eiffel', 'Tower', 'Famously', 'Archival',
+    'Scroll', 'Stay', 'Read', 'Click', 'Share', 'Watch', 'See', 'Know', 'About'
   ]);
+
+  const isWednesdayShowContext = /\b(Nevermore|Addams|Ortega|Enid|Morticia|Ophelia|Pugsley|Gomez)\b/i.test(
+    `${sample} ${title}`
+  );
+  if (!isWednesdayShowContext) {
+    stopWords.add('Wednesday');
+  }
 
   const stats = new Map();
 
   const companionRegex =
-    /\b(?:with|alongside|beside)\s+(?:her|his|their)?\s*(?:new\s+|longtime\s+)?(?:husband|wife|partner|boyfriend|girlfriend|fiance|fiancée|companion|model|actress|actor)?\s*,?\s*([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
+    /\b(?:with|alongside|beside)\s+(?:her|his|their)?\s*(?:new\s+|longtime\s+)?(?:husband|wife|partner|boyfriend|girlfriend|fiance|fiancée|companion|model|actress|actor|financier)?\s*(?:,\s*(?:\d{2}-year-old\s+)?(?:[a-z-]+\s+){0,3})?([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
   const companionSet = new Set();
   let cm;
-  while ((cm = companionRegex.exec(sample.slice(0, 800))) !== null) {
+  while ((cm = companionRegex.exec(sample.slice(0, 1000))) !== null) {
     const cName = cm[1]
       .trim()
       .split(/\s+/)
@@ -329,12 +409,12 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
   }
 
   const bioRegex =
-    /(?:(\d{2}-year-old(?:\s+[a-z-]+){0,3})|(?:representative\s+for|breakout\s+star|actor|actress|singer|model|supermodel|star|frontman|mastermind|financier|husband|wife|partner|boyfriend|girlfriend|mother|father|icon|legend|winner|daughter|son)(?:\s+[a-z-]+){0,2})\s*,?\s+([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
+    /(?:(\d{2}-year-old(?:\s+[a-zA-Z-]+){0,4})|(?:representative\s+for|breakout\s+star|actor|actress|singer|model|supermodel|star|frontman|mastermind|financier|surgeon|husband|wife|partner|boyfriend|girlfriend|mother|father|icon|legend|winner|daughter|son|director|showrunners?)(?:\s+[a-zA-Z-]+){0,2})\s*,?\s+(?:Dr\.\s+)?([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
   let bm;
   while ((bm = bioRegex.exec(sample)) !== null) {
     const rawName = bm[2].trim();
     const parts = rawName.split(/\s+/);
-    const cleanParts = parts.filter((p) => !stopWords.has(p));
+    const cleanParts = parts.filter((p) => !stopWords.has(p.replace(/['’]s$/i, '')));
     if (cleanParts.length < 2) continue;
     const candidate = cleanParts.slice(0, 3).join(' ');
     const isComp = companionSet.has(candidate);
@@ -344,7 +424,7 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
       bioBoost: 0,
       isCompanion: isComp,
     };
-    prev.bioBoost += isComp ? 18 : 38;
+    prev.bioBoost += isComp ? 18 : 42;
     if (isComp) prev.isCompanion = true;
     stats.set(candidate, prev);
   }
@@ -354,9 +434,9 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
   let m;
   const textToScan = sample || `${title || ''} ${imgAltText}`;
   while ((m = regex.exec(textToScan)) !== null) {
-    const rawName = m[1].trim();
+    const rawName = m[1].trim().replace(/['’]s$/i, '');
     const parts = rawName.split(/\s+/);
-    if (parts.some((p) => stopWords.has(p))) continue;
+    if (parts.some((p) => stopWords.has(p.replace(/['’]s$/i, '')))) continue;
     if (parts.length < 2) continue;
     const candidate = parts.join(' ');
     const isComp = companionSet.has(candidate);
@@ -373,21 +453,29 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
 
   for (const [fullName, info] of stats.entries()) {
     const tokens = fullName.split(/\s+/);
+    const firstName = tokens[0];
     const lastName = tokens[tokens.length - 1];
-    if (lastName && lastName.length >= 4) {
+    if (lastName && lastName.length >= 4 && !stopWords.has(lastName)) {
       const lastRegex = new RegExp(`\\b${lastName}\\b`, 'g');
       const totalLastMentions = (sample.match(lastRegex) || []).length;
       if (totalLastMentions > info.count) {
-        info.bioBoost += Math.min(24, (totalLastMentions - info.count) * 6);
+        info.bioBoost += Math.min(28, (totalLastMentions - info.count) * 6);
+      }
+    }
+    if (firstName && firstName.length >= 4 && !stopWords.has(firstName)) {
+      const firstRegex = new RegExp(`\\b${firstName}\\b`, 'g');
+      const totalFirstMentions = (sample.match(firstRegex) || []).length;
+      if (totalFirstMentions > info.count) {
+        info.bioBoost += Math.min(24, (totalFirstMentions - info.count) * 5);
       }
     }
   }
 
   const rankedEntries = [...stats.entries()].sort((a, b) => {
-    const leadBonusA = a[1].firstIdx < 260 ? 38 : a[1].firstIdx < 500 ? 22 : 0;
-    const leadBonusB = b[1].firstIdx < 260 ? 38 : b[1].firstIdx < 500 ? 22 : 0;
-    const compPenaltyA = a[1].isCompanion ? -25 : 0;
-    const compPenaltyB = b[1].isCompanion ? -25 : 0;
+    const leadBonusA = a[1].firstIdx < 280 ? 38 : a[1].firstIdx < 550 ? 22 : 0;
+    const leadBonusB = b[1].firstIdx < 280 ? 38 : b[1].firstIdx < 550 ? 22 : 0;
+    const compPenaltyA = a[1].isCompanion ? -22 : 0;
+    const compPenaltyB = b[1].isCompanion ? -22 : 0;
     const scoreA = a[1].count * 12 + a[1].bioBoost + leadBonusA + compPenaltyA;
     const scoreB = b[1].count * 12 + b[1].bioBoost + leadBonusB + compPenaltyB;
     return scoreB - scoreA;
@@ -395,60 +483,108 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
 
   const rankedPeople = rankedEntries.map((e) => e[0]);
 
-  const primaryPerson =
-    rankedPeople[0] ||
-    (userKeyword && String(userKeyword).trim()) ||
-    String(title || '').split(/[:–—|-]/)[0].trim();
+  let primaryPerson = rankedPeople[0] || (userKeyword && String(userKeyword).trim()) || '';
+  if (!primaryPerson && isWednesdayShowContext) {
+    primaryPerson = /\bJenna\s+Ortega\b/i.test(sample) ? 'Jenna Ortega' : 'Wednesday Addams';
+  }
+  if (!primaryPerson) {
+    primaryPerson =
+      cleanScrapedTitle(title)
+        .split(/[:–—|-]/)[0]
+        .trim()
+        .slice(0, 50) || 'the star';
+  }
 
   const secondaryEntry = rankedEntries.find(
     ([p, info]) =>
       p !== primaryPerson &&
-      info.firstIdx < 650 &&
-      (info.count >= 2 || info.bioBoost > 0) &&
+      (info.firstIdx < 900 || info.isCompanion || info.count >= 2) &&
+      (info.count >= 2 || info.bioBoost > 0 || info.isCompanion) &&
       !primaryPerson.toLowerCase().includes(p.toLowerCase()) &&
       !p.toLowerCase().includes(primaryPerson.toLowerCase())
   );
   const secondaryPerson = secondaryEntry ? secondaryEntry[0] : '';
 
-  const visualSceneText = `${title || ''} ${imgAltText} ${sample.slice(0, 1100)}`.toLowerCase();
+  const supportingEntities = rankedEntries
+    .map(([p]) => p)
+    .filter(
+      (p) =>
+        p !== primaryPerson &&
+        p !== secondaryPerson &&
+        !primaryPerson.toLowerCase().includes(p.toLowerCase()) &&
+        (!secondaryPerson || !secondaryPerson.toLowerCase().includes(p.toLowerCase()))
+    )
+    .slice(0, 8);
+
+  const visualSceneText = `${imgAltText} ${sample.slice(0, 1800)}`.toLowerCase();
   const outfitKeywords = [];
   const outfitRegex =
-    /\b((?:all-white|snakeskin(?:-print)?|burgundy|white|black|red|blue|gold|shimmering\s+gold|glittering\s+gold|floral|striped|pink|green|yellow|navy|chic|skimpy|tiny|polka-dot|leopard(?:-print)?|animal-print|denim|leather|lace|sheer|sequin|silver)\s+(?:bikini|swimsuit|bathing\s+suit|swim\s+shorts|swim\s+trunks|shorts|trunks|dress|gown|mini\s+dress|summer\s+dress|tank\s+top|t-shirt|tee|shirt|top|jacket|coat|suit|jeans|trousers|pants|skirt|outfit|ensemble))\b/gi;
+    /\b((?:all-white|snakeskin(?:-print)?|burgundy|white|black|red|blue|gold|shimmering\s+gold|glittering\s+gold|floral|striped|pink|green|yellow|navy|chic|skimpy|tiny|polka-dot|leopard(?:-print)?|animal-print|denim|leather|lace|sheer|sequin|silver|gothic|monochrome)\s+(?:bikini|swimsuit|bathing\s+suit|swim\s+shorts|swim\s+trunks|shorts|trunks|dress|gown|mini\s+dress|summer\s+dress|tank\s+top|t-shirt|tee|shirt|top|jacket|coat|suit|jeans|trousers|pants|skirt|outfit|ensemble|wardrobe|costume))\b/gi;
   let om;
   while ((om = outfitRegex.exec(visualSceneText)) !== null) {
     const phrase = om[1].replace(/\s+/g, ' ').trim();
-    if (!outfitKeywords.includes(phrase) && outfitKeywords.length < 3) {
+    if (!outfitKeywords.includes(phrase) && outfitKeywords.length < 4) {
       outfitKeywords.push(phrase);
     }
   }
 
-  const openingScene = `${title || ''} ${imgAltText} ${sample.slice(0, 750)}`.toLowerCase();
+  const bodyLower = sample.toLowerCase();
   const locationGlossary = [
     'sandy lane', 'barbados', 'saint-tropez', 'french riviera', 'notting hill',
-    'west hollywood', 'london', 'malibu', 'new york', 'manhattan', 'miami',
-    'bahamas', 'cabo', 'caribbean', 'cannes', 'paris', 'venice', 'beverly hills', 'los angeles'
+    'west hollywood', 'london', 'malibu', 'new york city', 'new york', 'manhattan',
+    'miami', 'bahamas', 'cabo', 'caribbean', 'cannes', 'paris', 'eiffel tower',
+    'venice', 'beverly hills', 'los angeles', 'nevermore academy', 'ireland', 'dublin'
   ];
   const locationKeywords = [];
   for (const loc of locationGlossary) {
-    if (openingScene.includes(loc) && locationKeywords.length < 2) {
+    if (bodyLower.includes(loc) && locationKeywords.length < 4) {
       locationKeywords.push(loc);
+    }
+  }
+
+  const timeframeKeywords = [];
+  const timeRegex =
+    /\b((?:in|since|during|by|until|around|early|late|mid-|summer|Spring|winter|fall|autumn)\s+(?:19\d{2}|20\d{2})|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+(?:\d{1,2},?\s+)?(?:19\d{2}|20\d{2})|season\s+\d+|19\d{2}s|20\d{2})\b/gi;
+  let tm;
+  while ((tm = timeRegex.exec(sample)) !== null) {
+    const tf = tm[1].replace(/\s+/g, ' ').trim();
+    if (!timeframeKeywords.some((k) => k.toLowerCase() === tf.toLowerCase()) && timeframeKeywords.length < 5) {
+      timeframeKeywords.push(tf);
     }
   }
 
   const eventGlossary = [
     'bikini', 'swimsuit', 'bathing suit', 'yacht', 'beach', 'boat', 'pregnant',
     'pregnancy', 'baby bump', 'stroll', 'lunch', 'brunch', 'kiss', 'kisses',
-    'motorcycle', 'red carpet', 'vacation', 'getaway', 'holiday'
+    'motorcycle', 'red carpet', 'vacation', 'getaway', 'holiday', 'season 3',
+    'season 2', 'netflix', 'filming', 'premiere', 'cast', 'gothic', 'nevermore'
   ];
   const eventKeywords = [];
   for (const ev of eventGlossary) {
     if (
-      openingScene.includes(ev) &&
-      eventKeywords.length < 3 &&
+      bodyLower.includes(ev) &&
+      eventKeywords.length < 4 &&
       !outfitKeywords.some((o) => o.includes(ev))
     ) {
       eventKeywords.push(ev);
     }
+  }
+
+  let articleCategory = 'celebrity_lifestyle';
+  if (
+    /\b(season\s+\d|netflix|showrunners?|episodes?|filming|cast|series|character|sequel|spin-?off|nevermore|addams)\b/i.test(
+      sample
+    )
+  ) {
+    articleCategory = 'screen_production';
+  } else if (
+    /\b(red\s+carpet|awards?|gala|premiere|ceremony|gown|golden\s+globes|oscars|emmys|grammys)\b/i.test(
+      sample
+    )
+  ) {
+    articleCategory = 'red_carpet_event';
+  } else if (/\b(19[6789]\d|archival|throwback|decades\s+ago|late\s+actor|legacy)\b/i.test(sample)) {
+    articleCategory = 'retrospective_feature';
   }
 
   const eventWords = [...outfitKeywords, ...locationKeywords, ...eventKeywords].slice(0, 6);
@@ -471,10 +607,13 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
   return {
     primaryPerson,
     secondaryPerson,
+    supportingEntities,
     outfitKeywords,
     locationKeywords,
+    timeframeKeywords,
     eventKeywords,
     eventWords,
+    articleCategory,
     subjectDisplay,
     combinedSearchQuery: combinedSearchQuery || primaryPerson || title,
   };
@@ -790,8 +929,20 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
     const pRegex = /<(p|h2|h3|blockquote|li)\b[^>]*>([\s\S]*?)<\/\1>/gi;
     let m;
     while ((m = pRegex.exec(htmlChunk)) !== null) {
+      const tag = m[1].toLowerCase();
       const txt = stripHtmlTags(m[2]).replace(/\s+/g, ' ').trim();
-      if (txt.length >= 25 && !paragraphs.includes(txt)) {
+      if (!txt) continue;
+      if (
+        /^(read more|related:|also read|share this|follow us|subscribe|advertisement|sponsored|source:|photo credit|click here)/i.test(
+          txt
+        )
+      ) {
+        continue;
+      }
+      if ((tag === 'h2' || tag === 'h3') && txt.length >= 8 && txt.length <= 140) {
+        const marker = `## ${txt}`;
+        if (!paragraphs.includes(marker)) paragraphs.push(marker);
+      } else if (txt.length >= 25 && !paragraphs.includes(txt)) {
         paragraphs.push(txt);
       }
     }
@@ -1052,44 +1203,248 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
   };
 }
 
-function normalizeParagraphToAround150Words(baseText, subject, title, language, sectionIdx) {
-  const clean = stripHtmlTags(baseText).replace(/\s+/g, ' ').trim();
+function splitIntoSentences(text) {
+  const cleaned = stripHtmlTags(text).replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  const protectedText = cleaned
+    .replace(/\b(Dr|Mr|Ms|Mrs|St|Jr|Sr|vs|Prof|Inc|Ltd)\.\s+/g, '$1__DOT__ ')
+    .replace(/\bU\.S\./g, 'U__DOT__S__DOT__');
+  const rawParts = protectedText.split(/(?<=[.!?])\s+(?=[A-Z“"‘'])/);
+  return rawParts
+    .map((s) => s.replace(/__DOT__/g, '.').trim())
+    .filter((s) => s.length >= 20);
+}
 
-  const enElaborations = [
-    `Throughout the unfolding moments surrounding ${subject}, long-time followers and entertainment observers have pointed out how naturally these details resonate with audiences worldwide. Every candid frame and subtle interaction adds another layer of authenticity to "${title}", demonstrating why genuine human connection continues to stand out in modern celebrity culture. Readers following the story have shared hundreds of thoughtful perspectives across social platforms, praising the relaxed confidence, timeless poise, and unmistakable warmth captured throughout the occasion.`,
-    `Looking closer at the broader context of ${subject}, industry insiders note that moments like this rarely happen in isolation; instead, they reflect years of personal growth, evolving priorities, and a conscious desire to balance public expectations with private fulfillment. Whether stepping away from high-pressure production schedules or simply enjoying unscripted time with loved ones, the narrative around "${title}" highlights a refreshing shift toward mindfulness and grounded living that fans deeply admire.`,
-    `From a visual and storytelling standpoint, the atmosphere surrounding ${subject} offers a vivid contrast to the carefully choreographed appearances typically seen at major red-carpet premieres and press tours. Observers quickly noticed the effortless styling, natural lighting, and relaxed body language that made the entire outing feel both cinematic and deeply relatable. It is precisely this blend of star power and everyday simplicity that keeps "${title}" trending across entertainment circles.`,
-    `Furthermore, cultural commentators emphasize that public fascination with ${subject} stems from a genuine appreciation for resilience and authenticity in the spotlight. Over the years, audiences have grown increasingly drawn to stories that celebrate real companionship, quiet confidence, and meaningful milestones rather than fleeting headlines. As discussions around "${title}" continue to gain momentum, admirers everywhere are reminded of the enduring appeal of sincerity both on and off the screen.`,
-  ];
+function expandFactBlockToAround150Words({
+  baseFactText,
+  contextProfile,
+  allFactsPool,
+  language,
+  paragraphIndex,
+}) {
+  const cleanBase = stripHtmlTags(baseFactText).replace(/^##\s*/, '').replace(/\s+/g, ' ').trim();
 
-  const viElaborations = [
-    `Nhìn lại toàn bộ những khoảnh khắc xoay quanh ${subject}, đông đảo khán giả và giới quan sát giải trí đều nhận thấy sự chân thực, gần gũi hiếm có trong từng khung hình. Từng cử chỉ tự nhiên và thần thái rạng rỡ trong câu chuyện "${title}" đã tạo nên sức hút mạnh mẽ trên khắp các diễn đàn mạng xã hội, chứng minh rằng chính những giá trị cảm xúc đời thường mới là điều chạm đến trái tim người hâm mộ một cách bền vững nhất.`,
-    `Đặt trong bối cảnh rộng hơn về hành trình của ${subject}, nhiều chuyên gia truyền thông đánh giá rằng những khoảnh khắc thư thái này phản ánh sự trưởng thành sâu sắc trong phong cách sống cũng như cách cân bằng giữa ánh hào quang và cuộc sống riêng tư. Thay vì những xuất hiện cầu kỳ trên thảm đỏ, câu chuyện "${title}" mang lại cảm giác bình yên, tinh tế và tràn đầy năng lượng tích cực cho người xem.`,
-    `Xét dưới góc độ hình ảnh và sức lan tỏa truyền thông, từng chi tiết gắn liền với ${subject} đều toát lên vẻ đẹp tự nhiên, phóng khoáng nhưng vẫn giữ được dấu ấn riêng biệt. Ngay khi loạt hình ảnh và thông tin về "${title}" được đăng tải, hàng ngàn bình luận từ cộng đồng mạng đã bày tỏ sự ngưỡng mộ trước phong thái tự tin, giản dị và nguồn cảm hứng sống tích cực mà nhân vật mang lại.`,
-    `Hơn thế nữa, sức hút bền bỉ của ${subject} trong lòng công chúng còn đến từ sự trân trọng những khoảnh khắc gắn kết chân thành bên những người thân yêu. Giữa nhịp sống sôi động của làng giải trí hiện đại, "${title}" giống như một lát cắt đầy cảm xúc, giúp khán giả hiểu thêm về những góc nhìn nhân văn, sâu lắng phía sau ống kính máy quay.`,
-  ];
+  const primary = contextProfile.primaryPerson || contextProfile.subjectDisplay || 'the star';
+  const secondary = contextProfile.secondaryPerson || '';
+  const coupleOrSubject = secondary ? `${primary} and ${secondary}` : primary;
+  const supList = contextProfile.supportingEntities || [];
+  const supporting = supList.length > 0 ? supList.slice(0, 3).join(', ') : '';
+  const specificSup = supList.length > 0 ? supList[paragraphIndex % supList.length] : '';
+  const loc =
+    contextProfile.locationKeywords && contextProfile.locationKeywords.length > 0
+      ? contextProfile.locationKeywords
+          .slice(0, 2)
+          .map((l) => l.replace(/\b\w/g, (c) => c.toUpperCase()))
+          .join(' and ')
+      : '';
+  const outfit =
+    contextProfile.outfitKeywords && contextProfile.outfitKeywords.length > 0
+      ? contextProfile.outfitKeywords[paragraphIndex % contextProfile.outfitKeywords.length]
+      : '';
+  const timeframe =
+    contextProfile.timeframeKeywords && contextProfile.timeframeKeywords.length > 0
+      ? contextProfile.timeframeKeywords[paragraphIndex % contextProfile.timeframeKeywords.length]
+      : '';
+  const category = contextProfile.articleCategory || 'celebrity_lifestyle';
 
-  const pool = language === 'vi' ? viElaborations : enElaborations;
-  let combined = clean;
+  const localNames = (
+    cleanBase.match(/\b[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})+\b/g) || []
+  ).filter((n) => !/^(Considering Season|From Nevermore|Beyond Nevermore|While Wednesday|Because Thing|As Season)$/i.test(n));
+  const localFocusEntity = localNames[0] || specificSup || primary;
+
+  const baseWordsCount = cleanBase.split(/\s+/).filter(Boolean).length;
+  let combined = cleanBase;
+  if (baseWordsCount < 35 && allFactsPool && allFactsPool.length > 1) {
+    const companionFact = allFactsPool[(paragraphIndex * 3 + 1) % allFactsPool.length];
+    if (companionFact && !combined.includes(companionFact.slice(0, 25))) {
+      combined = `${combined} ${companionFact}`;
+    }
+  }
+
+  let contextualElaborations = [];
+
+  if (language === 'vi') {
+    if (category === 'screen_production') {
+      contextualElaborations = [
+        `Đi sâu vào chi tiết nội dung này, khán giả có thể thấy rõ tâm huyết của đội ngũ sản xuất cũng như diễn xuất ấn tượng của ${coupleOrSubject}${supporting ? ` cùng sự góp mặt của ${supporting}` : ''}. Việc đầu tư kỹ lưỡng từ bối cảnh quay${loc ? ` tại ${loc}` : ''} cho đến chiều sâu tâm lý nhân vật giúp mạch truyện trở nên cuốn hút, chặt chẽ và giàu kịch tính hơn qua từng phân cảnh.`,
+        `Bên cạnh những thông tin cốt lõi vừa được hé lộ${timeframe ? ` xoay quanh cột mốc ${timeframe}` : ''}, giới phê bình đánh giá rất cao cách xây dựng thế giới nhân vật quanh ${localFocusEntity}. Sự kết hợp ăn ý giữa các gương mặt quen thuộc và những nhân tố mới mang lại làn gió tươi mới, mở ra nhiều nút thắt bất ngờ khiến người xem không ngừng mong đợi.`,
+        `Nhìn từ góc độ nghệ thuật và quy mô thực hiện, từng chi tiết về tạo hình, bối cảnh${loc ? ` ở ${loc}` : ''} lẫn đường dây kịch bản đều phản ánh bước tiến lớn của dự án gắn liền với ${coupleOrSubject}. Những hé lộ thực tế từ hậu trường cho thấy toàn bộ ê-kíp đã làm việc tỉ mỉ để giữ trọn bản sắc độc đáo vốn đã làm nên sức hút vang dội của tác phẩm.`,
+        `Hơn thế nữa, sự phối hợp giữa ${coupleOrSubject}${supporting ? ` và các cộng sự như ${supporting}` : ''} tiếp tục khẳng định sức hút bền bỉ của thương hiệu trong lòng khán giả toàn cầu. Mỗi tình tiết được phát triển trong nội dung bài viết đều góp phần làm sáng tỏ bức tranh toàn cảnh về hành trình tiếp theo của các nhân vật chính.`,
+        `Đặc biệt, cách triển khai mạch truyện xoay quanh ${localFocusEntity} cho thấy sự cân bằng khéo léo giữa yếu tố bí ẩn đặc trưng và chiều sâu cảm xúc. Người hâm mộ theo dõi sát sao từng bước phát triển của dự án đều nhận định rằng những thay đổi này sẽ tạo nên điểm nhấn bùng nổ khi tác phẩm chính thức ra mắt.`,
+        `Không dừng lại ở đó, việc mở rộng không gian câu chuyện${loc ? ` sang ${loc}` : ''} cùng những thử thách mới dành cho ${primary} giúp tác phẩm duy trì được nhịp độ lôi cuốn từ đầu đến cuối. Từng chi tiết nhỏ trong kịch bản đều được cài cắm có chủ đích, hứa hẹn mang đến trải nghiệm điện ảnh mãn nhãn.`,
+      ];
+    } else {
+      contextualElaborations = [
+        `Phân tích sâu hơn từ những chi tiết thực tế trong bài viết, có thể thấy ${coupleOrSubject} đang tận hưởng trọn vẹn từng khoảnh khắc đáng nhớ${loc ? ` tại ${loc}` : ''}${timeframe ? ` vào dịp ${timeframe}` : ''}. Từ phong thái tự nhiên${outfit ? ` trong trang phục ${outfit}` : ''} cho đến sự gắn kết ăn ý, mọi khung hình đều khắc họa rõ nét cuộc sống đời thường ấm áp và chân thực của nhân vật.`,
+        `Đặt trong mạch câu chuyện xuyên suốt bài viết, mối quan hệ và nhịp sống của ${coupleOrSubject}${supporting ? ` cũng như sự gắn bó với ${supporting}` : ''} cho thấy sự cân bằng tinh tế giữa sự nghiệp bận rộn và không gian riêng tư. Những khoảnh khắc sẻ chia bình dị${loc ? ` nơi ${loc}` : ''} chính là chất keo gắn kết giúp câu chuyện nhận được sự đồng cảm lớn từ công chúng.`,
+        `Không chỉ gây ấn tượng bởi vẻ ngoài rạng rỡ${outfit ? ` cùng lựa chọn ${outfit}` : ''}, hành trình của ${primary}${secondary ? ` bên cạnh ${secondary}` : ''} còn phản ánh một giai đoạn trưởng thành, viên mãn và tràn đầy năng lượng tích cực. Từng chi tiết cụ thể được ghi nhận trong bài đều làm nổi bật tính cách gần gũi, chân thành phía sau ánh hào quang.`,
+        `Nhìn lại toàn bộ các dữ kiện xoay quanh ${coupleOrSubject}${timeframe ? ` từ ${timeframe}` : ''}, người hâm mộ càng thêm ngưỡng mộ cách nhân vật trân trọng những giá trị gia đình và cảm xúc thật. Sự hòa quyện giữa công việc, cuộc sống cá nhân và những chuyến đi ý nghĩa${loc ? ` tại ${loc}` : ''} đã tạo nên một dấu ấn đẹp đẽ và đầy sức sống.`,
+        `Qua góc nhìn của những người theo dõi lâu năm, những hình ảnh và chi tiết gắn liền với ${localFocusEntity} minh chứng cho sức hút tự nhiên không cần phô trương. Chính sự giản dị, tinh tế trong từng cử chỉ đời thường lại tạo nên sức lan tỏa mạnh mẽ hơn bất kỳ sự kiện hào nhoáng nào.`,
+        `Thêm vào đó, cách ${coupleOrSubject} gìn giữ sự riêng tư nhưng vẫn thoải mái tận hưởng niềm vui bên những người thân yêu${supporting ? ` như ${supporting}` : ''} mang đến nguồn cảm hứng tích cực. Mỗi dấu mốc được đề cập trong bài đều góp phần hoàn thiện bức chân dung sống động và chân thực.`,
+      ];
+    }
+  } else {
+    if (category === 'screen_production') {
+      contextualElaborations = [
+        `Expanding on these specific production details, viewers can appreciate how thoughtfully the creative team and ${coupleOrSubject}${supporting ? `, alongside ${supporting},` : ''} are shaping the next chapter of the story. From the atmospheric filming locations${loc ? ` across ${loc}` : ''} to the intricate character dynamics, every element has been crafted to deepen the central mystery while honoring the distinctive tone that audiences love.`,
+        `Looking closer at the developments unfolding around ${localFocusEntity}${timeframe ? ` heading into ${timeframe}` : ''}, longtime fans and television critics alike have noted how seamlessly the new casting additions and narrative arcs build upon earlier foundations. By weaving together family lore, sharp wit, and high-stakes suspense${supporting ? ` involving figures like ${supporting}` : ''}, the series continues to expand its creative scope in compelling ways.`,
+        `From a storytelling and visual design perspective, the choices surrounding ${coupleOrSubject}${loc ? ` and settings such as ${loc}` : ''} play a vital role in establishing mood and pacing before a single line of dialogue is spoken. Every wardrobe detail, architectural backdrop, and behind-the-scenes decision works in harmony to make the onscreen world feel both immersive and unmistakably distinctive.`,
+        `Furthermore, the collaborative synergy between ${coupleOrSubject}${supporting ? ` and creative forces including ${supporting}` : ''} underscores why anticipation remains so high among global viewers. Each concrete update from the production reinforces a commitment to bold character evolution, ensuring that the upcoming episodes deliver both emotional resonance and unforgettable twists.`,
+        `Delving deeper into the narrative implications for ${localFocusEntity}, industry observers point out that balancing established canon with fresh dramatic tension requires exceptional precision. As the storyline ventures into uncharted territory${loc ? ` around ${loc}` : ''}, the interplay between veteran performers and newcomers promises to elevate the stakes significantly.`,
+        `At the same time, the visual and thematic continuity anchored by ${primary}${secondary ? ` and ${secondary}` : ''} ensures that the heart of the series remains intact even as its world grows darker and more complex. Fans analyzing each detail from the set recognize how deliberately these clues set the stage for a landmark television event.`,
+        `Equally important is how the production schedule${timeframe ? ` around ${timeframe}` : ''} reflects the ambitious scale of the project. With intricate set pieces, gothic aesthetics, and tightly guarded plot turns involving ${specificSup || primary}, the creative team is leaving no stone unturned in delivering a worthy continuation.`,
+        `In addition, the emphasis on character-driven mystery allows ${localFocusEntity} to explore new emotional dimensions while preserving the razor-sharp humor that defined earlier chapters. Every scene and casting choice highlighted in the coverage points toward a richer, more expansive television experience.`,
+        `Considering the global reception of ${primary}'s performance, it comes as no surprise that every behind-the-scenes update${loc ? ` from ${loc}` : ''} sparks widespread analysis across entertainment circles. The careful integration of lore, atmosphere, and ensemble chemistry remains the cornerstone of the show's enduring appeal.`,
+        `Moreover, by spotlighting ${specificSup || coupleOrSubject} within this evolving arc, the writers open the door to deeper secrets and long-awaited confrontations. Viewers who have followed the clues from the beginning can see how organically these new elements fit into the overarching mythology.`,
+      ];
+    } else if (category === 'red_carpet_event') {
+      contextualElaborations = [
+        `Unpacking the details of this memorable appearance, observers can clearly see how ${coupleOrSubject} brought an unmistakable blend of warmth, confidence, and grace to the occasion${loc ? ` in ${loc}` : ''}. Whether dazzling in ${outfit || 'striking couture'} or sharing genuine, supportive moments behind the scenes, every aspect of the outing reflected a deeply grounded sense of self-assurance.`,
+        `Looking deeper into the personal and professional milestones surrounding ${localFocusEntity}${supporting ? `, as well as projects and loved ones like ${supporting},` : ''} reveals how intentional choices have shaped this fulfilling chapter. Balancing high-profile television and film commitments with meaningful personal priorities has allowed ${primary} to shine with authentic poise.`,
+        `From a fashion and cultural standpoint, ${primary}'s hands-on approach to styling${outfit ? `—highlighted by the ${outfit}—` : ' '}resonates strongly with audiences who value body confidence and individuality. Rather than following rigid industry formulas, every public moment and candid interaction${loc ? ` in ${loc}` : ''} celebrates real strength, mutual respect, and creative empowerment.`,
+        `Moreover, the natural chemistry and quiet support between ${coupleOrSubject} illustrate how meaningful companionship thrives alongside a demanding entertainment career. Each detail shared from the appearance offers fans an inspiring glimpse into a life built on patience, artistic passion, and genuine happiness.`,
+        `Reflecting on the broader journey of ${localFocusEntity}${timeframe ? ` around ${timeframe}` : ''}, commentators have praised the refreshing honesty and elegance on display throughout the event. By embracing every milestone with confidence and gratitude, ${primary} continues to set a powerful example both on and off the red carpet.`,
+        `Beyond the flashbulbs and formal poses${loc ? ` at ${loc}` : ''}, it is the candid warmth between ${coupleOrSubject}${specificSup ? ` and ${specificSup}` : ''} that leaves the strongest impression. Moments like these remind audiences that authentic connection and self-expression remain the most timeless style statements of all.`,
+        `Furthermore, the career momentum surrounding ${primary}${supporting ? ` across projects involving ${supporting}` : ''} adds even greater significance to this public celebration. Seeing artistic accomplishment paired with personal fulfillment underscores why admirers remain so supportive of every new endeavor.`,
+        `As conversations around the event continue, fashion editors and fans alike point to ${localFocusEntity}'s presence as a standout highlight of the season. Every thoughtful detail—from wardrobe craftsmanship to heartfelt remarks—reflects a star completely at ease in the spotlight.`,
+      ];
+    } else if (category === 'retrospective_feature') {
+      contextualElaborations = [
+        `Examining the historical context and specific details surrounding ${coupleOrSubject}${loc ? ` in ${loc}` : ''}${timeframe ? ` during ${timeframe}` : ''} offers readers a much richer understanding of the moment captured on camera. Rather than viewing these snapshots in isolation, looking at the real timeline, personal relationships${supporting ? `, and key figures such as ${supporting}` : ''} preserves the true meaning behind the archive.`,
+        `When revisiting the documented facts around ${localFocusEntity}, cultural historians and devoted followers emphasize how important accurate context remains in entertainment journalism. Every detail—from ${outfit || 'the candid styling'} to the setting${loc ? ` of ${loc}` : ''}—serves as a tangible link to an unforgettable chapter in pop culture history.`,
+        `Stepping back to appreciate the broader legacy of ${coupleOrSubject}${timeframe ? ` across ${timeframe}` : ''}, it becomes clear why audiences continue to revisit these enduring stories and photographs. The combination of creative brilliance, candid human vulnerability, and timeless charisma ensures that their impact remains deeply felt years later.`,
+        `Ultimately, preserving the genuine narrative around ${primary}${supporting ? ` alongside ${supporting}` : ''} allows both longtime admirers and new generations to connect with the real history behind the images. Each verified detail adds depth, respect, and emotional clarity to a remarkable life and career.`,
+        `Looking closer at how ${localFocusEntity} navigated both public adulation and private bonds${loc ? ` in ${loc}` : ''} reveals a portrait of rare authenticity. Unlike staged publicity shoots, these documented moments capture the unvarnished grace and emotional truth that defined an era.`,
+        `In addition, the enduring interest in ${coupleOrSubject}${specificSup ? ` and their connection with ${specificSup}` : ''} speaks to the lasting power of genuine artistry and human connection. By separating myth from documented reality, readers gain a far more meaningful appreciation for their story.`,
+        `Across the decades${timeframe ? ` since ${timeframe}` : ''}, the influence of ${primary} has only grown stronger as biographers and fans uncover the full context behind these iconic chapters. Every preserved photograph and firsthand account enriches our collective memory of a truly singular figure.`,
+        `Taken in full perspective, the story of ${localFocusEntity} reminds us that behind every legendary career lies a tapestry of quiet friendships, personal resilience, and unscripted moments that deserve to be remembered with care and accuracy.`,
+      ];
+    } else {
+      contextualElaborations = [
+        `Looking closely at the specific details of this getaway${loc ? ` in ${loc}` : ''}${timeframe ? ` on ${timeframe}` : ''}, it is easy to see why ${coupleOrSubject} appeared so thoroughly relaxed and in sync. From ${outfit ? `the effortless summer styling featuring ${outfit}` : 'their effortless coastal aesthetic'} to the unhurried pace of the afternoon, every moment reflected genuine affection away from demanding schedules.`,
+        `Tracing the broader arc of ${coupleOrSubject}'s relationship${timeframe ? ` since ${timeframe}` : ''}${loc ? ` across destinations like ${loc}` : ''}, insiders and longtime observers note how naturally their partnership has flourished. By prioritizing uninterrupted quality time and blending their respective worlds${supporting ? `—including ${supporting}—` : ''}, they have built a remarkably grounded and supportive dynamic.`,
+        `Beyond the sun-drenched scenery${loc ? ` of ${loc}` : ''}, what stands out most about ${primary} and ${secondary || 'their inner circle'} is the seamless balance between high-level professional achievements${supporting ? ` involving ${supporting}` : ''} and quiet family routines. Every candid gesture captured during the outing speaks to a mature, joyful chapter defined by mutual respect and shared contentment.`,
+        `Furthermore, seeing ${coupleOrSubject} embrace these unscripted moments${loc ? ` along the coast of ${loc}` : ''} offers fans a refreshing glimpse into life behind the spotlight. Rather than grand spectacle, it is the simple warmth of shared laughter, coastal breezes, and close family bonds that makes their story so genuinely compelling.`,
+        `Focusing on the personal milestones surrounding ${localFocusEntity}, those close to the pair have consistently highlighted how refreshing it is to keep their romance low-key and authentic. Whether spending time in ${loc || 'their favorite retreats'} or navigating busy work commitments, their mutual devotion remains unmistakable.`,
+        `At the same time, ${primary}'s ability to juggle major creative ventures${specificSup ? ` alongside connections to ${specificSup}` : ''} while carving out peaceful getaways with ${secondary || 'loved ones'} demonstrates an inspiring sense of balance. Every detail from the trip underscores a season of calm happiness and emotional renewal.`,
+        `Observers also note how effortlessly ${coupleOrSubject} have integrated their friends and family${supporting ? `, including ${supporting},` : ''} into this new chapter. That foundation of trust and shared joy shines through in every candid photograph from the outing.`,
+        `Ultimately, the enduring warmth between ${coupleOrSubject}${loc ? ` during their time in ${loc}` : ''} captures the essence of a partnership built on genuine compatibility. Away from red carpets and studio sets, these quiet, sun-lit moments tell the truest story of all.`,
+      ];
+    }
+  }
+
   let attempt = 0;
-
-  while (combined.split(/\s+/).filter(Boolean).length < 138 && attempt < 4) {
-    const addon = pool[(sectionIdx + attempt) % pool.length];
-    combined = combined ? `${combined} ${addon}` : addon;
+  while (combined.split(/\s+/).filter(Boolean).length < 140 && attempt < contextualElaborations.length) {
+    const addon =
+      contextualElaborations[(paragraphIndex * 2 + attempt) % contextualElaborations.length];
+    if (!combined.includes(addon.slice(0, 36))) {
+      combined = combined ? `${combined} ${addon}` : addon;
+    }
     attempt++;
   }
 
   const finalWords = combined.split(/\s+/).filter(Boolean);
   if (finalWords.length > 172) {
     const sliced = finalWords.slice(0, 162).join(' ');
-    const lastDot = Math.max(sliced.lastIndexOf('. '), sliced.lastIndexOf('! '), sliced.lastIndexOf('? '));
-    if (lastDot > 550) {
+    const lastDot = Math.max(
+      sliced.lastIndexOf('. '),
+      sliced.lastIndexOf('! '),
+      sliced.lastIndexOf('? ')
+    );
+    if (lastDot > 520) {
       return sliced.slice(0, lastDot + 1).trim();
     }
     return `${sliced}.`;
   }
 
   return finalWords.join(' ');
+}
+
+function buildContentDrivenSubheadings(contextProfile, originalHeadings, language) {
+  const isVi = language === 'vi';
+  const primary = contextProfile.primaryPerson || contextProfile.subjectDisplay || 'Nhân vật chính';
+  const secondary = contextProfile.secondaryPerson || '';
+  const subjectPair = secondary ? `${primary} & ${secondary}` : primary;
+  const loc1 = contextProfile.locationKeywords && contextProfile.locationKeywords[0]
+    ? contextProfile.locationKeywords[0].replace(/\b\w/g, (c) => c.toUpperCase())
+    : '';
+  const sup1 = (contextProfile.supportingEntities && contextProfile.supportingEntities[0]) || '';
+  const sup2 = (contextProfile.supportingEntities && contextProfile.supportingEntities[1]) || '';
+  const time1 = (contextProfile.timeframeKeywords && contextProfile.timeframeKeywords[0]) || '';
+  const outfit1 = (contextProfile.outfitKeywords && contextProfile.outfitKeywords[0]) || '';
+  const cat = contextProfile.articleCategory;
+
+  const cleanOrig = (originalHeadings || [])
+    .map((h) => h.replace(/^##\s*/, '').trim())
+    .filter((h) => h.length >= 8 && h.length <= 120);
+
+  let generated = [];
+
+  if (isVi) {
+    if (cat === 'screen_production') {
+      generated = [
+        `Cột Mốc Sản Xuất Mới Nhất Của ${subjectPair}${loc1 ? ` Tại ${loc1}` : ''}`,
+        `Dàn Diễn Viên Thực Lực Và Sự Góp Mặt Của ${sup1 || primary}${sup2 ? ` Cùng ${sup2}` : ''}`,
+        `Bối Cảnh Quay Ấn Tượng${loc1 ? ` Ở ${loc1}` : ''} Và Phong Cách Nghệ Thuật Đặc Trưng`,
+        `Chia Sẻ Từ Đội Ngũ Sáng Tạo Về Hướng Đi Mới Của ${primary}`,
+        `Chiều Sâu Tâm Lý Nhân Vật Và Những Bí Ẩn Đang Chờ Hé Lộ`,
+        `Lịch Trình Ra Mắt${time1 ? ` (${time1})` : ''} Và Kỳ Vọng Từ Khán Giả Toàn Cầu`,
+      ];
+    } else {
+      generated = [
+        `Khoảnh Khắc Đời Thường Đáng Nhớ Của ${subjectPair}${loc1 ? ` Tại ${loc1}` : ''}`,
+        `Phong Cách Thời Trang Tự Nhiên${outfit1 ? `: Điểm Nhấn ${outfit1}` : ` Của ${primary}`}`,
+        `Hành Trình Gắn Kết Và Sự Đồng Điệu Giữa ${subjectPair}`,
+        `Sự Cân Bằng Giữa Sự Nghiệp Đỉnh Cao Và Không Gian Riêng Tư`,
+        `Mối Quan Hệ Gần Gũi Với Gia Đình Và ${sup1 || 'Những Người Thân Yêu'}`,
+        `Sức Hút Chân Thực Của ${primary} Trong Lòng Người Hâm Mộ`,
+      ];
+    }
+  } else {
+    if (cat === 'screen_production') {
+      generated = [
+        `Inside the Production Milestone Featuring ${subjectPair}${loc1 ? ` in ${loc1}` : ''}`,
+        `New and Returning Cast Additions${sup1 ? `: ${sup1}${sup2 ? ` and ${sup2}` : ''}` : ''}`,
+        `Atmospheric Locations${loc1 ? ` Across ${loc1}` : ''} and Signature Visual Identity`,
+        `Showrunners and Creative Leadership on Expanding ${primary}'s World`,
+        `Character Evolution, Family Lore, and Deepening Mysteries`,
+        `What Viewers Can Expect Ahead of the ${time1 || 'Upcoming'} Release`,
+      ];
+    } else if (cat === 'red_carpet_event') {
+      generated = [
+        `${subjectPair} Shining Together${loc1 ? ` in ${loc1}` : ''}`,
+        `Signature Couture and Hands-On Styling${outfit1 ? `: The ${outfit1}` : ''}`,
+        `Balancing Screen Milestones${sup1 ? ` Like ${sup1}` : ''} With Personal Fulfillment`,
+        `Mutual Support and Lasting Chemistry Behind the Scenes`,
+        `Championing Confidence, Individuality, and Authentic Grace`,
+        `What Comes Next for ${primary} on Screen and Beyond`,
+      ];
+    } else if (cat === 'retrospective_feature') {
+      generated = [
+        `The Real Context Behind ${subjectPair}'s Iconic Moment${time1 ? ` (${time1})` : ''}`,
+        `Inside the Setting${loc1 ? ` of ${loc1}` : ''} and Genuine Personal Bonds`,
+        `How ${primary}${sup1 ? ` and ${sup1}` : ''} Shaped an Unforgettable Era`,
+        `Separating Documented History From Pop Culture Myth`,
+        `Enduring Artistry, Charisma, and Cultural Impact`,
+        `Why ${primary}'s Legacy Continues to Resonate With Generations`,
+      ];
+    } else {
+      generated = [
+        `Inside ${subjectPair}'s Sun-Soaked Getaway${loc1 ? ` in ${loc1}` : ''}`,
+        `Effortless Coastal Style${outfit1 ? `: Highlighting the ${outfit1}` : ` and Candid Moments`}`,
+        `How ${subjectPair}'s Low-Key Romance Has Flourished${time1 ? ` Since ${time1}` : ''}`,
+        `Balancing Career Ventures${sup1 ? ` and ${sup1}` : ''} With Private Serenity`,
+        `Family Harmony and Blending Worlds${sup2 ? ` With ${sup2}` : ''}`,
+        `A Grounded, Joyful Chapter Ahead for ${subjectPair}`,
+      ];
+    }
+  }
+
+  const combined = [];
+  for (const h of [...cleanOrig, ...generated]) {
+    if (!combined.includes(h)) combined.push(h);
+  }
+  return combined.slice(0, 9);
 }
 
 function buildLongFormSeoArticle2000To5000Words({
@@ -1099,195 +1454,192 @@ function buildLongFormSeoArticle2000To5000Words({
   images,
   youtubeVideos,
   language,
+  contextProfile,
 }) {
   const isVi = language === 'vi';
-  const subject = focusKeyword || articleTitle.split(/[:–—|-]/)[0].trim() || 'the star';
+  const profile =
+    contextProfile ||
+    analyzeArticleSubjectAndContext(articleTitle, sourceArticleText, focusKeyword, images);
 
-  const rawParagraphs = [];
-  if (sourceArticleText) {
-    for (const line of String(sourceArticleText).split(/\n+/)) {
-      const t = line.replace(/\s+/g, ' ').trim();
-      if (t.length > 35 && !rawParagraphs.includes(t)) {
-        rawParagraphs.push(t);
+  const rawLines = String(sourceArticleText || '')
+    .split(/\n+/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+
+  const originalHeadings = [];
+  const sourceParagraphs = [];
+
+  for (const line of rawLines) {
+    if (line.startsWith('## ')) {
+      originalHeadings.push(line.replace(/^##\s*/, '').trim());
+    } else if (
+      line.length >= 12 &&
+      line.length <= 85 &&
+      !/[.!]$/.test(line) &&
+      (line.endsWith('?') || /^[a-z0-9\s'’“-]+$/i.test(line))
+    ) {
+      originalHeadings.push(line);
+    } else if (line.length >= 25) {
+      sourceParagraphs.push(line);
+    }
+  }
+
+  const allSourceSentences = [];
+  for (const sp of sourceParagraphs) {
+    const sents = splitIntoSentences(sp);
+    for (const s of sents) {
+      if (!allSourceSentences.includes(s)) {
+        allSourceSentences.push(s);
       }
     }
   }
 
-  const sectionBlueprints = isVi
+  const factUnits = [];
+  for (const sp of sourceParagraphs) {
+    const sents = splitIntoSentences(sp);
+    if (sents.length >= 3) {
+      const mid = Math.ceil(sents.length / 2);
+      factUnits.push(sents.slice(0, mid).join(' '));
+      factUnits.push(sents.slice(mid).join(' '));
+    } else if (sents.length === 2 && sp.split(/\s+/).length >= 45) {
+      factUnits.push(sents[0]);
+      factUnits.push(sents[1]);
+    } else {
+      factUnits.push(sp);
+    }
+  }
+
+  const primary = profile.primaryPerson || profile.subjectDisplay || 'the star';
+  const secondary = profile.secondaryPerson || '';
+  const subjectPair = secondary ? `${primary} and ${secondary}` : primary;
+  const locs = (profile.locationKeywords || []).map((l) =>
+    l.replace(/\b\w/g, (c) => c.toUpperCase())
+  );
+  const sups = profile.supportingEntities || [];
+  const outfits = profile.outfitKeywords || [];
+  const timeframes = profile.timeframeKeywords || [];
+
+  const synthesisAngles = isVi
     ? [
-        {
-          h2: `1. Toàn cảnh câu chuyện: ${articleTitle}`,
-          seeds: [
-            `Câu chuyện xoay quanh "${articleTitle}" đang nhanh chóng trở thành một trong những chủ đề tâm điểm thu hút sự quan tâm lớn từ công chúng và người hâm mộ. Ngay từ những hình ảnh và thông tin đầu tiên xuất hiện, ${subject} đã gây ấn tượng mạnh mẽ bởi thần thái tự nhiên, cuốn hút cùng những khoảnh khắc đời thường đầy cảm xúc.`,
-            `Không chỉ dừng lại ở một tin tức giải trí thông thường, những chi tiết xoay quanh ${subject} còn mở ra góc nhìn gần gũi và chân thực hơn về cuộc sống phía sau ánh đèn sân khấu. Sự kết hợp giữa phong thái tự tin và không gian thư giãn đã tạo nên một bức tranh sinh động khiến khán giả không ngừng bàn luận.`,
-          ],
-        },
-        {
-          h2: `2. Những khoảnh khắc đắt giá và chi tiết ấn tượng nhất`,
-          seeds: [
-            `Đi sâu vào từng khoảnh khắc được ghi lại, người xem dễ dàng nhận thấy sự thoải mái và năng lượng tích cực toả ra từ ${subject}. Từng cử chỉ nhỏ, ánh nhìn cho đến nụ cười rạng rỡ đều phản ánh một tâm thế bình yên, tận hưởng trọn vẹn từng giây phút bên cạnh những người thân thiết.`,
-            `Nhiều người hâm mộ tinh ý nhận ra rằng chính sự giản dị, không phô trương trong cách xuất hiện của ${subject} lại tạo nên sức hút đặc biệt. Mỗi khung hình trong bài viết đều mang màu sắc tự nhiên, chân thật như một thước phim đời thường sống động.`,
-          ],
-        },
-        {
-          h2: `3. Phong cách, thần thái và dấu ấn cá nhân của ${subject}`,
-          seeds: [
-            `Bên cạnh câu chuyện chính, phong cách thời trang và thần thái của ${subject} trong dịp này cũng nhận được vô số lời khen ngợi từ các tạp chí đời sống và cộng đồng mạng. Sự lựa chọn trang phục tinh tế, hài hòa với bối cảnh giúp tôn lên vẻ đẹp khỏe khoắn, thanh lịch và đầy cuốn hút.`,
-            `Qua nhiều năm hoạt động, ${subject} luôn biết cách làm mới hình ảnh của mình mà vẫn giữ trọn vẹn bản sắc cá nhân. Dù xuất hiện tại các sự kiện lớn hay trong những chuyến nghỉ dưỡng riêng tư, sức hút tự nhiên ấy vẫn luôn tỏa sáng rõ nét.`,
-          ],
-        },
-        {
-          h2: `4. Bối cảnh hậu trường và câu chuyện phía sau ống kính`,
-          seeds: [
-            `Ít ai biết rằng đằng sau những khoảnh khắc thư giãn được chia sẻ rộng rãi là cả một hành trình làm việc nghiêm túc và bền bỉ của ${subject}. Việc dành thời gian nghỉ ngơi, tái tạo năng lượng và tận hưởng không gian riêng tư đóng vai trò vô cùng quan trọng để duy trì sự cân bằng trong cuộc sống.`,
-            `Những nguồn tin thân cận cho biết ${subject} luôn ưu tiên những khoảng lặng ý nghĩa bên gia đình, bạn bè và người đồng hành sau mỗi dự án dài hơi. Chính sự trân trọng những giá trị bình dị này đã giúp nhân vật giữ vững tinh thần lạc quan.`,
-          ],
-        },
-        {
-          h2: `5. Sự đồng hành, gắn kết và cảm xúc chân thành`,
-          seeds: [
-            `Một trong những điểm nhấn khiến khán giả đặc biệt yêu thích ở "${articleTitle}" chính là sự gắn kết ấm áp và tự nhiên giữa các nhân vật trong câu chuyện. Không cần những lời tuyên bố ồn ào, sự quan tâm tinh tế dành cho nhau qua từng hành động nhỏ đã nói lên tất cả.`,
-            `Trong mắt công chúng, những khoảnh khắc sẻ chia giản dị như vậy luôn có sức lay động mạnh mẽ hơn bất kỳ kịch bản cầu kỳ nào. Đó cũng là lý do khiến câu chuyện về ${subject} nhanh chóng nhận được sự đồng cảm sâu sắc từ người đọc ở nhiều độ tuổi.`,
-          ],
-        },
-        {
-          h2: `6. Phản ứng bùng nổ từ người hâm mộ và cộng đồng mạng`,
-          seeds: [
-            `Ngay sau khi loạt hình ảnh và thông tin về "${articleTitle}" được lan truyền, hàng loạt diễn đàn giải trí và mạng xã hội đã ghi nhận lượng tương tác tăng vọt. Hàng ngàn bình luận bày tỏ sự yêu mến, chúc phúc cũng như ngưỡng mộ trước cuộc sống viên mãn, tự tại của ${subject}.`,
-            `Nhiều khán giả lâu năm cũng chia sẻ lại những kỷ niệm và dấu ấn đáng nhớ trong sự nghiệp của ${subject}, tạo nên một làn sóng thảo luận sôi nổi và tích cực. Sự ủng hộ nồng nhiệt từ công chúng một lần nữa khẳng định vị trí vững chắc của nhân vật trong lòng người hâm mộ.`,
-          ],
-        },
-        {
-          h2: `7. Góc nhìn truyền thông và sức lan tỏa trong văn hóa đại chúng`,
-          seeds: [
-            `Dưới góc nhìn của các nhà phân tích truyền thông, sức hút từ câu chuyện "${articleTitle}" cho thấy xu hướng thưởng thức thông tin của độc giả hiện đại đang ngày càng hướng tới sự chân thực. Khán giả ngày nay yêu thích những hình ảnh đời thường, gần gũi và giàu cảm xúc thực tế của người nổi tiếng.`,
-            `Sự xuất hiện của ${subject} trong bối cảnh tự nhiên không chỉ mang lại cảm giác dễ chịu cho người xem mà còn truyền tải thông điệp ý nghĩa về việc yêu thương bản thân, tận hưởng hiện tại và trân trọng từng khoảnh khắc quý giá của cuộc sống.`,
-          ],
-        },
-        {
-          h2: `8. Hành trình phát triển và những cột mốc đáng nhớ của ${subject}`,
-          seeds: [
-            `Nhìn lại chặng đường đã qua, ${subject} đã không ngừng nỗ lực để khẳng định tài năng và bản lĩnh qua từng giai đoạn. Mỗi cột mốc trong sự nghiệp cũng như trong cuộc sống cá nhân đều để lại dấu ấn sâu đậm nhờ sự nghiêm túc, cầu thị và niềm đam mê bền bỉ.`,
-            `Chính nền tảng vững chắc đó đã giúp ${subject} luôn giữ được sự tự tin và phong độ ổn định trước mọi biến động. Người hâm mộ hoàn toàn có cơ sở để kỳ vọng vào những bước tiến mới đầy hứa hẹn của nhân vật trong thời gian tới.`,
-          ],
-        },
-        {
-          h2: `9. Tổng kết: Dư âm đẹp từ câu chuyện "${articleTitle}"`,
-          seeds: [
-            `Khép lại toàn bộ câu chuyện xoay quanh "${articleTitle}", điều đọng lại sâu sắc nhất trong lòng độc giả chính là nguồn năng lượng tích cực, sự bình yên và vẻ đẹp chân thực của ${subject}. Mỗi bức ảnh và từng chi tiết trong bài đều góp phần khắc họa một khoảnh khắc đáng nhớ.`,
-            `Trong thời gian tới, chắc chắn những thông tin và hoạt động mới tiếp theo của ${subject} sẽ tiếp tục nhận được sự dõi theo nồng nhiệt từ khán giả. Hãy cùng xem thêm các hình ảnh minh họa chi tiết và 2 video liên quan đặc sắc ngay bên dưới để có góc nhìn trọn vẹn nhất.`,
-          ],
-        },
+        allSourceSentences[0]
+          ? `Đi sâu phân tích chi tiết mở đầu trong bài viết: ${allSourceSentences[0]}`
+          : `Trọng tâm của câu chuyện xoay quanh ${subjectPair}${locs[0] ? ` tại ${locs[0]}` : ''} cùng những diễn biến thực tế đang thu hút sự chú ý lớn.`,
+        allSourceSentences[1]
+          ? `Khía cạnh tiếp theo được làm rõ trong nội dung bài là ${allSourceSentences[1]}`
+          : `Mỗi chi tiết xoay quanh ${primary}${secondary ? ` và ${secondary}` : ''}${outfits[0] ? ` với hình ảnh ${outfits[0]}` : ''} đều mang lại góc nhìn sinh động và chân thực.`,
+        allSourceSentences[2]
+          ? `Đáng chú ý hơn, bài viết nhấn mạnh vào cột mốc quan trọng: ${allSourceSentences[2]}`
+          : `Sự kết nối giữa ${subjectPair}${sups[0] ? ` cùng các yếu tố liên quan tới ${sups[0]}` : ''} tạo nên chiều sâu đặc biệt cho toàn bộ mạch truyện.`,
+        allSourceSentences[3]
+          ? `Nhìn từ bối cảnh thực tế được đề cập: ${allSourceSentences[3]}`
+          : `Tại ${locs.join(' và ') || 'bối cảnh chính của câu chuyện'}, ${subjectPair} đã để lại nhiều ấn tượng sâu sắc qua từng hoạt động cụ thể.`,
+        allSourceSentences[4]
+          ? `Một chi tiết đắt giá khác trong bài viết cũng thu hút sự quan tâm đặc biệt: ${allSourceSentences[4]}`
+          : `Quá trình phát triển${timeframes[0] ? ` gắn liền với mốc thời gian ${timeframes[0]}` : ''} cho thấy bước chuyển mình rõ nét của ${primary}.`,
+        allSourceSentences[5]
+          ? `Tiếp nối mạch thông tin trong bài: ${allSourceSentences[5]}`
+          : `Bên cạnh nhân vật trung tâm là ${primary}, sự xuất hiện của ${secondary || sups.slice(0, 2).join(', ') || 'các cộng sự'} càng làm nổi bật bức tranh toàn cảnh.`,
+        allSourceSentences[6]
+          ? `Khép lại chuỗi dữ kiện cốt lõi trong bài viết: ${allSourceSentences[6]}`
+          : `Tổng hợp toàn bộ những thông tin thực tế xoay quanh ${subjectPair}, độc giả có thể cảm nhận trọn vẹn giá trị và sức hút của câu chuyện.`,
       ]
     : [
-        {
-          h2: `1. The Full Story Behind: ${articleTitle}`,
-          seeds: [
-            `The unfolding story surrounding "${articleTitle}" has quickly captured the imagination of entertainment readers and devoted fans alike. From the very first candid snapshots that surfaced online, ${subject} drew widespread admiration for projecting effortless warmth, genuine relaxation, and an unmistakable sense of joy that immediately stood out across social media feeds.`,
-            `Beyond the initial headlines, a closer look at ${subject} during this memorable outing reveals why audiences remain so deeply connected to authentic, unscripted celebrity moments. Rather than a staged publicity appearance, every detail of the day reflected natural ease, companionship, and a refreshing break from the demands of the spotlight.`,
-          ],
-        },
-        {
-          h2: `2. Key Highlights and Unfiltered Candid Moments`,
-          seeds: [
-            `Examining the standout moments from "${articleTitle}", observers immediately noticed how relaxed and present ${subject} appeared throughout the entire experience. Every shared laugh, unhurried stroll, and sunlit backdrop contributed to an atmosphere of pure contentment that fans rarely get to witness in such vivid detail.`,
-            `What makes these glimpses of ${subject} especially compelling is the complete absence of pretension. In an era dominated by heavily curated digital personas, seeing genuine spontaneity and real-life happiness unfold naturally creates an immediate emotional bond with readers everywhere.`,
-          ],
-        },
-        {
-          h2: `3. Effortless Style, Poise, and Visual Presence`,
-          seeds: [
-            `Style watchers and entertainment editors were equally quick to praise the effortless aesthetic displayed by ${subject} in "${articleTitle}". Combining comfort with timeless elegance, the look complemented the relaxed setting while showcasing the natural confidence and radiant energy that have long defined the star's public appeal.`,
-            `Over the years, ${subject} has consistently demonstrated an innate ability to turn even the simplest off-duty outing into a masterclass in understated grace. Whether appearing on international red carpets or enjoying a quiet getaway, that signature poise remains unmistakable.`,
-          ],
-        },
-        {
-          h2: `4. Behind the Scenes: Balancing Fame and Personal Peace`,
-          seeds: [
-            `To truly appreciate the significance of "${articleTitle}", it helps to consider the demanding pace of ${subject}'s professional journey. Between rigorous production schedules, media commitments, and creative projects, carving out dedicated time to unwind and recharge away from cameras is essential for long-term well-being.`,
-            `Those familiar with ${subject}'s approach to life and career often note a deliberate emphasis on protecting meaningful personal time. Stepping back to enjoy simple pleasures alongside trusted companions offers a vital sense of grounding that fuels both personal happiness and artistic longevity.`,
-          ],
-        },
-        {
-          h2: `5. Genuine Connection and Shared Companionship`,
-          seeds: [
-            `At the heart of "${articleTitle}" lies a warm portrait of companionship and mutual support. Throughout the outing, the natural chemistry and relaxed body language around ${subject} spoke volumes, illustrating how meaningful relationships thrive on quiet everyday moments rather than grand public gestures.`,
-            `For fans following the story, seeing ${subject} surrounded by genuine warmth and affection proved especially heartwarming. It serves as a powerful reminder that behind global recognition and industry accolades, the most cherished chapters of life are built on trust, laughter, and shared presence.`,
-          ],
-        },
-        {
-          h2: `6. How Fans and Social Media Are Reacting Worldwide`,
-          seeds: [
-            `Within hours of "${articleTitle}" circulating online, fan communities and entertainment platforms lit up with thousands of supportive comments and reactions. Admirers from around the globe praised ${subject} for looking radiant, happy, and completely at ease, turning the story into one of the week's most uplifting trending topics.`,
-            `Long-time supporters also took the opportunity to reflect on ${subject}'s enduring impact, sharing favorite memories and celebrating the positive energy evident in every photo. The overwhelmingly warm reception underscores the deep goodwill and respect the star has cultivated with audiences over time.`,
-          ],
-        },
-        {
-          h2: `7. Cultural Context and the Appeal of Authentic Stardom`,
-          seeds: [
-            `Media commentators observing the response to "${articleTitle}" point out a broader shift in how modern audiences engage with celebrity culture. Today's readers gravitate strongly toward stories that highlight real humanity, emotional honesty, and relatable lifestyle moments rather than manufactured drama.`,
-            `By embracing a grounded, authentic way of living, ${subject} exemplifies the kind of modern stardom that resonates across generations. Every candid image from this chapter reinforces a message of balance, self-assurance, and appreciation for life's simple joys.`,
-          ],
-        },
-        {
-          h2: `8. Career Evolution and Lasting Legacy of ${subject}`,
-          seeds: [
-            `Looking at the bigger picture, "${articleTitle}" arrives during a fascinating chapter in the ongoing evolution of ${subject}. Through dedication, versatility, and an unwavering commitment to craft, the star has built a remarkable body of work that continues to inspire both peers and newcomers alike.`,
-            `That hard-earned professional foundation allows ${subject} to navigate the entertainment world on their own terms, choosing projects and personal priorities with clarity and confidence. Fans eagerly anticipating what comes next can see that this sense of fulfillment sets the stage for even greater chapters ahead.`,
-          ],
-        },
-        {
-          h2: `9. Final Thoughts and Exclusive Video Highlights`,
-          seeds: [
-            `Ultimately, the enduring takeaway from "${articleTitle}" is a celebration of authenticity, joy, and well-deserved serenity for ${subject}. Every paragraph and photograph from this story captures a refreshing snapshot of life lived genuinely and wholeheartedly in the present moment.`,
-            `As conversations around ${subject} continue to unfold, be sure to explore the complete gallery of original and supplemental photographs throughout this feature, along with the two related YouTube videos embedded below for deeper context and memorable highlights.`,
-          ],
-        },
+        allSourceSentences[0]
+          ? `Taking a closer analytical look at the opening details of the report: ${allSourceSentences[0]}`
+          : `At the center of the story is ${subjectPair}${locs[0] ? ` in ${locs[0]}` : ''}, whose latest chapter brings together compelling personal and professional developments.`,
+        allSourceSentences[1]
+          ? `Building directly on the scene described in the coverage: ${allSourceSentences[1]}`
+          : `Every specific detail surrounding ${primary}${secondary ? ` and ${secondary}` : ''}${outfits[0] ? `, including the ${outfits[0]},` : ''} highlights the authentic atmosphere of the moment.`,
+        allSourceSentences[2]
+          ? `Another pivotal detail highlighted within the story notes how ${allSourceSentences[2].charAt(0).toLowerCase()}${allSourceSentences[2].slice(1)}`
+          : `The timeline connecting ${subjectPair}${timeframes[0] ? ` around ${timeframes[0]}` : ''}${locs[1] ? ` and ${locs[1]}` : ''} reveals a thoughtful, organic progression.`,
+        allSourceSentences[3]
+          ? `Examining the broader background shared in the article: ${allSourceSentences[3]}`
+          : `Key connections involving ${sups.slice(0, 3).join(', ') || subjectPair} add important context to how ${primary} navigates both career and personal priorities.`,
+        allSourceSentences[4]
+          ? `Further underscoring the depth of this chapter, the report points out: ${allSourceSentences[4]}`
+          : `Across ${locs.join(' and ') || 'each setting featured in the story'}, the interplay between ${subjectPair} demonstrates genuine poise and lasting chemistry.`,
+        allSourceSentences[5]
+          ? `Adding another layer of insight from the documented account: ${allSourceSentences[5]}`
+          : `Whether focusing on ${sups[0] || primary}'s creative milestones or quiet moments away from the cameras, the details paint a cohesive and engaging portrait.`,
+        allSourceSentences[6]
+          ? `Bringing together the final threads of the coverage: ${allSourceSentences[6]}`
+          : `Taken together, every fact surrounding ${subjectPair}${locs[0] ? ` in ${locs[0]}` : ''} underscores why audiences remain so invested in their ongoing journey.`,
       ];
 
-  const finalParagraphs150Words = [];
-  let rawCursor = 0;
-
-  sectionBlueprints.forEach((sec, secIdx) => {
-    for (let pIdx = 0; pIdx < 2; pIdx++) {
-      const rawCandidate =
-        rawCursor < rawParagraphs.length
-          ? `${rawParagraphs[rawCursor]} ${sec.seeds[pIdx % sec.seeds.length]}`
-          : sec.seeds[pIdx % sec.seeds.length];
-      if (rawCursor < rawParagraphs.length) rawCursor++;
-
-      const normalized150 = normalizeParagraphToAround150Words(
-        rawCandidate,
-        subject,
-        articleTitle,
-        language,
-        secIdx * 3 + pIdx
-      );
-
-      finalParagraphs150Words.push({
-        h2: pIdx === 0 ? sec.h2 : undefined,
-        text: normalized150,
-      });
-    }
-  });
-
-  while (rawCursor < rawParagraphs.length && finalParagraphs150Words.length < 28) {
-    const extraRaw = rawParagraphs[rawCursor++];
-    const normalized150 = normalizeParagraphToAround150Words(
-      extraRaw,
-      subject,
-      articleTitle,
-      language,
-      finalParagraphs150Words.length
-    );
-    finalParagraphs150Words.push({ text: normalized150 });
+  let synIdx = 0;
+  while (factUnits.length < 16 && synIdx < synthesisAngles.length * 2) {
+    const candidate = synthesisAngles[synIdx % synthesisAngles.length];
+    const extraSent =
+      allSourceSentences.length > 0
+        ? allSourceSentences[(synIdx + 2) % allSourceSentences.length]
+        : '';
+    const merged =
+      extraSent && !candidate.includes(extraSent.slice(0, 30))
+        ? `${candidate} ${extraSent}`
+        : candidate;
+    factUnits.push(merged);
+    synIdx++;
   }
+
+  const targetUnits = factUnits.slice(0, 20);
+  const subheadings = buildContentDrivenSubheadings(profile, originalHeadings, language);
+
+  const finalParagraphs150Words = [];
+
+  targetUnits.forEach((unitText, idx) => {
+    const expanded150 = expandFactBlockToAround150Words({
+      baseFactText: unitText,
+      contextProfile: profile,
+      allFactsPool: allSourceSentences,
+      language,
+      paragraphIndex: idx,
+    });
+
+    let h2ForPara;
+    if (idx > 0 && idx % 2 === 0) {
+      const h2Index = Math.floor((idx - 2) / 2);
+      if (h2Index < subheadings.length) {
+        h2ForPara = subheadings[h2Index];
+      }
+    }
+
+    finalParagraphs150Words.push({
+      h2: h2ForPara,
+      text: expanded150,
+    });
+  });
 
   const htmlBlocks = [];
   const totalParas = finalParagraphs150Words.length;
-  const imgStep =
-    images.length > 0 ? Math.max(1, Math.floor(totalParas / (images.length + 1))) : 999;
   let imgIdx = 0;
+
+  const renderFigureBlock = (img, displayNum) => {
+    const cleanAlt =
+      img.alt && img.alt !== articleTitle
+        ? img.alt
+        : `${profile.subjectDisplay || primary} - Photo #${displayNum}`;
+    const altText = String(cleanAlt).replace(/"/g, '&quot;');
+    const sourceBadge = img.isExternal
+      ? isVi
+        ? `Ảnh bổ sung #${displayNum}`
+        : `Supplemental Photo #${displayNum}`
+      : isVi
+      ? `Ảnh trong bài #${displayNum}`
+      : `Article Photo #${displayNum}`;
+    return `<figure class="wp-block-image size-large article-image-block" style="margin: 24px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" loading="lazy" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
+</figure>`;
+  };
+
+  if (images.length > 0) {
+    htmlBlocks.push(renderFigureBlock(images[imgIdx++], imgIdx));
+  }
+
+  const remainingImgs = Math.max(0, images.length - imgIdx);
+  const imgStep =
+    remainingImgs > 0 ? Math.max(1, Math.floor(totalParas / (remainingImgs + 1))) : 999;
 
   finalParagraphs150Words.forEach((item, idx) => {
     if (item.h2) {
@@ -1300,34 +1652,16 @@ function buildLongFormSeoArticle2000To5000Words({
       `<p style="margin: 0 0 22px 0; line-height: 1.85; font-size: 17px;">${item.text}</p>\n<br />`
     );
 
-    if (imgIdx < images.length && ((idx + 1) % imgStep === 0 || idx === totalParas - 2)) {
-      const img = images[imgIdx++];
-      const altText = String(img.alt || articleTitle).replace(/"/g, '&quot;');
-      const sourceBadge = img.isExternal
-        ? isVi
-          ? 'Ảnh tư liệu mở rộng'
-          : 'Editorial Visual Highlight'
-        : isVi
-        ? 'Hình ảnh trong bài'
-        : 'Featured Story Moment';
-      htmlBlocks.push(
-        `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
-  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
-</figure>`
-      );
+    if (
+      imgIdx < images.length &&
+      ((idx + 1) % imgStep === 0 || idx >= totalParas - (images.length - imgIdx))
+    ) {
+      htmlBlocks.push(renderFigureBlock(images[imgIdx++], imgIdx));
     }
   });
 
   while (imgIdx < images.length) {
-    const img = images[imgIdx++];
-    const altText = String(img.alt || articleTitle).replace(/"/g, '&quot;');
-    htmlBlocks.push(
-      `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
-  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
-</figure>`
-    );
+    htmlBlocks.push(renderFigureBlock(images[imgIdx++], imgIdx));
   }
 
   if (youtubeVideos.length > 0) {
@@ -1389,6 +1723,8 @@ async function generateSeoArticleWithAiFast(params) {
     sourceExcerpt = scraped.originalExcerpt;
     sourceArticleText = scraped.articleText;
     resolvedSourceUrl = scraped.sourceUrl;
+  } else {
+    sourceArticleText = String(params.existingContent || params.topic || '').trim();
   }
 
   if (params.existingContent) {
@@ -1408,9 +1744,19 @@ async function generateSeoArticleWithAiFast(params) {
     }
   }
 
+  const contextProfile = analyzeArticleSubjectAndContext(
+    sourceTitle || params.topic,
+    sourceArticleText || params.existingContent || params.topic,
+    params.keyword,
+    scrapedImages
+  );
+
   const effectiveTopic =
     sourceTitle || String(params.topic || '').trim() || String(params.existingContent || '').slice(0, 120);
-  const kw = String(params.keyword || '').trim() || effectiveTopic.split(/[:–—|-]/)[0].trim();
+  const kw =
+    contextProfile.primaryPerson ||
+    String(params.keyword || '').trim() ||
+    effectiveTopic.split(/[:–—|-]/)[0].trim();
 
   const generatedTitle =
     sourceTitle ||
@@ -1428,36 +1774,40 @@ async function generateSeoArticleWithAiFast(params) {
     .replace(/\s+/g, '-')
     .slice(0, 80);
 
+  const firstCleanSent = splitIntoSentences(sourceArticleText)[0] || '';
   const generatedExcerpt =
     sourceExcerpt ||
-    (sourceArticleText
-      ? sourceArticleText.slice(0, 158)
-      : `Read the full in-depth story on ${generatedTitle}.`);
+    (firstCleanSent
+      ? firstCleanSent.slice(0, 158)
+      : `Read the full story about ${contextProfile.subjectDisplay || kw}.`);
 
-  const contextProfile = analyzeArticleSubjectAndContext(
-    generatedTitle,
-    sourceArticleText || params.topic,
-    params.keyword,
-    scrapedImages
-  );
   const generatedKeyword =
     (contextProfile.primaryPerson || kw).slice(0, 55) || 'Celebrity';
   const generatedTags = [
     contextProfile.primaryPerson || generatedKeyword,
     ...(contextProfile.secondaryPerson ? [contextProfile.secondaryPerson] : []),
+    ...(contextProfile.supportingEntities || []).slice(0, 2),
     params.categoryName || 'Showbiz',
-    'Entertainment',
     'Celeb24h',
   ];
 
-  const existingKeys = new Set(scrapedImages.map((img) => img.url.split('?')[0].toLowerCase()));
+  const existingKeys = new Set(
+    scrapedImages.map((img) =>
+      img.url
+        .split('?')[0]
+        .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+        .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+        .toLowerCase()
+    )
+  );
   const searchTopicQuery =
     contextProfile.combinedSearchQuery || generatedKeyword || generatedTitle;
 
-  // Trước tiên lấy HẾT ảnh trong bài viết ở link bài (scrapedImages).
-  // Nếu số ảnh < 5 thì mới lấy thêm ảnh ngoài ĐÚNG DIỄN VIÊN & SỰ KIỆN TRONG BÀI cho đủ 5 đến 7 ảnh (6 ảnh). Nếu đã >= 5 ảnh thì thôi!
+  const realContentImgCount = scrapedImages.filter(
+    (img) => !/\bcollage[-_\d]/i.test(img.url)
+  ).length;
   const neededExternalCount =
-    scrapedImages.length >= 5 ? 0 : Math.max(0, 6 - scrapedImages.length);
+    realContentImgCount >= 5 ? 0 : Math.max(2, 6 - realContentImgCount);
 
   const [externalImages, relatedVideos] = await Promise.all([
     neededExternalCount > 0
@@ -1480,6 +1830,7 @@ async function generateSeoArticleWithAiFast(params) {
     images: allCombinedImages,
     youtubeVideos: relatedVideos,
     language,
+    contextProfile,
   });
 
   return {
