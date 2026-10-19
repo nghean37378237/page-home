@@ -333,7 +333,207 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     return out.join('');
   };
 
-  // Bộ khởi tạo dự phòng trực tiếp trên trình duyệt: đọc trực tiếp nội dung đoạn văn (articleText / content) và ảnh minh họa để phân tích nhân vật, sự kiện và nhân rộng sát nội dung
+  // Bộ hút nội dung & ảnh vượt tường lửa / chống copy trực tiếp từ trình duyệt qua Jina Cloud Headless Browser (CORS *)
+  const extractViaJinaReaderClient = async (rawTargetUrl: string): Promise<{
+    title: string;
+    excerpt: string;
+    articleText: string;
+    images: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[];
+  } | null> => {
+    try {
+      let cleanTarget = rawTargetUrl.trim();
+      try {
+        const u = new URL(cleanTarget);
+        ['fbclid', 'gclid', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', '_ga'].forEach(
+          (k) => u.searchParams.delete(k)
+        );
+        cleanTarget = u.href;
+      } catch {}
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 9000);
+      const res = await fetch(`https://r.jina.ai/${cleanTarget}`, {
+        headers: {
+          Accept: 'application/json',
+          'X-With-Images-Summary': 'true',
+          'X-No-Cache': 'true',
+        },
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+
+      if (!res.ok) return null;
+      const json: any = await res.json().catch(() => null);
+      const jData = json?.data;
+      if (!jData) return null;
+
+      const titleText = String(jData.title || '')
+        .replace(/\s+[|–—-]\s+[^|–—-]{2,35}\.(com|net|org|fun|vn|info|us|co\.uk)$/i, '')
+        .trim();
+      const excerptText = String(jData.description || '').trim();
+      const foundImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+      const seenKeys = new Set<string>();
+
+      const pushImg = (rawU: string, altTxt: string) => {
+        let u = String(rawU || '').trim();
+        if (!u || !/^https?:\/\//i.test(u)) return;
+        const lower = u.toLowerCase();
+        if (
+          lower.endsWith('.svg') ||
+          lower.endsWith('.gif') ||
+          lower.endsWith('.ico') ||
+          lower.includes('gravatar.com') ||
+          lower.includes('avatar') ||
+          lower.includes('logo') ||
+          lower.includes('emoji') ||
+          lower.includes('pixel') ||
+          lower.includes('1x1')
+        ) {
+          return;
+        }
+        if (u.includes('/wp-content/uploads/')) {
+          u = u.replace(
+            /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
+            ''
+          );
+        }
+        const key = u.split('?')[0].toLowerCase();
+        if (seenKeys.has(key)) return;
+        seenKeys.add(key);
+        foundImgs.push({
+          url: u,
+          alt: altTxt && !/^Image\s*\d+/i.test(altTxt) ? altTxt : titleText || `Photo ${foundImgs.length + 1}`,
+          isFeatured: foundImgs.length === 0,
+          isExternal: false,
+        });
+      };
+
+      if (jData.images && typeof jData.images === 'object') {
+        for (const [k, v] of Object.entries(jData.images)) {
+          pushImg(String(v || ''), String(k || ''));
+        }
+      }
+
+      const mdContent = String(jData.content || '');
+      const mdImgRe = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
+      let mim: RegExpExecArray | null;
+      while ((mim = mdImgRe.exec(mdContent)) !== null) {
+        pushImg(mim[2], mim[1]);
+      }
+
+      const paras: string[] = [];
+      for (const rawLine of mdContent.split(/\n+/)) {
+        let line = rawLine
+          .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+          .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+          .replace(/^#+\s*/, '')
+          .replace(/[*_`~]+/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+        if (!line || line.length < 28) continue;
+        if (
+          /^(skip to content|search|menu|home|share|tweet|pin|copy link|read more|related posts|leave a comment|cancel reply|privacy policy|terms of service|we use cookies|accept all|manage preferences)/i.test(
+            line
+          )
+        ) {
+          continue;
+        }
+        line = line
+          .replace(/\s*(?:What|Who|Which) is your (?:absolute )?favorite[\s\S]*$/i, '')
+          .replace(/\s*Let['’]s (?:swap|talk)[\s\S]*$/i, '')
+          .replace(/\s*Scroll down for a closer look[\s\S]*$/i, '')
+          .trim();
+        if (!line || line.length < 25) continue;
+        if (!paras.includes(line)) paras.push(line);
+      }
+
+      return {
+        title: titleText,
+        excerpt: excerptText,
+        articleText: paras.join('\n\n'),
+        images: foundImgs,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  // Tách khối văn bản thành từng đoạn văn chuẩn SEO 40 đến 50 từ xuống dòng rõ ràng, trọn vẹn câu
+  const splitClientTextInto40To50WordParagraphs = (text: string): string[] => {
+    const cleaned = String(text || '')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned) return [];
+    const totalWords = cleaned.split(/\s+/).filter(Boolean);
+    if (totalWords.length <= 52) return [totalWords.join(' ')];
+
+    const rawSentences =
+      cleaned
+        .match(/[^.!?]+[.!?]+["'”’)]*/g)
+        ?.map((s) => s.trim())
+        .filter(Boolean) || [cleaned];
+
+    const normalizedSentences: string[] = [];
+    for (const s of rawSentences) {
+      const w = s.split(/\s+/).filter(Boolean);
+      if (w.length <= 52) {
+        normalizedSentences.push(s);
+      } else {
+        const clauses = s.split(
+          /(?:;\s+|\s+—\s+|,\s+(?=(?:and|but|while|showing|proving|making|highlighting|where|nhưng|đồng thời|qua đó|giúp)\b))/i
+        );
+        if (clauses.length > 1) {
+          for (const cl of clauses) {
+            let trimmed = cl.trim();
+            if (!trimmed) continue;
+            if (!/[.!?]["'”’)]*$/.test(trimmed)) trimmed = trimmed.replace(/[,;:-]+$/, '') + '.';
+            trimmed = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+            normalizedSentences.push(trimmed);
+          }
+        } else {
+          normalizedSentences.push(s);
+        }
+      }
+    }
+
+    const out: string[] = [];
+    let currentWords: string[] = [];
+    for (const sent of normalizedSentences) {
+      const sentWords = sent.split(/\s+/).filter(Boolean);
+      if (currentWords.length === 0) {
+        currentWords.push(...sentWords);
+        if (currentWords.length >= 40) {
+          out.push(currentWords.join(' '));
+          currentWords = [];
+        }
+        continue;
+      }
+      if (currentWords.length + sentWords.length <= 56) {
+        currentWords.push(...sentWords);
+        if (currentWords.length >= 38) {
+          out.push(currentWords.join(' '));
+          currentWords = [];
+        }
+      } else {
+        out.push(currentWords.join(' '));
+        currentWords = [...sentWords];
+        if (currentWords.length >= 40) {
+          out.push(currentWords.join(' '));
+          currentWords = [];
+        }
+      }
+    }
+    if (currentWords.length > 0) {
+      if (currentWords.length < 22 && out.length > 0) {
+        out[out.length - 1] = `${out[out.length - 1]} ${currentWords.join(' ')}`;
+      } else {
+        out.push(currentWords.join(' '));
+      }
+    }
+    return out;
+  };
+
+  // Bộ khởi tạo dự phòng trực tiếp trên trình duyệt: đọc trực tiếp nội dung đoạn văn (articleText / content) và ảnh minh họa để mở rộng sát 100% nội dung gốc, chia đoạn 40-50 từ xuống dòng
   const buildClientFallbackSeoArticle = async (
     activeMode: 'from_text' | 'from_url',
     rawInput: string,
@@ -376,6 +576,21 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         }
       } catch {
         // ignore
+      }
+
+      // Nếu server chưa lấy được ảnh hoặc nội dung từ site chống copy, gọi trực tiếp Jina Cloud Headless Browser từ trình duyệt!
+      if (origImgs.length === 0 || !extractedBodyText || extractedBodyText.length < 60) {
+        const jinaData = await extractViaJinaReaderClient(targetUrl);
+        if (jinaData) {
+          if (!extractedTitle && jinaData.title) extractedTitle = jinaData.title;
+          if (!extractedExcerpt && jinaData.excerpt) extractedExcerpt = jinaData.excerpt;
+          if ((!extractedBodyText || extractedBodyText.length < 60) && jinaData.articleText) {
+            extractedBodyText = jinaData.articleText;
+          }
+          if (origImgs.length === 0 && jinaData.images.length > 0) {
+            origImgs = jinaData.images;
+          }
+        }
       }
     }
 
@@ -481,74 +696,68 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
     const factBlocks: string[] = [];
     if (rawSentences.length > 0) {
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 15; i++) {
         const s1 = rawSentences[i % rawSentences.length];
         const s2 =
           rawSentences.length > 1
-            ? rawSentences[(i + 2) % rawSentences.length]
+            ? rawSentences[(i + 1) % rawSentences.length]
             : '';
         factBlocks.push(s2 && s2 !== s1 ? `${s1} ${s2}` : s1);
       }
     } else if (bodyParagraphs.length > 0) {
-      for (let i = 0; i < 16; i++) {
+      for (let i = 0; i < 15; i++) {
         factBlocks.push(bodyParagraphs[i % bodyParagraphs.length]);
       }
     }
 
     const analyticalAnglesEn = [
-      `Looking closely at the specific details documented in this passage and the accompanying photographs, ${subjectDisplay} projected an unmistakable sense of ease and authenticity that immediately grounded the scene.`,
-      `Connecting the context described in the paragraph directly to the visual moments in the report illustrates how naturally ${primaryPerson || subjectDisplay}'s personal and professional chapters intersect.`,
-      `Every concrete observation in the coverage—from the candid body language of ${subjectDisplay} to the surrounding setting—reinforces why these unscripted snapshots resonate far more deeply than staged appearances.`,
-      `At the same time, the documented background in the article adds vital texture to the story, giving readers a complete view of what transpired behind the lens.`,
-      `Tracing how ${subjectDisplay} navigated this chapter reveals a consistent pattern of genuineness, where quiet real-world moments speak volumes about their bond and priorities.`,
-      `Taken alongside the illustrative photographs in the article, these verified details surrounding ${subjectDisplay} bring clarity and depth to every frame captured during the outing.`,
+      `As captured in the original photographs from the article, ${subjectDisplay} drew immediate attention for the exact styling, fit, and confident presence documented throughout the piece.`,
+      `Connecting the details shared directly in the report to the accompanying snapshots gives readers a clear view of ${primaryPerson || subjectDisplay} without departing from the facts of the outing.`,
+      `Every concrete observation in the source story reinforces the specific visual moments captured in the photographs of ${subjectDisplay}.`,
+      `Furthermore, the background details mentioned in the original text help readers immediately recognize ${primaryPerson || subjectDisplay} from the sunlit frames.`,
     ];
 
     const analyticalAnglesVi = [
-      `Chi tiết thực tế này trong đoạn văn kết hợp cùng hình ảnh minh họa làm nổi bật phong thái tự nhiên của ${subjectDisplay}, mang đến cái nhìn trực quan và sát với ngữ cảnh câu chuyện.`,
-      `Khi đặt dữ kiện trong đoạn văn cạnh các chi tiết trong ảnh minh họa, người đọc dễ dàng nhận ra mạch phát triển tự nhiên và nhất quán của ${primaryPerson || subjectDisplay}.`,
-      `Từng chi tiết được ghi lại trong đoạn văn và khung hình minh họa đều cho thấy cuộc sống đời thường chân thực của ${subjectDisplay}, hoàn toàn tách biệt khỏi những đồn đoán bên ngoài.`,
-      `Bên cạnh đó, bối cảnh thực tế được đề cập trong bài viết góp phần giải thích rõ nét hơn những khoảnh khắc xuất hiện trong loạt ảnh minh họa.`,
-      `Nhìn từ tổng thể các đoạn văn gốc, câu chuyện về ${subjectDisplay} không chỉ dừng lại ở một khoảnh khắc đơn lẻ mà còn phản ánh trọn vẹn hành trình sự nghiệp lẫn cuộc sống riêng.`,
-      `Qua từng góc máy minh họa kết hợp cùng thông tin xác thực trong bài, câu chuyện khắc họa sống động sức hút bền bỉ của ${subjectDisplay} trong lòng công chúng.`,
+      `Hình ảnh ghi lại trong bài gốc của ${subjectDisplay} làm nổi bật phong cách thời trang cùng thần thái tự nhiên đúng như những gì bài viết mô tả.`,
+      `Khi đặt các dữ kiện được đề cập trực tiếp trong bài cạnh loạt ảnh minh họa, người đọc dễ dàng theo dõi trọn vẹn câu chuyện thực tế của ${primaryPerson || subjectDisplay}.`,
+      `Mọi chi tiết được ghi nhận quanh sự xuất hiện của ${subjectDisplay} đều bám sát chuỗi khoảnh khắc có thật trong bài báo gốc.`,
+      `Bên cạnh đó, những thông tin về nhân vật trong bài viết giúp khán giả nhận ra ngay ${primaryPerson || subjectDisplay} qua từng khung hình.`,
     ];
 
-    const paragraphs150: { h2?: string; text: string }[] = [];
-    for (let idx = 0; idx < 16; idx++) {
+    const shortParagraphs40To50: { h2?: string; text: string }[] = [];
+    for (let idx = 0; idx < 15; idx++) {
       const coreFact =
         factBlocks[idx] ||
         extractedExcerpt ||
         (isVi
           ? `Trong nội dung đoạn văn và ảnh minh họa, các tình tiết xoay quanh ${subjectDisplay} được ghi nhận với nhiều chi tiết cụ thể và bối cảnh thực tế rõ ràng.`
-          : `According to the documented paragraphs and illustrative photos in the story, the events involving ${subjectDisplay} unfold through specific real-life moments and notable milestones.`);
+          : `According to the documented paragraphs and illustrative photos in the story, the events involving ${subjectDisplay} unfold through specific real-life moments.`);
       const nextFact =
-        factBlocks[(idx + 3) % Math.max(1, factBlocks.length)] || '';
+        factBlocks[(idx + 2) % Math.max(1, factBlocks.length)] || '';
       const angle1 = isVi
         ? analyticalAnglesVi[idx % analyticalAnglesVi.length]
         : analyticalAnglesEn[idx % analyticalAnglesEn.length];
       const angle2 = isVi
-        ? analyticalAnglesVi[(idx + 3) % analyticalAnglesVi.length]
-        : analyticalAnglesEn[(idx + 3) % analyticalAnglesEn.length];
+        ? analyticalAnglesVi[(idx + 1) % analyticalAnglesVi.length]
+        : analyticalAnglesEn[(idx + 1) % analyticalAnglesEn.length];
 
       let h2Heading: string | undefined;
       if (idx > 0 && idx % 2 === 0) {
         const secIdx = Math.floor((idx - 2) / 2);
         const enHeadings = [
           `${subjectDisplay}: Inside the Candid Moments Captured in the Story`,
-          `Key Details and Background Surrounding ${primaryPerson || subjectDisplay}`,
-          `Effortless Style and Real-World Chemistry in Every Frame`,
-          `Timeline and Context: What the Paragraphs Reveal About ${subjectDisplay}`,
-          `Behind the Photographs: Notable Highlights From the Coverage`,
-          `How ${subjectDisplay} Balances Career Milestones With Private Moments`,
-          `Closer Look at the Visual Details and Story Context`,
+          `Key Visual Details and Background Surrounding ${primaryPerson || subjectDisplay}`,
+          `Standout Style and Wardrobe Highlights in Every Frame`,
+          `What the Original Report Reveals About ${subjectDisplay}`,
+          `Behind the Photographs: Notable Highlights From the Outing`,
+          `Closer Look at the Visual Details Surrounding ${subjectDisplay}`,
         ];
         const viHeadings = [
           `${subjectDisplay}: Chi Tiết Thực Tế Qua Từng Đoạn Văn & Khung Hình`,
           `Dấu Ấn Và Bối Cảnh Xoay Quanh ${primaryPerson || subjectDisplay}`,
-          `Phong Thái Đời Thường Của ${subjectDisplay} Qua Ảnh Minh Họa`,
-          `Mạch Thời Gian & Những Dữ Kiện Đáng Chú Ý Trong Bài Viết`,
-          `Phía Sau Loạt Ảnh Minh Họa: Mối Gắn Kết Của ${subjectDisplay}`,
-          `Sự Cân Bằng Giữa Sự Nghiệp Và Cuộc Sống Riêng Của ${subjectDisplay}`,
+          `Phong Cách Thời Trang Của ${subjectDisplay} Qua Ảnh Minh Họa`,
+          `Những Dữ Kiện Đáng Chú Ý Trong Bài Viết Gốc`,
+          `Phía Sau Loạt Ảnh Minh Họa Của ${subjectDisplay}`,
           `Toàn Cảnh Câu Chuyện Nhìn Từ Nội Dung Chính`,
         ];
         h2Heading = isVi
@@ -565,31 +774,49 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         .filter(Boolean)
         .join(' ');
 
-      paragraphs150.push({
-        h2: h2Heading,
-        text: combined,
+      const splitChunks = splitClientTextInto40To50WordParagraphs(combined);
+      splitChunks.forEach((chunkTxt, cIdx) => {
+        shortParagraphs40To50.push({
+          h2: cIdx === 0 ? h2Heading : undefined,
+          text: chunkTxt,
+        });
       });
     }
 
     const htmlBlocks: string[] = [];
     const imgStep =
       extractedImgs.length > 0
-        ? Math.max(1, Math.floor(paragraphs150.length / (extractedImgs.length + 1)))
+        ? Math.max(2, Math.floor(shortParagraphs40To50.length / (extractedImgs.length + 1)))
         : 999;
     let imgIdx = 0;
 
-    paragraphs150.forEach((item, idx) => {
+    if (extractedImgs.length > 0) {
+      const firstIm = extractedImgs[imgIdx++];
+      const firstAlt = String(
+        firstIm.alt && firstIm.alt !== finalTitle && !/\?$/.test(firstIm.alt)
+          ? firstIm.alt
+          : `${subjectDisplay} - Featured Story Photo #1`
+      ).replace(/"/g, '&quot;');
+      htmlBlocks.push(
+        `<figure class="wp-block-image size-large" style="margin: 24px 0; text-align: center;">
+  <img src="${firstIm.url}" alt="${firstAlt}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${firstAlt}</figcaption>
+</figure>`
+      );
+    }
+
+    shortParagraphs40To50.forEach((item, idx) => {
       if (item.h2) {
         htmlBlocks.push(
-          `<h2 style="margin: 30px 0 14px 0; font-weight: 800; line-height: 1.35;">${item.h2}</h2>`
+          `<h2 style="margin: 28px 0 14px 0; font-weight: 800; line-height: 1.35;">${item.h2}</h2>`
         );
       }
       htmlBlocks.push(
-        `<p style="margin: 0 0 22px 0; line-height: 1.85; font-size: 17px;">${item.text}</p>\n<br />`
+        `<p style="margin: 0 0 18px 0; line-height: 1.85; font-size: 17px;">${item.text}</p>`
       );
       if (
         imgIdx < extractedImgs.length &&
-        ((idx + 1) % imgStep === 0 || idx === paragraphs150.length - 2)
+        ((idx + 1) % imgStep === 0 || idx === shortParagraphs40To50.length - 2)
       ) {
         const im = extractedImgs[imgIdx++];
         const rawSentCaption = rawSentences[(imgIdx - 1) % Math.max(1, rawSentences.length)] || '';
@@ -601,7 +828,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             : `${subjectDisplay} - Photo #${imgIdx}`;
         const altText = String(cleanAlt).replace(/"/g, '&quot;');
         htmlBlocks.push(
-          `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
+          `<figure class="wp-block-image size-large" style="margin: 24px 0; text-align: center;">
   <img src="${im.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
   <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
 </figure>`
@@ -615,7 +842,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         im.alt && im.alt !== finalTitle ? im.alt : `${subjectDisplay} - Photo #${imgIdx}`
       ).replace(/"/g, '&quot;');
       htmlBlocks.push(
-        `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
+        `<figure class="wp-block-image size-large" style="margin: 24px 0; text-align: center;">
   <img src="${im.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
   <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
 </figure>`
@@ -637,7 +864,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       tags: Array.from(new Set([primaryPerson, secondaryPerson, 'Showbiz', 'Entertainment', 'Celeb24h'].filter(Boolean))),
       contentHtml: finalHtml,
       wordCount,
-      paragraphCount: paragraphs150.length,
+      paragraphCount: shortParagraphs40To50.length,
       featuredImageUrl: origImgs[0]?.url || extractedImgs[0]?.url || '',
       extractedImages: extractedImgs,
       originalImageCount: origImgs.length,
@@ -801,31 +1028,72 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
       setSearchingExtImages(true);
       try {
-        const res = await fetch('/api/extract-web-images', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url: cleanLink }),
-        });
-        const data = await safeParseApiJson(res);
-        if (res.ok && data.ok && Array.isArray(data.images) && data.images.length > 0) {
-          const fetchedTitle = String(data.title || '').trim();
-          if (fetchedTitle && (!title.trim() || title.trim().startsWith('http'))) {
-            setTitle(fetchedTitle);
+        let fetchedTitle = '';
+        let fetchedExcerpt = '';
+        let fetchedText = '';
+        let rawImgs: { url: string; alt?: string }[] = [];
+
+        try {
+          const res = await fetch('/api/extract-web-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: cleanLink }),
+          });
+          const data = await safeParseApiJson(res);
+          if (res.ok && data.ok) {
+            fetchedTitle = String(data.title || '').trim();
+            fetchedExcerpt = String(data.excerpt || '').trim();
+            fetchedText = String(data.articleText || '').trim();
+            if (Array.isArray(data.images)) {
+              rawImgs = data.images;
+            }
           }
-          if (data.excerpt && !excerpt.trim()) {
-            setExcerpt(String(data.excerpt).trim());
-          }
-          if (data.articleText) {
-            const bodyTxt = String(data.articleText).trim();
-            setAiTopic((prev) => {
-              const trimmed = prev.trim();
-              if (!trimmed || trimmed === cleanLink || /^https?:\/\/\S+$/i.test(trimmed)) {
-                return bodyTxt;
+        } catch {}
+
+        // Nếu web gốc chặn IP máy chủ hoặc ẩn ảnh chống copy khiến lấy được < 2 ảnh hoặc thiếu văn bản -> kích hoạt Jina Cloud Headless Browser trực tiếp từ trình duyệt
+        if (rawImgs.length < 2 || fetchedText.length < 150) {
+          const jinaData = await extractViaJinaReaderClient(cleanLink);
+          if (jinaData) {
+            if (
+              jinaData.title &&
+              (!fetchedTitle || (!/[?!:]/.test(fetchedTitle) && /[?!:]/.test(jinaData.title)))
+            ) {
+              fetchedTitle = jinaData.title;
+            }
+            if (!fetchedExcerpt && jinaData.excerpt) fetchedExcerpt = jinaData.excerpt;
+            if (jinaData.articleText && jinaData.articleText.length > fetchedText.length) {
+              fetchedText = jinaData.articleText;
+            }
+            if (jinaData.images.length > 0) {
+              const seen = new Set(rawImgs.map((im) => String(im.url || '').split('?')[0].toLowerCase()));
+              for (const jim of jinaData.images) {
+                const k = jim.url.split('?')[0].toLowerCase();
+                if (!seen.has(k)) {
+                  seen.add(k);
+                  rawImgs.push(jim);
+                }
               }
-              return prev;
-            });
+            }
           }
-          const origImgs = data.images.map((im: any, idx: number) => ({
+        }
+
+        if (fetchedTitle && (!title.trim() || title.trim().startsWith('http'))) {
+          setTitle(fetchedTitle);
+        }
+        if (fetchedExcerpt && !excerpt.trim()) {
+          setExcerpt(fetchedExcerpt);
+        }
+        if (fetchedText) {
+          setAiTopic((prev) => {
+            const trimmed = prev.trim();
+            if (!trimmed || trimmed === cleanLink || /^https?:\/\/\S+$/i.test(trimmed)) {
+              return fetchedText;
+            }
+            return prev;
+          });
+        }
+        if (rawImgs.length > 0) {
+          const origImgs = rawImgs.map((im: any, idx: number) => ({
             url: String(im.url || im.dataUrl || ''),
             alt: String(im.alt || fetchedTitle || `Photo ${idx + 1}`),
             isFeatured: idx === 0,
@@ -982,7 +1250,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     } catch {}
   };
 
-  // Tạo nội dung chuẩn SEO theo 2 Chức năng chính (Lấy tiêu đề bài gốc + Viết dài 2000-5000 từ + Đoạn ~150 từ xuống dòng + Lấy hết ảnh bài gốc & bổ sung ảnh ngoài + 2 Video YouTube cuối bài)
+  // Tạo nội dung chuẩn SEO theo 2 Chức năng chính (Lấy tiêu đề bài gốc + Mở rộng bám sát 100% nội dung bài gốc + Mỗi đoạn 40-50 từ xuống dòng + Lấy hết ảnh bài gốc & bổ sung ảnh ngoài + 2 Video YouTube cuối bài)
   const handleGenerateSeoArticle = async (
     overrideMode?: 'from_text' | 'from_url'
   ): Promise<{
@@ -1004,7 +1272,6 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       setAiSourceUrl(detectedSourceUrl);
     }
 
-    // Khi ở chế độ viết từ văn bản/trình soạn thảo: ưu tiên lấy đoạn văn trong aiTopic hoặc content (nội dung bài viết), tuyệt đối không lấy mỗi tiêu đề tò mò nếu đã có đoạn văn!
     const rawTarget =
       activeMode === 'from_url'
         ? detectedSourceUrl || aiSourceUrl.trim()
@@ -1035,9 +1302,44 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         /Across the paragraphs and illustrative photographs of the report|wp-youtube-embed-box|🎬 Related Videos & Exclusive Moments|🎬 Video Liên Quan Đáng Chú Ý/i.test(
           content
         );
-      const cleanExistingContent = isPrevGeneratedDraft
+      let cleanExistingContent = isPrevGeneratedDraft
         ? aiTopic.trim()
         : [aiTopic.trim(), content.trim()].filter(Boolean).join('\n\n');
+      let preExtractedTitle = title.trim();
+      let preExtractedImages = [...extractedWebImages];
+
+      // Nếu có Link bài gốc (như beaware.fun chặn copy), chủ động hút trước cả văn bản lẫn ảnh qua trình duyệt Jina Cloud Headless Browser để truyền thẳng xuống server (đảm bảo 100% có đủ văn bản gốc & ảnh gốc kể cả khi web chặn IP máy chủ)
+      if (detectedSourceUrl && (preExtractedImages.filter((im) => !im.isExternal).length < 2 || cleanExistingContent.length < 180)) {
+        const jinaPre = await extractViaJinaReaderClient(detectedSourceUrl);
+        if (jinaPre) {
+          if (jinaPre.title && (!preExtractedTitle || preExtractedTitle.startsWith('http'))) {
+            preExtractedTitle = jinaPre.title;
+            setTitle(jinaPre.title);
+          }
+          if (jinaPre.articleText && jinaPre.articleText.length > 100) {
+            cleanExistingContent = jinaPre.articleText;
+            if (!aiTopic.trim() || aiTopic.trim() === detectedSourceUrl) {
+              setAiTopic(jinaPre.articleText);
+            }
+          }
+          if (jinaPre.images.length > 0) {
+            const seen = new Set(preExtractedImages.map((im) => im.url.split('?')[0].toLowerCase()));
+            for (const jim of jinaPre.images) {
+              const k = jim.url.split('?')[0].toLowerCase();
+              if (!seen.has(k)) {
+                seen.add(k);
+                preExtractedImages.push({
+                  url: jim.url,
+                  alt: jim.alt || preExtractedTitle || 'Article Image',
+                  isFeatured: preExtractedImages.length === 0,
+                  isExternal: false,
+                });
+              }
+            }
+            setExtractedWebImages(preExtractedImages);
+          }
+        }
+      }
 
       const res = await fetch('/api/wp-publish', {
         method: 'POST',
@@ -1050,17 +1352,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           keyword: activeMode === 'from_url' ? undefined : focusKeyword.trim() || undefined,
           language: aiLanguage,
           categoryName: primaryCatName,
-          existingTitle:
-            activeMode === 'from_url' || detectedSourceUrl
-              ? undefined
-              : title.trim()
-              ? title.trim()
-              : undefined,
-          existingContent:
-            activeMode === 'from_url'
-              ? undefined
-              : cleanExistingContent || undefined,
-          existingImages: extractedWebImages.length > 0 ? extractedWebImages : undefined,
+          existingTitle: preExtractedTitle || undefined,
+          existingContent: cleanExistingContent || undefined,
+          existingImages: preExtractedImages.length > 0 ? preExtractedImages : undefined,
         }),
       });
       let data = await safeParseApiJson(res);
@@ -1118,7 +1412,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       }
       setAiArticleStats({
         wordCount: Number(data.wordCount || 2750),
-        paragraphCount: Number(data.paragraphCount || 18),
+        paragraphCount: Number(data.paragraphCount || 45),
         originalImageCount: Number(data.originalImageCount || 0),
         externalImageCount: Number(data.externalImageCount || 0),
       });
@@ -1218,6 +1512,36 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             }));
           }
         } catch {}
+
+        // Nếu site chặn copy hoặc chặn IP máy chủ khiến lấy được < 2 ảnh, gọi thêm Jina Cloud Headless Browser trực tiếp từ trình duyệt
+        if (origImgs.length < 2) {
+          const jinaData = await extractViaJinaReaderClient(sourceLink);
+          if (jinaData) {
+            if (!resolvedTitle && jinaData.title) {
+              resolvedTitle = jinaData.title;
+              setTitle(resolvedTitle);
+            }
+            if (jinaData.articleText && (!resolvedBodyText || resolvedBodyText.length < 150)) {
+              resolvedBodyText = jinaData.articleText;
+              if (!aiTopic.trim()) setAiTopic(resolvedBodyText);
+            }
+            if (jinaData.images.length > 0) {
+              const seen = new Set(origImgs.map((im) => im.url.split('?')[0].toLowerCase()));
+              for (const jim of jinaData.images) {
+                const k = jim.url.split('?')[0].toLowerCase();
+                if (!seen.has(k)) {
+                  seen.add(k);
+                  origImgs.push({
+                    url: jim.url,
+                    alt: jim.alt || resolvedTitle || `Photo ${origImgs.length + 1}`,
+                    isFeatured: origImgs.length === 0,
+                    isExternal: false,
+                  });
+                }
+              }
+            }
+          }
+        }
       } else {
         origImgs = extractedWebImages.filter((im) => !im.isExternal);
       }
@@ -1990,10 +2314,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   </div>
                   <div>
                     <div className="text-xs font-black text-slate-900">
-                      Ném 1 Link Web Bất Kỳ → Giữ Tiêu Đề Gốc & Viết Lại 2.000 – 5.000 Từ Chuẩn SEO
+                      Ném 1 Link Web Bất Kỳ → Giữ Tiêu Đề Gốc &amp; Mở Rộng Sát Nội Dung Bài Gốc (40–50 Từ/Đoạn)
                     </div>
                     <div className="text-[11px] text-slate-600 mt-0.5">
-                      Lấy hết ảnh trong bài (nếu &lt; 5 ảnh mới lấy thêm ảnh ngoài cho đủ 5–7 ảnh, đủ 5 ảnh rồi thì thôi) + viết 2.000–5.000 từ (~150 từ/đoạn) + 2 Video YouTube
+                      Phá chặn copy lấy hết ảnh &amp; văn bản bài gốc + mở rộng bám sát 100% nội dung gốc (không sáng tác ngoài lề) + chia đoạn 40–50 từ xuống dòng + 2 Video YouTube
                     </div>
                   </div>
                 </button>
@@ -2018,10 +2342,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   </div>
                   <div>
                     <div className="text-xs font-black text-slate-900">
-                      Nhập Đoạn Nội Dung / Chủ Đề → Viết Bài Dài 2.000 – 5.000 Từ Chuẩn SEO
+                      Nhập Đoạn Nội Dung / Hút Link Chặn Copy → Mở Rộng Sát Nội Dung (40–50 Từ/Đoạn)
                     </div>
                     <div className="text-[11px] text-slate-600 mt-0.5">
-                      Viết thành bài báo dài 2.000–5.000 từ (~150 từ/đoạn, xuống dòng) + tự bổ sung 5–7 ảnh minh họa ngoài + gắn 2 Video YouTube cuối bài
+                      Mở rộng trực tiếp từ nội dung bài gốc thành bài dài chuẩn SEO (mỗi đoạn 40–50 từ xuống dòng, không sáng tác thêm) + gắn đủ 5–7 ảnh + 2 Video YouTube cuối bài
                     </div>
                   </div>
                 </button>
@@ -2031,7 +2355,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               {aiMode === 'from_url' ? (
                 <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
                   <label className="text-xs font-black text-slate-800 block">
-                    🔗 Dán đường dẫn (URL) bài viết từ bất kỳ trang báo / website nào (Tự lấy hết ảnh bài gốc; nếu &lt; 5 ảnh sẽ tự bù ảnh ngoài cho đủ 5–7 ảnh &amp; gắn thẳng vào bài):
+                    🔗 Dán đường dẫn (URL) bài viết từ bất kỳ trang báo / website nào (Tự vượt chặn copy lấy hết ảnh &amp; nội dung bài gốc; mở rộng bám sát bài gốc với từng đoạn 40–50 từ xuống dòng):
                   </label>
                   <div className="flex flex-col sm:flex-row gap-2">
                     <input
@@ -2056,12 +2380,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       {aiLoading ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang viết bài, lấy ảnh trong bài &amp; gắn vào bài...</span>
+                          <span>Đang hút bài gốc, mở rộng 40–50 từ/đoạn &amp; gắn ảnh...</span>
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          <span>Viết Lại 2.000–5.000 Từ + Lấy Ảnh Trong Bài &amp; Gắn Vào Bài</span>
+                          <span>Mở Rộng Sát Bài Gốc (40–50 Từ/Đoạn) + Lấy Hết Ảnh &amp; Gắn Vào Bài</span>
                         </>
                       )}
                     </button>
@@ -2138,12 +2462,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       {aiLoading ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang viết bài 2000-5000 từ, tìm ảnh &amp; 2 Video...</span>
+                          <span>Đang mở rộng sát bài gốc (40–50 từ/đoạn), tìm ảnh &amp; 2 Video...</span>
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          <span>Viết Bài 2.000–5.000 Từ Chuẩn SEO + Gắn Ảnh &amp; 2 Video YT</span>
+                          <span>Mở Rộng Sát Bài Gốc (40–50 Từ/Đoạn) + Gắn Ảnh &amp; 2 Video YT</span>
                         </>
                       )}
                     </button>
@@ -2151,15 +2475,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 </div>
               )}
 
-              {/* THỐNG KÊ BÀI VIẾT VỪA TẠO: SỐ TỪ (2000-5000 TỪ), SỐ ĐOẠN (~150 TỪ/ĐOẠN), ẢNH TRONG BÀI & ẢNH NGOÀI */}
+              {/* THỐNG KÊ BÀI VIẾT VỪA TẠO: SỐ TỪ (2000-5000 TỪ), SỐ ĐOẠN (40-50 TỪ/ĐOẠN), ẢNH TRONG BÀI & ẢNH NGOÀI */}
               {aiArticleStats && (
                 <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-900 text-white text-xs font-bold">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 font-black">
-                      ✅ ĐÃ VIẾT {Number(aiArticleStats.wordCount || 2750).toLocaleString('vi-VN')} TỪ CHUẨN SEO
+                      ✅ ĐÃ VIẾT {Number(aiArticleStats.wordCount || 2750).toLocaleString('vi-VN')} TỪ CHUẨN SEO (BÁM SÁT 100% BÀI GỐC)
                     </span>
                     <span>
-                      • {Number(aiArticleStats.paragraphCount || 18)} đoạn văn (~150 từ / 1 đoạn &amp; xuống dòng rõ ràng)
+                      • {Number(aiArticleStats.paragraphCount || 45)} đoạn văn (mỗi đoạn 40–50 từ xuống dòng rõ ràng)
                     </span>
                     <span>
                       {Number(aiArticleStats.externalImageCount || 0) === 0
@@ -2168,7 +2492,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     </span>
                   </div>
                   <span className="text-[11px] text-emerald-200">
-                    Đã giữ nguyên tiêu đề &amp; gắn ảnh vào bài
+                    Bám sát bài gốc · 40–50 từ/đoạn · Đã gắn ảnh
                   </span>
                 </div>
               )}

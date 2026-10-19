@@ -99,39 +99,50 @@ function pickBestUrlFromSrcset(srcset, baseUrl) {
 }
 
 async function fetchImageAsDataUrl(imageUrl, refererUrl) {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 9000);
-    const res = await fetch(imageUrl, {
-      headers: {
-        'User-Agent': USER_AGENT,
-        Referer: refererUrl,
-        Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-      },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
+  const tryDownload = async (targetUrl, ref) => {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5500);
+      const res = await fetch(targetUrl, {
+        headers: {
+          'User-Agent': USER_AGENT,
+          ...(ref ? { Referer: ref } : {}),
+          Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
 
-    if (!res.ok) return null;
-    const contentType = res.headers.get('content-type') || 'image/jpeg';
-    if (!contentType.startsWith('image/') || contentType.includes('svg')) {
+      if (!res.ok) return null;
+      const contentType = res.headers.get('content-type') || 'image/jpeg';
+      if (!contentType.startsWith('image/') || contentType.includes('svg')) {
+        return null;
+      }
+
+      const arrayBuffer = await res.arrayBuffer();
+      if (arrayBuffer.byteLength < 3500) {
+        return null;
+      }
+
+      const base64 = Buffer.from(arrayBuffer).toString('base64');
+      return `data:${contentType.split(';')[0]};base64,${base64}`;
+    } catch {
       return null;
     }
+  };
 
-    const arrayBuffer = await res.arrayBuffer();
-    if (arrayBuffer.byteLength < 3500) {
-      return null;
-    }
-
-    const base64 = Buffer.from(arrayBuffer).toString('base64');
-    return `data:${contentType.split(';')[0]};base64,${base64}`;
-  } catch {
-    return null;
-  }
+  const direct = await tryDownload(imageUrl, refererUrl);
+  if (direct) return direct;
+  const proxyUrl = `https://wsrv.nl/?url=${encodeURIComponent(imageUrl)}&output=jpg`;
+  return tryDownload(proxyUrl, '');
 }
 
-function extractImagesFromHtmlChunk(htmlChunk, baseUrl) {
+function extractImagesFromHtmlChunk(rawHtmlChunk, baseUrl) {
   const results = [];
+  const htmlChunk = String(rawHtmlChunk || '').replace(
+    /<noscript\b[^>]*>([\s\S]*?)<\/noscript>/gi,
+    '$1'
+  );
 
   const sourceTagRegex = /<source\b[^>]*>/gi;
   let sourceMatch;
@@ -214,6 +225,19 @@ function extractImagesFromHtmlChunk(htmlChunk, baseUrl) {
     const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
 
     results.push({ url: chosenUrl, alt });
+  }
+
+  const rawWpUploadRegex =
+    /https?:\/\/[^"'\s<>()]+\/wp-content\/uploads\/[^"'\s<>()]+\.(?:jpg|jpeg|png|webp|avif)/gi;
+  let wpMatch;
+  while ((wpMatch = rawWpUploadRegex.exec(htmlChunk)) !== null) {
+    const cleaned = wpMatch[0].replace(
+      /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+|768x\d+)(?=\.(jpg|jpeg|png|webp|avif)$)/i,
+      ''
+    );
+    if (!isJunkImageUrl(cleaned)) {
+      results.push({ url: cleaned, alt: '' });
+    }
   }
 
   return results;
@@ -334,6 +358,7 @@ export default async function handler(req, res) {
 
     let articleBodySample = '';
     const extractedParagraphs = [];
+    let matchedWpPostId = 0;
 
     const collectParagraphsFromHtml = (htmlChunk) => {
       const pRegex = /<(p|h2|h3|blockquote|li)\b[^>]*>([\s\S]*?)<\/\1>/gi;
@@ -366,6 +391,7 @@ export default async function handler(req, res) {
         const rawJson = await wpRes.json();
         const postJson = Array.isArray(rawJson) ? rawJson[0] : rawJson;
         if (postJson && postJson.id) {
+          matchedWpPostId = Number(postJson.id) || 0;
           if (!title) title = decodeHtmlEntities(postJson.title?.rendered || '');
           if (!excerpt) {
             excerpt = decodeHtmlEntities(
@@ -386,7 +412,7 @@ export default async function handler(req, res) {
           articleBodySample = decodeHtmlEntities(contentHtml.replace(/<[^>]+>/g, ' '))
             .replace(/\s+/g, ' ')
             .trim()
-            .slice(0, 1400);
+            .slice(0, 2000);
           const contentImgs = extractImagesFromHtmlChunk(contentHtml, cleanUrl);
           for (const img of contentImgs) {
             addCandidate(img.url, img.alt || title, candidateImages.length === 0);
@@ -409,112 +435,216 @@ export default async function handler(req, res) {
         await tryFetchWpRestPost(
           `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSegment)}&_embed`
         );
+        if (candidateImages.length === 0 && extractedParagraphs.length === 0) {
+          const searchWords = lastSegment.replace(/[-_]+/g, ' ').trim();
+          if (searchWords.length >= 5) {
+            await tryFetchWpRestPost(
+              `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(searchWords)}&per_page=1&_embed`
+            );
+          }
+        }
       }
     }
 
-    if (candidateImages.length < 2 || !title || extractedParagraphs.length === 0) {
-      const pageRes = await fetch(cleanUrl, {
-        headers: {
-          'User-Agent': USER_AGENT,
-          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
-        },
-      });
-
-      if (!pageRes.ok && candidateImages.length === 0) {
-        return res.status(400).json({
-          ok: false,
-          error: `Không thể truy cập đường dẫn (${pageRes.status}). Hãy kiểm tra lại link!`,
-        });
-      }
-
-      if (pageRes.ok) {
-        const html = await pageRes.text();
-
-        const wpJsonLinkMatch = html.match(
-          /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
+    if (matchedWpPostId > 0 && candidateImages.length < 4) {
+      try {
+        const mediaRes = await fetch(
+          `${origin}/wp-json/wp/v2/media?parent=${matchedWpPostId}&per_page=20`,
+          { headers: { 'User-Agent': USER_AGENT } }
         );
-        if (wpJsonLinkMatch && wpJsonLinkMatch[1] && candidateImages.length === 0) {
-          await tryFetchWpRestPost(resolveAbsoluteUrl(wpJsonLinkMatch[1], cleanUrl));
+        if (mediaRes.ok) {
+          const mediaItems = await mediaRes.json();
+          if (Array.isArray(mediaItems)) {
+            for (const mItem of mediaItems) {
+              const mUrl =
+                mItem?.media_details?.sizes?.full?.source_url ||
+                mItem?.media_details?.sizes?.large?.source_url ||
+                mItem?.source_url ||
+                '';
+              const mAlt = decodeHtmlEntities(mItem?.alt_text || mItem?.title?.rendered || title);
+              if (mUrl) addCandidate(mUrl, mAlt, candidateImages.length === 0);
+            }
+          }
         }
+      } catch {}
+    }
 
-        if (candidateImages.length < 2 || !title || extractedParagraphs.length === 0) {
-          if (!title) {
-            const ogTitle =
-              html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
-              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
-              html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ||
-              html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
-            if (ogTitle && ogTitle[1]) {
-              title = decodeHtmlEntities(ogTitle[1].replace(/<[^>]+>/g, ''));
+    if (candidateImages.length < 2 || !title || extractedParagraphs.length === 0) {
+      try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 5000);
+        const pageRes = await fetch(cleanUrl, {
+          headers: {
+            'User-Agent': USER_AGENT,
+            Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'vi-VN,vi;q=0.9,en-US;q=0.8,en;q=0.7',
+          },
+          signal: controller.signal,
+        }).finally(() => clearTimeout(t));
+
+        if (pageRes.ok) {
+          const html = await pageRes.text();
+
+          const wpJsonLinkMatch = html.match(
+            /<link[^>]+type=["']application\/json["'][^>]+href=["']([^"']+\/wp\/v2\/posts\/\d+)["']/i
+          );
+          if (wpJsonLinkMatch && wpJsonLinkMatch[1] && candidateImages.length === 0) {
+            await tryFetchWpRestPost(resolveAbsoluteUrl(wpJsonLinkMatch[1], cleanUrl));
+          }
+
+          if (candidateImages.length < 2 || !title || extractedParagraphs.length === 0) {
+            if (!title) {
+              const ogTitle =
+                html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+                html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i) ||
+                html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i) ||
+                html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+              if (ogTitle && ogTitle[1]) {
+                title = decodeHtmlEntities(ogTitle[1].replace(/<[^>]+>/g, ''));
+              }
             }
-          }
 
-          if (!excerpt) {
-            const ogDesc =
-              html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
-              html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
-            if (ogDesc && ogDesc[1]) {
-              excerpt = decodeHtmlEntities(ogDesc[1]);
+            if (!excerpt) {
+              const ogDesc =
+                html.match(/<meta[^>]+property=["']og:description["'][^>]+content=["']([^"']+)["']/i) ||
+                html.match(/<meta[^>]+name=["']description["'][^>]+content=["']([^"']+)["']/i);
+              if (ogDesc && ogDesc[1]) {
+                excerpt = decodeHtmlEntities(ogDesc[1]);
+              }
             }
-          }
 
-          const ogImg =
-            html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-            html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
-            html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-          if (ogImg && ogImg[1]) {
-            addCandidate(ogImg[1], title || 'Ảnh đại diện', true);
-          }
+            const ogImg =
+              html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
+              html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
+              html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
+            if (ogImg && ogImg[1]) {
+              addCandidate(ogImg[1], title || 'Ảnh đại diện', true);
+            }
 
-          const jsonLdUrls = extractImagesFromJsonLd(html, cleanUrl);
-          for (const jUrl of jsonLdUrls) {
-            addCandidate(jUrl, title, candidateImages.length === 0);
-          }
+            const jsonLdUrls = extractImagesFromJsonLd(html, cleanUrl);
+            for (const jUrl of jsonLdUrls) {
+              addCandidate(jUrl, title, candidateImages.length === 0);
+            }
 
-          const cleanedBody = html
-            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-            .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-            .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
-            .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
-            .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
-            .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '')
-            .replace(
-              /<(div|section|ul)\b[^>]+(class|id)=["'][^"']*(related|yarpp|sharedaddy|jp-relatedposts|post-navigation|comments-area|sidebar|widget|more-posts|popular-posts|recent-posts)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,
-              ''
-            );
+            const cleanedBody = html
+              .replace(/<noscript\b[^>]*>([\s\S]*?)<\/noscript>/gi, '$1')
+              .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+              .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+              .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
+              .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
+              .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+              .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '')
+              .replace(
+                /<(div|section|ul)\b[^>]+(class|id)=["'][^"']*(related|yarpp|sharedaddy|jp-relatedposts|post-navigation|comments-area|sidebar|widget|more-posts|popular-posts|recent-posts)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,
+                ''
+              );
 
-          let primaryZone = cleanedBody;
-          const articleTagMatch = cleanedBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
-          if (articleTagMatch && articleTagMatch[1]) {
-            primaryZone = articleTagMatch[1];
-          } else {
-            const contentDivStart = cleanedBody.search(
-              /<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content|article-body|story-body)[^"']*["'][^>]*>/i
-            );
-            if (contentDivStart !== -1) {
-              primaryZone = cleanedBody.slice(contentDivStart, contentDivStart + 120000);
+            let primaryZone = cleanedBody;
+            const articleTagMatch = cleanedBody.match(/<article\b[^>]*>([\s\S]*?)<\/article>/i);
+            if (articleTagMatch && articleTagMatch[1]) {
+              primaryZone = articleTagMatch[1];
             } else {
-              const mainMatch = cleanedBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
-              if (mainMatch && mainMatch[1]) primaryZone = mainMatch[1];
+              const contentDivStart = cleanedBody.search(
+                /<div\b[^>]+class=["'][^"']*(entry-content|post-content|article-content|td-post-content|single-content|article-body|story-body)[^"']*["'][^>]*>/i
+              );
+              if (contentDivStart !== -1) {
+                primaryZone = cleanedBody.slice(contentDivStart, contentDivStart + 120000);
+              } else {
+                const mainMatch = cleanedBody.match(/<main\b[^>]*>([\s\S]*?)<\/main>/i);
+                if (mainMatch && mainMatch[1]) primaryZone = mainMatch[1];
+              }
+            }
+
+            if (extractedParagraphs.length === 0) {
+              collectParagraphsFromHtml(primaryZone);
+            }
+            if (!articleBodySample) {
+              articleBodySample = decodeHtmlEntities(primaryZone.replace(/<[^>]+>/g, ' '))
+                .replace(/\s+/g, ' ')
+                .trim()
+                .slice(0, 2000);
+            }
+            const articleImgs = extractImagesFromHtmlChunk(primaryZone, cleanUrl);
+            for (const img of articleImgs) {
+              addCandidate(img.url, img.alt || title, candidateImages.length === 0);
             }
           }
+        }
+      } catch {}
+    }
 
-          if (extractedParagraphs.length === 0) {
-            collectParagraphsFromHtml(primaryZone);
+    // Tầng phá chặn Copy & vượt tường lửa Cloudflare (Jina Reader Headless Browser)
+    if (candidateImages.length < 2 || extractedParagraphs.length === 0 || !title) {
+      try {
+        const controller = new AbortController();
+        const t = setTimeout(() => controller.abort(), 5800);
+        const jinaRes = await fetch(`https://r.jina.ai/${cleanUrl}`, {
+          headers: {
+            Accept: 'application/json',
+            'X-With-Images-Summary': 'true',
+            'User-Agent': USER_AGENT,
+          },
+          signal: controller.signal,
+        }).finally(() => clearTimeout(t));
+
+        if (jinaRes.ok) {
+          const jinaJson = await jinaRes.json();
+          const jData = jinaJson?.data || {};
+          if (!title && jData.title) {
+            title = decodeHtmlEntities(String(jData.title))
+              .replace(/\s+[|–—-]\s+[^|–—-]{2,35}$/i, '')
+              .trim();
           }
-          if (!articleBodySample) {
-            articleBodySample = decodeHtmlEntities(primaryZone.replace(/<[^>]+>/g, ' '))
-              .replace(/\s+/g, ' ')
-              .trim()
-              .slice(0, 1400);
+          if (!excerpt && jData.description) {
+            excerpt = decodeHtmlEntities(String(jData.description)).trim();
           }
-          const articleImgs = extractImagesFromHtmlChunk(primaryZone, cleanUrl);
-          for (const img of articleImgs) {
-            addCandidate(img.url, img.alt || title, candidateImages.length === 0);
+          if (jData.images && typeof jData.images === 'object') {
+            for (const rawImgUrl of Object.values(jData.images)) {
+              const u = String(rawImgUrl || '').trim();
+              if (!/^https?:\/\//i.test(u)) continue;
+              if (/avplayer\.com|mgid\.com|doubleclick|taboola|outbrain/i.test(u)) continue;
+              addCandidate(u, title || 'Article Image', candidateImages.length === 0);
+            }
+          }
+          if (jData.content) {
+            const rawMd = String(jData.content);
+            const mdImgRegex = /!\[[^\]]*\]\((https?:\/\/[^)\s"']+)\)/gi;
+            let mim;
+            while ((mim = mdImgRegex.exec(rawMd)) !== null) {
+              const u = mim[1].trim();
+              if (!/avplayer\.com|mgid\.com|doubleclick|taboola|outbrain/i.test(u)) {
+                addCandidate(u, title || 'Article Image', candidateImages.length === 0);
+              }
+            }
+            if (extractedParagraphs.length === 0) {
+              const lines = rawMd
+                .split(/\n+/)
+                .map((line) =>
+                  line
+                    .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+                    .replace(/\[Video\s+\d+\]\([^)]*\)/gi, '')
+                    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+                    .replace(/[*_#>~`]+/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                )
+                .filter(
+                  (line) =>
+                    line.length >= 40 &&
+                    !/^(read more|related|share this|follow us|copyright|all rights reserved|advertisement|subscribe|skip to content)/i.test(
+                      line
+                    )
+                );
+              for (const l of lines) {
+                if (!extractedParagraphs.includes(l)) extractedParagraphs.push(l);
+              }
+              if (!articleBodySample && extractedParagraphs.length > 0) {
+                articleBodySample = extractedParagraphs.join(' ').slice(0, 2000);
+              }
+            }
           }
         }
-      }
+      } catch {}
     }
 
     // Trước tiên lấy hết ảnh trong bài viết ở link bài.

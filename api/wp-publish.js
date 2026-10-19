@@ -144,9 +144,13 @@ function pickBestSrcFromSrcset(srcset, baseUrl) {
 
 function collectImgsFromHtml(htmlChunk, baseUrl) {
   const list = [];
+  const expandedHtml = String(htmlChunk || '').replace(
+    /<noscript\b[^>]*>([\s\S]*?)<\/noscript>/gi,
+    (_m, inner) => decodeHtmlEntities(inner)
+  );
   const sourceRegex = /<source\b[^>]*>/gi;
   let sm;
-  while ((sm = sourceRegex.exec(htmlChunk)) !== null) {
+  while ((sm = sourceRegex.exec(expandedHtml)) !== null) {
     const tag = sm[0];
     const ss =
       tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
@@ -162,7 +166,7 @@ function collectImgsFromHtml(htmlChunk, baseUrl) {
 
   const imgRegex = /<img\b[^>]*>/gi;
   let m;
-  while ((m = imgRegex.exec(htmlChunk)) !== null) {
+  while ((m = imgRegex.exec(expandedHtml)) !== null) {
     const tag = m[0];
     const wMatch = tag.match(/\bwidth=["']?(\d+)/i);
     const hMatch = tag.match(/\bheight=["']?(\d+)/i);
@@ -212,6 +216,9 @@ function collectImgsFromHtml(htmlChunk, baseUrl) {
       }
     }
     if (!chosen || isIgnorableImage(chosen)) continue;
+    if (chosen.includes('/wp-content/uploads/')) {
+      chosen = chosen.replace(/-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i, '');
+    }
     const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
     const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
     list.push({ url: chosen, alt });
@@ -220,8 +227,21 @@ function collectImgsFromHtml(htmlChunk, baseUrl) {
   const figLinkRegex =
     /<(?:figure|div)\b[^>]*class=["'][^"']*(?:wp-block-image|wp-caption|gallery-item|post-thumbnail|featured-image)[^"']*["'][^>]*>[\s\S]*?<a\b[^>]+href=["']([^"']+\.(?:jpg|jpeg|png|webp)(?:\?[^"']*)?)["'][^>]*>/gi;
   let flm;
-  while ((flm = figLinkRegex.exec(htmlChunk)) !== null) {
+  while ((flm = figLinkRegex.exec(expandedHtml)) !== null) {
     const resolved = resolveAbsUrl(flm[1], baseUrl);
+    if (resolved && !isIgnorableImage(resolved)) {
+      list.push({ url: resolved, alt: '' });
+    }
+  }
+
+  const rawUploadRegex = /https?:\\?\/\\?\/[^"'\s<>\\]+\/wp-content\/uploads\/[^"'\s<>\\]+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"'\s<>\\]*)?/gi;
+  let rm;
+  while ((rm = rawUploadRegex.exec(expandedHtml)) !== null) {
+    let rawU = rm[0].replace(/\\\//g, '/');
+    if (rawU.includes('/wp-content/uploads/')) {
+      rawU = rawU.replace(/-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i, '');
+    }
+    const resolved = resolveAbsUrl(rawU, baseUrl);
     if (resolved && !isIgnorableImage(resolved)) {
       list.push({ url: resolved, alt: '' });
     }
@@ -1301,7 +1321,104 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
         }
       }
     } catch {
-      // Fallback to slug title
+      // Fallback to Jina Reader
+    }
+  }
+
+  // Kênh dự phòng đặc biệt vượt tường lửa / chống copy (Jina Cloud Headless Browser)
+  if (paragraphs.length < 2 || images.length < 2 || !originalTitle) {
+    try {
+      const jinaRes = await fetchWithTimeout(
+        `https://r.jina.ai/${cleanUrl}`,
+        {
+          headers: {
+            Accept: 'application/json',
+            'X-With-Images-Summary': 'true',
+            'X-No-Cache': 'true',
+            'User-Agent': SCRAPER_USER_AGENT,
+          },
+        },
+        6500
+      );
+
+      if (jinaRes.ok) {
+        const jinaJson = await jinaRes.json().catch(() => null);
+        const jData = jinaJson && jinaJson.data;
+        if (jData) {
+          if (!originalTitle && jData.title) {
+            originalTitle = cleanScrapedTitle(String(jData.title));
+          }
+          if (!originalExcerpt && jData.description) {
+            originalExcerpt = decodeHtmlEntities(String(jData.description));
+          }
+          if (jData.images && typeof jData.images === 'object') {
+            for (const [imgAlt, imgUrlVal] of Object.entries(jData.images)) {
+              let rawImgUrl = String(imgUrlVal || '').trim();
+              if (!rawImgUrl || rawImgUrl.startsWith('blob:') || rawImgUrl.startsWith('data:')) continue;
+              if (rawImgUrl.includes('/wp-content/uploads/')) {
+                rawImgUrl = rawImgUrl.replace(
+                  /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
+                  ''
+                );
+              }
+              addImage(
+                rawImgUrl,
+                imgAlt && !/^Image\s*\d+/i.test(imgAlt) ? imgAlt : originalTitle,
+                images.length === 0
+              );
+            }
+          }
+          const mdContent = String(jData.content || '');
+          const mdImgRegex = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
+          let mim;
+          while ((mim = mdImgRegex.exec(mdContent)) !== null) {
+            let rawImgUrl = mim[2].trim();
+            if (rawImgUrl.includes('/wp-content/uploads/')) {
+              rawImgUrl = rawImgUrl.replace(
+                /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
+                ''
+              );
+            }
+            addImage(
+              rawImgUrl,
+              mim[1] && !/^Image\s*\d+/i.test(mim[1]) ? mim[1] : originalTitle,
+              images.length === 0
+            );
+          }
+
+          if (paragraphs.length < 2 && mdContent) {
+            const mdLines = mdContent.split(/\n+/);
+            for (const rawLine of mdLines) {
+              let line = rawLine
+                .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+                .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+                .replace(/^#+\s*/, '')
+                .replace(/[*_`~]+/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+              if (!line || line.length < 28) continue;
+              if (
+                /^(skip to content|search|menu|home|share|tweet|pin|copy link|read more|related posts|leave a comment|cancel reply|privacy policy|terms of service|we use cookies|accept all|manage preferences)/i.test(
+                  line
+                )
+              ) {
+                continue;
+              }
+              line = line
+                .replace(/\s*(?:What|Who|Which) is your (?:absolute )?favorite[\s\S]*$/i, '')
+                .replace(/\s*Let['’]s (?:swap|talk)[\s\S]*$/i, '')
+                .replace(/\s*Scroll down for a closer look[\s\S]*$/i, '')
+                .trim();
+              if (!line || line.length < 25) continue;
+              if (!paragraphs.includes(line)) {
+                paragraphs.push(line);
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // Ignore Jina fallback error
     }
   }
 
@@ -1329,6 +1446,81 @@ function splitIntoSentences(text) {
   return rawParts
     .map((s) => s.replace(/__DOT__/g, '.').trim())
     .filter((s) => s.length >= 20);
+}
+
+function splitTextInto40To50WordParagraphs(text) {
+  const cleaned = stripHtmlTags(text).replace(/^##\s*/, '').replace(/\s+/g, ' ').trim();
+  if (!cleaned) return [];
+  const totalWords = cleaned.split(/\s+/).filter(Boolean);
+  if (totalWords.length <= 52) return [totalWords.join(' ')];
+
+  const rawSentences =
+    (cleaned.match(/[^.!?]+[.!?]+["'”’)]*/g) || [cleaned])
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+  const normalizedSentences = [];
+  for (const s of rawSentences) {
+    const w = s.split(/\s+/).filter(Boolean);
+    if (w.length <= 52) {
+      normalizedSentences.push(s);
+    } else {
+      const clauses = s.split(
+        /(?:;\s+|\s+—\s+|,\s+(?=(?:and|but|while|showing|proving|making|highlighting|where|nhưng|đồng thời|qua đó|giúp)\b))/i
+      );
+      if (clauses.length > 1) {
+        for (const cl of clauses) {
+          let trimmed = cl.trim();
+          if (!trimmed) continue;
+          if (!/[.!?]["'”’)]*$/.test(trimmed)) trimmed = trimmed.replace(/[,;:-]+$/, '') + '.';
+          trimmed = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+          normalizedSentences.push(trimmed);
+        }
+      } else {
+        normalizedSentences.push(s);
+      }
+    }
+  }
+
+  const paragraphs = [];
+  let currentWords = [];
+
+  for (const sent of normalizedSentences) {
+    const sentWords = sent.split(/\s+/).filter(Boolean);
+    if (currentWords.length === 0) {
+      currentWords.push(...sentWords);
+      if (currentWords.length >= 40) {
+        paragraphs.push(currentWords.join(' '));
+        currentWords = [];
+      }
+      continue;
+    }
+
+    if (currentWords.length + sentWords.length <= 56) {
+      currentWords.push(...sentWords);
+      if (currentWords.length >= 38) {
+        paragraphs.push(currentWords.join(' '));
+        currentWords = [];
+      }
+    } else {
+      paragraphs.push(currentWords.join(' '));
+      currentWords = [...sentWords];
+      if (currentWords.length >= 40) {
+        paragraphs.push(currentWords.join(' '));
+        currentWords = [];
+      }
+    }
+  }
+
+  if (currentWords.length > 0) {
+    if (currentWords.length < 22 && paragraphs.length > 0) {
+      paragraphs[paragraphs.length - 1] = `${paragraphs[paragraphs.length - 1]} ${currentWords.join(' ')}`;
+    } else {
+      paragraphs.push(currentWords.join(' '));
+    }
+  }
+
+  return paragraphs;
 }
 
 function extractSpecificFactsFromParagraph(text, profile) {
@@ -1445,51 +1637,66 @@ function expandFactBlockToAround150Words({
       : '');
   const quotedWork = extracted.quotedMatches[0] || '';
 
-  let combined = cleanBase;
-  if (combined.split(/\s+/).filter(Boolean).length < 42 && allFactsPool && allFactsPool.length > 1) {
-    const nextFact = allFactsPool[(paragraphIndex + 1) % allFactsPool.length];
-    if (nextFact && !combined.includes(nextFact.slice(0, 28))) {
-      combined = `${combined} ${nextFact}`;
+  const relatedSourceFacts = [];
+  if (allFactsPool && allFactsPool.length > 0) {
+    for (let offset = 0; offset < allFactsPool.length; offset++) {
+      const candidateFact = allFactsPool[(paragraphIndex + offset) % allFactsPool.length];
+      if (candidateFact && !cleanBase.includes(candidateFact.slice(0, 24))) {
+        relatedSourceFacts.push(candidateFact);
+      }
+      if (relatedSourceFacts.length >= 3) break;
     }
   }
+  const normalizeCompanionClause = (rawSent) => {
+    const stripped = String(rawSent || '').replace(/^(?:But|And|However,?|Yet|Still,?|Meanwhile,?)\s+/i, '').trim();
+    if (!stripped) return '';
+    const firstWord = stripped.split(/\s+/)[0] || '';
+    const isProperStart = /^[A-Z][a-z]+$/.test(firstWord) && !/^(As|In|On|At|For|With|From|After|Before|While|When|Beyond|Seeing|Stepping|Trading|Watching|There|The|This|Her|His|She|He|It)\b/.test(firstWord);
+    return isProperStart ? stripped : `${stripped.charAt(0).toLowerCase()}${stripped.slice(1)}`;
+  };
+  const companionFact1 = normalizeCompanionClause(relatedSourceFacts[0] || '');
+  const companionFact2 = normalizeCompanionClause(relatedSourceFacts[1] || '');
 
+  let combined = cleanBase;
   const factBridgeSentences =
     language === 'vi'
       ? [
-          `Chi tiết thực tế này trong bài viết làm nổi bật hình ảnh của ${coupleOrSubject}${visualDetail ? ` gắn liền với nét đặc trưng ${visualDetail}` : ''}${loc ? ` tại ${loc}` : ''}, mang đến cái nhìn trực quan và sát với ngữ cảnh câu chuyện.`,
-          `Khi đặt dữ kiện xoay quanh ${anchorEntity}${quotedWork ? ` cùng dấu ấn "${quotedWork}"` : ''}${timeDetail ? ` vào cột mốc ${timeDetail}` : ''} cạnh các chi tiết trong ảnh minh họa, người đọc dễ dàng nhận ra mạch phát triển tự nhiên và nhất quán của nhân vật.`,
-          `Từng chi tiết được ghi lại trong đoạn văn và khung hình minh họa đều cho thấy phong thái đời thường chân thực của ${primary}${secondary ? ` bên cạnh ${secondary}` : ''}, hoàn toàn tách biệt khỏi những đồn đoán bên ngoài.`,
-          `Bên cạnh đó, mối liên hệ thực tế giữa ${coupleOrSubject} và ${secondAnchorEntity}${loc ? ` ở ${loc}` : ''} góp phần giải thích rõ nét hơn bối cảnh xuất hiện trong loạt ảnh của bài viết.`,
-          `Nhìn từ tổng thể các đoạn văn gốc, câu chuyện về ${coupleOrSubject}${timeDetail ? ` (${timeDetail})` : ''} không chỉ dừng lại ở một khoảnh khắc đơn lẻ mà còn phản ánh trọn vẹn hành trình sự nghiệp lẫn cuộc sống riêng.`,
-          `Qua từng góc máy minh họa kết hợp cùng thông tin xác thực về ${anchorEntity}, bài viết khắc họa sống động sức hút bền bỉ của ${primary} trong lòng công chúng.`,
+          ...(companionFact1
+            ? [`Bên cạnh chi tiết trên, nội dung bài gốc cũng cho biết thêm rằng ${companionFact1}`]
+            : []),
+          `Hình ảnh ghi lại của ${coupleOrSubject}${visualDetail ? ` trong trang phục ${visualDetail}` : ''}${loc ? ` tại ${loc}` : ''} làm nổi bật phong cách thời trang cùng thần thái tự nhiên đúng như những gì bài viết gốc mô tả.`,
+          `Khi đặt dữ kiện xoay quanh ${anchorEntity}${quotedWork ? ` cùng dấu ấn "${quotedWork}"` : ''}${timeDetail ? ` vào cột mốc ${timeDetail}` : ''} cạnh các chi tiết trong ảnh minh họa, người đọc dễ dàng theo dõi trọn vẹn mạch câu chuyện thực tế của bài báo.`,
+          ...(companionFact2 ? [`Đồng thời, bài viết gốc nhấn mạnh thêm rằng ${companionFact2}`] : []),
+          `Mọi chi tiết được ghi nhận quanh sự xuất hiện của ${coupleOrSubject}${loc ? ` ở ${loc}` : ''} đều bám sát chuỗi khoảnh khắc thực tế trong bài báo gốc mà không thêm thắt tình tiết ngoài lề.`,
         ]
       : [
-          `Looking closely at the specific details documented in this passage and the accompanying photographs, ${coupleOrSubject}${visualDetail ? `—captured with ${visualDetail}—` : ' '}projected an unmistakable sense of ease${loc ? ` in ${loc}` : ''} that immediately grounded the scene.`,
-          `Connecting the context around ${anchorEntity}${quotedWork ? ` and "${quotedWork}"` : ''}${timeDetail ? ` from ${timeDetail}` : ''} directly to the visual moments in the report illustrates how naturally ${primary}'s personal and professional chapters intersect.`,
-          `Every concrete observation in the paragraph—from the candid body language of ${coupleOrSubject} to the surrounding atmosphere${loc ? ` of ${loc}` : ''}—reinforces why these unscripted snapshots resonate far more deeply than staged publicity appearances.`,
-          `At the same time, the documented link involving ${secondAnchorEntity}${visualDetail ? ` alongside the ${visualDetail} aesthetic` : ''} adds vital texture to the story, giving readers a complete view of what transpired behind the lens.`,
-          `Tracing how ${primary}${secondary ? ` and ${secondary}` : ''} navigated this chapter${timeDetail ? ` around ${timeDetail}` : ''} reveals a consistent pattern of authenticity, where quiet real-world moments speak volumes about their bond and priorities.`,
-          `Taken alongside the illustrative photographs in the article, these verified details surrounding ${anchorEntity} and ${coupleOrSubject} bring clarity and depth to every frame captured during the outing.`,
-          `Rather than relying on spectacle, the genuine dynamic between ${coupleOrSubject}${loc ? ` while spending time in ${loc}` : ''} highlights a grounded, self-assured presence that longtime admirers immediately recognize.`,
-          `Furthermore, the interplay between ${primary}'s established career milestones${quotedWork ? ` such as "${quotedWork}"` : ''} and the relaxed reality shown in the photos underscores how seamlessly the pieces of this narrative fit together.`,
+          ...(companionFact1
+            ? [`Connecting directly with that moment in the report, ${companionFact1}`]
+            : []),
+          `As captured in the original photographs, ${coupleOrSubject}${visualDetail ? ` in ${visualDetail}` : ''}${loc ? ` at ${loc}` : ''} drew immediate attention for the exact styling, fit, and confident presence highlighted throughout the piece.`,
+          `Connecting the context around ${anchorEntity}${quotedWork ? ` and "${quotedWork}"` : ''}${timeDetail ? ` from ${timeDetail}` : ''} directly to the visual moments in the report gives readers the exact clues and details documented in the source article.`,
+          ...(companionFact2
+            ? [`Furthermore, as the source coverage notes, ${companionFact2}`]
+            : []),
+          `Every concrete observation in the source report about ${coupleOrSubject}${loc ? ` in ${loc}` : ''}${visualDetail ? ` wearing ${visualDetail}` : ''} reinforces the specific visual moments captured in the accompanying photos.`,
+          `Taken together, these direct observations from the original article trace the complete appearance of ${primary}${loc ? ` in ${loc}` : ''} without departing from the documented facts of the outing.`,
         ];
 
   let attempt = 0;
   while (
-    combined.split(/\s+/).filter(Boolean).length < 142 &&
+    combined.split(/\s+/).filter(Boolean).length < 138 &&
     attempt < factBridgeSentences.length
   ) {
-    const addon =
-      factBridgeSentences[(paragraphIndex * 2 + attempt) % factBridgeSentences.length];
-    if (!combined.includes(addon.slice(0, 32))) {
+    const addon = factBridgeSentences[attempt];
+    if (!combined.includes(addon.slice(0, 28))) {
       combined = `${combined} ${addon}`;
     }
     attempt++;
   }
 
   const finalWords = combined.split(/\s+/).filter(Boolean);
-  if (finalWords.length > 175) {
-    const sliced = finalWords.slice(0, 164).join(' ');
+  if (finalWords.length > 165) {
+    const sliced = finalWords.slice(0, 156).join(' ');
     const lastDot = Math.max(
       sliced.lastIndexOf('. '),
       sliced.lastIndexOf('! '),
@@ -1541,21 +1748,21 @@ function buildHeadingForParagraph(unitText, profile, headingIndex, originalHeadi
     const viTemplates = [
       `${subjectPair}${loc ? ` Tại ${loc}` : ''}: Chi Tiết Thực Tế Trong Từng Khung Hình`,
       `Dấu Ấn Của ${primary}${quote ? ` Với "${quote}"` : localEntity ? ` Cùng ${localEntity}` : ''} Trong Bài Viết`,
-      `Phong Thái Đời Thường${visual ? ` (${visual})` : ''} Của ${subjectPair} Qua Ảnh Minh Họa`,
+      `Phong Cách Thời Trang${visual ? ` (${visual})` : ''} Của ${subjectPair} Qua Ảnh Minh Họa`,
       `Bối Cảnh Câu Chuyện${time ? ` Năm ${time}` : ''}${loc ? ` Ở ${loc}` : ''} Và Những Dữ Kiện Đáng Chú Ý`,
-      `Mối Gắn Kết Giữa ${subjectPair}${localEntity ? ` Và ${localEntity}` : ''} Nhìn Từ Nội Dung Chính`,
-      `Toàn Cảnh Hành Trình Của ${primary} Qua Các Đoạn Văn Gốc`,
+      `Chi Tiết Đáng Chú Ý Về ${subjectPair}${localEntity ? ` Và ${localEntity}` : ''} Nhìn Từ Nội Dung Chính`,
+      `Toàn Cảnh Câu Chuyện Của ${primary} Qua Các Đoạn Văn Gốc`,
     ];
     return viTemplates[headingIndex % viTemplates.length];
   }
 
   const enTemplates = [
     `${subjectPair}${loc ? ` in ${loc}` : ''}: Inside the Candid Moments Captured on Camera`,
-    `${primary}'s Journey${quote ? ` From "${quote}"` : localEntity ? ` Alongside ${localEntity}` : ''} and Key Story Details`,
-    `Effortless Style and Real-World Chemistry${visual ? `: The ${visual} Look` : ` of ${subjectPair}`}`,
+    `${primary}'s Highlights${quote ? ` From "${quote}"` : localEntity ? ` Alongside ${localEntity}` : ''} and Key Story Details`,
+    `Standout Style and Visual Details${visual ? `: The ${visual} Look` : ` of ${subjectPair}`}`,
     `Timeline and Context${time ? ` (${time})` : ''}: What the Article Reveals About ${subjectPair}`,
     `Behind the Photographs: ${localEntity || subjectPair}${loc ? ` in ${loc}` : ''} and Notable Highlights`,
-    `How ${subjectPair} Balances Career Milestones With Private Moments`,
+    `Every Detail Documented in ${subjectPair}'s Latest Snapshots`,
     `Closer Look at the Visual Details and Background Surrounding ${primary}`,
   ];
   return enTemplates[headingIndex % enTemplates.length];
@@ -1617,13 +1824,10 @@ function buildLongFormSeoArticle2000To5000Words({
   const factUnits = [];
   for (const sp of sourceParagraphs) {
     const sents = splitIntoSentences(sp);
-    if (sents.length >= 3) {
+    if (sents.length >= 2) {
       for (const s of sents) {
         factUnits.push(s);
       }
-    } else if (sents.length === 2) {
-      factUnits.push(sents[0]);
-      factUnits.push(sents[1]);
     } else if (sp.length >= 25) {
       factUnits.push(sp);
     }
@@ -1642,16 +1846,10 @@ function buildLongFormSeoArticle2000To5000Words({
     if (allSourceSentences.length > 0) {
       const sA = allSourceSentences[synIdx % allSourceSentences.length];
       const sB =
-        allSourceSentences[(synIdx + 2) % allSourceSentences.length] || '';
-      const imageContextNote =
-        images[synIdx % Math.max(images.length, 1)]?.alt &&
-        images[synIdx % Math.max(images.length, 1)]?.alt !== articleTitle
-          ? images[synIdx % Math.max(images.length, 1)].alt
-          : '';
-
+        allSourceSentences[(synIdx + 1) % allSourceSentences.length] || '';
       const prefix = isVi
-        ? `Phân tích sát theo mạch nội dung và hình ảnh minh họa trong bài${imageContextNote ? ` (${imageContextNote})` : ''}:`
-        : `Examining the documented details and visual evidence from the story${imageContextNote ? ` (${imageContextNote})` : ''}:`;
+        ? 'Đi sâu vào dữ kiện thực tế và hình ảnh được ghi nhận trong bài gốc:'
+        : 'Focusing on the documented details and visual moments from the source report:';
 
       const combinedUnit =
         sB && sB !== sA ? `${prefix} ${sA} ${sB}` : `${prefix} ${sA}`;
@@ -1665,8 +1863,9 @@ function buildLongFormSeoArticle2000To5000Words({
     synIdx++;
   }
 
-  const targetUnits = factUnits.slice(0, 18);
-  const finalParagraphs150Words = [];
+  const targetUnits = factUnits.slice(0, 16);
+  // Chia mỗi khối mở rộng thành các đoạn văn ngắn 40 - 50 từ xuống dòng rõ ràng theo đúng yêu cầu của người dùng!
+  const finalShortParagraphs40To50Words = [];
 
   targetUnits.forEach((unitText, idx) => {
     const expanded150 = expandFactBlockToAround150Words({
@@ -1689,14 +1888,17 @@ function buildLongFormSeoArticle2000To5000Words({
       );
     }
 
-    finalParagraphs150Words.push({
-      h2: h2ForPara,
-      text: expanded150,
+    const shortChunks = splitTextInto40To50WordParagraphs(expanded150);
+    shortChunks.forEach((chunkText, subIdx) => {
+      finalShortParagraphs40To50Words.push({
+        h2: subIdx === 0 ? h2ForPara : undefined,
+        text: chunkText,
+      });
     });
   });
 
   const htmlBlocks = [];
-  const totalParas = finalParagraphs150Words.length;
+  const totalParas = finalShortParagraphs40To50Words.length;
   let imgIdx = 0;
 
   const buildImageCaptionFromParagraphs = (img, displayNum) => {
@@ -1743,17 +1945,17 @@ function buildLongFormSeoArticle2000To5000Words({
 
   const remainingImgs = Math.max(0, images.length - imgIdx);
   const imgStep =
-    remainingImgs > 0 ? Math.max(1, Math.floor(totalParas / (remainingImgs + 1))) : 999;
+    remainingImgs > 0 ? Math.max(2, Math.floor(totalParas / (remainingImgs + 1))) : 999;
 
-  finalParagraphs150Words.forEach((item, idx) => {
+  finalShortParagraphs40To50Words.forEach((item, idx) => {
     if (item.h2) {
       htmlBlocks.push(
-        `<h2 style="margin: 30px 0 14px 0; font-weight: 800; line-height: 1.35;">${item.h2}</h2>`
+        `<h2 style="margin: 28px 0 14px 0; font-weight: 800; line-height: 1.35;">${item.h2}</h2>`
       );
     }
 
     htmlBlocks.push(
-      `<p style="margin: 0 0 22px 0; line-height: 1.85; font-size: 17px;">${item.text}</p>\n<br />`
+      `<p style="margin: 0 0 18px 0; line-height: 1.85; font-size: 17px;">${item.text}</p>`
     );
 
     if (
@@ -1799,7 +2001,7 @@ function buildLongFormSeoArticle2000To5000Words({
   return {
     html: finalHtml,
     wordCount: plainWords,
-    paragraphCount: finalParagraphs150Words.length,
+    paragraphCount: finalShortParagraphs40To50Words.length,
   };
 }
 
@@ -2626,22 +2828,38 @@ export default async function handler(req, res) {
             try {
               refererOrigin = `${new URL(String(effectiveFeaturedUrl)).origin}/`;
             } catch {}
-            const imgRes = await fetchWithTimeout(
-              String(effectiveFeaturedUrl),
-              {
-                headers: {
-                  'User-Agent': SCRAPER_USER_AGENT,
-                  Referer: refererOrigin,
-                  Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-                },
-              },
-              4500
-            );
-            if (imgRes.ok) {
-              const ct = imgRes.headers.get('content-type');
-              if (ct && ct.startsWith('image/')) mimeType = ct.split(';')[0];
-              const arr = await imgRes.arrayBuffer();
-              buffer = Buffer.from(arr);
+            const tryDownloadImg = async (u, ref) => {
+              try {
+                const r = await fetchWithTimeout(
+                  u,
+                  {
+                    headers: {
+                      'User-Agent': SCRAPER_USER_AGENT,
+                      Referer: ref,
+                      Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                    },
+                  },
+                  4500
+                );
+                if (!r.ok) return null;
+                const ct = (r.headers.get('content-type') || '').toLowerCase();
+                if (ct.includes('text/html')) return null;
+                const arr = await r.arrayBuffer();
+                const b = Buffer.from(arr);
+                if (b.byteLength < 400) return null;
+                return { buf: b, mime: ct.startsWith('image/') ? ct.split(';')[0] : 'image/jpeg' };
+              } catch {
+                return null;
+              }
+            };
+            let dl = await tryDownloadImg(String(effectiveFeaturedUrl), refererOrigin);
+            if (!dl) {
+              const wsrv = `https://wsrv.nl/?url=${encodeURIComponent(String(effectiveFeaturedUrl))}&output=jpg`;
+              dl = await tryDownloadImg(wsrv, 'https://wsrv.nl/');
+            }
+            if (dl) {
+              buffer = dl.buf;
+              mimeType = dl.mime;
             }
           }
           if (buffer) {
