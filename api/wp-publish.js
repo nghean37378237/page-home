@@ -536,16 +536,18 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
 
   const rankedPeople = rankedEntries.map((e) => e[0]);
 
-  let primaryPerson = rankedPeople[0] || (userKeyword && String(userKeyword).trim()) || '';
+  const cleanUserKw = String(userKeyword || '').trim();
+  const isInvalidUserKw =
+    !cleanUserKw ||
+    cleanUserKw.split(/\s+/).length > 4 ||
+    /\?|\b(spotted|soaking|beach|recognize|who|what|where|when|why|how|model|actress|actor|star|celebrity|outfits|turns|heads|look|like|can|you|her|him|them)\b/i.test(
+      cleanUserKw
+    );
+
+  let primaryPerson =
+    rankedPeople[0] || (!isInvalidUserKw ? cleanUserKw : '') || '';
   if (!primaryPerson && isWednesdayShowContext) {
     primaryPerson = /\bJenna\s+Ortega\b/i.test(sample) ? 'Jenna Ortega' : 'Wednesday Addams';
-  }
-  if (!primaryPerson) {
-    primaryPerson =
-      cleanScrapedTitle(title)
-        .split(/[:–—|-]/)[0]
-        .trim()
-        .slice(0, 50) || 'the star';
   }
 
   const secondaryEntry = rankedEntries.find(
@@ -662,7 +664,7 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
 
   const subjectDisplay = secondaryPerson
     ? `${primaryPerson} and ${secondaryPerson}`
-    : primaryPerson;
+    : primaryPerson || 'the cast and creators';
 
   const combinedSearchQuery = [
     primaryPerson,
@@ -686,7 +688,7 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     eventWords,
     articleCategory,
     subjectDisplay,
-    combinedSearchQuery: combinedSearchQuery || primaryPerson || title,
+    combinedSearchQuery: combinedSearchQuery || primaryPerson || 'Celebrity News',
   };
 }
 
@@ -1909,7 +1911,14 @@ async function generateSeoArticleWithAiFast(params) {
     try {
       const scraped = await scrapeWebArticleForSeoRewrite(urlToScrape);
       scrapedImages = scraped.images;
-      if (!sourceTitle) sourceTitle = scraped.originalTitle;
+      if (
+        scraped.originalTitle &&
+        (!sourceTitle ||
+          params.mode === 'from_url' ||
+          (!/[?!:]/.test(sourceTitle) && /[?!:]/.test(scraped.originalTitle)))
+      ) {
+        sourceTitle = scraped.originalTitle;
+      }
       sourceExcerpt = scraped.originalExcerpt;
       sourceArticleText = scraped.articleText;
       resolvedSourceUrl = scraped.sourceUrl;
@@ -1918,9 +1927,14 @@ async function generateSeoArticleWithAiFast(params) {
     }
   }
 
+  const isGeneratedBoilerplate = (txt) =>
+    /Across the paragraphs and illustrative photographs of the report|Looking closely at the specific details documented in this passage and the accompanying photographs|🎬 Related Videos & Exclusive Moments|🎬 Video Liên Quan Đáng Chú Ý/i.test(
+      txt
+    );
+
   const rawHtmlOrText = [params.topic, params.existingContent]
     .map((s) => String(s || '').trim())
-    .filter((s) => s && s !== sourceTitle && s !== urlToScrape)
+    .filter((s) => s && s !== sourceTitle && s !== urlToScrape && !isGeneratedBoilerplate(s))
     .join('\n\n');
 
   if (!sourceArticleText && rawHtmlOrText) {
@@ -1933,7 +1947,11 @@ async function generateSeoArticleWithAiFast(params) {
         .replace(/\s*Let['’]s (?:swap|talk)[\s\S]*$/i, '')
         .replace(/\s+/g, ' ')
         .trim();
-      if (cleanP.length >= 20 && !extractedParas.includes(cleanP)) {
+      if (
+        cleanP.length >= 20 &&
+        !isGeneratedBoilerplate(cleanP) &&
+        !extractedParas.includes(cleanP)
+      ) {
         extractedParas.push(cleanP);
       }
     }
@@ -1945,7 +1963,7 @@ async function generateSeoArticleWithAiFast(params) {
         .replace(/https?:\/\/[^\s"'<>]+/gi, '')
         .split(/\n+/)
         .map((l) => l.trim())
-        .filter((l) => l.length >= 20)
+        .filter((l) => l.length >= 20 && !isGeneratedBoilerplate(l))
         .join('\n\n');
     }
   }
@@ -1987,14 +2005,19 @@ async function generateSeoArticleWithAiFast(params) {
     }
   }
 
-  if (scrapedImages.length === 0 && (sourceTitle || sourceArticleText)) {
+  if ((scrapedImages.length === 0 || !sourceArticleText) && (sourceTitle || sourceArticleText || params.topic)) {
     const discovered = await tryDiscoverSourceArticleImagesFromText(
       sourceTitle || params.topic,
-      sourceArticleText || params.existingContent || params.topic
+      sourceArticleText || params.topic
     );
     if (discovered && discovered.images.length > 0) {
-      scrapedImages = discovered.images;
-      if (!sourceTitle && discovered.title) sourceTitle = discovered.title;
+      if (scrapedImages.length === 0) scrapedImages = discovered.images;
+      if (
+        discovered.title &&
+        (!sourceTitle || (!/[?!:]/.test(sourceTitle) && /[?!:]/.test(discovered.title)))
+      ) {
+        sourceTitle = discovered.title;
+      }
       if (!sourceExcerpt && discovered.excerpt) sourceExcerpt = discovered.excerpt;
       if (!sourceArticleText && discovered.articleText) sourceArticleText = discovered.articleText;
       if (!resolvedSourceUrl && discovered.sourceUrl) resolvedSourceUrl = discovered.sourceUrl;
@@ -2459,85 +2482,128 @@ export default async function handler(req, res) {
       // 5. Đẩy bài viết lên WordPress
       const empCode = String(body.employeeCode || 'A0006').trim().toUpperCase();
       const wpAuthorId = resolveWpUserIdByEmployeeCode(empCode);
-      const pubTitle = String(body.title || '').trim();
+      let pubTitle = String(body.title || '').trim();
       let pubContent = String(body.content || '').trim();
+      let pubExcerpt = String(body.excerpt || '').trim();
       let candidateImgs = Array.isArray(body.extractedImages)
         ? body.extractedImages.filter((im) => im && im.url)
         : [];
 
-      if (!/<img\b/i.test(pubContent)) {
-        if (candidateImgs.length === 0 && body.sourceUrl) {
+      const isBrokenFallbackDraft =
+        /Across the paragraphs and illustrative photographs of the report, the story of/i.test(
+          pubContent
+        ) ||
+        /Read the full story about .*?\s+\./i.test(pubExcerpt);
+
+      if (isBrokenFallbackDraft || !/<img\b/i.test(pubContent)) {
+        if (isBrokenFallbackDraft) {
           try {
-            const scraped = await scrapeWebArticleForSeoRewrite(String(body.sourceUrl));
-            candidateImgs = [...scraped.images];
-          } catch {}
-        }
-        if (candidateImgs.length < 5) {
-          try {
-            const ctxProfile = analyzeArticleSubjectAndContext(
-              pubTitle,
-              pubContent,
-              Array.isArray(body.tags) ? body.tags[0] : undefined,
-              candidateImgs
-            );
-            const excludeKeys = new Set(
-              candidateImgs.map((im) =>
-                String(im.url || '')
-                  .split('?')[0]
-                  .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
-                  .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
-                  .toLowerCase()
-              )
-            );
-            const needed = Math.max(0, 6 - candidateImgs.length);
-            if (needed > 0) {
-              const ext = await searchExternalRelatedImages(
-                ctxProfile.combinedSearchQuery || pubTitle,
-                needed,
-                excludeKeys,
-                ctxProfile
-              );
-              candidateImgs = [...candidateImgs, ...ext];
+            const regenerated = await generateSeoArticleWithAiFast({
+              mode: body.sourceUrl ? 'from_url' : 'from_text',
+              topic: body.sourceUrl || pubTitle,
+              sourceUrl: body.sourceUrl,
+              language: 'en',
+            });
+            if (regenerated && regenerated.contentHtml && /<img\b/i.test(regenerated.contentHtml)) {
+              pubTitle = regenerated.title || pubTitle;
+              pubContent = regenerated.contentHtml;
+              pubExcerpt = regenerated.excerpt || pubExcerpt;
+              if (Array.isArray(regenerated.extractedImages) && regenerated.extractedImages.length > 0) {
+                candidateImgs = regenerated.extractedImages;
+              }
+              if (!body.featuredImageUrl && regenerated.featuredImageUrl) {
+                body.featuredImageUrl = regenerated.featuredImageUrl;
+              }
             }
           } catch {}
         }
-        if (candidateImgs.length === 0 && body.featuredImageUrl) {
-          candidateImgs = [{ url: String(body.featuredImageUrl), alt: pubTitle }];
-        }
-        if (candidateImgs.length > 0) {
-          const figureBlocks = candidateImgs.map((img) => {
-            const altText = String(img.alt || pubTitle).replace(/"/g, '&quot;');
-            const sourceBadge = img.isExternal ? 'Editorial Visual Highlight' : 'Featured Story Moment';
-            return `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
+
+        if (!/<img\b/i.test(pubContent)) {
+          if (candidateImgs.length === 0 && body.sourceUrl) {
+            try {
+              const scraped = await scrapeWebArticleForSeoRewrite(String(body.sourceUrl));
+              candidateImgs = [...scraped.images];
+            } catch {}
+          }
+          if (candidateImgs.length === 0 && (pubTitle || pubContent)) {
+            try {
+              const discovered = await tryDiscoverSourceArticleImagesFromText(pubTitle, pubContent);
+              if (discovered && discovered.images.length > 0) {
+                candidateImgs = [...discovered.images];
+                if (discovered.title && !/[?!:]/.test(pubTitle) && /[?!:]/.test(discovered.title)) {
+                  pubTitle = discovered.title;
+                }
+              }
+            } catch {}
+          }
+          if (candidateImgs.length < 5) {
+            try {
+              const ctxProfile = analyzeArticleSubjectAndContext(
+                pubTitle,
+                pubContent,
+                undefined,
+                candidateImgs
+              );
+              const excludeKeys = new Set(
+                candidateImgs.map((im) =>
+                  String(im.url || '')
+                    .split('?')[0]
+                    .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+                    .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+                    .toLowerCase()
+                )
+              );
+              const needed = Math.max(0, 6 - candidateImgs.length);
+              if (needed > 0) {
+                const ext = await searchExternalRelatedImages(
+                  ctxProfile.combinedSearchQuery || pubTitle,
+                  needed,
+                  excludeKeys,
+                  ctxProfile
+                );
+                candidateImgs = [...candidateImgs, ...ext];
+              }
+            } catch {}
+          }
+          if (candidateImgs.length === 0 && body.featuredImageUrl) {
+            candidateImgs = [{ url: String(body.featuredImageUrl), alt: pubTitle }];
+          }
+          if (candidateImgs.length > 0) {
+            const figureBlocks = candidateImgs.map((img) => {
+              const altText = String(img.alt || pubTitle).replace(/"/g, '&quot;');
+              const sourceBadge = img.isExternal ? 'Editorial Visual Highlight' : 'Featured Story Moment';
+              return `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
   <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
   <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (${sourceBadge})</figcaption>
 </figure>`;
-          });
-          const pParts = pubContent.split(/(<\/p>\s*(?:<br\s*\/?>)?)/i);
-          if (pParts.length < 3) {
-            pubContent = `${figureBlocks[0]}\n\n${pubContent}\n\n${figureBlocks.slice(1).join('\n\n')}`;
-          } else {
-            const totalParas = Math.floor(pParts.length / 2);
-            const step = Math.max(1, Math.floor(totalParas / (figureBlocks.length + 1)));
-            let figIdx = 0;
-            let paraCount = 0;
-            const out = [];
-            for (let i = 0; i < pParts.length; i++) {
-              out.push(pParts[i]);
-              if (i % 2 === 1) {
-                paraCount++;
-                if (figIdx < figureBlocks.length && (paraCount % step === 0 || paraCount === totalParas - 1)) {
-                  out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+            });
+            const pParts = pubContent.split(/(<\/p>\s*(?:<br\s*\/?>)?)/i);
+            if (pParts.length < 3) {
+              pubContent = `${figureBlocks[0]}\n\n${pubContent}\n\n${figureBlocks.slice(1).join('\n\n')}`;
+            } else {
+              const totalParas = Math.floor(pParts.length / 2);
+              const step = Math.max(1, Math.floor(totalParas / (figureBlocks.length + 1)));
+              let figIdx = 0;
+              let paraCount = 0;
+              const out = [];
+              for (let i = 0; i < pParts.length; i++) {
+                out.push(pParts[i]);
+                if (i % 2 === 1) {
+                  paraCount++;
+                  if (figIdx < figureBlocks.length && (paraCount % step === 0 || paraCount === totalParas - 1)) {
+                    out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+                  }
                 }
               }
+              while (figIdx < figureBlocks.length) {
+                out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
+              }
+              pubContent = out.join('');
             }
-            while (figIdx < figureBlocks.length) {
-              out.push(`\n\n${figureBlocks[figIdx++]}\n\n`);
-            }
-            pubContent = out.join('');
           }
         }
       }
+      body.excerpt = pubExcerpt;
 
       const effectiveFeaturedUrl =
         body.featuredImageUrl || (candidateImgs[0] && candidateImgs[0].url) || '';

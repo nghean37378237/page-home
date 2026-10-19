@@ -465,53 +465,100 @@ function injectImagesIntoHtmlContent(
 export async function publishArticleToTarget(input: PublishArticleInput) {
   const targetMode = input.targetMode || 'default_wp';
 
-  // Đảm bảo luôn có ảnh gắn trong bài viết trước khi đẩy lên web
+  // Đảm bảo luôn có ảnh gắn trong bài viết và nội dung chuẩn trước khi đẩy lên web
   let finalContent = input.content || '';
   let candidateImgs = Array.isArray(input.extractedImages)
     ? input.extractedImages.filter((im) => im && im.url)
     : [];
 
-  if (!/<img\b/i.test(finalContent)) {
-    if (candidateImgs.length === 0 && input.sourceUrl) {
+  const isBrokenFallbackDraft =
+    /Across the paragraphs and illustrative photographs of the report, the story of/i.test(
+      finalContent
+    ) ||
+    /Read the full story about .*?\s+\./i.test(input.excerpt || '');
+
+  // Nếu bài đang đẩy lên chưa có ảnh HOẶC đang dính bản nháp dự phòng thiếu dữ kiện, tự động dò bài gốc & viết lại đầy đủ kèm 5 ảnh gốc!
+  if (isBrokenFallbackDraft || !/<img\b/i.test(finalContent)) {
+    if (isBrokenFallbackDraft) {
       try {
-        const scraped = await scrapeWebArticleForSeoRewrite(input.sourceUrl);
-        candidateImgs = [...scraped.images];
-      } catch {}
-    }
-    if (candidateImgs.length < 5) {
-      try {
-        const ctxProfile = analyzeArticleSubjectAndContext(
-          input.title,
-          finalContent,
-          input.tags?.[0],
-          candidateImgs
-        );
-        const excludeKeys = new Set(
-          candidateImgs.map((im) =>
-            im.url
-              .split('?')[0]
-              .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
-              .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
-              .toLowerCase()
-          )
-        );
-        const needed = Math.max(0, 6 - candidateImgs.length);
-        if (needed > 0) {
-          const ext = await searchExternalRelatedImages(
-            ctxProfile.combinedSearchQuery || input.title,
-            needed,
-            excludeKeys,
-            ctxProfile
-          );
-          candidateImgs = [...candidateImgs, ...ext];
+        const regenerated = await generateSeoArticleWithAi({
+          mode: input.sourceUrl ? 'from_url' : 'from_text',
+          topic: input.sourceUrl || input.title,
+          sourceUrl: input.sourceUrl,
+          language: 'en',
+        });
+        if (regenerated && regenerated.contentHtml && /<img\b/i.test(regenerated.contentHtml)) {
+          input.title = regenerated.title || input.title;
+          finalContent = regenerated.contentHtml;
+          input.excerpt = regenerated.excerpt || input.excerpt;
+          if (Array.isArray(regenerated.tags) && regenerated.tags.length > 0) {
+            input.tags = regenerated.tags;
+          }
+          if (Array.isArray(regenerated.extractedImages) && regenerated.extractedImages.length > 0) {
+            candidateImgs = regenerated.extractedImages;
+          }
+          if (!input.featuredImageUrl && regenerated.featuredImageUrl) {
+            input.featuredImageUrl = regenerated.featuredImageUrl;
+          }
         }
       } catch {}
     }
-    if (candidateImgs.length === 0 && input.featuredImageUrl) {
-      candidateImgs = [{ url: input.featuredImageUrl, alt: input.title }];
-    }
-    if (candidateImgs.length > 0) {
-      finalContent = injectImagesIntoHtmlContent(finalContent, candidateImgs, input.title);
+
+    if (!/<img\b/i.test(finalContent)) {
+      if (candidateImgs.length === 0 && input.sourceUrl) {
+        try {
+          const scraped = await scrapeWebArticleForSeoRewrite(input.sourceUrl);
+          if (scraped.images.length > 0) {
+            candidateImgs = [...scraped.images];
+          }
+        } catch {}
+      }
+      if (candidateImgs.length === 0 && (input.title || finalContent)) {
+        try {
+          const discovered = await tryDiscoverSourceArticleImagesFromText(input.title, finalContent);
+          if (discovered && discovered.images.length > 0) {
+            candidateImgs = [...discovered.images];
+            if (discovered.title && !/[?!:]/.test(input.title) && /[?!:]/.test(discovered.title)) {
+              input.title = discovered.title;
+            }
+          }
+        } catch {}
+      }
+      if (candidateImgs.length < 5) {
+        try {
+          const ctxProfile = analyzeArticleSubjectAndContext(
+            input.title,
+            finalContent,
+            undefined,
+            candidateImgs
+          );
+          const excludeKeys = new Set(
+            candidateImgs.map((im) =>
+              im.url
+                .split('?')[0]
+                .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+                .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+                .toLowerCase()
+            )
+          );
+          const needed = Math.max(0, 6 - candidateImgs.length);
+          if (needed > 0) {
+            const ext = await searchExternalRelatedImages(
+              ctxProfile.combinedSearchQuery || input.title,
+              needed,
+              excludeKeys,
+              ctxProfile
+            );
+            candidateImgs = [...candidateImgs, ...ext];
+          }
+        } catch {}
+      }
+      if (candidateImgs.length === 0 && input.featuredImageUrl) {
+        candidateImgs = [{ url: input.featuredImageUrl, alt: input.title }];
+      }
+      if (candidateImgs.length > 0) {
+        finalContent = injectImagesIntoHtmlContent(finalContent, candidateImgs, input.title);
+      }
     }
   }
 
@@ -1179,10 +1226,18 @@ export function analyzeArticleSubjectAndContext(
     else fallbackShowSubject = 'Wednesday Addams';
   }
 
+  const cleanUserKw = String(userKeyword || '').trim();
+  const isInvalidUserKw =
+    !cleanUserKw ||
+    cleanUserKw.split(/\s+/).length > 4 ||
+    /\?|\b(spotted|soaking|beach|recognize|who|what|where|when|why|how|model|actress|actor|star|celebrity|outfits|turns|heads|look|like|can|you|her|him|them)\b/i.test(
+      cleanUserKw
+    );
+
   const primaryPerson =
     rankedPeople[0] ||
     fallbackShowSubject ||
-    (userKeyword && userKeyword.trim()) ||
+    (!isInvalidUserKw ? cleanUserKw : '') ||
     '';
 
   const secondaryEntry = rankedEntries.find(
@@ -2809,7 +2864,14 @@ export async function generateSeoArticleWithAi(params: {
     try {
       const scraped = await scrapeWebArticleForSeoRewrite(candidateUrl);
       scrapedImages = scraped.images;
-      if (!sourceTitle) sourceTitle = scraped.originalTitle;
+      if (
+        scraped.originalTitle &&
+        (!sourceTitle ||
+          params.mode === 'from_url' ||
+          (!/[?!:]/.test(sourceTitle) && /[?!:]/.test(scraped.originalTitle)))
+      ) {
+        sourceTitle = scraped.originalTitle;
+      }
       sourceExcerpt = scraped.originalExcerpt;
       sourceArticleText = scraped.articleText;
       resolvedSourceUrl = scraped.sourceUrl;
@@ -2818,10 +2880,15 @@ export async function generateSeoArticleWithAi(params: {
     }
   }
 
-  // Luôn trích xuất thêm đoạn văn & ảnh minh họa có sẵn trong trình soạn thảo (nếu người dùng có nhập kèm)
+  const isGeneratedBoilerplate = (txt: string): boolean =>
+    /Across the paragraphs and illustrative photographs of the report|Looking closely at the specific details documented in this passage and the accompanying photographs|🎬 Related Videos & Exclusive Moments|🎬 Video Liên Quan Đáng Chú Ý/i.test(
+      txt
+    );
+
+  // Luôn trích xuất thêm đoạn văn & ảnh minh họa có sẵn trong trình soạn thảo (nhưng loại bỏ các đoạn văn tự sinh từ lần chạy trước để tránh làm bẩn dữ liệu gốc)
   const rawHtmlOrText = [params.topic, params.existingContent]
     .map((s) => String(s || '').trim())
-    .filter((s) => s && s !== sourceTitle && s !== candidateUrl)
+    .filter((s) => s && s !== sourceTitle && s !== candidateUrl && !isGeneratedBoilerplate(s))
     .join('\n\n');
 
   if (!sourceArticleText && rawHtmlOrText) {
@@ -2834,7 +2901,11 @@ export async function generateSeoArticleWithAi(params: {
         .replace(/\s*Let['’]s (?:swap|talk)[\s\S]*$/i, '')
         .replace(/\s+/g, ' ')
         .trim();
-      if (cleanP.length >= 20 && !extractedParas.includes(cleanP)) {
+      if (
+        cleanP.length >= 20 &&
+        !isGeneratedBoilerplate(cleanP) &&
+        !extractedParas.includes(cleanP)
+      ) {
         extractedParas.push(cleanP);
       }
     }
@@ -2846,7 +2917,7 @@ export async function generateSeoArticleWithAi(params: {
         .replace(/https?:\/\/[^\s"'<>]+/gi, '')
         .split(/\n+/)
         .map((l) => l.trim())
-        .filter((l) => l.length >= 20)
+        .filter((l) => l.length >= 20 && !isGeneratedBoilerplate(l))
         .join('\n\n');
     }
   }
@@ -2888,15 +2959,20 @@ export async function generateSeoArticleWithAi(params: {
     }
   }
 
-  // Nếu người dùng chỉ copy tiêu đề / đoạn văn từ bài gốc (chưa dán link) và chưa có ảnh gốc, tự động dò bài gốc theo tiêu đề hoặc câu đầu tiên để lấy trọn bộ ảnh gốc trong bài!
-  if (scrapedImages.length === 0 && (sourceTitle || sourceArticleText)) {
+  // Nếu người dùng chỉ copy tiêu đề / đoạn văn từ bài gốc (chưa dán link) hoặc chưa lấy được nội dung/ảnh gốc, tự động dò bài gốc theo tiêu đề hoặc câu đầu tiên!
+  if ((scrapedImages.length === 0 || !sourceArticleText) && (sourceTitle || sourceArticleText || params.topic)) {
     const discovered = await tryDiscoverSourceArticleImagesFromText(
       sourceTitle || params.topic,
-      sourceArticleText || params.existingContent || params.topic
+      sourceArticleText || params.topic
     );
     if (discovered && discovered.images.length > 0) {
-      scrapedImages = discovered.images;
-      if (!sourceTitle && discovered.title) sourceTitle = discovered.title;
+      if (scrapedImages.length === 0) scrapedImages = discovered.images;
+      if (
+        discovered.title &&
+        (!sourceTitle || (!/[?!:]/.test(sourceTitle) && /[?!:]/.test(discovered.title)))
+      ) {
+        sourceTitle = discovered.title;
+      }
       if (!sourceExcerpt && discovered.excerpt) sourceExcerpt = discovered.excerpt;
       if (!sourceArticleText && discovered.articleText) sourceArticleText = discovered.articleText;
       if (!resolvedSourceUrl && discovered.sourceUrl) resolvedSourceUrl = discovered.sourceUrl;
