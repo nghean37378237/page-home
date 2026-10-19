@@ -961,6 +961,26 @@ async function searchRelatedYouTubeVideos(rawQuery, limit = 2, contextProfile) {
   return candidates.slice(0, limit).map(({ score: _s, ...rest }) => rest);
 }
 
+function stripTrackingQueryFromUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    const toRemove = [];
+    u.searchParams.forEach((_v, k) => {
+      if (
+        /^(fbclid|gclid|dclid|msclkid|twclid|ttclid|igshid|mibextid|mc_cid|mc_eid|_ga|_gl|ref|fb_action_ids|fb_action_types|fb_source|utm_[a-z0-9_]+|_aem_[a-z0-9_]*)$/i.test(
+          k
+        )
+      ) {
+        toRemove.push(k);
+      }
+    });
+    for (const k of toRemove) u.searchParams.delete(k);
+    return u.href;
+  } catch {
+    return rawUrl;
+  }
+}
+
 async function scrapeWebArticleForSeoRewrite(rawUrl) {
   let cleanUrl = String(rawUrl || '').trim();
   if (!cleanUrl) {
@@ -969,6 +989,7 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
   if (!/^https?:\/\//i.test(cleanUrl)) {
     cleanUrl = `https://${cleanUrl}`;
   }
+  cleanUrl = stripTrackingQueryFromUrl(cleanUrl);
 
   const parsedUrl = new URL(cleanUrl);
   const origin = parsedUrl.origin;

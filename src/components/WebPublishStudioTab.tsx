@@ -775,6 +775,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const lastAutoExtractedUrlRef = useRef<string>('');
+
   const extractFirstArticleUrl = (inputStr: string): string => {
     const matches = String(inputStr || '').match(/https?:\/\/[^\s"'<>]+/gi) || [];
     for (const rawM of matches) {
@@ -789,6 +791,82 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     return '';
   };
 
+  // Tự động hút toàn bộ Ảnh gốc + Tiêu đề + Đoạn văn ngay khi người dùng dán Link (vượt qua mọi web chặn copy chuột phải / bôi đen như beaware.fun)
+  const autoExtractArticleFromPastedUrl = useCallback(
+    async (rawUrl: string) => {
+      const cleanLink = extractFirstArticleUrl(rawUrl);
+      if (!cleanLink || cleanLink.length < 12) return;
+      if (lastAutoExtractedUrlRef.current === cleanLink) return;
+      lastAutoExtractedUrlRef.current = cleanLink;
+
+      setSearchingExtImages(true);
+      try {
+        const res = await fetch('/api/extract-web-images', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: cleanLink }),
+        });
+        const data = await safeParseApiJson(res);
+        if (res.ok && data.ok && Array.isArray(data.images) && data.images.length > 0) {
+          const fetchedTitle = String(data.title || '').trim();
+          if (fetchedTitle && (!title.trim() || title.trim().startsWith('http'))) {
+            setTitle(fetchedTitle);
+          }
+          if (data.excerpt && !excerpt.trim()) {
+            setExcerpt(String(data.excerpt).trim());
+          }
+          if (data.articleText) {
+            const bodyTxt = String(data.articleText).trim();
+            setAiTopic((prev) => {
+              const trimmed = prev.trim();
+              if (!trimmed || trimmed === cleanLink || /^https?:\/\/\S+$/i.test(trimmed)) {
+                return bodyTxt;
+              }
+              return prev;
+            });
+          }
+          const origImgs = data.images.map((im: any, idx: number) => ({
+            url: String(im.url || im.dataUrl || ''),
+            alt: String(im.alt || fetchedTitle || `Photo ${idx + 1}`),
+            isFeatured: idx === 0,
+            isExternal: false,
+          }));
+          setExtractedWebImages(origImgs);
+          if (origImgs[0]?.url) {
+            setFeaturedImageUrl(origImgs[0].url);
+            setFeaturedMediaId(0);
+            setFeaturedImageBase64('');
+          }
+          setContent((prevContent) => {
+            if (prevContent.trim() && !/<img\b/i.test(prevContent)) {
+              return distributeAndAttachImagesToHtml(
+                prevContent,
+                origImgs,
+                fetchedTitle || title || 'Exclusive Story'
+              );
+            }
+            return prevContent;
+          });
+        }
+      } catch {
+        // ignore background pre-extract error
+      } finally {
+        setSearchingExtImages(false);
+      }
+    },
+    [title, excerpt]
+  );
+
+  // Tự động nhận diện khi người dùng dán Link vào ô aiSourceUrl hoặc aiTopic
+  useEffect(() => {
+    const candidate = aiSourceUrl.trim() || extractFirstArticleUrl(aiTopic);
+    if (!candidate || !/^https?:\/\/[a-z0-9.-]+\.[a-z]{2,}\/\S+/i.test(candidate)) return;
+    const timer = setTimeout(() => {
+      void autoExtractArticleFromPastedUrl(candidate);
+    }, 180);
+    return () => clearTimeout(timer);
+  }, [aiSourceUrl, aiTopic, autoExtractArticleFromPastedUrl]);
+
   // Tự động bóc tách ảnh minh họa (<img src/data-src/srcset>) khi người dùng Copy & Paste trực tiếp nội dung từ trang web (như beaware.fun) vào ô văn bản
   const handlePasteRichArticleContent = (
     e: React.ClipboardEvent<HTMLTextAreaElement | HTMLInputElement>
@@ -797,8 +875,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       const htmlClip = e.clipboardData?.getData('text/html') || '';
       const textClip = e.clipboardData?.getData('text/plain') || '';
       const pastedUrl = extractFirstArticleUrl(textClip) || extractFirstArticleUrl(htmlClip);
-      if (pastedUrl && !aiSourceUrl.trim()) {
-        setAiSourceUrl(pastedUrl);
+      if (pastedUrl) {
+        if (!aiSourceUrl.trim()) setAiSourceUrl(pastedUrl);
+        void autoExtractArticleFromPastedUrl(pastedUrl);
       }
       if (!htmlClip || !/<img\b/i.test(htmlClip)) return;
 
@@ -1977,17 +2056,36 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   </div>
                 </div>
               ) : (
-                /* GIAO DIỆN CHỨC NĂNG 2: NHẬP ĐOẠN NỘI DUNG THÔ */
+                /* GIAO DIỆN CHỨC NĂNG 2: NHẬP ĐOẠN NỘI DUNG THÔ HOẶC HÚT TỪ WEB CHẶN COPY */
                 <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
+                  <div className="flex flex-col sm:flex-row gap-2 pb-1">
+                    <input
+                      type="text"
+                      value={aiSourceUrl}
+                      onChange={(e) => setAiSourceUrl(e.target.value)}
+                      onPaste={handlePasteRichArticleContent}
+                      placeholder="🔓 Web gốc chặn Copy? Dán Link bài viết (VD: https://beaware.fun/...) vào đây để tự hút Đoạn Văn & Ảnh Gốc..."
+                      className="flex-1 px-3 py-2 bg-emerald-50/60 border border-emerald-300 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <button
+                      type="button"
+                      disabled={searchingExtImages || aiLoading}
+                      onClick={() => void handleExtractAndAttachArticleImages()}
+                      className="px-3 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-xs"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>🔓 Phá Chặn Copy: Hút Ảnh &amp; Đoạn Văn Từ Link</span>
+                    </button>
+                  </div>
                   <label className="text-xs font-black text-slate-800 block">
-                    📝 Nhập đoạn nội dung thô, bản tóm tắt hoặc tên nhân vật / sự kiện (hoặc dán kèm link bài):
+                    📝 Đoạn nội dung bài gốc (tự động điền khi dán Link ở trên, hoặc tự nhập / sửa):
                   </label>
                   <textarea
                     rows={3}
                     value={aiTopic}
                     onChange={(e) => setAiTopic(e.target.value)}
                     onPaste={handlePasteRichArticleContent}
-                    placeholder="Dán đoạn nội dung hoặc ý chính (hoặc dán kèm link bài viết) bạn muốn viết chuẩn SEO 2.000 - 5.000 từ vào đây..."
+                    placeholder="Dán đoạn nội dung hoặc dán trực tiếp Link bài viết (kể cả web chặn copy như beaware.fun) vào đây..."
                     className="w-full px-3.5 py-2 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <div className="flex flex-wrap justify-end gap-2">

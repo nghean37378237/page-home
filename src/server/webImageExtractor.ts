@@ -185,31 +185,53 @@ function extractImagesFromHtmlChunk(
       if (w > 0 && h > 0 && w < 120 && h < 120) continue;
     }
 
-    const srcsetMatch =
-      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
-      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
-      tag.match(/\bsrcset=["']([^"']+)["']/i);
-
     let chosenUrl = '';
-    if (srcsetMatch && srcsetMatch[1]) {
-      chosenUrl = pickBestUrlFromSrcset(srcsetMatch[1], baseUrl);
+    const lazyAttrs = [
+      'data-orig-file',
+      'data-large-file',
+      'data-full-url',
+      'data-hi-res-src',
+      'data-original',
+      'data-lazy-src',
+      'data-src',
+      'data-url',
+      'data-img-url',
+    ];
+    for (const attr of lazyAttrs) {
+      const mAttr = tag.match(new RegExp(`\\b${attr}=["']([^"']+)["']`, 'i'));
+      if (mAttr && mAttr[1] && !mAttr[1].trim().startsWith('data:')) {
+        const cand = resolveAbsoluteUrl(mAttr[1], baseUrl);
+        if (cand && !isJunkImageUrl(cand)) {
+          chosenUrl = cand;
+          break;
+        }
+      }
     }
 
     if (!chosenUrl) {
-      const srcAttr =
-        tag.match(/\bdata-lazy-src=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-src=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-original=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-full-url=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-hi-res-src=["']([^"']+)["']/i) ||
-        tag.match(/\bdata-url=["']([^"']+)["']/i) ||
-        tag.match(/\bsrc=["']([^"']+)["']/i);
-      if (srcAttr && srcAttr[1]) {
+      const srcsetMatch =
+        tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
+        tag.match(/\bsrcset=["']([^"']+)["']/i);
+      if (srcsetMatch && srcsetMatch[1] && !srcsetMatch[1].trim().startsWith('data:')) {
+        chosenUrl = pickBestUrlFromSrcset(srcsetMatch[1], baseUrl);
+      }
+    }
+
+    if (!chosenUrl) {
+      const srcAttr = tag.match(/\bsrc=["']([^"']+)["']/i);
+      if (srcAttr && srcAttr[1] && !srcAttr[1].trim().startsWith('data:')) {
         chosenUrl = resolveAbsoluteUrl(srcAttr[1], baseUrl);
       }
     }
 
     if (!chosenUrl || isJunkImageUrl(chosenUrl)) continue;
+    if (chosenUrl.includes('/wp-content/uploads/')) {
+      chosenUrl = chosenUrl.replace(
+        /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+|768x\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
+        ''
+      );
+    }
 
     const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
     const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
@@ -265,6 +287,26 @@ function extractImagesFromJsonLd(html: string, baseUrl: string): string[] {
   return urls;
 }
 
+function stripTrackingParams(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    const toRemove: string[] = [];
+    u.searchParams.forEach((_v, k) => {
+      if (
+        /^(fbclid|gclid|dclid|msclkid|twclid|ttclid|igshid|mibextid|mc_cid|mc_eid|_ga|_gl|ref|fb_action_ids|fb_action_types|fb_source|utm_[a-z0-9_]+|_aem_[a-z0-9_]*)$/i.test(
+          k
+        )
+      ) {
+        toRemove.push(k);
+      }
+    });
+    for (const k of toRemove) u.searchParams.delete(k);
+    return u.href;
+  } catch {
+    return rawUrl;
+  }
+}
+
 export async function extractImagesFromWebUrl(
   rawInputUrl: string
 ): Promise<ExtractedWebArticleResult> {
@@ -275,6 +317,8 @@ export async function extractImagesFromWebUrl(
   if (!/^https?:\/\//i.test(cleanUrl)) {
     cleanUrl = `https://${cleanUrl}`;
   }
+  // Loại bỏ ?fbclid=... và tham số tracking để chạm thẳng Cloudflare APO Cache (tốc độ ~180ms thay vì 8s)
+  cleanUrl = stripTrackingParams(cleanUrl);
 
   const parsedUrl = new URL(cleanUrl);
   const origin = parsedUrl.origin;
@@ -323,7 +367,8 @@ export async function extractImagesFromWebUrl(
         .trim();
       if (
         text.length >= 35 &&
-        !/^(read more|related|share this|follow us|copyright|all rights reserved|photo:|credit:|source:|advertisement|subscribe|sign up|click here|see also)/i.test(text)
+        !/^(read more|related|share this|follow us|copyright|all rights reserved|photo:|credit:|source:|advertisement|subscribe|sign up|click here|see also)/i.test(text) &&
+        !extractedParagraphs.includes(text)
       ) {
         extractedParagraphs.push(text);
       }
@@ -332,12 +377,14 @@ export async function extractImagesFromWebUrl(
 
   const tryFetchWpRestPost = async (apiEndpointUrl: string) => {
     try {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 4500);
       const wpRes = await fetch(
         apiEndpointUrl.includes('_embed')
           ? apiEndpointUrl
           : `${apiEndpointUrl}${apiEndpointUrl.includes('?') ? '&' : '?'}_embed`,
-        { headers: { 'User-Agent': USER_AGENT } }
-      );
+        { headers: { 'User-Agent': USER_AGENT }, signal: controller.signal }
+      ).finally(() => clearTimeout(t));
       if (!wpRes.ok) return;
       const rawJson: any = await wpRes.json();
       const postJson = Array.isArray(rawJson) ? rawJson[0] : rawJson;
@@ -379,26 +426,10 @@ export async function extractImagesFromWebUrl(
     await tryFetchWpRestPost(
       `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSlugSegment)}&_embed`
     );
-    if (candidateImages.length === 0) {
-      const searchQ = lastSlugSegment.replace(/[-_]+/g, ' ').trim();
-      if (searchQ.length >= 5) {
-        await tryFetchWpRestPost(
-          `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(searchQ)}&per_page=1&_embed`
-        );
-        if (candidateImages.length === 0) {
-          const shortQ = searchQ.split(/\s+/).slice(0, 5).join(' ');
-          if (shortQ && shortQ !== searchQ) {
-            await tryFetchWpRestPost(
-              `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(shortQ)}&per_page=1&_embed`
-            );
-          }
-        }
-      }
-    }
   }
 
-  // 2. Quét trực tiếp HTML trang web CHỈ KHI WP REST API chưa lấy được ảnh bài viết
-  if (candidateImages.length === 0 || !title) {
+  // 2. Quét trực tiếp HTML trang web (vượt qua mọi script chặn copy onselectstart/oncontextmenu)
+  if (candidateImages.length < 2 || !title || extractedParagraphs.length === 0) {
     const pageRes = await fetch(cleanUrl, {
       headers: {
         'User-Agent': USER_AGENT,
@@ -421,7 +452,7 @@ export async function extractImagesFromWebUrl(
         await tryFetchWpRestPost(resolveAbsoluteUrl(wpJsonLinkMatch[1], cleanUrl));
       }
 
-      if (candidateImages.length === 0 || !title) {
+      if (candidateImages.length < 2 || !title || extractedParagraphs.length === 0) {
         if (!title) {
           const ogTitle =
             html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||

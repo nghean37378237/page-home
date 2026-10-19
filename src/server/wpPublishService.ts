@@ -1631,6 +1631,26 @@ function cleanScrapedTitle(rawTitle: string): string {
   return stripped;
 }
 
+function stripTrackingQueryFromUrl(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl);
+    const toRemove: string[] = [];
+    u.searchParams.forEach((_v, k) => {
+      if (
+        /^(fbclid|gclid|dclid|msclkid|twclid|ttclid|igshid|mibextid|mc_cid|mc_eid|_ga|_gl|ref|fb_action_ids|fb_action_types|fb_source|utm_[a-z0-9_]+|_aem_[a-z0-9_]*)$/i.test(
+          k
+        )
+      ) {
+        toRemove.push(k);
+      }
+    });
+    for (const k of toRemove) u.searchParams.delete(k);
+    return u.href;
+  } catch {
+    return rawUrl;
+  }
+}
+
 /**
  * Cào toàn bộ nội dung văn bản + toàn bộ ảnh minh họa từ 1 link bài viết web bất kỳ
  */
@@ -1649,6 +1669,7 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
   if (!/^https?:\/\//i.test(cleanUrl)) {
     cleanUrl = `https://${cleanUrl}`;
   }
+  cleanUrl = stripTrackingQueryFromUrl(cleanUrl);
 
   const parsedUrl = new URL(cleanUrl);
   const origin = parsedUrl.origin;
