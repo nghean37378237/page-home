@@ -1048,12 +1048,6 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
     if (postJson.excerpt && postJson.excerpt.rendered) {
       originalExcerpt = stripHtmlTags(postJson.excerpt.rendered);
     }
-    const contentHtml = String((postJson.content && postJson.content.rendered) || '');
-    extractParagraphsFromHtml(contentHtml);
-    const contentImgs = collectImgsFromHtml(contentHtml, cleanUrl);
-    for (const img of contentImgs) {
-      addImage(img.url, img.alt || originalTitle, images.length === 0);
-    }
 
     const embeddedMedia =
       postJson._embedded &&
@@ -1072,8 +1066,15 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
         embeddedMedia.media_details.sizes.large.source_url) ||
       (embeddedMedia && embeddedMedia.source_url) ||
       '';
-    if (featUrl && (contentImgs.length === 0 || !/\bcollage[-_\d]/i.test(featUrl))) {
-      addImage(featUrl, originalTitle, images.length === 0);
+    if (featUrl) {
+      addImage(featUrl, originalTitle, true);
+    }
+
+    const contentHtml = String((postJson.content && postJson.content.rendered) || '');
+    extractParagraphsFromHtml(contentHtml);
+    const contentImgs = collectImgsFromHtml(contentHtml, cleanUrl);
+    for (const img of contentImgs) {
+      addImage(img.url, img.alt || originalTitle, images.length === 0);
     }
 
     if (images.length < 5 && postJson.id) {
@@ -1100,7 +1101,7 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
                   mItem.media_details.sizes.large.source_url) ||
                 (mItem && mItem.source_url) ||
                 '';
-              if (mUrl && !/\bcollage[-_\d]/i.test(mUrl)) {
+              if (mUrl) {
                 addImage(
                   mUrl,
                   decodeHtmlEntities((mItem && mItem.alt_text) || (mItem && mItem.title && mItem.title.rendered) || originalTitle),
@@ -1233,7 +1234,7 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
             html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
             html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
             html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-          if (ogImg && ogImg[1] && !/\bcollage[-_\d]/i.test(ogImg[1])) {
+          if (ogImg && ogImg[1]) {
             addImage(ogImg[1], originalTitle, images.length === 0);
           }
 
@@ -1779,6 +1780,86 @@ function buildLongFormSeoArticle2000To5000Words({
   };
 }
 
+async function tryDiscoverSourceArticleImagesFromText(rawTitle, rawBodyText) {
+  const candidateOrigins = ['https://beaware.fun'];
+  const slugFromTitle = String(rawTitle || '')
+    .toLowerCase()
+    .replace(/['’"“”?!:;,.()[\]]+/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const firstSentence = splitIntoSentences(rawBodyText)[0] || '';
+  const searchSnippet = firstSentence
+    .split(/\s+/)
+    .slice(0, 9)
+    .join(' ')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  for (const origin of candidateOrigins) {
+    try {
+      if (slugFromTitle && slugFromTitle.length >= 12) {
+        const slugUrl = `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(slugFromTitle)}&_embed`;
+        const res = await fetchWithTimeout(
+          slugUrl,
+          { headers: { 'User-Agent': SCRAPER_USER_AGENT } },
+          3500
+        );
+        if (res.ok) {
+          const arr = await res.json();
+          if (Array.isArray(arr) && arr[0] && arr[0].link) {
+            const scraped = await scrapeWebArticleForSeoRewrite(String(arr[0].link));
+            if (scraped.images.length > 0) {
+              return {
+                title: scraped.originalTitle,
+                excerpt: scraped.originalExcerpt,
+                articleText: scraped.articleText,
+                sourceUrl: scraped.sourceUrl,
+                images: scraped.images,
+              };
+            }
+          }
+        }
+      }
+
+      if (searchSnippet && searchSnippet.length >= 18) {
+        const searchUrl = `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(searchSnippet)}&per_page=3&_embed`;
+        const res = await fetchWithTimeout(
+          searchUrl,
+          { headers: { 'User-Agent': SCRAPER_USER_AGENT } },
+          3500
+        );
+        if (res.ok) {
+          const arr = await res.json();
+          if (Array.isArray(arr) && arr.length > 0) {
+            const probeWords = searchSnippet.toLowerCase().split(/\s+/).slice(0, 5).join(' ');
+            const matchedPost =
+              arr.find((p) =>
+                stripHtmlTags(String((p && p.content && p.content.rendered) || ''))
+                  .toLowerCase()
+                  .includes(probeWords)
+              ) || arr[0];
+            if (matchedPost && matchedPost.link) {
+              const scraped = await scrapeWebArticleForSeoRewrite(String(matchedPost.link));
+              if (scraped.images.length > 0) {
+                return {
+                  title: scraped.originalTitle,
+                  excerpt: scraped.originalExcerpt,
+                  articleText: scraped.articleText,
+                  sourceUrl: scraped.sourceUrl,
+                  images: scraped.images,
+                };
+              }
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
 async function generateSeoArticleWithAiFast(params) {
   const language = params.language === 'vi' ? 'vi' : 'en';
   let scrapedImages = [];
@@ -1787,28 +1868,41 @@ async function generateSeoArticleWithAiFast(params) {
   let sourceArticleText = '';
   let resolvedSourceUrl = '';
 
-  const rawUrlCandidate = String(params.sourceUrl || '').trim() || String(params.topic || '').trim();
-  const detectedUrlMatch = rawUrlCandidate.match(/https?:\/\/[^\s"'<>]+/i);
+  const extractNonImageHttpUrl = (inputStr) => {
+    const matches = String(inputStr || '').match(/https?:\/\/[^\s"'<>]+/gi) || [];
+    for (const rawM of matches) {
+      const cleaned = rawM.replace(/[),.;]+$/, '');
+      if (!/\.(jpg|jpeg|png|webp|gif|svg|avif)(\?|$)/i.test(cleaned) && !/youtube\.com|youtu\.be/i.test(cleaned)) {
+        return cleaned;
+      }
+    }
+    return '';
+  };
+
   const urlToScrape =
-    params.mode === 'from_url'
-      ? rawUrlCandidate
-      : detectedUrlMatch
-      ? detectedUrlMatch[0]
-      : '';
+    String(params.sourceUrl || '').trim() ||
+    extractNonImageHttpUrl(params.topic) ||
+    extractNonImageHttpUrl(params.existingContent);
 
   if (urlToScrape) {
-    const scraped = await scrapeWebArticleForSeoRewrite(urlToScrape);
-    scrapedImages = scraped.images;
-    if (!sourceTitle) sourceTitle = scraped.originalTitle;
-    sourceExcerpt = scraped.originalExcerpt;
-    sourceArticleText = scraped.articleText;
-    resolvedSourceUrl = scraped.sourceUrl;
-  } else {
-    const rawHtmlOrText = [params.topic, params.existingContent]
-      .map((s) => String(s || '').trim())
-      .filter((s) => s && s !== sourceTitle)
-      .join('\n\n');
+    try {
+      const scraped = await scrapeWebArticleForSeoRewrite(urlToScrape);
+      scrapedImages = scraped.images;
+      if (!sourceTitle) sourceTitle = scraped.originalTitle;
+      sourceExcerpt = scraped.originalExcerpt;
+      sourceArticleText = scraped.articleText;
+      resolvedSourceUrl = scraped.sourceUrl;
+    } catch (err) {
+      if (params.mode === 'from_url') throw err;
+    }
+  }
 
+  const rawHtmlOrText = [params.topic, params.existingContent]
+    .map((s) => String(s || '').trim())
+    .filter((s) => s && s !== sourceTitle && s !== urlToScrape)
+    .join('\n\n');
+
+  if (!sourceArticleText && rawHtmlOrText) {
     const extractedParas = [];
     const pRegex = /<(p|h2|h3|blockquote|li)\b[^>]*>([\s\S]*?)<\/\1>/gi;
     let pm;
@@ -1827,6 +1921,7 @@ async function generateSeoArticleWithAiFast(params) {
       sourceArticleText = extractedParas.join('\n\n');
     } else {
       sourceArticleText = stripHtmlTags(rawHtmlOrText)
+        .replace(/https?:\/\/[^\s"'<>]+/gi, '')
         .split(/\n+/)
         .map((l) => l.trim())
         .filter((l) => l.length >= 20)
@@ -1851,8 +1946,11 @@ async function generateSeoArticleWithAiFast(params) {
     }
   }
 
-  if (params.existingContent) {
-    const existingImgs = collectImgsFromHtml(String(params.existingContent), resolvedSourceUrl || DEFAULT_WP_SITE);
+  if (params.existingContent || params.topic) {
+    const existingImgs = collectImgsFromHtml(
+      `${params.topic || ''}\n${params.existingContent || ''}`,
+      resolvedSourceUrl || DEFAULT_WP_SITE
+    );
     const seen = new Set(scrapedImages.map((im) => im.url.split('?')[0].toLowerCase()));
     for (const ex of existingImgs) {
       const k = ex.url.split('?')[0].toLowerCase();
@@ -1865,6 +1963,20 @@ async function generateSeoArticleWithAiFast(params) {
           isExternal: false,
         });
       }
+    }
+  }
+
+  if (scrapedImages.length === 0 && (sourceTitle || sourceArticleText)) {
+    const discovered = await tryDiscoverSourceArticleImagesFromText(
+      sourceTitle || params.topic,
+      sourceArticleText || params.existingContent || params.topic
+    );
+    if (discovered && discovered.images.length > 0) {
+      scrapedImages = discovered.images;
+      if (!sourceTitle && discovered.title) sourceTitle = discovered.title;
+      if (!sourceExcerpt && discovered.excerpt) sourceExcerpt = discovered.excerpt;
+      if (!sourceArticleText && discovered.articleText) sourceArticleText = discovered.articleText;
+      if (!resolvedSourceUrl && discovered.sourceUrl) resolvedSourceUrl = discovered.sourceUrl;
     }
   }
 
@@ -1927,11 +2039,8 @@ async function generateSeoArticleWithAiFast(params) {
   const searchTopicQuery =
     contextProfile.combinedSearchQuery || generatedKeyword || generatedTitle;
 
-  const realContentImgCount = scrapedImages.filter(
-    (img) => !/\bcollage[-_\d]/i.test(img.url)
-  ).length;
   const neededExternalCount =
-    realContentImgCount >= 5 ? 0 : Math.max(2, 6 - realContentImgCount);
+    scrapedImages.length >= 5 ? 0 : Math.max(0, 6 - scrapedImages.length);
 
   const [externalImages, relatedVideos] = await Promise.all([
     neededExternalCount > 0
@@ -2184,10 +2293,50 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, videos });
       }
 
-      // 3. Xử lý tìm thêm ảnh ngoài
+      // 3. Xử lý tìm thêm ảnh ngoài (hoặc tự động dò ảnh bài gốc nếu chưa có ảnh gốc)
       if (action === 'search_external_images') {
         const query = String(body.query || '');
-        const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        let existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        let discoveredOrigImgs = [];
+
+        if (existingImgs.filter((im) => im && !im.isExternal).length === 0) {
+          const urlMatch = String(body.articleText || body.query || '').match(
+            /https?:\/\/[^\s"'<>]+/i
+          );
+          const urlCandidate =
+            String(body.sourceUrl || '').trim() || (urlMatch ? urlMatch[0] : '');
+          if (urlCandidate) {
+            try {
+              const scraped = await scrapeWebArticleForSeoRewrite(urlCandidate);
+              if (scraped.images.length > 0) {
+                discoveredOrigImgs = scraped.images.map((im, idx) => ({
+                  url: im.url,
+                  alt: im.alt || scraped.originalTitle || String(body.title || ''),
+                  isFeatured: idx === 0,
+                  isExternal: false,
+                }));
+              }
+            } catch {}
+          }
+          if (discoveredOrigImgs.length === 0 && (body.title || body.articleText)) {
+            const disc = await tryDiscoverSourceArticleImagesFromText(
+              String(body.title || query),
+              String(body.articleText || query)
+            );
+            if (disc && disc.images.length > 0) {
+              discoveredOrigImgs = disc.images.map((im, idx) => ({
+                url: im.url,
+                alt: im.alt || disc.title || String(body.title || ''),
+                isFeatured: idx === 0,
+                isExternal: false,
+              }));
+            }
+          }
+          if (discoveredOrigImgs.length > 0) {
+            existingImgs = [...discoveredOrigImgs, ...existingImgs];
+          }
+        }
+
         const excludeKeys = new Set(
           existingImgs
             .map((im) =>
@@ -2208,13 +2357,24 @@ export default async function handler(req, res) {
                 existingImgs
               )
             : undefined;
-        const images = await searchExternalRelatedImages(
-          (ctxProfile && ctxProfile.combinedSearchQuery) || query,
-          Number(body.limit || 6),
-          excludeKeys,
-          ctxProfile
-        );
-        return res.status(200).json({ ok: true, images });
+        const neededCount =
+          discoveredOrigImgs.length >= 5
+            ? 0
+            : Math.max(0, Number(body.limit || 6) - discoveredOrigImgs.length);
+        const extImages =
+          neededCount > 0
+            ? await searchExternalRelatedImages(
+                (ctxProfile && ctxProfile.combinedSearchQuery) || query,
+                neededCount,
+                excludeKeys,
+                ctxProfile
+              )
+            : [];
+        return res.status(200).json({
+          ok: true,
+          images: [...discoveredOrigImgs, ...extImages],
+          originalImages: discoveredOrigImgs,
+        });
       }
 
       const session = await getWpRestSession();

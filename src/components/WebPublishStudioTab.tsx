@@ -775,6 +775,134 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     reader.readAsDataURL(file);
   };
 
+  const extractFirstArticleUrl = (inputStr: string): string => {
+    const matches = String(inputStr || '').match(/https?:\/\/[^\s"'<>]+/gi) || [];
+    for (const rawM of matches) {
+      const cleaned = rawM.replace(/[),.;]+$/, '');
+      if (
+        !/\.(jpg|jpeg|png|webp|gif|svg|avif)(\?|$)/i.test(cleaned) &&
+        !/youtube\.com|youtu\.be/i.test(cleaned)
+      ) {
+        return cleaned;
+      }
+    }
+    return '';
+  };
+
+  // Tự động bóc tách ảnh minh họa (<img src/data-src/srcset>) khi người dùng Copy & Paste trực tiếp nội dung từ trang web (như beaware.fun) vào ô văn bản
+  const handlePasteRichArticleContent = (
+    e: React.ClipboardEvent<HTMLTextAreaElement | HTMLInputElement>
+  ) => {
+    try {
+      const htmlClip = e.clipboardData?.getData('text/html') || '';
+      const textClip = e.clipboardData?.getData('text/plain') || '';
+      const pastedUrl = extractFirstArticleUrl(textClip) || extractFirstArticleUrl(htmlClip);
+      if (pastedUrl && !aiSourceUrl.trim()) {
+        setAiSourceUrl(pastedUrl);
+      }
+      if (!htmlClip || !/<img\b/i.test(htmlClip)) return;
+
+      const foundImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+      const seenKeys = new Set(
+        extractedWebImages.map((im) => im.url.split('?')[0].toLowerCase())
+      );
+
+      const imgRegex = /<img\b[^>]*>/gi;
+      let m: RegExpExecArray | null;
+      while ((m = imgRegex.exec(htmlClip)) !== null) {
+        const tag = m[0];
+        const wM = tag.match(/\bwidth=["']?(\d+)/i);
+        const hM = tag.match(/\bheight=["']?(\d+)/i);
+        if (wM && hM) {
+          const w = Number(wM[1]);
+          const h = Number(hM[1]);
+          if (w > 0 && h > 0 && w < 110 && h < 110) continue;
+        }
+
+        let chosen = '';
+        const lazyAttrs = [
+          'data-orig-file',
+          'data-large-file',
+          'data-full-url',
+          'data-hi-res-src',
+          'data-original',
+          'data-lazy-src',
+          'data-src',
+          'data-url',
+        ];
+        for (const attr of lazyAttrs) {
+          const am = tag.match(new RegExp(`\\b${attr}=["']([^"']+)["']`, 'i'));
+          if (am && am[1] && /^https?:\/\//i.test(am[1].trim())) {
+            chosen = am[1].trim();
+            break;
+          }
+        }
+        if (!chosen) {
+          const ss =
+            tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+            tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
+            tag.match(/\bsrcset=["']([^"']+)["']/i);
+          if (ss && ss[1]) {
+            const parts = ss[1]
+              .split(',')
+              .map((p) => p.trim().split(/\s+/)[0])
+              .filter((u) => /^https?:\/\//i.test(u));
+            if (parts.length > 0) chosen = parts[0];
+          }
+        }
+        if (!chosen) {
+          const srcM = tag.match(/\bsrc=["']([^"']+)["']/i);
+          if (srcM && srcM[1] && /^https?:\/\//i.test(srcM[1].trim())) {
+            chosen = srcM[1].trim();
+          }
+        }
+        if (!chosen) continue;
+        const lower = chosen.toLowerCase();
+        if (
+          lower.endsWith('.svg') ||
+          lower.endsWith('.gif') ||
+          lower.endsWith('.ico') ||
+          lower.includes('gravatar.com') ||
+          lower.includes('avatar') ||
+          lower.includes('logo') ||
+          lower.includes('emoji') ||
+          lower.includes('smilies') ||
+          lower.includes('pixel')
+        ) {
+          continue;
+        }
+        if (chosen.includes('/wp-content/uploads/')) {
+          chosen = chosen.replace(
+            /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+|768x\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
+            ''
+          );
+        }
+        const key = chosen.split('?')[0].toLowerCase();
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        const altM = tag.match(/\balt=["']([^"']*)["']/i);
+        foundImgs.push({
+          url: chosen,
+          alt: (altM && altM[1]?.trim()) || title.trim() || 'Article Image',
+          isFeatured: extractedWebImages.length === 0 && foundImgs.length === 0,
+          isExternal: false,
+        });
+      }
+
+      if (foundImgs.length > 0) {
+        setExtractedWebImages((prev) => {
+          const merged = [...prev.filter((im) => !im.isExternal), ...foundImgs];
+          return merged;
+        });
+        if (!featuredImageUrl && foundImgs[0]?.url) {
+          setFeaturedImageUrl(foundImgs[0].url);
+          setFeaturedMediaId(0);
+          setFeaturedImageBase64('');
+        }
+      }
+    } catch {}
+  };
+
   // Tạo nội dung chuẩn SEO theo 2 Chức năng chính (Lấy tiêu đề bài gốc + Viết dài 2000-5000 từ + Đoạn ~150 từ xuống dòng + Lấy hết ảnh bài gốc & bổ sung ảnh ngoài + 2 Video YouTube cuối bài)
   const handleGenerateSeoArticle = async (
     overrideMode?: 'from_text' | 'from_url'
@@ -787,11 +915,21 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     tags: string[];
   } | null> => {
     const activeMode = overrideMode || aiMode;
+    const detectedSourceUrl =
+      aiSourceUrl.trim() ||
+      extractFirstArticleUrl(aiTopic) ||
+      extractFirstArticleUrl(content) ||
+      extractFirstArticleUrl(title);
+
+    if (detectedSourceUrl && !aiSourceUrl.trim()) {
+      setAiSourceUrl(detectedSourceUrl);
+    }
+
     // Khi ở chế độ viết từ văn bản/trình soạn thảo: ưu tiên lấy đoạn văn trong aiTopic hoặc content (nội dung bài viết), tuyệt đối không lấy mỗi tiêu đề tò mò nếu đã có đoạn văn!
     const rawTarget =
       activeMode === 'from_url'
-        ? aiSourceUrl.trim()
-        : aiTopic.trim() || content.trim() || title.trim();
+        ? detectedSourceUrl || aiSourceUrl.trim()
+        : aiTopic.trim() || content.trim() || detectedSourceUrl || title.trim();
 
     if (activeMode === 'from_url') {
       if (!rawTarget) {
@@ -803,7 +941,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     } else {
       if (!rawTarget) {
         setPublishError(
-          'Vui lòng nhập đoạn văn nội dung (ở ô Nội dung bài viết hoặc ô Tóm tắt) để hệ thống bám sát đoạn văn & ảnh minh họa viết lại chuẩn SEO!'
+          'Vui lòng nhập đoạn văn nội dung (ở ô Nội dung bài viết hoặc ô Tóm tắt) hoặc dán Link bài viết để hệ thống bám sát đoạn văn & ảnh minh họa viết lại chuẩn SEO!'
         );
         return null;
       }
@@ -821,25 +959,24 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           action: 'ai_write',
           mode: activeMode,
           topic: rawTarget,
-          sourceUrl: activeMode === 'from_url' ? rawTarget : undefined,
+          sourceUrl: detectedSourceUrl || undefined,
           keyword: activeMode === 'from_url' ? undefined : focusKeyword.trim() || undefined,
           language: aiLanguage,
           categoryName: primaryCatName,
-          existingTitle: activeMode === 'from_text' && title.trim() ? title.trim() : undefined,
+          existingTitle: title.trim() ? title.trim() : undefined,
           existingContent:
-            activeMode === 'from_text'
-              ? [aiTopic.trim(), content.trim()].filter(Boolean).join('\n\n')
-              : undefined,
-          existingImages:
-            activeMode === 'from_text' && extractedWebImages.length > 0
-              ? extractedWebImages
-              : undefined,
+            [aiTopic.trim(), content.trim()].filter(Boolean).join('\n\n') || undefined,
+          existingImages: extractedWebImages.length > 0 ? extractedWebImages : undefined,
         }),
       });
       let data = await safeParseApiJson(res);
       if (!res.ok || !data.ok) {
         // Tự động chuyển sang bộ viết bài dự phòng ngay lập tức nếu server bị lỗi/timeout
-        data = await buildClientFallbackSeoArticle(activeMode, rawTarget, aiLanguage);
+        data = await buildClientFallbackSeoArticle(
+          activeMode,
+          detectedSourceUrl || rawTarget,
+          aiLanguage
+        );
       }
 
       if (data.title) setTitle(data.title);
@@ -870,7 +1007,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       }
 
       let finalArticleHtml = String(data.contentHtml || content);
-      if (imgsList.length > 0 && !/<img\b/i.test(finalArticleHtml)) {
+      const attachedImgCount = (finalArticleHtml.match(/<img\b/gi) || []).length;
+      if (imgsList.length > 0 && attachedImgCount < imgsList.length) {
         finalArticleHtml = distributeAndAttachImagesToHtml(
           finalArticleHtml,
           imgsList,
@@ -906,7 +1044,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       try {
         const fallbackData = await buildClientFallbackSeoArticle(
           activeMode,
-          rawTarget,
+          detectedSourceUrl || rawTarget,
           aiLanguage
         );
         setTitle(fallbackData.title);
@@ -939,10 +1077,18 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
   // Nút chuyên biệt: Lấy toàn bộ ảnh từ Link bài viết (cộng thêm ảnh ngoài nếu < 5 ảnh) và gắn trực tiếp vào bài viết hiện tại
   const handleExtractAndAttachArticleImages = async () => {
-    const sourceLink = aiSourceUrl.trim();
-    const currentTitle = title.trim() || aiTopic.trim();
-    if (!sourceLink && !currentTitle) {
-      setPublishError('Vui lòng dán Link bài viết hoặc nhập Tiêu đề bài viết để hệ thống lấy ảnh và gắn vào bài!');
+    const sourceLink =
+      aiSourceUrl.trim() ||
+      extractFirstArticleUrl(aiTopic) ||
+      extractFirstArticleUrl(content) ||
+      extractFirstArticleUrl(title);
+    if (sourceLink && !aiSourceUrl.trim()) {
+      setAiSourceUrl(sourceLink);
+    }
+    const cleanTopicText = aiTopic.replace(/https?:\/\/[^\s"'<>]+/gi, '').trim();
+    const currentTitle = title.trim() || cleanTopicText;
+    if (!sourceLink && !currentTitle && !content.trim()) {
+      setPublishError('Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Đoạn văn bài viết để hệ thống lấy ảnh và gắn vào bài!');
       return;
     }
 
@@ -951,6 +1097,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     try {
       let origImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
       let resolvedTitle = currentTitle;
+      let resolvedBodyText = content.slice(0, 6000) || cleanTopicText;
 
       if (sourceLink) {
         try {
@@ -964,6 +1111,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             if (!resolvedTitle && imgData.title) {
               resolvedTitle = String(imgData.title).trim();
               setTitle(resolvedTitle);
+            }
+            if (!resolvedBodyText && imgData.articleText) {
+              resolvedBodyText = String(imgData.articleText).trim();
+              if (!aiTopic.trim()) setAiTopic(resolvedBodyText);
             }
             origImgs = imgData.images.map((im: any, idx: number) => ({
               url: String(im.url || im.dataUrl || ''),
@@ -980,23 +1131,34 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       let extImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
       if (origImgs.length < 5) {
         const needed = Math.max(0, 6 - origImgs.length);
-        const q = customYtQuery.trim() || focusKeyword.trim() || resolvedTitle;
-        if (q && needed > 0) {
+        const q = customYtQuery.trim() || focusKeyword.trim() || resolvedTitle || resolvedBodyText.slice(0, 120);
+        if ((q || sourceLink) && needed > 0) {
           const extRes = await fetch('/api/wp-publish', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               action: 'search_external_images',
               query: q,
+              sourceUrl: sourceLink || undefined,
               title: resolvedTitle,
-              articleText: content.slice(0, 6000) || aiTopic,
+              articleText: resolvedBodyText,
               existingImages: origImgs,
               limit: needed,
             }),
           });
           const extData = await safeParseApiJson(extRes);
           if (extRes.ok && extData.ok && Array.isArray(extData.images)) {
-            extImgs = extData.images.map((im: any) => ({
+            const returnedOriginals = extData.images.filter((im: any) => !im.isExternal);
+            const returnedExternals = extData.images.filter((im: any) => im.isExternal);
+            if (returnedOriginals.length > 0 && origImgs.length === 0) {
+              origImgs = returnedOriginals.map((im: any, idx: number) => ({
+                url: String(im.url || ''),
+                alt: String(im.alt || resolvedTitle || `Photo ${idx + 1}`),
+                isFeatured: idx === 0,
+                isExternal: false,
+              }));
+            }
+            extImgs = returnedExternals.map((im: any) => ({
               url: String(im.url || ''),
               alt: String(im.alt || resolvedTitle),
               isFeatured: false,
@@ -1415,11 +1577,13 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       },
     ];
 
+    const imageCount = (content.match(/<img\b[^>]*>/gi) || []).length;
     const score = checks.reduce((sum, c) => sum + (c.passed ? c.points : 0), 0);
     return {
       score,
       words,
       readingMinutes,
+      imageCount,
       checks,
     };
   }, [title, content, excerpt, focusKeyword, featuredImageUrl, featuredMediaId]);
@@ -1822,7 +1986,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     rows={3}
                     value={aiTopic}
                     onChange={(e) => setAiTopic(e.target.value)}
-                    placeholder="Dán đoạn nội dung hoặc ý chính bạn muốn viết chuẩn SEO 2.000 - 5.000 từ vào đây..."
+                    onPaste={handlePasteRichArticleContent}
+                    placeholder="Dán đoạn nội dung hoặc ý chính (hoặc dán kèm link bài viết) bạn muốn viết chuẩn SEO 2.000 - 5.000 từ vào đây..."
                     className="w-full px-3.5 py-2 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                   <div className="flex flex-wrap justify-end gap-2">
@@ -2377,6 +2542,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     rows={18}
                     value={content}
                     onChange={(e) => setContent(e.target.value)}
+                    onPaste={handlePasteRichArticleContent}
                     placeholder="Nhập nội dung bài viết tại đây (hỗ trợ cả văn bản thường lẫn thẻ HTML <p>, <h2>, <h3>, <img>...)..."
                     className="w-full p-4 text-sm text-slate-800 font-sans leading-relaxed focus:outline-none resize-y"
                   />
@@ -2387,6 +2553,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       rows={20}
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
+                      onPaste={handlePasteRichArticleContent}
                       placeholder="Sửa nội dung bài viết tại đây..."
                       className="w-full p-4 text-xs sm:text-sm text-slate-800 font-sans leading-relaxed focus:outline-none resize-y"
                     />

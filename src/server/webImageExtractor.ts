@@ -354,7 +354,7 @@ export async function extractImagesFromWebUrl(
           embeddedMedia?.media_details?.sizes?.large?.source_url ||
           embeddedMedia?.source_url ||
           '';
-        if (featUrl && !/\bcollage[-_\d]/i.test(featUrl)) {
+        if (featUrl) {
           addCandidate(featUrl, title || 'Ảnh đại diện bài viết', true);
         }
         const contentHtml = postJson.content?.rendered || '';
@@ -446,7 +446,7 @@ export async function extractImagesFromWebUrl(
           html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
           html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i) ||
           html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i);
-        if (ogImg && ogImg[1] && !/\bcollage[-_\d]/i.test(ogImg[1])) {
+        if (ogImg && ogImg[1]) {
           addCandidate(ogImg[1], title || 'Ảnh đại diện', true);
         }
 
@@ -511,12 +511,13 @@ export async function extractImagesFromWebUrl(
       'Addressing', 'Stepping', 'Enjoying', 'Sharing', 'Showing', 'Making',
       'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South',
       'East', 'United', 'States', 'America', 'British', 'English', 'American',
-      'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Actor'
+      'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Actor',
+      'Los', 'Angeles', 'New', 'York', 'San', 'Francisco', 'Las', 'Vegas', 'Miami', 'Beach', 'Baywatch'
     ]);
     const nameRegex = /\b([A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g;
     const counts = new Map<string, number>();
     let nm: RegExpExecArray | null;
-    const sampleText = `${title} ${articleBodySample}`;
+    const sampleText = `${articleBodySample} ${title}`;
     while ((nm = nameRegex.exec(sampleText)) !== null) {
       const cand = nm[1].trim();
       if (cand.split(/\s+/).some((w) => stopWords.has(w))) continue;
@@ -561,17 +562,16 @@ export async function extractImagesFromWebUrl(
   const downloaded = await Promise.all(
     topCandidates.map(async (item) => {
       const dataUrl = await fetchImageAsDataUrl(item.url, origin);
-      if (!dataUrl) return null;
       return {
         url: item.url,
-        dataUrl,
+        dataUrl: dataUrl || item.url,
         alt: item.alt,
         isFeatured: item.isFeatured,
       } as ExtractedWebImage;
     })
   );
 
-  const validImages = downloaded.filter((x): x is ExtractedWebImage => Boolean(x));
+  const validImages = downloaded.filter((x): x is ExtractedWebImage => Boolean(x && x.url));
 
   if (validImages.length === 0) {
     throw new Error('Không tìm thấy ảnh hợp lệ nào trong bài viết này. Vui lòng thử link bài viết khác!');

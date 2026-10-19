@@ -2665,6 +2665,89 @@ async function fetchImageInlinePartForVision(
   }
 }
 
+export async function tryDiscoverSourceArticleImagesFromText(
+  rawTitle: string,
+  rawBodyText: string
+): Promise<{
+  title: string;
+  excerpt: string;
+  articleText: string;
+  sourceUrl: string;
+  images: ScrapedArticleImage[];
+} | null> {
+  const candidateOrigins = ['https://beaware.fun'];
+  const slugFromTitle = String(rawTitle || '')
+    .toLowerCase()
+    .replace(/['’"“”?!:;,.()[\]]+/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const firstSentence = splitIntoSentences(rawBodyText)[0] || '';
+  const searchSnippet = firstSentence
+    .split(/\s+/)
+    .slice(0, 9)
+    .join(' ')
+    .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  for (const origin of candidateOrigins) {
+    try {
+      if (slugFromTitle && slugFromTitle.length >= 12) {
+        const slugUrl = `${origin}/wp-json/wp/v2/posts?slug=${encodeURIComponent(slugFromTitle)}&_embed`;
+        const res = await fetch(slugUrl, { headers: { 'User-Agent': SCRAPER_USER_AGENT } });
+        if (res.ok) {
+          const arr: any = await res.json();
+          if (Array.isArray(arr) && arr[0]?.link) {
+            const scraped = await scrapeWebArticleForSeoRewrite(String(arr[0].link));
+            if (scraped.images.length > 0) {
+              return {
+                title: scraped.originalTitle,
+                excerpt: scraped.originalExcerpt,
+                articleText: scraped.articleText,
+                sourceUrl: scraped.sourceUrl,
+                images: scraped.images,
+              };
+            }
+          }
+        }
+      }
+
+      if (searchSnippet && searchSnippet.length >= 18) {
+        const searchUrl = `${origin}/wp-json/wp/v2/posts?search=${encodeURIComponent(searchSnippet)}&per_page=3&_embed`;
+        const res = await fetch(searchUrl, { headers: { 'User-Agent': SCRAPER_USER_AGENT } });
+        if (res.ok) {
+          const arr: any = await res.json();
+          if (Array.isArray(arr) && arr.length > 0) {
+            const probeWords = searchSnippet.toLowerCase().split(/\s+/).slice(0, 5).join(' ');
+            const matchedPost =
+              arr.find((p: any) =>
+                stripHtmlTags(String(p?.content?.rendered || ''))
+                  .toLowerCase()
+                  .includes(probeWords)
+              ) || arr[0];
+            if (matchedPost?.link) {
+              const scraped = await scrapeWebArticleForSeoRewrite(String(matchedPost.link));
+              if (scraped.images.length > 0) {
+                return {
+                  title: scraped.originalTitle,
+                  excerpt: scraped.originalExcerpt,
+                  articleText: scraped.articleText,
+                  sourceUrl: scraped.sourceUrl,
+                  images: scraped.images,
+                };
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // ignore discovery error
+    }
+  }
+  return null;
+}
+
 export async function generateSeoArticleWithAi(params: {
   topic: string;
   keyword?: string;
@@ -2677,10 +2760,7 @@ export async function generateSeoArticleWithAi(params: {
   existingContent?: string;
   existingImages?: ScrapedArticleImage[];
 }) {
-  const apiKey = process.env.GEMINI_API_KEY;
   const language: 'en' | 'vi' = params.language === 'vi' ? 'vi' : 'en';
-  const langLabel =
-    language === 'vi' ? 'Tiếng Việt' : 'English (US Showbiz/Entertainment magazine style)';
 
   let scrapedImages: ScrapedArticleImage[] = [];
   let sourceTitle = params.existingTitle ? cleanScrapedTitle(params.existingTitle) : '';
@@ -2688,26 +2768,42 @@ export async function generateSeoArticleWithAi(params: {
   let sourceArticleText = '';
   let resolvedSourceUrl = '';
 
+  const extractNonImageHttpUrl = (inputStr: string): string => {
+    const matches = String(inputStr || '').match(/https?:\/\/[^\s"'<>]+/gi) || [];
+    for (const rawM of matches) {
+      const cleaned = rawM.replace(/[),.;]+$/, '');
+      if (!/\.(jpg|jpeg|png|webp|gif|svg|avif)(\?|$)/i.test(cleaned) && !/youtube\.com|youtu\.be/i.test(cleaned)) {
+        return cleaned;
+      }
+    }
+    return '';
+  };
+
   const candidateUrl =
     (params.sourceUrl && params.sourceUrl.trim()) ||
-    (/^https?:\/\/\S+$/i.test(String(params.topic || '').trim())
-      ? String(params.topic || '').trim()
-      : '');
+    extractNonImageHttpUrl(params.topic) ||
+    extractNonImageHttpUrl(params.existingContent || '');
 
-  if (params.mode === 'from_url' || candidateUrl) {
-    const scraped = await scrapeWebArticleForSeoRewrite(candidateUrl || params.topic);
-    scrapedImages = scraped.images;
-    if (!sourceTitle) sourceTitle = scraped.originalTitle;
-    sourceExcerpt = scraped.originalExcerpt;
-    sourceArticleText = scraped.articleText;
-    resolvedSourceUrl = scraped.sourceUrl;
-  } else {
-    // Chế độ viết từ đoạn văn & ảnh minh họa có sẵn trong trình soạn thảo (from_text)
-    const rawHtmlOrText = [params.topic, params.existingContent]
-      .map((s) => String(s || '').trim())
-      .filter((s) => s && s !== sourceTitle)
-      .join('\n\n');
+  if (candidateUrl) {
+    try {
+      const scraped = await scrapeWebArticleForSeoRewrite(candidateUrl);
+      scrapedImages = scraped.images;
+      if (!sourceTitle) sourceTitle = scraped.originalTitle;
+      sourceExcerpt = scraped.originalExcerpt;
+      sourceArticleText = scraped.articleText;
+      resolvedSourceUrl = scraped.sourceUrl;
+    } catch (err) {
+      if (params.mode === 'from_url') throw err;
+    }
+  }
 
+  // Luôn trích xuất thêm đoạn văn & ảnh minh họa có sẵn trong trình soạn thảo (nếu người dùng có nhập kèm)
+  const rawHtmlOrText = [params.topic, params.existingContent]
+    .map((s) => String(s || '').trim())
+    .filter((s) => s && s !== sourceTitle && s !== candidateUrl)
+    .join('\n\n');
+
+  if (!sourceArticleText && rawHtmlOrText) {
     const extractedParas: string[] = [];
     const pRegex = /<(p|h2|h3|blockquote|li)\b[^>]*>([\s\S]*?)<\/\1>/gi;
     let pm: RegExpExecArray | null;
@@ -2726,35 +2822,63 @@ export async function generateSeoArticleWithAi(params: {
       sourceArticleText = extractedParas.join('\n\n');
     } else {
       sourceArticleText = stripHtmlTags(rawHtmlOrText)
+        .replace(/https?:\/\/[^\s"'<>]+/gi, '')
         .split(/\n+/)
         .map((l) => l.trim())
         .filter((l) => l.length >= 20)
         .join('\n\n');
     }
+  }
 
-    if (Array.isArray(params.existingImages) && params.existingImages.length > 0) {
-      scrapedImages = params.existingImages.map((im, i) => ({
-        url: String(im.url || ''),
-        alt: String(im.alt || ''),
-        isFeatured: i === 0,
-        isExternal: Boolean(im.isExternal),
-      }));
-    }
-    if (params.existingContent) {
-      const inlineImgs = collectImgsFromHtml(params.existingContent, DEFAULT_WP_SITE);
-      const seenUrls = new Set(scrapedImages.map((im) => im.url.split('?')[0].toLowerCase()));
-      for (const im of inlineImgs) {
-        const k = im.url.split('?')[0].toLowerCase();
-        if (!seenUrls.has(k)) {
-          seenUrls.add(k);
-          scrapedImages.push({
-            url: im.url,
-            alt: im.alt || '',
-            isFeatured: scrapedImages.length === 0,
-            isExternal: false,
-          });
-        }
+  if (Array.isArray(params.existingImages) && params.existingImages.length > 0) {
+    const seenUrls = new Set(scrapedImages.map((im) => im.url.split('?')[0].toLowerCase()));
+    for (const im of params.existingImages) {
+      if (!im || !im.url) continue;
+      const k = String(im.url).split('?')[0].toLowerCase();
+      if (!seenUrls.has(k)) {
+        seenUrls.add(k);
+        scrapedImages.push({
+          url: String(im.url),
+          alt: String(im.alt || ''),
+          isFeatured: scrapedImages.length === 0,
+          isExternal: Boolean(im.isExternal),
+        });
       }
+    }
+  }
+
+  if (params.existingContent || params.topic) {
+    const inlineImgs = collectImgsFromHtml(
+      `${params.topic || ''}\n${params.existingContent || ''}`,
+      resolvedSourceUrl || DEFAULT_WP_SITE
+    );
+    const seenUrls = new Set(scrapedImages.map((im) => im.url.split('?')[0].toLowerCase()));
+    for (const im of inlineImgs) {
+      const k = im.url.split('?')[0].toLowerCase();
+      if (!seenUrls.has(k)) {
+        seenUrls.add(k);
+        scrapedImages.push({
+          url: im.url,
+          alt: im.alt || '',
+          isFeatured: scrapedImages.length === 0,
+          isExternal: false,
+        });
+      }
+    }
+  }
+
+  // Nếu người dùng chỉ copy tiêu đề / đoạn văn từ bài gốc (chưa dán link) và chưa có ảnh gốc, tự động dò bài gốc theo tiêu đề hoặc câu đầu tiên để lấy trọn bộ ảnh gốc trong bài!
+  if (scrapedImages.length === 0 && (sourceTitle || sourceArticleText)) {
+    const discovered = await tryDiscoverSourceArticleImagesFromText(
+      sourceTitle || params.topic,
+      sourceArticleText || params.existingContent || params.topic
+    );
+    if (discovered && discovered.images.length > 0) {
+      scrapedImages = discovered.images;
+      if (!sourceTitle && discovered.title) sourceTitle = discovered.title;
+      if (!sourceExcerpt && discovered.excerpt) sourceExcerpt = discovered.excerpt;
+      if (!sourceArticleText && discovered.articleText) sourceArticleText = discovered.articleText;
+      if (!resolvedSourceUrl && discovered.sourceUrl) resolvedSourceUrl = discovered.sourceUrl;
     }
   }
 
@@ -2772,149 +2896,41 @@ export async function generateSeoArticleWithAi(params: {
     params.keyword?.trim() ||
     effectiveTopic.split(/[:–—|-]/)[0].trim();
 
-  let generatedTitle = sourceTitle || '';
-  let generatedSlug = '';
-  let generatedExcerpt = sourceExcerpt || '';
-  let generatedKeyword = kw;
-  let generatedTags: string[] = [];
-  let aiDraftHtml = '';
-  let youtubeQuery = '';
+  const generatedTitle =
+    sourceTitle ||
+    params.topic.split('\n')[0]?.trim().slice(0, 95) ||
+    'Exclusive Celebrity Story & Highlights';
 
-  if (apiKey && sourceArticleText.length >= 40) {
-    try {
-      const ai = new GoogleGenAI({
-        apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          },
-        },
-      });
+  const generatedSlug = generatedTitle
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .slice(0, 80);
 
-      // Tải tối đa 2 ảnh minh họa trong bài (ưu tiên ảnh chụp thực tế không phải ảnh ghép collage) để Gemini Vision nhìn trực tiếp ảnh minh họa kết hợp đọc đoạn văn
-      const visionCandidates = scrapedImages
-        .filter((im) => !/\bcollage[-_\d]/i.test(im.url))
-        .slice(0, 2);
-      const visionParts = (
-        await Promise.all(visionCandidates.map((im) => fetchImageInlinePartForVision(im.url)))
-      ).filter((p): p is { inlineData: { mimeType: string; data: string } } => Boolean(p));
+  const firstCleanSent = splitIntoSentences(sourceArticleText)[0] || '';
+  const generatedExcerpt =
+    sourceExcerpt ||
+    (firstCleanSent
+      ? firstCleanSent.slice(0, 160)
+      : `Read the full story about ${contextProfile.subjectDisplay || kw}.`);
 
-      const promptText = `Bạn là biên tập viên cao cấp cho chuyên trang giải trí celeb24h.com.
-LƯU Ý QUAN TRỌNG TỪ NGƯỜI DÙNG:
-- Tiêu đề bài viết ("${sourceTitle || effectiveTopic}") chỉ được viết theo dạng TÒ MÒ / CÂU HỎI câu view (ẩn tên hoặc đặt câu hỏi).
-- NỘI DUNG CHÍNH THẬT SỰ nằm ở trong CÁC ĐOẠN VĂN BÊN DƯỚI và CÁC ẢNH MINH HỌA đính kèm!
-- Hãy dựa sát 100% vào các đoạn văn và ảnh minh họa này để viết nhân rộng thành bài báo dài chuẩn SEO chuyên sâu:
-  + Nhân vật chính thực sự trong đoạn văn & ảnh: ${contextProfile.subjectDisplay}
-  + Địa điểm thực tế trong đoạn văn: ${contextProfile.locationKeywords.join(', ') || 'theo đoạn văn'}
-  + Trang phục / chi tiết trong ảnh minh họa & đoạn văn: ${contextProfile.outfitKeywords.join(', ') || 'theo đoạn văn & ảnh'}
-  + Mốc thời gian: ${contextProfile.timeframeKeywords.join(', ') || 'theo đoạn văn'}
-  + TUYỆT ĐỐI KHÔNG lặp lại câu hỏi ở tiêu đề vào trong bài viết, KHÔNG bịa đặt sự kiện lệch khỏi đoạn văn và ảnh minh họa.
-  + Ngôn ngữ đầu ra bắt buộc: ${langLabel}.
+  const generatedKeyword = contextProfile.primaryPerson || kw;
 
-Nội dung các đoạn văn gốc trong bài:
-${sourceArticleText.slice(0, 7200)}
-
-Hãy trả về JSON thuần với cấu trúc:
-{
-  "title": "${(sourceTitle || '').replace(/"/g, '\\"')}",
-  "slug": "duong-dan-url-chuan-seo-khong-dau",
-  "excerpt": "Đoạn mô tả Meta Description chuẩn SEO (140-165 ký tự) tóm tắt sát nội dung đoạn văn về ${contextProfile.subjectDisplay}",
-  "focusKeyword": "${contextProfile.primaryPerson || kw}",
-  "youtubeSearchQuery": "${contextProfile.combinedSearchQuery}",
-  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"],
-  "contentHtml": "Nội dung bài viết nhân rộng chuyên sâu gồm 14-16 đoạn <p> (mỗi đoạn ~150 từ) và 7-8 thẻ <h2> bám sát 100% từng đoạn văn và chi tiết trong ảnh minh họa."
-}`;
-
-      const contentsPayload: any =
-        visionParts.length > 0 ? [...visionParts, { text: promptText }] : promptText;
-
-      let response: any = null;
-      for (const modelName of ['gemini-3.1-flash-lite', 'gemini-3.8-flash']) {
-        try {
-          response = await Promise.race([
-            ai.models.generateContent({
-              model: modelName,
-              contents: contentsPayload,
-              config: {
-                responseMimeType: 'application/json',
-              },
-            }),
-            new Promise((_, reject) =>
-              setTimeout(() => reject(new Error(`Timeout on ${modelName}`)), 11000)
-            ),
-          ]);
-          if (response && response.text) break;
-        } catch {
-          // Thử model tiếp theo nếu model đầu bị 503 hoặc quá thời gian
-        }
-      }
-
-      if (response && response.text) {
-        const parsed = JSON.parse(response.text || '{}');
-        if (parsed) {
-          generatedTitle = sourceTitle || String(parsed.title || effectiveTopic);
-          generatedSlug = String(parsed.slug || '');
-          generatedExcerpt = String(parsed.excerpt || sourceExcerpt || '');
-          generatedKeyword = String(contextProfile.primaryPerson || parsed.focusKeyword || kw);
-          youtubeQuery = String(
-            parsed.youtubeSearchQuery || contextProfile.combinedSearchQuery || generatedKeyword
-          );
-          generatedTags = Array.isArray(parsed.tags)
-            ? parsed.tags.map(String)
-            : [generatedKeyword];
-          aiDraftHtml = String(parsed.contentHtml || '');
-        }
-      }
-    } catch (err) {
-      console.warn('[wpPublishService] Using clause-aware content & image expansion engine:', err);
-    }
-  }
-
-  if (!generatedTitle) {
-    generatedTitle =
-      sourceTitle ||
-      params.topic.split('\n')[0]?.trim().slice(0, 95) ||
-      'Exclusive Celebrity Story & Highlights';
-  }
-
-  if (!generatedSlug) {
-    generatedSlug = generatedTitle
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/đ/g, 'd')
-      .replace(/Đ/g, 'D')
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .trim()
-      .replace(/\s+/g, '-')
-      .slice(0, 80);
-  }
-
-  if (!generatedExcerpt) {
-    const firstCleanSent = splitIntoSentences(sourceArticleText)[0] || '';
-    generatedExcerpt =
-      sourceExcerpt ||
-      (firstCleanSent
-        ? firstCleanSent.slice(0, 160)
-        : `Read the full story about ${contextProfile.subjectDisplay || generatedKeyword}.`);
-  }
-
-  if (generatedTags.length === 0) {
-    generatedTags = [
-      contextProfile.primaryPerson || generatedKeyword || 'Celebrity',
-      ...(contextProfile.secondaryPerson ? [contextProfile.secondaryPerson] : []),
-      ...contextProfile.supportingEntities.slice(0, 2),
-      params.categoryName || 'Showbiz',
-      'Celeb24h',
-    ];
-  }
-
-  if (contextProfile.primaryPerson) {
-    generatedKeyword = contextProfile.primaryPerson;
-  }
+  const generatedTags = [
+    contextProfile.primaryPerson || generatedKeyword || 'Celebrity',
+    ...(contextProfile.secondaryPerson ? [contextProfile.secondaryPerson] : []),
+    ...contextProfile.supportingEntities.slice(0, 2),
+    params.categoryName || 'Showbiz',
+    'Celeb24h',
+  ];
 
   const searchTopicQuery =
-    contextProfile.combinedSearchQuery || youtubeQuery || generatedKeyword || generatedTitle;
+    contextProfile.combinedSearchQuery || generatedKeyword || generatedTitle;
 
   const existingKeys = new Set(
     scrapedImages.map((img) =>
@@ -2926,12 +2942,8 @@ Hãy trả về JSON thuần với cấu trúc:
     )
   );
 
-  const realContentImgCount = scrapedImages.filter(
-    (img) => !/\bcollage[-_\d]/i.test(img.url)
-  ).length;
-
   const neededExternalCount =
-    realContentImgCount >= 5 ? 0 : Math.max(2, 6 - realContentImgCount);
+    scrapedImages.length >= 5 ? 0 : Math.max(0, 6 - scrapedImages.length);
 
   const [externalImages, relatedVideos] = await Promise.all([
     neededExternalCount > 0
@@ -2952,7 +2964,7 @@ Hãy trả về JSON thuần với cấu trúc:
     articleTitle: generatedTitle,
     focusKeyword: contextProfile.subjectDisplay || generatedKeyword,
     sourceArticleText,
-    aiDraftHtml,
+    aiDraftHtml: '',
     images: allCombinedImages,
     youtubeVideos: relatedVideos,
     language,
