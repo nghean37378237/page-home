@@ -333,17 +333,22 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     return out.join('');
   };
 
-  // Bộ khởi tạo dự phòng trực tiếp trên trình duyệt: đọc trực tiếp nội dung bài viết (articleText) để phân tích nhân vật, sự kiện và nhân rộng từ chính nội dung bài viết
+  // Bộ khởi tạo dự phòng trực tiếp trên trình duyệt: đọc trực tiếp nội dung đoạn văn (articleText / content) và ảnh minh họa để phân tích nhân vật, sự kiện và nhân rộng sát nội dung
   const buildClientFallbackSeoArticle = async (
     activeMode: 'from_text' | 'from_url',
     rawInput: string,
     lang: 'en' | 'vi'
   ) => {
-    let extractedTitle = '';
-    let extractedBodyText = activeMode === 'from_text' ? rawInput : '';
-    let extractedExcerpt = '';
-    let origImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
-    let extImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+    let extractedTitle = title.trim();
+    let extractedBodyText =
+      activeMode === 'from_text'
+        ? [aiTopic.trim(), content.trim()].filter(Boolean).join('\n\n') || rawInput
+        : '';
+    let extractedExcerpt = excerpt.trim();
+    let origImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] =
+      extractedWebImages.filter((im) => !im.isExternal);
+    let extImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] =
+      extractedWebImages.filter((im) => im.isExternal);
 
     const urlMatch = rawInput.match(/https?:\/\/[^\s"'<>]+/i);
     const targetUrl = activeMode === 'from_url' ? rawInput : urlMatch ? urlMatch[0] : '';
@@ -360,7 +365,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           if (imgData.title) extractedTitle = String(imgData.title).trim();
           if (imgData.excerpt) extractedExcerpt = String(imgData.excerpt).trim();
           if (imgData.articleText) extractedBodyText = String(imgData.articleText).trim();
-          if (Array.isArray(imgData.images)) {
+          if (Array.isArray(imgData.images) && imgData.images.length > 0) {
             origImgs = imgData.images.map((im: any, idx: number) => ({
               url: String(im.url || im.dataUrl || ''),
               alt: String(im.alt || imgData.title || `Photo ${idx + 1}`),
@@ -379,11 +384,21 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       rawInput.split('\n')[0]?.trim().slice(0, 95) ||
       'Exclusive Feature Story & In-Depth Analysis';
 
-    // Phân tích nội dung thực tế trong bài viết để tìm nhân vật chính và các tình tiết cốt lõi
-    const bodyParagraphs = String(extractedBodyText || extractedExcerpt || '')
+    // Trích xuất các đoạn văn sạch từ HTML hoặc văn bản thuần (tuyệt đối không dùng tiêu đề câu hỏi tò mò làm đoạn văn)
+    const cleanHtmlText = String(extractedBodyText || extractedExcerpt || '')
+      .replace(/<figure[\s\S]*?<\/figure>/gi, '\n')
+      .replace(/<\/(p|h2|h3|blockquote|li|div)>/gi, '\n')
+      .replace(/<[^>]*>/g, ' ');
+    const bodyParagraphs = cleanHtmlText
       .split(/\n+/)
-      .map((p) => p.replace(/\s+/g, ' ').trim())
-      .filter((p) => p.length >= 35);
+      .map((p) =>
+        p
+          .replace(/\s*(?:What|Who|Which) is your (?:absolute )?favorite[\s\S]*$/i, '')
+          .replace(/\s*Let['’]s (?:swap|talk)[\s\S]*$/i, '')
+          .replace(/\s+/g, ' ')
+          .trim()
+      )
+      .filter((p) => p.length >= 25 && p !== finalTitle);
 
     const stopWords = new Set([
       'There', 'The', 'This', 'That', 'These', 'Those', 'When', 'While', 'Where',
@@ -392,13 +407,20 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South',
       'East', 'United', 'States', 'America', 'British', 'English', 'American',
       'Anyone', 'But', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Actor',
+      'Supermodel', 'Partner', 'Husband', 'Wife', 'Boyfriend', 'Girlfriend', 'Candid',
       'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
       'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
-      'September', 'October', 'November', 'December', 'Photo', 'Video', 'Instagram'
+      'September', 'October', 'November', 'December', 'Photo', 'Video', 'Instagram',
+      'Notting', 'Hill', 'Saint', 'Tropez', 'French', 'Riviera', 'Sandy', 'Lane',
+      'Beverly', 'Hills', 'Santa', 'Monica', 'Malibu', 'Miami', 'Beach'
     ]);
 
     const nameCounts = new Map<string, number>();
-    const fullBodySample = bodyParagraphs.join(' ');
+    const imgAltJoined = origImgs
+      .map((im) => im.alt || '')
+      .filter((a) => a && a !== finalTitle)
+      .join(' ');
+    const fullBodySample = `${bodyParagraphs.join(' ')} ${imgAltJoined}`.trim();
     const nameRegex = /\b([A-Z][a-z]{2,15}(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g;
     let nm: RegExpExecArray | null;
     while ((nm = nameRegex.exec(fullBodySample)) !== null) {
@@ -416,12 +438,11 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     const subjectDisplay =
       primaryPerson && secondaryPerson && !primaryPerson.includes(secondaryPerson)
         ? `${primaryPerson} and ${secondaryPerson}`
-        : primaryPerson || 'the featured figure';
+        : primaryPerson || 'the featured star';
 
-    // Nếu số ảnh bài gốc < 5, tự động lấy thêm ảnh ngoài theo đúng tên nhân vật trong bài cho đủ 6 ảnh
-    if (origImgs.length < 5) {
+    if (origImgs.length + extImgs.length < 5) {
       try {
-        const needed = Math.max(0, 6 - origImgs.length);
+        const needed = Math.max(0, 6 - (origImgs.length + extImgs.length));
         const extRes = await fetch('/api/wp-publish', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -436,12 +457,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         });
         const extData = await safeParseApiJson(extRes);
         if (extRes.ok && extData.ok && Array.isArray(extData.images)) {
-          extImgs = extData.images.map((im: any) => ({
-            url: String(im.url || ''),
-            alt: String(im.alt || primaryPerson || finalTitle),
-            isFeatured: false,
-            isExternal: true,
-          }));
+          extImgs = [
+            ...extImgs,
+            ...extData.images.map((im: any) => ({
+              url: String(im.url || ''),
+              alt: String(im.alt || primaryPerson || finalTitle),
+              isFeatured: false,
+              isExternal: true,
+            })),
+          ];
         }
       } catch {}
     }
@@ -449,84 +473,87 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     const extractedImgs = [...origImgs, ...extImgs];
     const isVi = lang === 'vi';
 
-    // Tách toàn bộ câu thực tế từ nội dung bài gốc để làm hạt nhân sự thật cho từng đoạn văn
-    const rawSentences = fullBodySample
+    const rawSentences = bodyParagraphs
+      .join(' ')
       .split(/(?<=[.!?])\s+/)
       .map((s) => s.trim())
-      .filter((s) => s.length >= 30);
+      .filter((s) => s.length >= 25);
 
     const factBlocks: string[] = [];
     if (rawSentences.length > 0) {
-      for (let i = 0; i < 18; i++) {
-        const s1 = rawSentences[(i * 2) % rawSentences.length];
+      for (let i = 0; i < 16; i++) {
+        const s1 = rawSentences[i % rawSentences.length];
         const s2 =
           rawSentences.length > 1
-            ? rawSentences[(i * 2 + 1) % rawSentences.length]
+            ? rawSentences[(i + 2) % rawSentences.length]
             : '';
         factBlocks.push(s2 && s2 !== s1 ? `${s1} ${s2}` : s1);
       }
     } else if (bodyParagraphs.length > 0) {
-      for (let i = 0; i < 18; i++) {
+      for (let i = 0; i < 16; i++) {
         factBlocks.push(bodyParagraphs[i % bodyParagraphs.length]);
       }
     }
 
     const analyticalAnglesEn = [
-      `Examining these specific details from the report highlights how ${subjectDisplay} continues to command genuine attention through real-world actions and verifiable career milestones rather than mere speculation.`,
-      `What stands out most in this part of the account is the natural interplay between personal composure and public presence that ${primaryPerson || subjectDisplay} demonstrates throughout the situation.`,
-      `Long-time observers who have followed ${subjectDisplay} across multiple projects and appearances note that these concrete moments reflect a broader pattern of authenticity and self-assured poise.`,
-      `Moreover, the surrounding context documented in the story underscores why audiences respond so strongly when public figures allow unscripted, real-life experiences to speak for themselves.`,
-      `Looking closely at the timeline and background shared in the article, each detail connects directly to the ongoing journey and evolving public chapters of ${subjectDisplay}.`,
-      `From an editorial standpoint, these specific developments offer readers a much clearer window into the day-to-day reality, relationships, and priorities shaping this chapter.`,
-      `In addition, the candid details captured here illustrate how ${primaryPerson || subjectDisplay} balances high-profile visibility with grounded personal moments away from the spotlight.`,
-      `Followers discussing these exact details have pointed out how refreshing it is to see concrete, relatable experiences documented with clarity and context.`,
-      `Taken together with the other facts in the piece, this perspective reinforces the lasting impression that ${subjectDisplay} leaves on both industry watchers and everyday readers.`,
+      `Looking closely at the specific details documented in this passage and the accompanying photographs, ${subjectDisplay} projected an unmistakable sense of ease and authenticity that immediately grounded the scene.`,
+      `Connecting the context described in the paragraph directly to the visual moments in the report illustrates how naturally ${primaryPerson || subjectDisplay}'s personal and professional chapters intersect.`,
+      `Every concrete observation in the coverage—from the candid body language of ${subjectDisplay} to the surrounding setting—reinforces why these unscripted snapshots resonate far more deeply than staged appearances.`,
+      `At the same time, the documented background in the article adds vital texture to the story, giving readers a complete view of what transpired behind the lens.`,
+      `Tracing how ${subjectDisplay} navigated this chapter reveals a consistent pattern of genuineness, where quiet real-world moments speak volumes about their bond and priorities.`,
+      `Taken alongside the illustrative photographs in the article, these verified details surrounding ${subjectDisplay} bring clarity and depth to every frame captured during the outing.`,
     ];
 
     const analyticalAnglesVi = [
-      `Phân tích kỹ những chi tiết cụ thể được ghi nhận trong bài viết cho thấy ${subjectDisplay} luôn tạo dựng sức hút tự nhiên thông qua những hoạt động thực tế và dấu ấn rõ nét.`,
-      `Điểm đáng chú ý nhất trong tình tiết này chính là sự kết hợp hài hòa giữa phong thái đời thường gần gũi và bản lĩnh quen thuộc của ${primaryPerson || subjectDisplay}.`,
-      `Những khán giả theo dõi hành trình của ${subjectDisplay} trong suốt thời gian qua đều nhận thấy các chi tiết này phản ánh trọn vẹn sự chân thực và nhất quán.`,
-      `Bên cạnh đó, bối cảnh thực tế được đề cập trong bài viết cũng lý giải vì sao công chúng luôn dành sự quan tâm đặc biệt cho những khoảnh khắc đời thực không phô trương.`,
-      `Nhìn lại mạch thông tin và các chi tiết liên quan trong bài, mỗi sự kiện đều gắn liền với bước chuyển mình và những dấu mốc đáng chú ý của ${subjectDisplay}.`,
-      `Dưới góc độ biên tập chuyên sâu, những dữ kiện cụ thể này mang đến cho độc giả cái nhìn toàn diện và rõ ràng hơn về câu chuyện thực tế đang diễn ra.`,
-      `Hơn thế nữa, các chi tiết được ghi lại còn cho thấy cách ${primaryPerson || subjectDisplay} cân bằng tinh tế giữa công việc trước công chúng và không gian riêng tư.`,
-      `Đông đảo độc giả khi theo dõi những tình tiết này đều bày tỏ sự ấn tượng trước những thông tin cụ thể, giàu tính kết nối và giàu cảm xúc thực tế.`,
-      `Khi đặt cạnh toàn bộ các tình tiết khác trong bài viết, góc nhìn này càng làm nổi bật dấu ấn riêng biệt mà ${subjectDisplay} để lại trong lòng công chúng.`,
+      `Chi tiết thực tế này trong đoạn văn kết hợp cùng hình ảnh minh họa làm nổi bật phong thái tự nhiên của ${subjectDisplay}, mang đến cái nhìn trực quan và sát với ngữ cảnh câu chuyện.`,
+      `Khi đặt dữ kiện trong đoạn văn cạnh các chi tiết trong ảnh minh họa, người đọc dễ dàng nhận ra mạch phát triển tự nhiên và nhất quán của ${primaryPerson || subjectDisplay}.`,
+      `Từng chi tiết được ghi lại trong đoạn văn và khung hình minh họa đều cho thấy cuộc sống đời thường chân thực của ${subjectDisplay}, hoàn toàn tách biệt khỏi những đồn đoán bên ngoài.`,
+      `Bên cạnh đó, bối cảnh thực tế được đề cập trong bài viết góp phần giải thích rõ nét hơn những khoảnh khắc xuất hiện trong loạt ảnh minh họa.`,
+      `Nhìn từ tổng thể các đoạn văn gốc, câu chuyện về ${subjectDisplay} không chỉ dừng lại ở một khoảnh khắc đơn lẻ mà còn phản ánh trọn vẹn hành trình sự nghiệp lẫn cuộc sống riêng.`,
+      `Qua từng góc máy minh họa kết hợp cùng thông tin xác thực trong bài, câu chuyện khắc họa sống động sức hút bền bỉ của ${subjectDisplay} trong lòng công chúng.`,
     ];
 
     const paragraphs150: { h2?: string; text: string }[] = [];
-    for (let idx = 0; idx < 18; idx++) {
+    for (let idx = 0; idx < 16; idx++) {
       const coreFact =
         factBlocks[idx] ||
         extractedExcerpt ||
         (isVi
-          ? `Trong nội dung bài viết gốc, các tình tiết xoay quanh ${subjectDisplay} được ghi nhận với nhiều chi tiết cụ thể và bối cảnh thực tế rõ ràng.`
-          : `According to the documented details in the story, the events involving ${subjectDisplay} unfold through specific real-life moments and notable personal milestones.`);
+          ? `Trong nội dung đoạn văn và ảnh minh họa, các tình tiết xoay quanh ${subjectDisplay} được ghi nhận với nhiều chi tiết cụ thể và bối cảnh thực tế rõ ràng.`
+          : `According to the documented paragraphs and illustrative photos in the story, the events involving ${subjectDisplay} unfold through specific real-life moments and notable milestones.`);
       const nextFact =
         factBlocks[(idx + 3) % Math.max(1, factBlocks.length)] || '';
       const angle1 = isVi
         ? analyticalAnglesVi[idx % analyticalAnglesVi.length]
         : analyticalAnglesEn[idx % analyticalAnglesEn.length];
       const angle2 = isVi
-        ? analyticalAnglesVi[(idx + 4) % analyticalAnglesVi.length]
-        : analyticalAnglesEn[(idx + 4) % analyticalAnglesEn.length];
+        ? analyticalAnglesVi[(idx + 3) % analyticalAnglesVi.length]
+        : analyticalAnglesEn[(idx + 3) % analyticalAnglesEn.length];
 
       let h2Heading: string | undefined;
-      if (idx % 2 === 0) {
-        const secNum = Math.floor(idx / 2) + 1;
-        const snippetWords = coreFact
-          .replace(/^["'“”‘’]+|["'“”‘’]+$/g, '')
-          .split(/\s+/)
-          .slice(0, 9)
-          .join(' ')
-          .replace(/[,:;.-]+$/, '');
-        h2Heading =
-          snippetWords.length >= 12
-            ? `${secNum}. ${snippetWords.charAt(0).toUpperCase() + snippetWords.slice(1)}`
-            : isVi
-            ? `${secNum}. Chi tiết câu chuyện và dấu ấn của ${subjectDisplay} (Phần ${secNum})`
-            : `${secNum}. Key Story Details & Context Around ${subjectDisplay} (Part ${secNum})`;
+      if (idx > 0 && idx % 2 === 0) {
+        const secIdx = Math.floor((idx - 2) / 2);
+        const enHeadings = [
+          `${subjectDisplay}: Inside the Candid Moments Captured in the Story`,
+          `Key Details and Background Surrounding ${primaryPerson || subjectDisplay}`,
+          `Effortless Style and Real-World Chemistry in Every Frame`,
+          `Timeline and Context: What the Paragraphs Reveal About ${subjectDisplay}`,
+          `Behind the Photographs: Notable Highlights From the Coverage`,
+          `How ${subjectDisplay} Balances Career Milestones With Private Moments`,
+          `Closer Look at the Visual Details and Story Context`,
+        ];
+        const viHeadings = [
+          `${subjectDisplay}: Chi Tiết Thực Tế Qua Từng Đoạn Văn & Khung Hình`,
+          `Dấu Ấn Và Bối Cảnh Xoay Quanh ${primaryPerson || subjectDisplay}`,
+          `Phong Thái Đời Thường Của ${subjectDisplay} Qua Ảnh Minh Họa`,
+          `Mạch Thời Gian & Những Dữ Kiện Đáng Chú Ý Trong Bài Viết`,
+          `Phía Sau Loạt Ảnh Minh Họa: Mối Gắn Kết Của ${subjectDisplay}`,
+          `Sự Cân Bằng Giữa Sự Nghiệp Và Cuộc Sống Riêng Của ${subjectDisplay}`,
+          `Toàn Cảnh Câu Chuyện Nhìn Từ Nội Dung Chính`,
+        ];
+        h2Heading = isVi
+          ? viHeadings[secIdx % viHeadings.length]
+          : enHeadings[secIdx % enHeadings.length];
       }
 
       const combined = [
@@ -565,7 +592,14 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         ((idx + 1) % imgStep === 0 || idx === paragraphs150.length - 2)
       ) {
         const im = extractedImgs[imgIdx++];
-        const altText = String(im.alt || subjectDisplay || finalTitle).replace(/"/g, '&quot;');
+        const rawSentCaption = rawSentences[(imgIdx - 1) % Math.max(1, rawSentences.length)] || '';
+        const cleanAlt =
+          im.alt && im.alt !== finalTitle && !/\?$/.test(im.alt)
+            ? im.alt
+            : rawSentCaption
+            ? `${subjectDisplay}: ${rawSentCaption.split(/\s+/).slice(0, 16).join(' ')}...`
+            : `${subjectDisplay} - Photo #${imgIdx}`;
+        const altText = String(cleanAlt).replace(/"/g, '&quot;');
         htmlBlocks.push(
           `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
   <img src="${im.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
@@ -577,7 +611,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
     while (imgIdx < extractedImgs.length) {
       const im = extractedImgs[imgIdx++];
-      const altText = String(im.alt || subjectDisplay || finalTitle).replace(/"/g, '&quot;');
+      const altText = String(
+        im.alt && im.alt !== finalTitle ? im.alt : `${subjectDisplay} - Photo #${imgIdx}`
+      ).replace(/"/g, '&quot;');
       htmlBlocks.push(
         `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
   <img src="${im.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
@@ -595,7 +631,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       slug: slugifyText(finalTitle),
       excerpt:
         extractedExcerpt ||
-        factBlocks[0]?.slice(0, 180) ||
+        rawSentences[0]?.slice(0, 165) ||
         `Read the full in-depth story and see all photos featuring ${subjectDisplay}.`,
       focusKeyword: primaryPerson || subjectDisplay,
       tags: Array.from(new Set([primaryPerson, secondaryPerson, 'Showbiz', 'Entertainment', 'Celeb24h'].filter(Boolean))),
@@ -751,19 +787,24 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     tags: string[];
   } | null> => {
     const activeMode = overrideMode || aiMode;
+    // Khi ở chế độ viết từ văn bản/trình soạn thảo: ưu tiên lấy đoạn văn trong aiTopic hoặc content (nội dung bài viết), tuyệt đối không lấy mỗi tiêu đề tò mò nếu đã có đoạn văn!
     const rawTarget =
-      activeMode === 'from_url' ? aiSourceUrl.trim() : aiTopic.trim() || title.trim();
+      activeMode === 'from_url'
+        ? aiSourceUrl.trim()
+        : aiTopic.trim() || content.trim() || title.trim();
 
     if (activeMode === 'from_url') {
       if (!rawTarget) {
         setPublishError(
-          'Vui lòng dán 1 đường dẫn (Link) bài viết web bất kỳ để lấy tiêu đề, viết lại chuẩn SEO (2000-5000 từ) và lấy toàn bộ ảnh!'
+          'Vui lòng dán 1 đường dẫn (Link) bài viết web bất kỳ để giữ tiêu đề tò mò, đọc đoạn văn + ảnh minh họa và viết lại chuẩn SEO!'
         );
         return null;
       }
     } else {
       if (!rawTarget) {
-        setPublishError('Vui lòng nhập đoạn nội dung hoặc chủ đề để hệ thống viết chuẩn SEO!');
+        setPublishError(
+          'Vui lòng nhập đoạn văn nội dung (ở ô Nội dung bài viết hoặc ô Tóm tắt) để hệ thống bám sát đoạn văn & ảnh minh họa viết lại chuẩn SEO!'
+        );
         return null;
       }
     }
@@ -784,7 +825,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           keyword: activeMode === 'from_url' ? undefined : focusKeyword.trim() || undefined,
           language: aiLanguage,
           categoryName: primaryCatName,
-          existingContent: activeMode === 'from_text' ? content : undefined,
+          existingTitle: activeMode === 'from_text' && title.trim() ? title.trim() : undefined,
+          existingContent:
+            activeMode === 'from_text'
+              ? [aiTopic.trim(), content.trim()].filter(Boolean).join('\n\n')
+              : undefined,
+          existingImages:
+            activeMode === 'from_text' && extractedWebImages.length > 0
+              ? extractedWebImages
+              : undefined,
         }),
       });
       let data = await safeParseApiJson(res);
@@ -1999,19 +2048,42 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
               {/* Tiêu đề bài viết */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs font-black text-slate-800 uppercase tracking-wide">
-                    Tiêu Đề Bài Viết (Title) <span className="text-rose-500">*</span>
-                  </label>
-                  <span className="text-[11px] text-slate-500 font-mono">
-                    {title.length} ký tự
-                  </span>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
+                  <div>
+                    <label className="text-xs font-black text-slate-800 uppercase tracking-wide">
+                      Tiêu Đề Bài Viết (Title — Giữ Dạng Câu Hỏi / Tò Mò) <span className="text-rose-500">*</span>
+                    </label>
+                    <p className="text-[11px] text-emerald-800 font-semibold">
+                      💡 Tiêu đề chỉ đóng vai trò câu hỏi gây tò mò; khi bấm Viết Nhân Rộng, hệ thống sẽ đọc <strong>đoạn văn &amp; ảnh minh họa</strong> bên dưới để viết sát nội dung thật.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {(content.trim().length > 20 || aiTopic.trim().length > 20) && (
+                      <button
+                        type="button"
+                        disabled={aiLoading}
+                        onClick={() => void handleGenerateSeoArticle('from_text')}
+                        className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-black flex items-center space-x-1.5 cursor-pointer shadow-xs"
+                        title="Đọc toàn bộ đoạn văn và ảnh minh họa đang có trong bài để viết nhân rộng 2.000–5.000 từ bám sát nội dung, giữ nguyên tiêu đề tò mò"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>
+                          {aiLoading
+                            ? 'Đang đọc đoạn văn & ảnh...'
+                            : '✨ Viết Nhân Rộng Theo Đoạn Văn & Ảnh Minh Họa'}
+                        </span>
+                      </button>
+                    )}
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      {title.length} ký tự
+                    </span>
+                  </div>
                 </div>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Nhập tiêu đề bài viết hấp dẫn chuẩn SEO..."
+                  placeholder="Nhập tiêu đề dạng câu hỏi / tò mò (VD: Hollywood Actress Enjoys A Relaxed Beach Day... – Do You Recognize Them?)..."
                   className="w-full px-4 py-3 bg-slate-50 border border-slate-300 rounded-xl text-base sm:text-lg font-black text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
