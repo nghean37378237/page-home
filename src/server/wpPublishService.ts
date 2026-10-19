@@ -1146,15 +1146,15 @@ export function analyzeArticleSubjectAndContext(
 
   // Nhận diện các nhân vật đi kèm sau cụm "with/and her/his husband/wife/boyfriend/girlfriend/partner..."
   const companionRegex =
-    /\b(?:with|alongside|beside|and)\s+(?:her|his|their)?\s*(?:new\s+|longtime\s+)?(?:husband|wife|partner|boyfriend|girlfriend|fiance|fiancée|companion|beau)\s*(?:,\s*(?:\d{2}-year-old\s+)?(?:[a-z-]+\s+){0,3})?([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
+    /\b(?:with|alongside|beside|and)\s+(?:her|his|their)?\s*(?:new\s+|longtime\s+)?(?:husband|wife|partner|boyfriend|girlfriend|fiance|fiancée|companion|beau)\s*(?:,\s*(?:\d{2}-year-old\s+)?(?:[a-z-]+\s+){0,3})?([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}(?:\s+(?:de|van|von|del|da|di|la|le))?\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
   const companionSet = new Set<string>();
   let cm: RegExpExecArray | null;
-  while ((cm = companionRegex.exec(sample.slice(0, 1200))) !== null) {
+  while ((cm = companionRegex.exec(sample.slice(0, 1400))) !== null) {
     const cName = cm[1]
       .trim()
       .split(/\s+/)
       .filter((p) => !stopWords.has(p))
-      .slice(0, 3)
+      .slice(0, 4)
       .join(' ');
     if (cName.split(/\s+/).length >= 2 && !stopPhrases.has(cName.toLowerCase())) {
       companionSet.add(cName);
@@ -1163,13 +1163,13 @@ export function analyzeArticleSubjectAndContext(
 
   // 1a. Nhận diện mẫu "Tên Nhân Vật, 49," (ví dụ: "Reese Witherspoon, 49, and her boyfriend...")
   const nameAgeAfterRegex =
-    /\b([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)\s*,\s*\d{2}\b/g;
+    /\b([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}(?:\s+(?:de|van|von|del|da|di|la|le))?\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)\s*,\s*\d{2}\b/g;
   let nam: RegExpExecArray | null;
-  while ((nam = nameAgeAfterRegex.exec(sample.slice(0, 1200))) !== null) {
+  while ((nam = nameAgeAfterRegex.exec(sample.slice(0, 1400))) !== null) {
     const rawName = nam[1].trim();
     const cleanParts = rawName.split(/\s+/).filter((p) => !stopWords.has(p.replace(/['’]s$/i, '')));
     if (cleanParts.length < 2) continue;
-    const candidate = cleanParts.slice(0, 3).join(' ');
+    const candidate = cleanParts.slice(0, 4).join(' ');
     if (stopPhrases.has(candidate.toLowerCase())) continue;
     const isComp = companionSet.has(candidate);
     const prev = stats.get(candidate) || {
@@ -1185,14 +1185,14 @@ export function analyzeArticleSubjectAndContext(
 
   // 1b. Ưu tiên nhận diện tên nhân vật đi kèm tuổi hoặc danh xưng nghề nghiệp trong NỘI DUNG BÀI
   const bioRegex =
-    /(?:(\d{2}-year-old(?:\s+[a-zA-Z-]+){0,4})|(?:representative\s+for|breakout\s+star|actor|actress|singer|model|supermodel|star|frontman|mastermind|financier|surgeon|mother|father|icon|legend|winner|daughter|son|director|showrunners?)(?:\s+[a-zA-Z-]+){0,2})\s*,?\s+(?:Dr\.\s+)?([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
+    /(?:(\d{2}-year-old(?:\s+[a-zA-Z-]+){0,4})|(?:representative\s+for|breakout\s+star|personality|actor|actress|singer|model|supermodel|star|frontman|mastermind|financier|surgeon|mother|father|icon|legend|winner|daughter|son|director|showrunners?|executive)(?:\s+[a-zA-Z-]+){0,2})\s*,?\s+(?:Dr\.\s+)?([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}(?:\s+(?:de|van|von|del|da|di|la|le))?\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15})?)/g;
   let bm: RegExpExecArray | null;
   while ((bm = bioRegex.exec(sample)) !== null) {
     const rawName = bm[2].trim();
     const parts = rawName.split(/\s+/);
     const cleanParts = parts.filter((p) => !stopWords.has(p.replace(/['’]s$/i, '')));
     if (cleanParts.length < 2) continue;
-    const candidate = cleanParts.slice(0, 3).join(' ');
+    const candidate = cleanParts.slice(0, 4).join(' ');
     if (stopPhrases.has(candidate.toLowerCase())) continue;
     const isComp = companionSet.has(candidate);
     const prev = stats.get(candidate) || {
@@ -1201,21 +1201,22 @@ export function analyzeArticleSubjectAndContext(
       bioBoost: 0,
       isCompanion: isComp,
     };
-    prev.bioBoost += isComp ? 18 : 42;
+    prev.bioBoost += isComp ? 18 : 44;
     if (isComp) prev.isCompanion = true;
     stats.set(candidate, prev);
   }
 
-  // 2. Quét toàn bộ tên riêng trong NỘI DUNG BÀI VIẾT (sample), tuyệt đối ưu tiên nội dung bài thay vì tiêu đề
+  // 2. Quét toàn bộ tên riêng trong NỘI DUNG BÀI VIẾT (sample) + đối chiếu tiêu đề / alt ảnh
   const regex =
-    /\b([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}){1,2})\b/g;
+    /\b([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}(?:\s+(?:de|van|von|del|da|di|la|le))?(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}){1,2})\b/g;
   let m: RegExpExecArray | null;
-  const textToScan = sample || imgAltText || title || '';
+  const textToScan = `${sample} ${imgAltText} ${title || ''}`.trim();
   while ((m = regex.exec(textToScan)) !== null) {
     const rawName = m[1].replace(/['’]s$/i, '').trim();
     const parts = rawName.split(/\s+/);
-    if (parts.some((p) => stopWords.has(p) || stopWords.has(p.replace(/['’]s$/i, '')))) continue;
-    if (parts.length < 2) continue;
+    const capParts = parts.filter((p) => !/^(de|van|von|del|da|di|la|le)$/i.test(p));
+    if (capParts.some((p) => stopWords.has(p) || stopWords.has(p.replace(/['’]s$/i, '')))) continue;
+    if (capParts.length < 2) continue;
     const candidate = parts.join(' ');
     if (stopPhrases.has(candidate.toLowerCase())) continue;
     const isComp = companionSet.has(candidate);
@@ -1238,7 +1239,7 @@ export function analyzeArticleSubjectAndContext(
       const lastRegex = new RegExp(`\\b${lastName}\\b`, 'g');
       const totalLastMentions = (sample.match(lastRegex) || []).length;
       if (totalLastMentions > info.count) {
-        info.bioBoost += Math.min(30, (totalLastMentions - info.count) * 6);
+        info.bioBoost += Math.min(35, (totalLastMentions - info.count) * 7);
       }
     }
   }
@@ -1270,7 +1271,7 @@ export function analyzeArticleSubjectAndContext(
   const isInvalidUserKw =
     !cleanUserKw ||
     cleanUserKw.split(/\s+/).length > 4 ||
-    /\?|\b(spotted|soaking|beach|recognize|who|what|where|when|why|how|model|actress|actor|star|celebrity|outfits|turns|heads|look|like|can|you|her|him|them)\b/i.test(
+    /\?|\b(spotted|soaking|beach|recognize|who|what|where|when|why|how|model|actress|actor|star|celebrity|outfits|turns|heads|look|like|can|you|her|him|them|familiar|face|sunny|carefree|stylish|moment)\b/i.test(
       cleanUserKw
     );
 
@@ -1284,6 +1285,7 @@ export function analyzeArticleSubjectAndContext(
     ([p, info]) =>
       p !== primaryPerson &&
       !exPartnerSet.has(p) &&
+      !/^(Sports Illustrated|Daily Mail|Page Six|People Magazine|Golden Globes|Academy Awards)$/i.test(p) &&
       (info.isCompanion || info.bioBoost > 0 || (info.firstIdx < 650 && info.count >= 2)) &&
       !primaryPerson.toLowerCase().includes(p.toLowerCase()) &&
       !p.toLowerCase().includes(primaryPerson.toLowerCase())
@@ -1296,14 +1298,18 @@ export function analyzeArticleSubjectAndContext(
     .slice(0, 8);
 
   // 3. Đối chiếu trang phục & đặc điểm hình ảnh từ NỘI DUNG BÀI VIẾT
-  const visualSceneText = `${imgAltText} ${sample.slice(0, 1500)}`.toLowerCase();
+  const visualSceneText = `${imgAltText} ${sample.slice(0, 2200)}`.toLowerCase();
   const outfitKeywords: string[] = [];
   const outfitRegex =
-    /\b((?:all-white|snakeskin(?:-print)?|burgundy|vibrant\s+red|vibrant\s+blue|white|black|red|blue|gold|shimmering\s+gold|glittering\s+gold|shimmer-drenched\s+gold|floral|striped|pink|hot\s+pink|mustard-yellow|green|yellow|navy|chic|skimpy|tiny|polka-dot|leopard(?:-print)?|animal-print|denim|slouchy\s+denim|leather|lace|sheer|sequin|silver|dark|gothic)\s+(?:two-piece\s+bikini|bikini|swimsuit|bathing\s+suit|swim\s+shorts|swim\s+trunks|athletic\s+shorts|shorts|trunks|dress|gown|mini\s+dress|summer\s+dress|crop\s+top|tank\s+top|sports\s+bra|t-shirt|tee|shirt|top|jacket|coat|suit|jeans|joggers|trousers|pants|skirt|outfit|ensemble|wardrobe|cap|ring))\b/gi;
+    /\b((?:all-white|snakeskin(?:-print)?|burgundy|vibrant\s+red|vibrant\s+blue|monochromatic\s+black|sharp\s+black|sleek\s+black|minimal\s+black|white|black|red|blue|gold|shimmering\s+gold|glittering\s+gold|shimmer-drenched\s+gold|floral|striped|pink|hot\s+pink|mustard-yellow|green|yellow|navy|chic|skimpy|tiny|polka-dot|leopard(?:-print)?|animal-print|denim|slouchy\s+denim|leather|lace|sheer|sequin|silver|dark|gothic)\s+(?:two-piece\s+bikini|one-piece\s+swimsuit|bikini|swimsuit|bathing\s+suit|swim\s+shorts|swim\s+trunks|athletic\s+shorts|shorts|trunks|dress|gown|mini\s+dress|summer\s+dress|crop\s+top|tank\s+top|sports\s+bra|t-shirt|tee|shirt|top|jacket|coat|suit|silhouette|jeans|joggers|trousers|pants|skirt|outfit|ensemble|wardrobe|cap|ring))\b/gi;
   let om: RegExpExecArray | null;
   while ((om = outfitRegex.exec(visualSceneText)) !== null) {
-    const phrase = om[1].replace(/\s+/g, ' ').trim();
-    if (!outfitKeywords.includes(phrase) && outfitKeywords.length < 4) {
+    const phrase = om[1]
+      .replace(/^(sharp|sleek|minimal|monochromatic)\s+/i, '')
+      .replace(/\s+silhouette$/i, ' swimsuit')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!outfitKeywords.includes(phrase) && outfitKeywords.length < 5) {
       outfitKeywords.push(phrase);
     }
   }
@@ -1313,10 +1319,10 @@ export function analyzeArticleSubjectAndContext(
   const locationGlossary = [
     'sandy lane', 'barbados', 'bahamas', 'bora bora', 'saint-tropez', 'french riviera',
     'mediterranean', 'south of france', 'notting hill', 'west london', 'west hollywood',
-    'london', 'malibu', 'new york city', 'new york', 'manhattan', 'nashville', 'miami beach',
-    'miami', 'cabo', 'caribbean', 'cannes', 'paris', 'eiffel tower', 'dublin', 'ireland',
-    'venice', 'italy', 'beverly hills', 'los angeles', 'byron bay', 'greenwich', 'connecticut',
-    'nevermore academy'
+    'london', 'malibu', 'venice beach', 'long beach', 'new york city', 'new york',
+    'manhattan', 'nashville', 'miami beach', 'miami', 'cabo', 'caribbean', 'cannes',
+    'paris', 'eiffel tower', 'dublin', 'ireland', 'venice', 'italy', 'beverly hills',
+    'los angeles', 'byron bay', 'greenwich', 'connecticut', 'nevermore academy'
   ];
   const matchedLocations: { loc: string; firstPos: number }[] = [];
   for (const loc of locationGlossary) {
@@ -1338,16 +1344,18 @@ export function analyzeArticleSubjectAndContext(
 
   const timeframeKeywords: string[] = [];
   const timeRegex =
-    /\b((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+[A-Z][a-z]+\s+\d{1,2},\s+\d{4}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|Season\s+\d+|19\d\d|20\d\d)\b/g;
+    /\b((?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday),\s+[A-Z][a-z]+\s+\d{1,2},\s+\d{4}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},\s+\d{4}|(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}|(?:this\s+past\s+|in\s+)(?:January|February|March|April|May|June|July|August|September|October|November|December)|Season\s+\d+|19\d\d|20\d\d)\b/gi;
   let tm: RegExpExecArray | null;
   while ((tm = timeRegex.exec(sample)) !== null) {
-    const tf = tm[1].trim();
+    const tf = tm[1].replace(/^this\s+past\s+|^in\s+/i, '').trim();
     if (!timeframeKeywords.includes(tf) && timeframeKeywords.length < 5) {
       timeframeKeywords.push(tf);
     }
   }
 
+  // Ưu tiên nhận diện tên dự án / thương hiệu / bối cảnh đặc thù (VD: Baywatch, set, reboot...) trước các từ chung như beach
   const eventGlossary = [
+    'baywatch', 'on set', 'beach set', 'reboot', 'lifeguard', 'miami swim week',
     'bikini', 'swimsuit', 'bathing suit', 'yacht', 'beach', 'boat', 'pregnant',
     'pregnancy', 'baby bump', 'stroll', 'lunch', 'brunch', 'kiss', 'kisses',
     'motorcycle', 'red carpet', 'vacation', 'getaway', 'holiday', 'filming',
@@ -1357,8 +1365,8 @@ export function analyzeArticleSubjectAndContext(
   for (const ev of eventGlossary) {
     if (
       contentLower.includes(ev) &&
-      eventKeywords.length < 4 &&
-      !outfitKeywords.some((o) => o.includes(ev))
+      eventKeywords.length < 5 &&
+      !outfitKeywords.some((o) => o === ev)
     ) {
       eventKeywords.push(ev);
     }
@@ -1367,7 +1375,7 @@ export function analyzeArticleSubjectAndContext(
   // 5. Phân loại chính xác thể loại nội dung bên trong bài viết
   let articleCategory: ArticleContextProfile['articleCategory'] = 'celebrity_romance_vacation';
   if (
-    /\b(season\s+\d|filming|showrunners?|casting|cast\b|nevermore|addams\s+family|netflix|premiere\s+date|executive\s+produce|series|episodes?)\b/i.test(
+    /\b(season\s+\d|filming|showrunners?|casting|cast\b|nevermore|addams\s+family|netflix|premiere\s+date|executive\s+produce|series|episodes?|reboot|on\s+set|beach\s+set|baywatch)\b/i.test(
       sample
     )
   ) {
@@ -1394,7 +1402,7 @@ export function analyzeArticleSubjectAndContext(
     articleCategory = 'city_neighborhood_outing';
   }
 
-  const eventWords = [...outfitKeywords, ...locationKeywords.slice(0, 2), ...eventKeywords].slice(0, 6);
+  const eventWords = [...eventKeywords.slice(0, 2), ...outfitKeywords.slice(0, 2), ...locationKeywords.slice(0, 2)].slice(0, 6);
 
   const subjectDisplay = secondaryPerson
     ? `${primaryPerson} and ${secondaryPerson}`
@@ -1403,9 +1411,9 @@ export function analyzeArticleSubjectAndContext(
   const combinedSearchQuery = [
     primaryPerson || (isWednesdayShowContext ? 'Wednesday Addams Jenna Ortega' : ''),
     secondaryPerson,
+    eventKeywords[0] || '',
     outfitKeywords[0] || '',
     locationKeywords[0] || '',
-    eventKeywords[0] || '',
   ]
     .filter(Boolean)
     .join(' ')
@@ -1422,12 +1430,12 @@ export function analyzeArticleSubjectAndContext(
     eventWords,
     articleCategory,
     subjectDisplay,
-    combinedSearchQuery: combinedSearchQuery || primaryPerson || 'Celebrity News',
+    combinedSearchQuery: combinedSearchQuery || primaryPerson || '',
   };
 }
 
 /**
- * Đối chiếu ảnh đã có trong bài (trang phục, bối cảnh, nhân vật, bộ ảnh gốc) để tìm ảnh ngoài TƯƠNG TỰ & CÙNG SỰ KIỆN bổ sung khi bài thiếu ảnh (< 5 ảnh)
+ * Đối chiếu ảnh đã có trong bài (trang phục, bối cảnh, nhân vật, bộ ảnh gốc) để tìm ảnh ngoài TƯƠNG TỰ & CÙNG SỰ KIỆN bổ sung
  */
 export async function searchExternalRelatedImages(
   rawQuery: string,
@@ -1442,36 +1450,57 @@ export async function searchExternalRelatedImages(
     .trim();
 
   const effectiveProfile =
-    contextProfile || analyzeArticleSubjectAndContext('', cleanQuery);
+    contextProfile || analyzeArticleSubjectAndContext(cleanQuery, cleanQuery);
+
+  const genericQueryNoiseRe =
+    /^(model|actress|actor|star|celebrity|spotted|soaking|up|the|sun|at|beach|can|you|recognize|her|him|them|who|is|she|he|they|familiar|face|sunny|day|with|would|carefree|stylish|summer|moment|rare|candid|paparazzi|cast|and|creators|exclusive|story|news|photo|photos)$/i;
+
+  const fallbackQueryTokens = cleanQuery
+    .split(/\s+/)
+    .filter((w) => w.length >= 2 && !genericQueryNoiseRe.test(w));
 
   const primaryPerson = (
     effectiveProfile.primaryPerson ||
-    cleanQuery.split(/\s+/).slice(0, 3).join(' ')
+    fallbackQueryTokens.slice(0, 3).join(' ')
   ).trim();
   const secondaryPerson = (effectiveProfile.secondaryPerson || '').trim();
   const outfitKeywords = effectiveProfile.outfitKeywords || [];
   const locationKeywords = effectiveProfile.locationKeywords || [];
   const eventKeywords = effectiveProfile.eventKeywords || [];
+  const timeframeKeywords = effectiveProfile.timeframeKeywords || [];
   const eventWords = effectiveProfile.eventWords || [];
 
-  if (!primaryPerson && !cleanQuery) return [];
+  // Tuyệt đối không tìm kiếm nếu chưa xác định được tên nhân vật (tránh trả về ảnh phong cảnh bãi biển Pexels/Wallpaper)
+  if (!primaryPerson || genericQueryNoiseRe.test(primaryPerson)) {
+    return [];
+  }
 
-  // Xây dựng bộ truy vấn đối chiếu sát nhất với bộ ảnh gốc (Cùng nhân vật + Cùng trang phục + Cùng địa điểm/sự kiện)
+  const specificEvent = eventKeywords.find((e) => e !== 'beach' && e !== 'swimsuit' && e !== 'bikini') || eventKeywords[0] || '';
+  const secondaryEvent = eventKeywords.find((e) => e !== specificEvent) || '';
+
+  // Xây dựng bộ truy vấn đối chiếu sát nhất với bộ ảnh gốc (Cùng nhân vật + Cùng dự án/sự kiện + Cùng trang phục + Cùng địa điểm)
   const queries = [
-    [primaryPerson, secondaryPerson, outfitKeywords[0], locationKeywords[0], eventKeywords[0]]
+    [primaryPerson, secondaryPerson, specificEvent, outfitKeywords[0], secondaryEvent === 'beach set' || secondaryEvent === 'on set' ? 'set' : locationKeywords[0]]
       .filter(Boolean)
       .join(' ')
       .trim(),
-    [primaryPerson, outfitKeywords[0], locationKeywords[0], eventKeywords[0], 'dailymail']
+    [primaryPerson, specificEvent, outfitKeywords[0], 'set', timeframeKeywords[0] || '2026']
       .filter(Boolean)
       .join(' ')
       .trim(),
-    [primaryPerson, secondaryPerson, locationKeywords[0], eventKeywords[0]]
+    [primaryPerson, secondaryPerson, outfitKeywords[0], locationKeywords[0], specificEvent]
       .filter(Boolean)
       .join(' ')
       .trim(),
-    [primaryPerson, outfitKeywords[0], eventKeywords[0]].filter(Boolean).join(' ').trim(),
-    [primaryPerson, secondaryPerson].filter(Boolean).join(' ').trim(),
+    [primaryPerson, specificEvent, outfitKeywords[0], 'celebmafia OR justjared OR dailymail OR hawtcelebs']
+      .filter(Boolean)
+      .join(' ')
+      .trim(),
+    [primaryPerson, secondaryPerson, specificEvent, locationKeywords[0]]
+      .filter(Boolean)
+      .join(' ')
+      .trim(),
+    [primaryPerson, secondaryPerson, outfitKeywords[0]].filter(Boolean).join(' ').trim(),
   ].filter(Boolean);
 
   const uniqueQueries = [...new Set(queries)];
@@ -1487,14 +1516,76 @@ export async function searchExternalRelatedImages(
     .flatMap((w) => w.toLowerCase().split(/\s+/))
     .filter((t) => t.length >= 3);
   const locTokens = locationKeywords.map((w) => w.toLowerCase()).filter(Boolean);
-  const evTokens = eventKeywords.map((w) => w.toLowerCase()).filter(Boolean);
+  const evTokens = eventKeywords
+    .flatMap((w) => w.toLowerCase().split(/\s+/))
+    .filter((t) => t.length >= 3);
+
+  const stockOrGenericBlockRe =
+    /gettyimages\.|alamy\.|shutterstock\.|istockphoto\.|dreamstime\.|depositphotos\.|123rf\.|pond5\.|prettylittlething\.|shein\.|ido\.org\.tw|tiktok\.com\/api|pexels\.com|pixabay\.com|unsplash\.com|wallpaperaccess\.com|wallpapercave\.com|hdwallpapers|freepik\.com|vecteezy\.com|burst\.shopify\.com|kaboompics\.com|theplanetd\.com|cntraveler\.com|tripadvisor\.|booking\.com|expedia\.|coloring|clipart/i;
+
+  const normalizeFullResWpUrl = (rawImgUrl: string): string => {
+    let cleaned = String(rawImgUrl || '').trim();
+    if (cleaned.includes('/wp-content/uploads/')) {
+      cleaned = cleaned.replace(
+        /-\d{2,4}x\d{2,4}(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
+        ''
+      );
+    }
+    return cleaned;
+  };
+
+  const getNormKey = (u: string): string =>
+    normalizeFullResWpUrl(u)
+      .split('?')[0]
+      .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+      .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+      .toLowerCase();
+
+  // Trích xuất tháng/năm từ URL ảnh gốc (VD: /2026/03/ -> '2026/03' và 'march-2026', 'march 2026') để ưu tiên bộ ảnh cùng thời điểm
+  const monthNames = [
+    '', 'january', 'february', 'march', 'april', 'may', 'june',
+    'july', 'august', 'september', 'october', 'november', 'december'
+  ];
+  const sourceDateHints: string[] = [];
+  for (const exUrl of excludeKeys) {
+    const ymMatch = String(exUrl || '').match(/\/(202\d)\/(0[1-9]|1[0-2])\//);
+    if (ymMatch) {
+      const yr = ymMatch[1];
+      const moNum = parseInt(ymMatch[2], 10);
+      const moName = monthNames[moNum];
+      sourceDateHints.push(`/${yr}/${ymMatch[2]}/`);
+      if (moName) {
+        sourceDateHints.push(`${moName}-${yr}`);
+        sourceDateHints.push(`${moName} ${yr}`);
+      }
+      break;
+    }
+  }
+  for (const tf of timeframeKeywords) {
+    const tfLower = tf.toLowerCase().trim();
+    if (/^[a-z]+\s+202\d$/.test(tfLower)) {
+      sourceDateHints.push(tfLower);
+      sourceDateHints.push(tfLower.replace(/\s+/g, '-'));
+    }
+  }
+
+  const colorTokenSet = new Set([
+    'black', 'white', 'red', 'blue', 'green', 'yellow', 'pink', 'gold', 'silver',
+    'floral', 'sheer', 'leather', 'denim', 'lace', 'sequin', 'striped', 'plaid',
+    'beige', 'brown', 'purple', 'orange', 'navy', 'cream', 'khaki', 'burgundy', 'metallic'
+  ]);
+  const garmentSynonyms = [
+    'swimsuit', 'suit', 'bikini', 'one-piece', 'swimwear', 'monokini', 'trunks',
+    'dress', 'gown', 'skirt', 'top', 'shirt', 'blouse', 'jacket', 'coat', 'blazer',
+    'sweater', 'cardigan', 'hoodie', 'jeans', 'pants', 'trousers', 'shorts', 'jumpsuit', 'bodysuit'
+  ];
 
   const scoredCandidates: (ScrapedArticleImage & { score: number; purl: string })[] = [];
   const seen = new Set<string>(excludeKeys);
   const seenMd5 = new Set<string>();
 
   for (const q of uniqueQueries) {
-    if (scoredCandidates.length >= Math.max(limit * 3, 10)) break;
+    if (scoredCandidates.length >= Math.max(limit * 3, 14)) break;
     try {
       const url = `https://www.bing.com/images/search?q=${encodeURIComponent(
         q
@@ -1512,22 +1603,15 @@ export async function searchExternalRelatedImages(
       for (const m of matches) {
         try {
           const obj = JSON.parse(decodeHtmlEntities(m[1]));
-          const imgUrl = String(obj.murl || '').trim();
+          const rawMurl = String(obj.murl || '').trim();
+          const imgUrl = normalizeFullResWpUrl(rawMurl);
           if (!imgUrl || isIgnorableImage(imgUrl)) continue;
           if (!/\.(jpg|jpeg|png|webp)(\?|$)/i.test(imgUrl)) continue;
-          if (
-            /gettyimages\.|alamy\.|shutterstock\.|istockphoto\.|dreamstime\.|depositphotos\.|123rf\.|pond5\.|prettylittlething\.|shein\.|ido\.org\.tw|tiktok\.com\/api/i.test(
-              imgUrl
-            )
-          ) {
+          if (stockOrGenericBlockRe.test(imgUrl) || stockOrGenericBlockRe.test(String(obj.purl || ''))) {
             continue;
           }
 
-          const normKey = imgUrl
-            .split('?')[0]
-            .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
-            .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
-            .toLowerCase();
+          const normKey = getNormKey(imgUrl);
           if (seen.has(normKey)) continue;
           if (obj.md5 && seenMd5.has(String(obj.md5))) continue;
 
@@ -1543,26 +1627,57 @@ export async function searchExternalRelatedImages(
           const hasAllPTokens = pTokens.length > 0 && pTokens.every((tk) => hay.includes(tk));
           if (!hasFullPrimary && !hasAllPTokens) continue;
 
-          let score = hasFullPrimary ? 60 : 45;
+          let score = hasFullPrimary ? 65 : 48;
 
-          if (secondaryPerson && hay.includes(secondaryPerson.toLowerCase())) score += 50;
-          else if (sTokens.length > 0 && sTokens.every((tk) => hay.includes(tk))) score += 35;
+          if (secondaryPerson && hay.includes(secondaryPerson.toLowerCase())) score += 55;
+          else if (sTokens.length > 0 && sTokens.every((tk) => hay.includes(tk))) score += 38;
 
-          for (const ot of outfitTokens) {
-            if (hay.includes(ot)) score += 22;
+          const hasWordToken = (text: string, token: string): boolean => {
+            const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i').test(text);
+          };
+
+          const uniqueEvMatched = new Set<string>();
+          for (const et of evTokens) {
+            if (hasWordToken(hay, et) && !uniqueEvMatched.has(et)) {
+              uniqueEvMatched.add(et);
+              score += et === 'baywatch' || et === 'yacht' ? 36 : 18;
+            }
           }
+
+          let matchedColor = false;
+          for (const ot of outfitTokens) {
+            if (hasWordToken(hay, ot)) {
+              if (colorTokenSet.has(ot)) {
+                score += 65;
+                matchedColor = true;
+              } else {
+                score += 35;
+              }
+            }
+          }
+          if (matchedColor && garmentSynonyms.some((g) => hasWordToken(hay, g))) {
+            score += 40;
+          }
+
+          if (sourceDateHints.length > 0 && sourceDateHints.some((dh) => hay.includes(dh))) {
+            score += 55;
+          }
+
           for (const lt of locTokens) {
             if (hay.includes(lt)) score += 25;
           }
-          for (const et of evTokens) {
-            if (hay.includes(et)) score += 15;
-          }
           if (
-            /dailymail\.|justjared\.|hawtcelebs\.|celebmafia\.|pagesix\.|usmagazine\.|people\.com|thesun\.|mirror\.co\.uk|backgrid|netflix\.|tvinsider\./i.test(
+            /celebmafia\.|justjared\.|hawtcelebs\.|dailymail\.|pagesix\.|usmagazine\.|people\.com|thesun\.|mirror\.co\.uk|backgrid|barnorama\./i.test(
               hay
             )
           ) {
-            score += 30;
+            score += 32;
+          }
+
+          if (effectiveProfile.articleCategory !== 'retrospective_feature') {
+            if (/\b(2026|2025)\b/.test(hay)) score += 30;
+            if (/\b(2016|2017|2018|2019|2020|2021|2022)\b/.test(hay)) score -= 50;
           }
 
           seen.add(normKey);
@@ -1570,7 +1685,7 @@ export async function searchExternalRelatedImages(
 
           scoredCandidates.push({
             url: imgUrl,
-            alt: titleText || `${primaryPerson} ${eventWords.join(' ')}`.trim(),
+            alt: titleText || `${primaryPerson} - ${eventWords.join(' ')}`.trim(),
             isFeatured: false,
             isExternal: true,
             score,
@@ -1586,15 +1701,75 @@ export async function searchExternalRelatedImages(
   }
 
   scoredCandidates.sort((a, b) => b.score - a.score);
-  const topPurl = scoredCandidates[0]?.purl;
-  if (topPurl) {
-    for (const item of scoredCandidates) {
-      if (item.purl && item.purl === topPurl) {
-        item.score += 25;
+
+  // Mở rộng bộ ảnh CÙNG SỰ KIỆN / CÙNG BUỔI CHỤP từ trang gallery đứng đầu (CelebMafia, HawtCelebs, JustJared, Barnorama...)
+  const topCandidate = scoredCandidates[0];
+  if (topCandidate && topCandidate.purl) {
+    const stemMatch = topCandidate.url.match(
+      /^(https?:\/\/[^?]+?[-_])(\d+)(\.(?:jpg|jpeg|png|webp))$/i
+    );
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const galRes = await fetch(topCandidate.purl, {
+        headers: {
+          'User-Agent': SCRAPER_USER_AGENT,
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+        signal: controller.signal,
+      }).finally(() => clearTimeout(timer));
+
+      if (galRes.ok) {
+        const galHtml = await galRes.text();
+        const rawUrls =
+          galHtml.match(
+            /https?:\/\/[^"'\s<>\\]+\.(?:jpg|jpeg|png|webp)(?:\?[^"'\s<>\\]*)?/gi
+          ) || [];
+        const cleanBaseTitle = topCandidate.alt
+          .replace(/\s*[•|–—-]\s*(CelebMafia|HawtCelebs|Just\s*Jared|Barnorama).*$/i, '')
+          .replace(/\s*\.\.\.$/, '')
+          .trim();
+
+        for (const rawU of rawUrls) {
+          const fullU = normalizeFullResWpUrl(rawU);
+          if (!fullU || isIgnorableImage(fullU)) continue;
+          const nKey = getNormKey(fullU);
+          if (seen.has(nKey)) continue;
+
+          const isSameNumberedStem =
+            stemMatch &&
+            fullU.toLowerCase().startsWith(stemMatch[1].toLowerCase()) &&
+            new RegExp(
+              `^${stemMatch[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\d+\\.(jpg|jpeg|png|webp)$`,
+              'i'
+            ).test(fullU);
+
+          const lowerU = fullU.toLowerCase();
+          const hasAllPTokensInFile =
+            !stemMatch && pTokens.length > 0 && pTokens.every((tk) => lowerU.includes(tk));
+          const hasOutfitOrEventInFile =
+            !stemMatch &&
+            [...evTokens, ...outfitTokens].some((tk) => tk.length >= 4 && lowerU.includes(tk));
+
+          if (isSameNumberedStem || (hasAllPTokensInFile && hasOutfitOrEventInFile)) {
+            seen.add(nKey);
+            scoredCandidates.push({
+              url: fullU,
+              alt: cleanBaseTitle || topCandidate.alt,
+              isFeatured: false,
+              isExternal: true,
+              score: isSameNumberedStem ? topCandidate.score + 45 : topCandidate.score + 15,
+              purl: topCandidate.purl,
+            });
+          }
+        }
       }
+    } catch {
+      // ignore gallery expansion timeout
     }
-    scoredCandidates.sort((a, b) => b.score - a.score);
   }
+
+  scoredCandidates.sort((a, b) => b.score - a.score);
 
   return scoredCandidates
     .slice(0, limit)
@@ -2876,7 +3051,8 @@ async function fetchImageInlinePartForVision(
 
 export async function tryDiscoverSourceArticleImagesFromText(
   rawTitle: string,
-  rawBodyText: string
+  rawBodyText: string,
+  existingImages?: { url?: string }[]
 ): Promise<{
   title: string;
   excerpt: string;
@@ -2884,7 +3060,20 @@ export async function tryDiscoverSourceArticleImagesFromText(
   sourceUrl: string;
   images: ScrapedArticleImage[];
 } | null> {
-  const candidateOrigins = ['https://beaware.fun'];
+  const originSet = new Set<string>(['https://beaware.fun']);
+  if (Array.isArray(existingImages)) {
+    for (const im of existingImages) {
+      try {
+        if (im?.url && /^https?:\/\//i.test(im.url)) {
+          const u = new URL(im.url);
+          if (!/pexels\.|pixabay\.|unsplash\.|bing\.|celeb24h\.com/i.test(u.hostname)) {
+            originSet.add(u.origin);
+          }
+        }
+      } catch {}
+    }
+  }
+  const candidateOrigins = [...originSet];
   const slugFromTitle = String(rawTitle || '')
     .toLowerCase()
     .replace(/['’"“”?!:;,.()[\]]+/g, '')

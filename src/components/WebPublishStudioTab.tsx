@@ -1091,6 +1091,27 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             }
             return prev;
           });
+          // Tự động nhận diện tên nhân vật chính trong bài gốc để điền sẵn vào Từ khóa trọng tâm (Focus Keyword)
+          const personMatch = fetchedText.match(
+            /\b([A-Z][a-z]{2,15}(?:\s+(?:de|van|von|del|da|di|la|le|st\.?))?(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g
+          );
+          if (personMatch && personMatch.length > 0) {
+            const ignoreWords = new Set([
+              'The', 'This', 'That', 'There', 'When', 'While', 'Where', 'What', 'Who', 'Why', 'How',
+              'Los', 'Angeles', 'New', 'York', 'Miami', 'Beach', 'Venice', 'Malibu', 'Beverly', 'Hills',
+              'Santa', 'Monica', 'United', 'States', 'Sports', 'Illustrated', 'Daily', 'Mail', 'Page', 'Six'
+            ]);
+            const freq = new Map<string, number>();
+            for (const cand of personMatch) {
+              const parts = cand.trim().split(/\s+/);
+              if (parts.some((w) => ignoreWords.has(w))) continue;
+              freq.set(cand.trim(), (freq.get(cand.trim()) || 0) + 1);
+            }
+            const bestPerson = Array.from(freq.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
+            if (bestPerson) {
+              setFocusKeyword((prevKw) => (prevKw.trim() ? prevKw : bestPerson));
+            }
+          }
         }
         if (rawImgs.length > 0) {
           const origImgs = rawImgs.map((im: any, idx: number) => ({
@@ -1624,45 +1645,200 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     }
   };
 
-  // Tìm và bổ sung thêm ảnh ngoài liên quan vào bài viết (đối chiếu với ảnh đã có và nội dung bài đang viết)
-  const handleFetchMoreExternalImages = async () => {
-    const q = customYtQuery.trim() || focusKeyword.trim() || title.trim() || aiTopic.trim();
-    if (!q) {
-      setPublishError('Vui lòng nhập tiêu đề hoặc từ khóa nhân vật để tìm thêm ảnh ngoài!');
+  // Tìm và bổ sung thêm ảnh ngoài tương tự (cùng nhân vật, cùng trang phục, cùng bối cảnh sự kiện/buổi chụp với ảnh gốc và đoạn văn trong bài)
+  const handleFetchMoreExternalImages = async (replaceExistingExternals: boolean = false) => {
+    const sourceLink =
+      aiSourceUrl.trim() ||
+      extractFirstArticleUrl(aiTopic) ||
+      extractFirstArticleUrl(content) ||
+      extractFirstArticleUrl(title);
+    if (sourceLink && !aiSourceUrl.trim()) {
+      setAiSourceUrl(sourceLink);
+    }
+
+    const cleanTopicText = aiTopic.replace(/https?:\/\/[^\s"'<>]+/gi, '').trim();
+    const strippedContentText = content
+      .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    let resolvedTitle = title.trim();
+    let resolvedBodyText = [strippedContentText, cleanTopicText, excerpt.trim()]
+      .filter(Boolean)
+      .join('\n\n')
+      .slice(0, 8000);
+    let currentOrigImages = extractedWebImages.filter((im) => !im.isExternal);
+
+    const q =
+      customYtQuery.trim() ||
+      focusKeyword.trim() ||
+      resolvedTitle ||
+      cleanTopicText.slice(0, 120) ||
+      sourceLink;
+
+    if (!q && !sourceLink && currentOrigImages.length === 0) {
+      setPublishError('Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Từ khóa nhân vật để tìm thêm ảnh ngoài tương tự!');
       return;
     }
+
     setSearchingExtImages(true);
     setPublishError(null);
     try {
+      // Nếu chưa có đủ nội dung văn bản để nhận diện tên nhân vật & trang phục mà có sourceLink -> hút nhanh văn bản bài gốc trước
+      if (sourceLink && (resolvedBodyText.length < 150 || currentOrigImages.length === 0)) {
+        try {
+          const exRes = await fetch('/api/extract-web-images', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: sourceLink }),
+          });
+          const exData = await safeParseApiJson(exRes);
+          if (exRes.ok && exData.ok) {
+            if (!resolvedTitle && exData.title) {
+              resolvedTitle = String(exData.title).trim();
+              setTitle(resolvedTitle);
+            }
+            if (exData.articleText && String(exData.articleText).trim().length > resolvedBodyText.length) {
+              resolvedBodyText = String(exData.articleText).trim();
+              if (!aiTopic.trim() || /^https?:\/\/\S+$/i.test(aiTopic.trim())) {
+                setAiTopic(resolvedBodyText);
+              }
+            }
+            if (currentOrigImages.length === 0 && Array.isArray(exData.images) && exData.images.length > 0) {
+              currentOrigImages = exData.images.map((im: any, idx: number) => ({
+                url: String(im.url || im.dataUrl || ''),
+                alt: String(im.alt || resolvedTitle || `Photo ${idx + 1}`),
+                isFeatured: idx === 0,
+                isExternal: false,
+              }));
+            }
+          }
+        } catch {}
+
+        if (resolvedBodyText.length < 150 || currentOrigImages.length === 0) {
+          const jinaData = await extractViaJinaReaderClient(sourceLink);
+          if (jinaData) {
+            if (!resolvedTitle && jinaData.title) {
+              resolvedTitle = jinaData.title;
+              setTitle(resolvedTitle);
+            }
+            if (jinaData.articleText && jinaData.articleText.length > resolvedBodyText.length) {
+              resolvedBodyText = jinaData.articleText;
+              if (!aiTopic.trim() || /^https?:\/\/\S+$/i.test(aiTopic.trim())) {
+                setAiTopic(resolvedBodyText);
+              }
+            }
+            if (currentOrigImages.length === 0 && jinaData.images.length > 0) {
+              currentOrigImages = jinaData.images;
+            }
+          }
+        }
+      }
+
+      // Loại bỏ các ảnh stock phong cảnh Pexels/Unsplash cũ (nếu có) để thay bằng ảnh thật đúng nhân vật & bối cảnh
+      const cleanExistingImages = (replaceExistingExternals
+        ? currentOrigImages
+        : extractedWebImages.length > 0
+        ? extractedWebImages
+        : currentOrigImages
+      ).filter(
+        (im) =>
+          !im.isExternal ||
+          !/pexels\.com|unsplash\.com|pixabay\.com|freepik\.com/i.test(im.url)
+      );
+
       const res = await fetch('/api/wp-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'search_external_images',
-          query: q,
-          title: title.trim(),
-          articleText: content.slice(0, 6000),
-          existingImages: extractedWebImages,
+          query: customYtQuery.trim() || focusKeyword.trim() || resolvedTitle || q,
+          sourceUrl: sourceLink || undefined,
+          title: resolvedTitle,
+          articleText: resolvedBodyText,
+          existingImages: cleanExistingImages,
           limit: 6,
         }),
       });
       const data = await safeParseApiJson(res);
       if (res.ok && data.ok && Array.isArray(data.images) && data.images.length > 0) {
-        const existingUrls = new Set(extractedWebImages.map((img) => img.url));
-        const newImgs = data.images.filter((img: any) => !existingUrls.has(img.url));
-        if (newImgs.length > 0) {
-          setExtractedWebImages((prev) => [...prev, ...newImgs]);
-          const extraFigures = newImgs
-            .map((img: any) => {
-              const altText = String(img.alt || title || q).replace(/"/g, '&quot;');
-              return `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">
-  <img src="${img.url}" alt="${altText}" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
-</figure>`;
-            })
-            .join('\n\n');
-          setContent((prev) => `${prev}\n\n${extraFigures}`);
+        if (data.primaryPerson && !focusKeyword.trim()) {
+          setFocusKeyword(String(data.primaryPerson));
         }
+
+        const returnedOriginals = data.images
+          .filter((im: any) => !im.isExternal)
+          .map((im: any, idx: number) => ({
+            url: String(im.url || ''),
+            alt: String(im.alt || resolvedTitle || `Photo ${idx + 1}`),
+            isFeatured: idx === 0,
+            isExternal: false,
+          }));
+        const returnedExternals = data.images
+          .filter((im: any) => im.isExternal !== false)
+          .map((im: any) => ({
+            url: String(im.url || ''),
+            alt: String(im.alt || data.primaryPerson || resolvedTitle || q),
+            isFeatured: false,
+            isExternal: true,
+          }));
+
+        const baseOriginals =
+          currentOrigImages.length > 0 ? currentOrigImages : returnedOriginals;
+        const keptExternals = replaceExistingExternals
+          ? []
+          : cleanExistingImages.filter((im) => im.isExternal);
+
+        const seenUrls = new Set<string>();
+        const mergedAll: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
+        for (const im of [...baseOriginals, ...keptExternals, ...returnedExternals]) {
+          const normKey = String(im.url || '').split('?')[0].toLowerCase();
+          if (!normKey || seenUrls.has(normKey)) continue;
+          seenUrls.add(normKey);
+          mergedAll.push({
+            ...im,
+            isFeatured: mergedAll.length === 0,
+          });
+        }
+
+        setExtractedWebImages(mergedAll);
+        if (!featuredImageUrl && mergedAll[0]?.url) {
+          setFeaturedImageUrl(mergedAll[0].url);
+          setFeaturedMediaId(0);
+          setFeaturedImageBase64('');
+        }
+
+        // Gắn đều toàn bộ cả Ảnh bài gốc lẫn Ảnh ngoài tương tự vào bài viết để không bao giờ bị mất ảnh gốc hoặc chỉ hiện ảnh ngoài
+        const hasRealParagraphs = /<p\b[^>]*>[\s\S]{20,}?<\/p>/i.test(content);
+        let baseHtmlForAttach = content;
+        if (!hasRealParagraphs && resolvedBodyText.length > 40) {
+          const paraChunks = splitClientTextInto40To50WordParagraphs(resolvedBodyText);
+          if (paraChunks.length > 0) {
+            baseHtmlForAttach = paraChunks
+              .map(
+                (p) =>
+                  `<p style="margin: 0 0 18px 0; line-height: 1.85; font-size: 17px;">${p}</p>`
+              )
+              .join('\n\n');
+          }
+        }
+
+        const updatedHtml = distributeAndAttachImagesToHtml(
+          baseHtmlForAttach,
+          mergedAll,
+          resolvedTitle || 'Exclusive Story'
+        );
+        setContent(updatedHtml);
+        setAiArticleStats((prev) => ({
+          wordCount: prev?.wordCount || seoAnalysis.words || 0,
+          paragraphCount: prev?.paragraphCount || 0,
+          originalImageCount: mergedAll.filter((x) => !x.isExternal).length,
+          externalImageCount: mergedAll.filter((x) => x.isExternal).length,
+        }));
+        setEditorViewMode('preview');
+      } else {
+        setPublishError('Chưa tìm thêm được ảnh ngoài mới khớp với nhân vật/bối cảnh này.');
       }
     } catch (err: any) {
       setPublishError(err?.message || 'Không thể tìm thêm ảnh ngoài');
@@ -1673,8 +1849,18 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
   // Tìm và thay thế 2 video YouTube liên quan ở cuối bài viết theo từ khóa / tên nhân vật
   const handleRefreshYoutubeVideos = async () => {
-    const q = customYtQuery.trim() || focusKeyword.trim() || title.trim();
-    if (!q) {
+    const sourceLink =
+      aiSourceUrl.trim() ||
+      extractFirstArticleUrl(aiTopic) ||
+      extractFirstArticleUrl(content) ||
+      extractFirstArticleUrl(title);
+    const effectiveArticleText = [content, aiTopic, excerpt]
+      .map((s) => String(s || '').trim())
+      .filter(Boolean)
+      .join('\n\n')
+      .slice(0, 8000);
+    const q = customYtQuery.trim() || focusKeyword.trim() || title.trim() || aiTopic.trim().slice(0, 100);
+    if (!q && !sourceLink) {
       setPublishError('Vui lòng nhập tên nhân vật hoặc chủ đề để tìm 2 video YouTube liên quan!');
       return;
     }
@@ -1687,8 +1873,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         body: JSON.stringify({
           action: 'search_youtube',
           query: q,
+          sourceUrl: sourceLink || undefined,
           title: title.trim(),
-          articleText: content.slice(0, 6000),
+          articleText: effectiveArticleText,
           existingImages: extractedWebImages,
           limit: 2,
         }),
@@ -2766,11 +2953,22 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     <button
                       type="button"
                       disabled={searchingExtImages}
-                      onClick={() => void handleFetchMoreExternalImages()}
+                      onClick={() => void handleFetchMoreExternalImages(false)}
                       className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-bold cursor-pointer"
                     >
                       + Tìm thêm ảnh ngoài tương tự
                     </button>
+                    {extractedWebImages.some((x) => x.isExternal) && (
+                      <button
+                        type="button"
+                        disabled={searchingExtImages}
+                        onClick={() => void handleFetchMoreExternalImages(true)}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[11px] font-bold cursor-pointer"
+                        title="Xóa các ảnh ngoài cũ và tìm lại bộ ảnh ngoài mới khớp đúng nhân vật, trang phục & bối cảnh trong bài"
+                      >
+                        🔄 Tìm lại bộ ảnh ngoài chuẩn
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2804,6 +3002,32 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                             >
                               {img.isExternal ? `+Ảnh Ngoài #${idx + 1}` : `Ảnh Bài Gốc #${idx + 1}`}
                             </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const remaining = extractedWebImages.filter((_, i) => i !== idx);
+                                setExtractedWebImages(remaining);
+                                if (featuredImageUrl === img.url) {
+                                  setFeaturedImageUrl(remaining[0]?.url || '');
+                                }
+                                setContent((prev) => {
+                                  const escaped = img.url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                  return prev
+                                    .replace(
+                                      new RegExp(
+                                        `<figure\\b[^>]*>[\\s\\S]*?${escaped}[\\s\\S]*?<\\/figure>\\s*`,
+                                        'gi'
+                                      ),
+                                      ''
+                                    )
+                                    .trim();
+                                });
+                              }}
+                              className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white text-[10px] font-black flex items-center justify-center cursor-pointer shadow-2xs"
+                              title="Xóa ảnh này khỏi bài"
+                            >
+                              ×
+                            </button>
                             <span
                               className={`absolute bottom-1 left-1 text-[9px] font-bold px-1.5 py-0.5 rounded ${
                                 isEmbedded

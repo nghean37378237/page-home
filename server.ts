@@ -83,63 +83,149 @@ async function startServer() {
       if (action === 'search_youtube') {
         const query = String(body.query || '');
         const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
-        const ctxProfile =
-          body.articleText || body.title
-            ? analyzeArticleSubjectAndContext(
-                String(body.title || query),
-                String(body.articleText || query),
-                query,
-                existingImgs
-              )
-            : undefined;
-        const videos = await searchRelatedYouTubeVideos(
-          ctxProfile?.combinedSearchQuery || query,
-          Number(body.limit) || 2,
-          ctxProfile
+        let effectiveTitle = String(body.title || query);
+        let effectiveText = String(body.articleText || '')
+          .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        let ctxProfile = analyzeArticleSubjectAndContext(
+          effectiveTitle,
+          effectiveText || query,
+          query,
+          existingImgs
         );
-        res.json({ ok: true, videos });
-        return;
-      }
 
-      if (action === 'search_external_images') {
-        const query = String(body.query || '');
-        let existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
-        let discoveredOrigImgs: any[] = [];
-
-        if (existingImgs.filter((im: any) => !im?.isExternal).length === 0) {
+        if (!ctxProfile.primaryPerson || effectiveText.length < 100) {
           const urlCandidate =
             String(body.sourceUrl || '').trim() ||
             (String(body.articleText || body.query || '').match(/https?:\/\/[^\s"'<>]+/i)?.[0] || '');
           if (urlCandidate) {
             try {
               const scraped = await scrapeWebArticleForSeoRewrite(urlCandidate);
-              if (scraped.images.length > 0) {
+              if (scraped.articleText) effectiveText = scraped.articleText;
+              if (scraped.originalTitle) effectiveTitle = scraped.originalTitle;
+            } catch {}
+          }
+          if (!effectiveText || effectiveText.length < 100) {
+            const disc = await tryDiscoverSourceArticleImagesFromText(
+              effectiveTitle,
+              effectiveText || query,
+              existingImgs
+            );
+            if (disc) {
+              if (disc.articleText) effectiveText = disc.articleText;
+              if (disc.title) effectiveTitle = disc.title;
+            }
+          }
+          ctxProfile = analyzeArticleSubjectAndContext(
+            effectiveTitle,
+            effectiveText || query,
+            query,
+            existingImgs
+          );
+        }
+
+        const videos = await searchRelatedYouTubeVideos(
+          ctxProfile?.combinedSearchQuery || query,
+          Number(body.limit) || 2,
+          ctxProfile
+        );
+        res.json({
+          ok: true,
+          videos,
+          primaryPerson: ctxProfile?.primaryPerson || '',
+          searchQuery: ctxProfile?.combinedSearchQuery || query,
+        });
+        return;
+      }
+
+      if (action === 'search_external_images') {
+        const query = String(body.query || '');
+        const forceExternalSearch = Boolean(body.forceExternalSearch);
+        let existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        let discoveredOrigImgs: any[] = [];
+        let effectiveTitle = String(body.title || '');
+        let effectiveText = String(body.articleText || '')
+          .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+          .replace(/<[^>]*>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        let ctxProfile = analyzeArticleSubjectAndContext(
+          effectiveTitle || query,
+          effectiveText || query,
+          query,
+          existingImgs
+        );
+
+        const hasOrigImgs = existingImgs.some((im: any) => im && !im.isExternal);
+        const needsSourceDiscovery =
+          !hasOrigImgs || !ctxProfile.primaryPerson || effectiveText.length < 100;
+
+        if (needsSourceDiscovery) {
+          const urlCandidate =
+            String(body.sourceUrl || '').trim() ||
+            (String(body.articleText || body.query || '').match(/https?:\/\/[^\s"'<>]+/i)?.[0] || '');
+          if (urlCandidate) {
+            try {
+              const scraped = await scrapeWebArticleForSeoRewrite(urlCandidate);
+              if (scraped.articleText && scraped.articleText.length > effectiveText.length) {
+                effectiveText = scraped.articleText;
+              }
+              if (scraped.originalTitle && !effectiveTitle) {
+                effectiveTitle = scraped.originalTitle;
+              }
+              if (!hasOrigImgs && scraped.images.length > 0) {
                 discoveredOrigImgs = scraped.images.map((im, idx) => ({
                   url: im.url,
-                  alt: im.alt || scraped.originalTitle || String(body.title || ''),
+                  alt: im.alt || scraped.originalTitle || effectiveTitle,
                   isFeatured: idx === 0,
                   isExternal: false,
                 }));
               }
             } catch {}
           }
-          if (discoveredOrigImgs.length === 0 && (body.title || body.articleText)) {
+
+          if (
+            (discoveredOrigImgs.length === 0 && !hasOrigImgs) ||
+            !effectiveText ||
+            effectiveText.length < 100
+          ) {
             const disc = await tryDiscoverSourceArticleImagesFromText(
-              String(body.title || query),
-              String(body.articleText || query)
+              effectiveTitle || query,
+              effectiveText || query,
+              existingImgs
             );
-            if (disc && disc.images.length > 0) {
-              discoveredOrigImgs = disc.images.map((im, idx) => ({
-                url: im.url,
-                alt: im.alt || disc.title || String(body.title || ''),
-                isFeatured: idx === 0,
-                isExternal: false,
-              }));
+            if (disc) {
+              if (disc.articleText && disc.articleText.length > effectiveText.length) {
+                effectiveText = disc.articleText;
+              }
+              if (disc.title && !effectiveTitle) {
+                effectiveTitle = disc.title;
+              }
+              if (!hasOrigImgs && disc.images.length > 0) {
+                discoveredOrigImgs = disc.images.map((im, idx) => ({
+                  url: im.url,
+                  alt: im.alt || disc.title || effectiveTitle,
+                  isFeatured: idx === 0,
+                  isExternal: false,
+                }));
+              }
             }
           }
+
           if (discoveredOrigImgs.length > 0) {
             existingImgs = [...discoveredOrigImgs, ...existingImgs];
           }
+
+          ctxProfile = analyzeArticleSubjectAndContext(
+            effectiveTitle || query,
+            effectiveText || query,
+            query,
+            existingImgs
+          );
         }
 
         const excludeKeys = new Set<string>(
@@ -153,19 +239,14 @@ async function startServer() {
             )
             .filter(Boolean)
         );
-        const ctxProfile =
-          body.articleText || body.title || existingImgs.length > 0
-            ? analyzeArticleSubjectAndContext(
-                String(body.title || query),
-                String(body.articleText || query),
-                query,
-                existingImgs
-              )
-            : undefined;
-        const neededCount =
-          discoveredOrigImgs.length >= 5
-            ? 0
-            : Math.max(0, (Number(body.limit) || 6) - discoveredOrigImgs.length);
+
+        const requestedLimit = Number(body.limit) || 6;
+        const neededCount = forceExternalSearch
+          ? requestedLimit
+          : discoveredOrigImgs.length >= 5
+          ? 0
+          : Math.max(0, requestedLimit - discoveredOrigImgs.length);
+
         const extImages =
           neededCount > 0
             ? await searchExternalRelatedImages(
@@ -179,6 +260,8 @@ async function startServer() {
           ok: true,
           images: [...discoveredOrigImgs, ...extImages],
           originalImages: discoveredOrigImgs,
+          primaryPerson: ctxProfile?.primaryPerson || '',
+          searchQuery: ctxProfile?.combinedSearchQuery || query,
         });
         return;
       }
