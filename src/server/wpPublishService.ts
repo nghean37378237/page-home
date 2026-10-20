@@ -779,8 +779,16 @@ function resolveAbsUrl(rawUrl: string, baseUrl: string): string {
   }
 }
 
-function isIgnorableImage(url: string): boolean {
-  const lower = url.toLowerCase();
+const AD_BANNER_DIMENSIONS = new Set([
+  '728x90', '970x90', '970x250', '468x60', '320x50', '320x100',
+  '300x50', '300x100', '300x250', '336x280', '160x600', '120x600',
+  '120x240', '300x600', '300x1050', '250x250', '200x200', '125x125',
+  '180x150', '234x60', '88x31', '120x90', '120x60', '80x60',
+  '100x70', '110x75', '120x80', '150x150', '218x150', '100x100', '80x80'
+]);
+
+function isIgnorableImage(url: string, altText = '', tagHtml = ''): boolean {
+  const lower = String(url || '').toLowerCase().trim();
   if (
     !lower ||
     lower.startsWith('data:') ||
@@ -790,7 +798,9 @@ function isIgnorableImage(url: string): boolean {
     lower.endsWith('.ico') ||
     lower.includes('gravatar.com') ||
     lower.includes('/wp-includes/') ||
+    lower.includes('/wp-content/plugins/') ||
     lower.includes('/plugins/') ||
+    lower.includes('/wp-content/themes/') ||
     lower.includes('/themes/') ||
     lower.includes('s.w.org/images/core/emoji') ||
     lower.includes('/emoji/') ||
@@ -799,36 +809,182 @@ function isIgnorableImage(url: string): boolean {
     lower.includes('site-logo') ||
     lower.includes('header-logo') ||
     lower.includes('footer-logo') ||
+    lower.includes('custom-logo') ||
+    lower.includes('gdpr') ||
+    lower.includes('cookie') ||
     lower.includes('/logo.') ||
     lower.includes('-logo.') ||
     lower.includes('_logo.') ||
     lower.includes('pixel') ||
     lower.includes('analytics') ||
     lower.includes('doubleclick') ||
+    lower.includes('googlesyndication') ||
+    lower.includes('googleads') ||
+    lower.includes('googleadservices') ||
+    lower.includes('adservice.google') ||
+    lower.includes('2mdn.net') ||
+    lower.includes('adsafeprotected') ||
+    lower.includes('moatads') ||
+    lower.includes('doubleverify') ||
+    lower.includes('mgid.com') ||
+    lower.includes('adskeeper') ||
+    lower.includes('avplayer.com') ||
+    lower.includes('taboola.com') ||
+    lower.includes('outbrain.com') ||
+    lower.includes('outbrainimg.com') ||
+    lower.includes('revcontent.com') ||
+    lower.includes('zergnet.com') ||
+    lower.includes('teads.tv') ||
+    lower.includes('criteo.') ||
+    lower.includes('rubiconproject.') ||
+    lower.includes('pubmatic.') ||
+    lower.includes('openx.') ||
+    lower.includes('adnxs.com') ||
+    lower.includes('smartadserver.') ||
+    lower.includes('kargo.com') ||
+    lower.includes('gumgum.com') ||
+    lower.includes('nativo.com') ||
+    lower.includes('sharethrough.com') ||
+    lower.includes('connatix.com') ||
+    lower.includes('primis.tech') ||
+    lower.includes('vidazoo.com') ||
+    lower.includes('aniview.com') ||
+    lower.includes('bidgear.com') ||
+    lower.includes('valueimpression.com') ||
+    lower.includes('ezoic.') ||
+    lower.includes('ezodn.com') ||
+    lower.includes('mediavine.com') ||
+    lower.includes('adthrive.com') ||
+    lower.includes('raptive.com') ||
+    lower.includes('monumetric.com') ||
+    lower.includes('sovrn.com') ||
+    lower.includes('lijit.com') ||
+    lower.includes('propellerads.') ||
+    lower.includes('adsterra.') ||
+    lower.includes('exoclick.') ||
+    lower.includes('juicyads.') ||
+    lower.includes('popads.') ||
+    lower.includes('amazon-adsystem.com') ||
+    lower.includes('assoc-amazon.com') ||
+    lower.includes('impactradius.') ||
+    lower.includes('skimresources.com') ||
+    lower.includes('viglink.com') ||
     lower.includes('facebook.com/tr') ||
     lower.includes('google-analytics') ||
     lower.includes('1x1') ||
     lower.includes('spacer') ||
     lower.includes('blank.') ||
     lower.includes('lazyload') ||
-    lower.includes('placeholder')
+    lower.includes('placeholder') ||
+    lower.includes('loading.')
   ) {
     return true;
   }
-  const tinyMatch = lower.match(/-(\d+)x(\d+)\.(jpg|jpeg|png|webp|avif)/);
-  if (tinyMatch) {
-    const w = Number(tinyMatch[1]);
-    const h = Number(tinyMatch[2]);
-    if (w < 150 && h < 150) return true;
+
+  if (
+    /\/(ads?|adv|advert|advertisement|advertising|banners?|sponsors?|sponsored|promo|promotions?|affiliate|popunder|popup|ad-inserter|advanced-ads|wp-quads|adrotate|admanager|dfp|gpt|prebid|mgid|taboola|outbrain|adsense|avplayer)(?:[\/_.-]|$)/i.test(
+      lower
+    ) ||
+    /(?:^|[\/_.-])(ad|ads|adv|advert|banner|sponsor|sponsored|promo|affiliate|quang-cao|quangcao)[0-9_-]*(?:\.(?:jpg|jpeg|png|webp|avif)|[\/_.-])/i.test(
+      lower
+    )
+  ) {
+    return true;
   }
+
+  const dimMatch =
+    lower.match(/-(\d{2,4})x(\d{2,4})\.(jpg|jpeg|png|webp|avif)/i) ||
+    lower.match(/[?&](?:w|width)=(\d{2,4})&(?:h|height)=(\d{2,4})\b/i);
+  if (dimMatch) {
+    const w = Number(dimMatch[1]);
+    const h = Number(dimMatch[2]);
+    if (AD_BANNER_DIMENSIONS.has(`${w}x${h}`)) return true;
+    if (w < 220 || h < 135) return true;
+    if (w > 0 && h > 0 && (w / h >= 3.1 || h / w >= 2.3)) return true;
+  }
+
+  if (altText) {
+    const cleanAlt = String(altText).trim();
+    // Jina Reader gán mã hash hex 32 ký tự cho ảnh quảng cáo MGID / AVPlayer (VD: "Image 1: 2f7d4a5cbdb7c978f8bd5a6609a4cb66")
+    if (/\b[a-f0-9]{28,40}\b/i.test(cleanAlt)) return true;
+    if (
+      /^(advertisement|sponsored|quảng cáo|quang cao|ad|ads|banner|promo|sponsored link|partner|tvus\.info|beaware\.fun)$/i.test(
+        cleanAlt
+      ) ||
+      /\b(advertisement|sponsored content|quảng cáo|banner quảng cáo|mgid|taboola|outbrain|adsense|avplayer|gdpr|click here to|buy now|shop now|casino|bet88|nhà cái)\b/i.test(
+        cleanAlt
+      )
+    ) {
+      return true;
+    }
+  }
+
+  if (tagHtml) {
+    if (
+      /\b(?:class|id)=["'][^"']*\b(ad|ads|adv|advert|advertisement|banner|sponsor|sponsored|promo|mgid|mgbox|taboola|outbrain|adsbygoogle|wp-quads|quads-|ai-viewport|adrotate|advanced-ads|avatar|author-avatar|site-logo|custom-logo|mh-magazine-lite-small|size-mh-magazine-lite-small|attachment-thumbnail|size-thumbnail)\b/i.test(
+        tagHtml
+      ) ||
+      /\bsizes=["'][^"']*max-width:\s*(?:[1-9]\d|1[0-8]\d)px/i.test(tagHtml)
+    ) {
+      return true;
+    }
+  }
+
   return false;
+}
+
+function stripAdAndRelatedContainersFromHtml(htmlChunk: string, baseUrl: string): string {
+  let cleaned = String(htmlChunk || '')
+    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<ins\b[^>]*>[\s\S]*?<\/ins>/gi, '')
+    .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+    .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '')
+    .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
+    .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '');
+
+  // Loại bỏ các khối quảng cáo (Ad Inserter, WP QUADS, MGID, Taboola, Outbrain, AdSense...) và khối bài liên quan / widget
+  cleaned = cleaned.replace(
+    /<(div|section|figure|ul|ol|li|p|span|center)\b[^>]+(?:class|id|data-ad|data-widget)=["'][^"']*\b(ad-box|ads-box|ad-container|ads-container|ad-wrapper|ad-slot|ad-unit|ad-banner|ad-block|ads-block|code-block|ai-viewports?|wp-quads|quads-location|advads|adrotate|adsbygoogle|advertisement|advertising|sponsored|promo-box|affiliate|mgid|mgbox|taboola|outbrain|revcontent|zergnet|bidgear|ezoic|mediavine|adthrive|avplayer|related-posts|related_posts|yarpp|jp-relatedposts|crp_related|td-related|td_block_related|jnews_related|inline-related|also-read|read-also|must-read|more-posts|popular-posts|recent-posts|trending-posts|mh-custom-posts|mh-widget|widget|sidebar|sharedaddy|social-share|author-box|post-author|comments-area|post-navigation|newsletter|subscribe|gdpr|cookie)\b[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,
+    ''
+  );
+
+  // Loại bỏ các thẻ <a href="..."><img ...></a> dẫn tới link quảng cáo ngoài hoặc link sang bài viết khác (không phải link file ảnh)
+  let basePathname = '';
+  try {
+    basePathname = new URL(baseUrl).pathname.replace(/\/+$/, '');
+  } catch {}
+
+  cleaned = cleaned.replace(
+    /<a\b[^>]*\bhref=["']([^"']+)["'][^>]*>\s*(?:<picture\b[^>]*>[\s\S]*?<\/picture>|<img\b[^>]*>|<span\b[^>]*>\s*<img\b[^>]*>\s*<\/span>)\s*<\/a>/gi,
+    (fullMatch, hrefVal) => {
+      const rawHref = String(hrefVal || '').trim();
+      if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:')) {
+        return fullMatch;
+      }
+      if (/\.(jpg|jpeg|png|webp|avif)(\?|$)/i.test(rawHref) || /attachment_id=/i.test(rawHref)) {
+        return fullMatch;
+      }
+      try {
+        const resolvedHref = new URL(rawHref, baseUrl);
+        const hrefPath = resolvedHref.pathname.replace(/\/+$/, '');
+        if (basePathname && hrefPath === basePathname) {
+          return fullMatch;
+        }
+      } catch {}
+      // Link trỏ sang trang quảng cáo hoặc bài viết khác -> Bỏ qua toàn bộ ảnh bên trong thẻ <a> này
+      return '';
+    }
+  );
+
+  return cleaned;
 }
 
 function pickBestSrcFromSrcset(srcset: string, baseUrl: string): string {
   const trimmed = String(srcset || '').trim();
   if (!trimmed || trimmed.startsWith('data:')) return '';
   const candidates: { url: string; width: number }[] = [];
-  // Tách các phần tử trong srcset mà không làm đứt các URL chứa dấu phẩy (VD: Cloudinary c_crop,x_0,y_0...)
+  // Tách các phần tử trong srcset mà không làm đứt các URL chứa dấu phẩy (VD: Cloudinary c_crop,x_0,y_0... hoặc Hola ?im=Resize=(960),type=downsize)
   const parts = trimmed.split(/,\s+(?=(?:https?:\/\/|\/\/|\/|[a-zA-Z0-9_-]+\/))/);
   for (const part of parts) {
     const tokens = part.trim().split(/\s+/);
@@ -841,6 +997,7 @@ function pickBestSrcFromSrcset(srcset: string, baseUrl: string): string {
     } else if (tokens[1]?.endsWith('x')) {
       width = (parseFloat(tokens[1].slice(0, -1)) || 1) * 600;
     }
+    if (width > 0 && width < 220) continue;
     candidates.push({ url: u, width });
   }
   if (candidates.length === 0) return '';
@@ -854,37 +1011,31 @@ function pickBestSrcFromSrcset(srcset: string, baseUrl: string): string {
 
 function collectImgsFromHtml(htmlChunk: string, baseUrl: string): { url: string; alt: string }[] {
   const list: { url: string; alt: string }[] = [];
-  const expandedHtml = String(htmlChunk || '').replace(
+  const unlockedHtml = String(htmlChunk || '').replace(
     /<noscript\b[^>]*>([\s\S]*?)<\/noscript>/gi,
     (_m, inner) => decodeHtmlEntities(inner)
   );
-
-  const sourceRegex = /<source\b[^>]*>/gi;
-  let sm: RegExpExecArray | null;
-  while ((sm = sourceRegex.exec(expandedHtml)) !== null) {
-    const tag = sm[0];
-    const ss =
-      tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
-      tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
-      tag.match(/\bsrcset=["']([^"']+)["']/i);
-    if (ss && ss[1] && !ss[1].trim().startsWith('data:')) {
-      const best = pickBestSrcFromSrcset(ss[1], baseUrl);
-      if (best && !isIgnorableImage(best)) {
-        list.push({ url: best, alt: '' });
-      }
-    }
-  }
+  const expandedHtml = stripAdAndRelatedContainersFromHtml(unlockedHtml, baseUrl);
 
   const imgRegex = /<img\b[^>]*>/gi;
   let m: RegExpExecArray | null;
   while ((m = imgRegex.exec(expandedHtml)) !== null) {
     const tag = m[0];
+    const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
+    const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
+
+    if (isIgnorableImage('', alt, tag)) continue;
+
     const wMatch = tag.match(/\bwidth=["']?(\d+)/i);
     const hMatch = tag.match(/\bheight=["']?(\d+)/i);
-    if (wMatch && hMatch) {
-      const w = Number(wMatch[1]);
-      const h = Number(hMatch[1]);
-      if (w > 0 && h > 0 && w < 110 && h < 110) continue;
+    if (wMatch || hMatch) {
+      const w = wMatch ? Number(wMatch[1]) : 0;
+      const h = hMatch ? Number(hMatch[1]) : 0;
+      if ((w > 0 && w < 220) || (h > 0 && h < 135)) continue;
+      if (w > 0 && h > 0) {
+        if (AD_BANNER_DIMENSIONS.has(`${w}x${h}`)) continue;
+        if (w / h >= 3.1 || h / w >= 2.3) continue;
+      }
     }
 
     let chosen = '';
@@ -904,7 +1055,7 @@ function collectImgsFromHtml(htmlChunk: string, baseUrl: string): { url: string;
       const matchAttr = tag.match(new RegExp(`\\b${attr}=["']([^"']+)["']`, 'i'));
       if (matchAttr && matchAttr[1] && !matchAttr[1].trim().startsWith('data:')) {
         const candidate = resolveAbsUrl(matchAttr[1], baseUrl);
-        if (candidate && !isIgnorableImage(candidate)) {
+        if (candidate && !isIgnorableImage(candidate, alt, tag)) {
           chosen = candidate;
           break;
         }
@@ -924,31 +1075,53 @@ function collectImgsFromHtml(htmlChunk: string, baseUrl: string): { url: string;
     if (!chosen) {
       const srcAttr = tag.match(/\bsrc=["']([^"']+)["']/i);
       if (srcAttr && srcAttr[1] && !srcAttr[1].trim().startsWith('data:')) {
-        chosen = resolveAbsUrl(srcAttr[1], baseUrl);
+        const rawCandidate = resolveAbsUrl(srcAttr[1], baseUrl);
+        if (rawCandidate && !isIgnorableImage(rawCandidate, alt, tag)) {
+          chosen = rawCandidate;
+        }
       }
     }
 
-    if (!chosen || isIgnorableImage(chosen)) continue;
-    // Tự động chuyển URL ảnh thumbnail cắt nhỏ của WordPress (-300x169.jpg, -678x381.webp...) về ảnh gốc chất lượng cao nếu nằm trong /wp-content/uploads/
+    if (!chosen || isIgnorableImage(chosen, alt, tag)) continue;
+    // Tự động chuyển URL ảnh thumbnail cắt nhỏ của WordPress (-678x381.webp...) về ảnh gốc chất lượng cao nếu nằm trong /wp-content/uploads/
     if (chosen.includes('/wp-content/uploads/')) {
-      chosen = chosen.replace(/-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i, '');
+      chosen = chosen.replace(/-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+|768x\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i, '');
     }
-    const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
-    const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
     list.push({ url: chosen, alt });
   }
 
-  // Quét thêm URL ảnh /wp-content/uploads/ ẩn trong script/JSON khi web bật chống copy bằng JS blob
-  const rawUploadRegex = /https?:\\?\/\\?\/[^"'\s<>\\]+\/wp-content\/uploads\/[^"'\s<>\\]+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"'\s<>\\]*)?/gi;
-  let rm: RegExpExecArray | null;
-  while ((rm = rawUploadRegex.exec(expandedHtml)) !== null) {
-    let rawU = rm[0].replace(/\\\//g, '/');
-    if (rawU.includes('/wp-content/uploads/')) {
-      rawU = rawU.replace(/-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i, '');
+  // Nếu chưa tìm thấy thẻ <img> nào, mới quét thẻ <source> và đường dẫn /wp-content/uploads/ ẩn trong script
+  if (list.length === 0) {
+    const sourceRegex = /<source\b[^>]*>/gi;
+    let sm: RegExpExecArray | null;
+    while ((sm = sourceRegex.exec(expandedHtml)) !== null) {
+      const tag = sm[0];
+      const ss =
+        tag.match(/\bdata-srcset=["']([^"']+)["']/i) ||
+        tag.match(/\bdata-lazy-srcset=["']([^"']+)["']/i) ||
+        tag.match(/\bsrcset=["']([^"']+)["']/i);
+      if (ss && ss[1] && !ss[1].trim().startsWith('data:')) {
+        const best = pickBestSrcFromSrcset(ss[1], baseUrl);
+        if (best && !isIgnorableImage(best)) {
+          list.push({ url: best, alt: '' });
+        }
+      }
     }
-    const resolved = resolveAbsUrl(rawU, baseUrl);
-    if (resolved && !isIgnorableImage(resolved)) {
-      list.push({ url: resolved, alt: '' });
+
+    const htmlWithoutImgs = expandedHtml.replace(/<img\b[^>]*>/gi, '');
+    const rawUploadRegex = /https?:\\?\/\\?\/[^"'\s<>\\]+\/wp-content\/uploads\/[^"'\s<>\\]+\.(?:jpg|jpeg|png|webp|avif)(?:\?[^"'\s<>\\]*)?/gi;
+    let rm: RegExpExecArray | null;
+    while ((rm = rawUploadRegex.exec(htmlWithoutImgs)) !== null) {
+      let rawU = rm[0].replace(/\\\//g, '/');
+      const resolvedRaw = resolveAbsUrl(rawU, baseUrl);
+      if (!resolvedRaw || isIgnorableImage(resolvedRaw)) continue;
+      if (rawU.includes('/wp-content/uploads/')) {
+        rawU = rawU.replace(/-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+|768x\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i, '');
+      }
+      const resolved = resolveAbsUrl(rawU, baseUrl);
+      if (resolved && !isIgnorableImage(resolved)) {
+        list.push({ url: resolved, alt: '' });
+      }
     }
   }
 
@@ -2215,15 +2388,22 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
 
   const addImage = (url: string, alt = '', isFeatured = false) => {
     const resolved = resolveAbsUrl(url, cleanUrl);
-    if (!resolved || isIgnorableImage(resolved)) return;
-    const key = resolved
+    if (!resolved || isIgnorableImage(resolved, alt)) return;
+    let finalUrl = resolved;
+    if (finalUrl.includes('/wp-content/uploads/')) {
+      finalUrl = finalUrl.replace(
+        /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+|768x\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
+        ''
+      );
+    }
+    const key = finalUrl
       .split('?')[0]
       .replace(/-\d+x\d+(?=\.(jpg|jpeg|png|webp|avif)$)/i, '')
       .toLowerCase();
     if (seenImgKeys.has(key)) return;
     seenImgKeys.add(key);
     images.push({
-      url: resolved,
+      url: finalUrl,
       alt: alt || originalTitle || 'Article Image',
       isFeatured,
       isExternal: false,
@@ -2382,7 +2562,7 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
     }
   }
 
-  if (matchedWpPostId > 0 && images.length < 4) {
+  if (matchedWpPostId > 0 && images.length === 0) {
     try {
       const mediaRes = await fetch(
         `${origin}/wp-json/wp/v2/media?parent=${matchedWpPostId}&per_page=20`,
@@ -2407,7 +2587,8 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
     }
   }
 
-  if (paragraphs.length === 0 || images.length < 2 || !originalTitle) {
+  // Nếu chưa lấy được nội dung/ảnh từ WP REST API (hoặc trang không dùng WP REST API), mới quét HTML trực tiếp
+  if (paragraphs.length === 0 || images.length === 0 || !originalTitle) {
     try {
       const pageRes = await fetch(cleanUrl, {
         headers: {
@@ -2427,7 +2608,7 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
           await tryFetchWpRestPost(resolveAbsUrl(wpJsonLink[1], cleanUrl));
         }
 
-        if (images.length < 2 || !originalTitle || paragraphs.length === 0) {
+        if (images.length === 0 || !originalTitle || paragraphs.length === 0) {
           if (!originalTitle) {
             const h1Match = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/i);
             const ogTitle =
@@ -2459,13 +2640,8 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
             addImage(ogImg[1], originalTitle, images.length === 0);
           }
 
-          const cleanBody = html
-            .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
-            .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, '')
-            .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '')
-            .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, '')
-            .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, '')
-            .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, '');
+          const cleanBody = stripAdAndRelatedContainersFromHtml(html, cleanUrl)
+            .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, '');
 
           const articleBlocks = [...cleanBody.matchAll(/<article\b[^>]*>([\s\S]*?)<\/article>/gi)].map(
             (m) => m[1]
@@ -2480,7 +2656,7 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
             if (contentStartMatch && contentStartMatch.index !== undefined) {
               const afterStart = cleanBody.slice(contentStartMatch.index);
               const stopMatch = afterStart.match(
-                /<(div|section|aside|footer)\b[^>]+(id|class)=["'][^"']*\b(related-posts|yarpp|jp-relatedposts|comments-area|post-navigation|site-footer|sidebar)\b[^"']*["']/i
+                /<(div|section|aside|footer)\b[^>]+(id|class)=["'][^"']*\b(related-posts|yarpp|jp-relatedposts|comments-area|post-navigation|site-footer|sidebar|mh-widget|widget)\b[^"']*["']/i
               );
               primaryZone = stopMatch && stopMatch.index ? afterStart.slice(0, stopMatch.index) : afterStart;
             } else {
@@ -2503,8 +2679,8 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
     }
   }
 
-  // Kênh dự phòng đặc biệt vượt tường lửa / chống copy (Jina Cloud Headless Browser) khi trang chặn IP server, Cloudflare hoặc mã hóa ảnh bằng blob JS
-  if (paragraphs.length < 2 || images.length < 2 || !originalTitle) {
+  // Kênh dự phòng đặc biệt vượt tường lửa / chống copy (Jina Cloud Headless Browser) chỉ chạy khi trang chặn IP hoặc mã hóa ảnh bằng blob JS
+  if (paragraphs.length < 2 || images.length === 0 || !originalTitle) {
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 9000);
@@ -2528,16 +2704,41 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
           if (!originalExcerpt && jData.description) {
             originalExcerpt = decodeHtmlEntities(String(jData.description));
           }
+
+          // Ưu tiên lấy ảnh nằm trực tiếp trong luồng nội dung bài viết (mdContent) trước, cắt bỏ phần bài liên quan / quảng cáo cuối trang
+          const rawMdContent = String(jData.content || '');
+          const stopFooterIdx = rawMdContent.search(
+            /\n(?:#+\s*)?(?:Related\s+Posts|You\s+May\s+Also\s+Like|More\s+From|Promoted\s+Content|Sponsored\s+Content|Around\s+The\s+Web|Leave\s+a\s+Reply|Leave\s+a\s+Comment)\b/i
+          );
+          const mdContent = stopFooterIdx !== -1 ? rawMdContent.slice(0, stopFooterIdx) : rawMdContent;
+
+          // Loại bỏ các ảnh bọc trong link quảng cáo / bài liên quan dạng [![alt](img_url)](non_image_link)
+          const cleanedMdForImgs = mdContent.replace(
+            /\[!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)\]\((https?:\/\/[^)\s]+)\)/gi,
+            (fullMd, _alt, _imgU, linkU) => {
+              if (/\.(jpg|jpeg|png|webp|avif)(\?|$)/i.test(linkU)) return fullMd;
+              return '';
+            }
+          );
+
+          const mdImgRegex = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
+          let mim: RegExpExecArray | null;
+          while ((mim = mdImgRegex.exec(cleanedMdForImgs)) !== null) {
+            const rawImgUrl = mim[2].trim();
+            const altLabel = mim[1].trim();
+            if (isIgnorableImage(rawImgUrl, altLabel)) continue;
+            addImage(
+              rawImgUrl,
+              altLabel && !/^Image\s*\d+/i.test(altLabel) ? altLabel : originalTitle,
+              images.length === 0
+            );
+          }
+
           if (jData.images && typeof jData.images === 'object') {
             for (const [imgAlt, imgUrlVal] of Object.entries(jData.images)) {
-              let rawImgUrl = String(imgUrlVal || '').trim();
+              const rawImgUrl = String(imgUrlVal || '').trim();
               if (!rawImgUrl || rawImgUrl.startsWith('blob:') || rawImgUrl.startsWith('data:')) continue;
-              if (rawImgUrl.includes('/wp-content/uploads/')) {
-                rawImgUrl = rawImgUrl.replace(
-                  /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
-                  ''
-                );
-              }
+              if (isIgnorableImage(rawImgUrl, imgAlt)) continue;
               addImage(
                 rawImgUrl,
                 imgAlt && !/^Image\s*\d+/i.test(imgAlt) ? imgAlt : originalTitle,
@@ -2545,29 +2746,13 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
               );
             }
           }
-          const mdContent = String(jData.content || '');
-          const mdImgRegex = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
-          let mim: RegExpExecArray | null;
-          while ((mim = mdImgRegex.exec(mdContent)) !== null) {
-            let rawImgUrl = mim[2].trim();
-            if (rawImgUrl.includes('/wp-content/uploads/')) {
-              rawImgUrl = rawImgUrl.replace(
-                /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
-                ''
-              );
-            }
-            addImage(
-              rawImgUrl,
-              mim[1] && !/^Image\s*\d+/i.test(mim[1]) ? mim[1] : originalTitle,
-              images.length === 0
-            );
-          }
 
           if (paragraphs.length < 2 && mdContent) {
             const mdLines = mdContent.split(/\n+/);
             for (const rawLine of mdLines) {
               let line = rawLine
                 .replace(/!\[[^\]]*\]\([^)]*\)/g, '')
+                .replace(/\[Video\s+\d+\]\([^)]*\)/gi, '')
                 .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
                 .replace(/^#+\s*/, '')
                 .replace(/[*_`~]+/g, '')
@@ -2575,7 +2760,7 @@ export async function scrapeWebArticleForSeoRewrite(rawUrl: string): Promise<{
                 .trim();
               if (!line || line.length < 28) continue;
               if (
-                /^(skip to content|search|menu|home|share|tweet|pin|copy link|read more|related posts|leave a comment|cancel reply|privacy policy|terms of service|we use cookies|accept all|manage preferences)/i.test(
+                /^(skip to content|search|menu|home|share|tweet|pin|copy link|read more|related posts|leave a comment|cancel reply|privacy policy|terms of service|we use cookies|accept all|manage preferences|advertisement|sponsored)/i.test(
                   line
                 )
               ) {
