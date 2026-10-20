@@ -84,6 +84,20 @@ interface QuickWpArticleOption {
   employeeCode?: string;
 }
 
+interface CircleSlotOverride {
+  dx: number;
+  dy: number;
+  sizeScale: number;
+}
+
+type CircleQuickSnapPos =
+  | 'top_left'
+  | 'top_right'
+  | 'bottom_left'
+  | 'bottom_right'
+  | 'bottom_center'
+  | 'center';
+
 // Hàng 1: 8 mẫu ảnh cho bài viết (Kích thước ưu tiên mặc định: 3:4)
 const AUTO_MULTI_FRAME_IDS: {
   presetId: string;
@@ -386,6 +400,33 @@ export function ImageStudioTab({
   // Dragging state for photo pan
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
+
+  // --- DI CHUYỂN & THU PHÓNG KHUNG ẢNH TRÒN (PIP) TRÁNH CHE ẢNH NỀN ---
+  // Lưu vị trí & kích thước vòng tròn cho từng khung trong Bộ Sưu Tập 2 Hàng (key: offsetKey)
+  const [multiFrameCircleOverrides, setMultiFrameCircleOverrides] = useState<
+    Record<string, CircleSlotOverride>
+  >({});
+  // Lưu vị trí & kích thước vòng tròn trên Bàn Chỉnh Sửa Lớn (key: slot.id)
+  const [mainCircleOverrides, setMainCircleOverrides] = useState<
+    Record<number, CircleSlotOverride>
+  >({});
+  // Chế độ kéo trên bàn chỉnh sửa lớn đối với ô tròn: 'move_circle' (di chuyển vị trí vòng tròn) hoặc 'pan_photo' (chỉnh tâm ảnh trong vòng tròn)
+  const [circleDragMode, setCircleDragMode] = useState<'move_circle' | 'pan_photo'>('move_circle');
+  const [activeCircleDragKey, setActiveCircleDragKey] = useState<string | null>(null);
+  const circleDragRef = useRef<{
+    targetType: 'gallery' | 'main';
+    targetKey: string;
+    slotId: number;
+    startClientX: number;
+    startClientY: number;
+    startDx: number;
+    startDy: number;
+    sizeScale: number;
+    containerWidth: number;
+    containerHeight: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressNextCardClickRef = useRef<boolean>(false);
 
   // Modal create/edit task
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
@@ -986,6 +1027,280 @@ export function ImageStudioTab({
     }));
   };
 
+  // Tính toán tọa độ & kích thước thực tế của từng ô (đặc biệt hỗ trợ di chuyển & thu phóng ô ảnh tròn khỏi che ảnh nền)
+  const getEffectiveSlotBounds = useCallback(
+    (
+      slot: CollageSlot,
+      ratioAspect: number,
+      override?: CircleSlotOverride
+    ): { x: number; y: number; width: number; height: number } => {
+      if (slot.shape !== 'circle') {
+        return {
+          x: slot.x,
+          y: slot.y,
+          width: slot.width,
+          height: slot.height,
+        };
+      }
+      const scale = override?.sizeScale ?? 1;
+      const dx = override?.dx ?? 0;
+      const dy = override?.dy ?? 0;
+
+      // Chuẩn hóa chiều cao theo tỷ lệ khung để vòng tròn luôn tròn đều cả ở 3:4, 9:16 và 1:1
+      const safeAspect = ratioAspect > 0 ? ratioAspect : 0.75;
+      const baseW = slot.width;
+      const baseH = slot.width * safeAspect;
+
+      const origCenterX = slot.x + slot.width / 2;
+      const origCenterY = slot.y + slot.height / 2;
+
+      const width = Math.max(14, Math.min(85, baseW * scale));
+      const height = Math.max(10, Math.min(85, baseH * scale));
+
+      const rawX = origCenterX - width / 2 + dx;
+      const rawY = origCenterY - height / 2 + dy;
+
+      const x = Math.max(1, Math.min(99 - width, rawX));
+      const y = Math.max(1, Math.min(99 - height, rawY));
+
+      return { x, y, width, height };
+    },
+    []
+  );
+
+  // Tính toán nhanh dx, dy để nhảy vòng tròn tới các góc tránh che mặt nhân vật
+  const computeSnapCircleOverride = useCallback(
+    (
+      slot: CollageSlot,
+      ratioAspect: number,
+      snapPos: CircleQuickSnapPos,
+      currentScale = 1
+    ): CircleSlotOverride => {
+      const safeAspect = ratioAspect > 0 ? ratioAspect : 0.75;
+      const width = Math.max(14, Math.min(85, slot.width * currentScale));
+      const height = Math.max(10, Math.min(85, slot.width * safeAspect * currentScale));
+      const origCenterX = slot.x + slot.width / 2;
+      const origCenterY = slot.y + slot.height / 2;
+
+      let targetX = slot.x;
+      let targetY = slot.y;
+      const margin = 3;
+
+      if (snapPos === 'top_left') {
+        targetX = margin;
+        targetY = margin;
+      } else if (snapPos === 'top_right') {
+        targetX = 100 - width - margin;
+        targetY = margin;
+      } else if (snapPos === 'bottom_left') {
+        targetX = margin;
+        targetY = 96 - height;
+      } else if (snapPos === 'bottom_right') {
+        targetX = 100 - width - margin;
+        targetY = 90 - height; // Chừa chỗ cho nhãn Full Comments 👇 ở góc dưới phải
+      } else if (snapPos === 'bottom_center') {
+        targetX = 50 - width / 2;
+        targetY = 95 - height;
+      } else if (snapPos === 'center') {
+        targetX = 50 - width / 2;
+        targetY = 50 - height / 2;
+      }
+
+      const targetCenterX = targetX + width / 2;
+      const targetCenterY = targetY + height / 2;
+
+      return {
+        dx: targetCenterX - origCenterX,
+        dy: targetCenterY - origCenterY,
+        sizeScale: currentScale,
+      };
+    },
+    []
+  );
+
+  // Lắng nghe kéo chuột toàn cục để di chuyển vòng tròn mượt mà trong cả ô nhỏ lẫn khung lớn
+  useEffect(() => {
+    const handleWindowMouseMove = (ev: MouseEvent) => {
+      const drag = circleDragRef.current;
+      if (!drag) return;
+
+      const deltaPxX = ev.clientX - drag.startClientX;
+      const deltaPxY = ev.clientY - drag.startClientY;
+      if (Math.abs(deltaPxX) > 2 || Math.abs(deltaPxY) > 2) {
+        drag.moved = true;
+      }
+
+      const deltaPercentX = (deltaPxX / Math.max(1, drag.containerWidth)) * 100;
+      const deltaPercentY = (deltaPxY / Math.max(1, drag.containerHeight)) * 100;
+
+      const nextOverride: CircleSlotOverride = {
+        dx: drag.startDx + deltaPercentX,
+        dy: drag.startDy + deltaPercentY,
+        sizeScale: drag.sizeScale,
+      };
+
+      if (drag.targetType === 'gallery') {
+        setMultiFrameCircleOverrides((prev) => ({
+          ...prev,
+          [drag.targetKey]: nextOverride,
+        }));
+      } else {
+        setMainCircleOverrides((prev) => ({
+          ...prev,
+          [drag.slotId]: nextOverride,
+        }));
+      }
+    };
+
+    const handleWindowMouseUp = () => {
+      if (circleDragRef.current) {
+        if (circleDragRef.current.moved) {
+          suppressNextCardClickRef.current = true;
+          setTimeout(() => {
+            suppressNextCardClickRef.current = false;
+          }, 120);
+        }
+        circleDragRef.current = null;
+        setActiveCircleDragKey(null);
+      }
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, []);
+
+  const handleStartGalleryCircleDrag = (
+    e: React.MouseEvent<HTMLDivElement>,
+    offsetKey: string,
+    slotId: number
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const containerEl = e.currentTarget.parentElement;
+    if (!containerEl) return;
+    const rect = containerEl.getBoundingClientRect();
+    const current = multiFrameCircleOverrides[offsetKey] || { dx: 0, dy: 0, sizeScale: 1 };
+    circleDragRef.current = {
+      targetType: 'gallery',
+      targetKey: offsetKey,
+      slotId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startDx: current.dx,
+      startDy: current.dy,
+      sizeScale: current.sizeScale,
+      containerWidth: rect.width,
+      containerHeight: rect.height,
+      moved: false,
+    };
+    setActiveCircleDragKey(offsetKey);
+  };
+
+  const handleStartMainCircleDrag = (
+    e: React.MouseEvent<HTMLDivElement>,
+    slotId: number
+  ) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const containerEl = e.currentTarget.parentElement;
+    if (!containerEl) return;
+    const rect = containerEl.getBoundingClientRect();
+    const current = mainCircleOverrides[slotId] || { dx: 0, dy: 0, sizeScale: 1 };
+    circleDragRef.current = {
+      targetType: 'main',
+      targetKey: `main-${slotId}`,
+      slotId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      startDx: current.dx,
+      startDy: current.dy,
+      sizeScale: current.sizeScale,
+      containerWidth: rect.width,
+      containerHeight: rect.height,
+      moved: false,
+    };
+    setActiveCircleDragKey(`main-${slotId}`);
+  };
+
+  // Áp dụng vị trí nhanh cho tất cả các khung có ảnh tròn trong Bộ Sưu Tập 2 Hàng
+  const handleApplyGlobalCircleSnap = (snapPos: CircleQuickSnapPos | 'reset' | 'smaller' | 'larger') => {
+    setMultiFrameCircleOverrides((prev) => {
+      const next: Record<string, CircleSlotOverride> = { ...prev };
+      const applyToList = (
+        list: { preset: CollagePreset; ratio: RatioOption }[],
+        prefix: 'post' | 'story'
+      ) => {
+        list.forEach((item, idx) => {
+          const circleSlot = item.preset.slots.find((s) => s.shape === 'circle');
+          if (!circleSlot) return;
+          const key = `${prefix}-${idx}-${item.preset.id}`;
+          const cur = prev[key] || { dx: 0, dy: 0, sizeScale: 1 };
+          if (snapPos === 'reset') {
+            delete next[key];
+          } else if (snapPos === 'smaller') {
+            next[key] = { ...cur, sizeScale: Math.max(0.55, Number((cur.sizeScale - 0.1).toFixed(2))) };
+          } else if (snapPos === 'larger') {
+            next[key] = { ...cur, sizeScale: Math.min(1.35, Number((cur.sizeScale + 0.1).toFixed(2))) };
+          } else {
+            next[key] = computeSnapCircleOverride(
+              circleSlot,
+              item.ratio.exportWidth / item.ratio.exportHeight,
+              snapPos,
+              cur.sizeScale
+            );
+          }
+        });
+      };
+      applyToList(multiFrameVariations, 'post');
+      applyToList(storyFrameVariations, 'story');
+      return next;
+    });
+
+    // Đồng bộ luôn với khung chính nếu đang chọn mẫu có ảnh tròn
+    const mainCircleSlot = activePreset.slots.find((s) => s.shape === 'circle');
+    if (mainCircleSlot) {
+      setMainCircleOverrides((prev) => {
+        const cur = prev[mainCircleSlot.id] || { dx: 0, dy: 0, sizeScale: 1 };
+        if (snapPos === 'reset') {
+          const copy = { ...prev };
+          delete copy[mainCircleSlot.id];
+          return copy;
+        }
+        if (snapPos === 'smaller') {
+          return {
+            ...prev,
+            [mainCircleSlot.id]: {
+              ...cur,
+              sizeScale: Math.max(0.55, Number((cur.sizeScale - 0.1).toFixed(2))),
+            },
+          };
+        }
+        if (snapPos === 'larger') {
+          return {
+            ...prev,
+            [mainCircleSlot.id]: {
+              ...cur,
+              sizeScale: Math.min(1.35, Number((cur.sizeScale + 0.1).toFixed(2))),
+            },
+          };
+        }
+        return {
+          ...prev,
+          [mainCircleSlot.id]: computeSnapCircleOverride(
+            mainCircleSlot,
+            activeRatio.exportWidth / activeRatio.exportHeight,
+            snapPos,
+            cur.sizeScale
+          ),
+        };
+      });
+    }
+  };
+
   // Filtered preset list by category
   const filteredPresets = useMemo(() => {
     if (categoryFilter === 'favorites') {
@@ -1105,6 +1420,7 @@ export function ImageStudioTab({
     ratio: RatioOption;
     slotPhotos: Record<number, string>;
     transforms?: Record<number, SlotTransform>;
+    circleOverrides?: Record<number, CircleSlotOverride>;
     exportRatioScale?: number;
   }): Promise<HTMLCanvasElement> => {
     const {
@@ -1112,6 +1428,7 @@ export function ImageStudioTab({
       ratio,
       slotPhotos,
       transforms = {},
+      circleOverrides = {},
       exportRatioScale = 2,
     } = options;
 
@@ -1159,6 +1476,7 @@ export function ImageStudioTab({
 
     const innerW = targetW - padPx * 2;
     const innerH = targetH - padPx * 2;
+    const ratioAspect = targetW / targetH;
 
     const loadedImgs: Record<number, HTMLImageElement> = {};
     await Promise.all(
@@ -1198,10 +1516,11 @@ export function ImageStudioTab({
     const sortedSlots = [...preset.slots].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
     for (const slot of sortedSlots) {
-      const slotX = padPx + (slot.x / 100) * innerW + gapPx / 2;
-      const slotY = padPx + (slot.y / 100) * innerH + gapPx / 2;
-      const slotW = Math.max(1, (slot.width / 100) * innerW - gapPx);
-      const slotH = Math.max(1, (slot.height / 100) * innerH - gapPx);
+      const eff = getEffectiveSlotBounds(slot, ratioAspect, circleOverrides[slot.id]);
+      const slotX = padPx + (eff.x / 100) * innerW + gapPx / 2;
+      const slotY = padPx + (eff.y / 100) * innerH + gapPx / 2;
+      const slotW = Math.max(1, (eff.width / 100) * innerW - gapPx);
+      const slotH = Math.max(1, (eff.height / 100) * innerH - gapPx);
 
       ctx.save();
 
@@ -1466,6 +1785,7 @@ export function ImageStudioTab({
       ratio: activeRatio,
       slotPhotos: slotAssignments,
       transforms: slotTransforms,
+      circleOverrides: mainCircleOverrides,
       exportRatioScale,
     });
   };
@@ -1475,7 +1795,8 @@ export function ImageStudioTab({
     preset: CollagePreset,
     ratio: RatioOption,
     slotPhotos: Record<number, string>,
-    mode: 'download' | 'copy'
+    mode: 'download' | 'copy',
+    circleOverrides?: Record<number, CircleSlotOverride>
   ) => {
     try {
       setExportingPresetId(preset.id);
@@ -1483,6 +1804,7 @@ export function ImageStudioTab({
         preset,
         ratio,
         slotPhotos,
+        circleOverrides,
         exportRatioScale: 2,
       });
 
@@ -2422,6 +2744,66 @@ export function ImageStudioTab({
                   </div>
                 )}
 
+                {/* THANH ĐIỀU KHIỂN NHANH VỊ TRÍ & KÍCH THƯỚC ẢNH TRÒN (PIP) CHO TOÀN BỘ KHUNG */}
+                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-rose-50/90 border border-rose-200/80">
+                  <div className="flex items-center gap-1.5 text-[11px] font-bold text-rose-950">
+                    <Move className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span>
+                      Di chuyển Ảnh Tròn (tránh che mặt ảnh sau):{' '}
+                      <span className="font-normal text-rose-800">
+                        Kéo trực tiếp hình tròn bằng chuột trên từng khung hoặc bấm nhảy góc nhanh:
+                      </span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1">
+                    {(
+                      [
+                        { id: 'top_left', label: '↖ Góc Trái Trên' },
+                        { id: 'top_right', label: '↗ Góc Phải Trên' },
+                        { id: 'bottom_left', label: '↙ Góc Trái Dưới' },
+                        { id: 'bottom_right', label: '↘ Góc Phải Dưới' },
+                        { id: 'bottom_center', label: '⬇ Giữa Dưới' },
+                        { id: 'center', label: '⏺ Giữa' },
+                      ] as const
+                    ).map((btn) => (
+                      <button
+                        key={btn.id}
+                        type="button"
+                        onClick={() => handleApplyGlobalCircleSnap(btn.id)}
+                        className="px-2 py-0.5 rounded-md bg-white hover:bg-rose-600 hover:text-white text-slate-700 border border-rose-200 text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
+                        title={`Đưa tất cả ảnh tròn về ${btn.label}`}
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                    <span className="text-rose-300 mx-0.5">|</span>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyGlobalCircleSnap('smaller')}
+                      className="px-2 py-0.5 rounded-md bg-white hover:bg-slate-800 hover:text-white text-slate-700 border border-slate-300 text-[10px] font-bold cursor-pointer"
+                      title="Thu nhỏ kích thước vòng tròn để đỡ che ảnh nền"
+                    >
+                      Thu nhỏ (-)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyGlobalCircleSnap('larger')}
+                      className="px-2 py-0.5 rounded-md bg-white hover:bg-slate-800 hover:text-white text-slate-700 border border-slate-300 text-[10px] font-bold cursor-pointer"
+                      title="Phóng to kích thước vòng tròn"
+                    >
+                      To hơn (+)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleApplyGlobalCircleSnap('reset')}
+                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 text-[10px] font-bold cursor-pointer"
+                      title="Khôi phục vị trí & kích thước vòng tròn mặc định"
+                    >
+                      ↺ Mặc định
+                    </button>
+                  </div>
+                </div>
+
                 {/* ========================================================= */}
                 {/* HÀNG 1: 8 MẪU ẢNH CHO BÀI VIẾT (KÍCH THƯỚC MẶC ĐỊNH 3:4) */}
                 {/* ========================================================= */}
@@ -2449,6 +2831,13 @@ export function ImageStudioTab({
                         variationSlots[s.id] =
                           uploadedPhotos[(sIdx + offset) % Math.max(1, uploadedPhotos.length)] || '';
                       });
+                      const circleSlot = item.preset.slots.find((s) => s.shape === 'circle');
+                      const cardCircleOverride = multiFrameCircleOverrides[offsetKey];
+                      const cardCircleMap: Record<number, CircleSlotOverride> =
+                        circleSlot && cardCircleOverride
+                          ? { [circleSlot.id]: cardCircleOverride }
+                          : {};
+                      const ratioAspect = item.ratio.exportWidth / item.ratio.exportHeight;
                       const isCurrentPreset =
                         selectedPresetId === item.preset.id && selectedRatioId === item.ratio.id;
                       const isBusy = exportingPresetId === item.preset.id;
@@ -2501,41 +2890,91 @@ export function ImageStudioTab({
                             {/* Bản xem trước trực tiếp (Live Mini Collage - Chuẩn 3:4) */}
                             <div
                               onClick={() => {
+                                if (suppressNextCardClickRef.current) return;
                                 setSelectedPresetId(item.preset.id);
                                 setSelectedRatioId(item.ratio.id);
                                 setSlotAssignments(variationSlots);
                                 setSlotTransforms({});
+                                setMainCircleOverrides(cardCircleMap);
                               }}
                               style={{
                                 aspectRatio: '3/4',
                                 background: selectedBackground.value,
                               }}
-                              className="w-full rounded-lg relative overflow-hidden border border-slate-200 cursor-pointer group"
-                              title="Bấm để mở khung bài viết 3:4 này xuống bàn chỉnh sửa lớn"
+                              className="w-full rounded-lg relative overflow-hidden border border-slate-200 cursor-pointer group select-none"
+                              title={
+                                circleSlot
+                                  ? 'Kéo trực tiếp ảnh tròn để di chuyển khỏi che mặt • Bấm vào nền để mở xuống bàn chỉnh sửa lớn'
+                                  : 'Bấm để mở khung bài viết 3:4 này xuống bàn chỉnh sửa lớn'
+                              }
                             >
                               {item.preset.slots.map((slot) => {
                                 const photoSrc = variationSlots[slot.id];
+                                const isCircle = slot.shape === 'circle';
+                                const eff = getEffectiveSlotBounds(
+                                  slot,
+                                  ratioAspect,
+                                  isCircle ? cardCircleOverride : undefined
+                                );
+                                const isDraggingThisCircle =
+                                  isCircle && activeCircleDragKey === offsetKey;
+
                                 return (
                                   <div
                                     key={slot.id}
+                                    onMouseDown={
+                                      isCircle
+                                        ? (e) =>
+                                            handleStartGalleryCircleDrag(e, offsetKey, slot.id)
+                                        : undefined
+                                    }
+                                    onClick={
+                                      isCircle
+                                        ? (e) => {
+                                            e.stopPropagation();
+                                          }
+                                        : undefined
+                                    }
                                     style={{
-                                      left: `calc(${slot.x}% + 1.5px)`,
-                                      top: `calc(${slot.y}% + 1.5px)`,
-                                      width: `calc(${slot.width}% - 3px)`,
-                                      height: `calc(${slot.height}% - 3px)`,
-                                      borderRadius: slot.shape === 'circle' ? '9999px' : '4px',
-                                      zIndex: slot.zIndex || 1,
-                                      border:
-                                        slot.shape === 'circle' ? '2px solid #FFFFFF' : 'none',
+                                      left: `calc(${eff.x}% + 1.5px)`,
+                                      top: `calc(${eff.y}% + 1.5px)`,
+                                      width: `calc(${eff.width}% - 3px)`,
+                                      height: `calc(${eff.height}% - 3px)`,
+                                      borderRadius: isCircle ? '9999px' : '4px',
+                                      zIndex: isCircle ? 25 : slot.zIndex || 1,
+                                      border: isCircle
+                                        ? isDraggingThisCircle
+                                          ? '2.5px solid #f59e0b'
+                                          : '2px solid #FFFFFF'
+                                        : 'none',
+                                      boxShadow: isCircle
+                                        ? '0 4px 12px rgba(0,0,0,0.35)'
+                                        : 'none',
                                     }}
-                                    className="absolute overflow-hidden bg-slate-200"
+                                    className={`absolute overflow-hidden bg-slate-200 ${
+                                      isCircle
+                                        ? 'cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-amber-400 group/circle'
+                                        : ''
+                                    }`}
+                                    title={
+                                      isCircle
+                                        ? 'Giữ chuột và kéo để di chuyển ảnh tròn khỏi che các ảnh phía sau'
+                                        : undefined
+                                    }
                                   >
                                     {photoSrc && (
                                       <img
                                         src={photoSrc}
                                         alt=""
-                                        className="w-full h-full object-cover"
+                                        draggable={false}
+                                        className="w-full h-full object-cover pointer-events-none select-none"
                                       />
+                                    )}
+                                    {isCircle && (
+                                      <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[8px] font-bold py-0.5 text-center opacity-0 group-hover/circle:opacity-100 transition-opacity pointer-events-none flex items-center justify-center gap-0.5">
+                                        <Move className="w-2.5 h-2.5 text-amber-300" />
+                                        <span>Kéo di chuyển</span>
+                                      </div>
                                     )}
                                   </div>
                                 );
@@ -2612,12 +3051,111 @@ export function ImageStudioTab({
                                 </div>
                               )}
 
-                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-30">
-                                <span className="px-2 py-1 rounded-md bg-white text-slate-900 font-black text-[10px] shadow">
-                                  Chọn Khung 3:4
+                              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
+                                <span className="px-2 py-0.5 rounded-md bg-black/75 text-white font-bold text-[9px] shadow whitespace-nowrap">
+                                  {circleSlot ? 'Kéo ảnh tròn hoặc bấm chọn' : 'Chọn Khung 3:4'}
                                 </span>
                               </div>
                             </div>
+
+                            {/* Thanh chỉnh nhanh vị trí & cỡ vòng tròn ngay dưới từng khung có ảnh tròn */}
+                            {circleSlot && (
+                              <div className="mt-1.5 px-1 py-1 rounded-lg bg-amber-50/80 border border-amber-200/80 flex items-center justify-between gap-0.5">
+                                <div className="flex items-center gap-0.5">
+                                  {(
+                                    [
+                                      { pos: 'top_left', label: '↖', title: 'Đưa ảnh tròn lên góc trái trên' },
+                                      { pos: 'top_right', label: '↗', title: 'Đưa ảnh tròn lên góc phải trên' },
+                                      { pos: 'bottom_left', label: '↙', title: 'Đưa ảnh tròn xuống góc trái dưới' },
+                                      { pos: 'bottom_right', label: '↘', title: 'Đưa ảnh tròn xuống góc phải dưới' },
+                                      { pos: 'bottom_center', label: '⬇', title: 'Đưa ảnh tròn xuống giữa dưới' },
+                                    ] as const
+                                  ).map((b) => (
+                                    <button
+                                      key={b.pos}
+                                      type="button"
+                                      onClick={() =>
+                                        setMultiFrameCircleOverrides((prev) => ({
+                                          ...prev,
+                                          [offsetKey]: computeSnapCircleOverride(
+                                            circleSlot,
+                                            ratioAspect,
+                                            b.pos,
+                                            prev[offsetKey]?.sizeScale ?? 1
+                                          ),
+                                        }))
+                                      }
+                                      title={b.title}
+                                      className="w-4 h-4 rounded bg-white hover:bg-rose-600 hover:text-white text-slate-700 border border-amber-200 text-[9px] font-black flex items-center justify-center cursor-pointer"
+                                    >
+                                      {b.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setMultiFrameCircleOverrides((prev) => {
+                                        const cur = prev[offsetKey] || { dx: 0, dy: 0, sizeScale: 1 };
+                                        return {
+                                          ...prev,
+                                          [offsetKey]: {
+                                            ...cur,
+                                            sizeScale: Math.max(
+                                              0.55,
+                                              Number((cur.sizeScale - 0.1).toFixed(2))
+                                            ),
+                                          },
+                                        };
+                                      })
+                                    }
+                                    title="Thu nhỏ ảnh tròn"
+                                    className="w-4 h-4 rounded bg-white hover:bg-slate-800 hover:text-white text-slate-700 border border-amber-200 text-[10px] font-black flex items-center justify-center cursor-pointer"
+                                  >
+                                    -
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setMultiFrameCircleOverrides((prev) => {
+                                        const cur = prev[offsetKey] || { dx: 0, dy: 0, sizeScale: 1 };
+                                        return {
+                                          ...prev,
+                                          [offsetKey]: {
+                                            ...cur,
+                                            sizeScale: Math.min(
+                                              1.35,
+                                              Number((cur.sizeScale + 0.1).toFixed(2))
+                                            ),
+                                          },
+                                        };
+                                      })
+                                    }
+                                    title="Phóng to ảnh tròn"
+                                    className="w-4 h-4 rounded bg-white hover:bg-slate-800 hover:text-white text-slate-700 border border-amber-200 text-[10px] font-black flex items-center justify-center cursor-pointer"
+                                  >
+                                    +
+                                  </button>
+                                  {cardCircleOverride && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setMultiFrameCircleOverrides((prev) => {
+                                          const copy = { ...prev };
+                                          delete copy[offsetKey];
+                                          return copy;
+                                        })
+                                      }
+                                      title="Đặt lại vị trí ảnh tròn mặc định"
+                                      className="w-4 h-4 rounded bg-rose-100 hover:bg-rose-600 hover:text-white text-rose-700 text-[9px] font-black flex items-center justify-center cursor-pointer"
+                                    >
+                                      ↺
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Nút Đảo ảnh, Copy & Tải nhanh từng khung */}
@@ -2646,7 +3184,8 @@ export function ImageStudioTab({
                                   item.preset,
                                   item.ratio,
                                   variationSlots,
-                                  'copy'
+                                  'copy',
+                                  cardCircleMap
                                 )
                               }
                               className="flex-1 py-1 px-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
@@ -2664,7 +3203,8 @@ export function ImageStudioTab({
                                   item.preset,
                                   item.ratio,
                                   variationSlots,
-                                  'download'
+                                  'download',
+                                  cardCircleMap
                                 )
                               }
                               className="flex-1 py-1 px-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
@@ -2707,6 +3247,13 @@ export function ImageStudioTab({
                         variationSlots[s.id] =
                           uploadedPhotos[(sIdx + offset) % Math.max(1, uploadedPhotos.length)] || '';
                       });
+                      const circleSlot = item.preset.slots.find((s) => s.shape === 'circle');
+                      const cardCircleOverride = multiFrameCircleOverrides[offsetKey];
+                      const cardCircleMap: Record<number, CircleSlotOverride> =
+                        circleSlot && cardCircleOverride
+                          ? { [circleSlot.id]: cardCircleOverride }
+                          : {};
+                      const ratioAspect = item.ratio.exportWidth / item.ratio.exportHeight;
                       const isCurrentPreset =
                         selectedPresetId === item.preset.id && selectedRatioId === '9:16';
                       const isBusy = exportingPresetId === item.preset.id;
@@ -2750,41 +3297,91 @@ export function ImageStudioTab({
                             {/* Bản xem trước trực tiếp (Live Mini Story - Chuẩn 9:16) */}
                             <div
                               onClick={() => {
+                                if (suppressNextCardClickRef.current) return;
                                 setSelectedPresetId(item.preset.id);
                                 setSelectedRatioId('9:16');
                                 setSlotAssignments(variationSlots);
                                 setSlotTransforms({});
+                                setMainCircleOverrides(cardCircleMap);
                               }}
                               style={{
                                 aspectRatio: '9/16',
                                 background: selectedBackground.value,
                               }}
-                              className="w-full rounded-lg relative overflow-hidden border border-slate-200 cursor-pointer group"
-                              title="Bấm để mở khung Story 9:16 này xuống bàn chỉnh sửa lớn"
+                              className="w-full rounded-lg relative overflow-hidden border border-slate-200 cursor-pointer group select-none"
+                              title={
+                                circleSlot
+                                  ? 'Kéo trực tiếp ảnh tròn để di chuyển khỏi che mặt • Bấm vào nền để mở xuống bàn chỉnh sửa lớn'
+                                  : 'Bấm để mở khung Story 9:16 này xuống bàn chỉnh sửa lớn'
+                              }
                             >
                               {item.preset.slots.map((slot) => {
                                 const photoSrc = variationSlots[slot.id];
+                                const isCircle = slot.shape === 'circle';
+                                const eff = getEffectiveSlotBounds(
+                                  slot,
+                                  ratioAspect,
+                                  isCircle ? cardCircleOverride : undefined
+                                );
+                                const isDraggingThisCircle =
+                                  isCircle && activeCircleDragKey === offsetKey;
+
                                 return (
                                   <div
                                     key={slot.id}
+                                    onMouseDown={
+                                      isCircle
+                                        ? (e) =>
+                                            handleStartGalleryCircleDrag(e, offsetKey, slot.id)
+                                        : undefined
+                                    }
+                                    onClick={
+                                      isCircle
+                                        ? (e) => {
+                                            e.stopPropagation();
+                                          }
+                                        : undefined
+                                    }
                                     style={{
-                                      left: `calc(${slot.x}% + 1.5px)`,
-                                      top: `calc(${slot.y}% + 1.5px)`,
-                                      width: `calc(${slot.width}% - 3px)`,
-                                      height: `calc(${slot.height}% - 3px)`,
-                                      borderRadius: slot.shape === 'circle' ? '9999px' : '4px',
-                                      zIndex: slot.zIndex || 1,
-                                      border:
-                                        slot.shape === 'circle' ? '2px solid #FFFFFF' : 'none',
+                                      left: `calc(${eff.x}% + 1.5px)`,
+                                      top: `calc(${eff.y}% + 1.5px)`,
+                                      width: `calc(${eff.width}% - 3px)`,
+                                      height: `calc(${eff.height}% - 3px)`,
+                                      borderRadius: isCircle ? '9999px' : '4px',
+                                      zIndex: isCircle ? 25 : slot.zIndex || 1,
+                                      border: isCircle
+                                        ? isDraggingThisCircle
+                                          ? '2.5px solid #f59e0b'
+                                          : '2px solid #FFFFFF'
+                                        : 'none',
+                                      boxShadow: isCircle
+                                        ? '0 4px 12px rgba(0,0,0,0.35)'
+                                        : 'none',
                                     }}
-                                    className="absolute overflow-hidden bg-slate-200"
+                                    className={`absolute overflow-hidden bg-slate-200 ${
+                                      isCircle
+                                        ? 'cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-amber-400 group/circle'
+                                        : ''
+                                    }`}
+                                    title={
+                                      isCircle
+                                        ? 'Giữ chuột và kéo để di chuyển ảnh tròn khỏi che các ảnh phía sau'
+                                        : undefined
+                                    }
                                   >
                                     {photoSrc && (
                                       <img
                                         src={photoSrc}
                                         alt=""
-                                        className="w-full h-full object-cover"
+                                        draggable={false}
+                                        className="w-full h-full object-cover pointer-events-none select-none"
                                       />
+                                    )}
+                                    {isCircle && (
+                                      <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[8px] font-bold py-0.5 text-center opacity-0 group-hover/circle:opacity-100 transition-opacity pointer-events-none flex items-center justify-center gap-0.5">
+                                        <Move className="w-2.5 h-2.5 text-amber-300" />
+                                        <span>Kéo di chuyển</span>
+                                      </div>
                                     )}
                                   </div>
                                 );
@@ -2861,12 +3458,111 @@ export function ImageStudioTab({
                                 </div>
                               )}
 
-                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-30">
-                                <span className="px-2 py-1 rounded-md bg-white text-slate-900 font-black text-[10px] shadow">
-                                  Chọn Story 9:16
+                              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
+                                <span className="px-2 py-0.5 rounded-md bg-black/75 text-white font-bold text-[9px] shadow whitespace-nowrap">
+                                  {circleSlot ? 'Kéo ảnh tròn hoặc bấm chọn' : 'Chọn Story 9:16'}
                                 </span>
                               </div>
                             </div>
+
+                            {/* Thanh chỉnh nhanh vị trí & cỡ vòng tròn ngay dưới khung Story có ảnh tròn */}
+                            {circleSlot && (
+                              <div className="mt-1.5 px-1 py-1 rounded-lg bg-indigo-50/80 border border-indigo-200/80 flex items-center justify-between gap-0.5">
+                                <div className="flex items-center gap-0.5">
+                                  {(
+                                    [
+                                      { pos: 'top_left', label: '↖', title: 'Đưa ảnh tròn lên góc trái trên' },
+                                      { pos: 'top_right', label: '↗', title: 'Đưa ảnh tròn lên góc phải trên' },
+                                      { pos: 'bottom_left', label: '↙', title: 'Đưa ảnh tròn xuống góc trái dưới' },
+                                      { pos: 'bottom_right', label: '↘', title: 'Đưa ảnh tròn xuống góc phải dưới' },
+                                      { pos: 'bottom_center', label: '⬇', title: 'Đưa ảnh tròn xuống giữa dưới' },
+                                    ] as const
+                                  ).map((b) => (
+                                    <button
+                                      key={b.pos}
+                                      type="button"
+                                      onClick={() =>
+                                        setMultiFrameCircleOverrides((prev) => ({
+                                          ...prev,
+                                          [offsetKey]: computeSnapCircleOverride(
+                                            circleSlot,
+                                            ratioAspect,
+                                            b.pos,
+                                            prev[offsetKey]?.sizeScale ?? 1
+                                          ),
+                                        }))
+                                      }
+                                      title={b.title}
+                                      className="w-4 h-4 rounded bg-white hover:bg-indigo-600 hover:text-white text-slate-700 border border-indigo-200 text-[9px] font-black flex items-center justify-center cursor-pointer"
+                                    >
+                                      {b.label}
+                                    </button>
+                                  ))}
+                                </div>
+                                <div className="flex items-center gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setMultiFrameCircleOverrides((prev) => {
+                                        const cur = prev[offsetKey] || { dx: 0, dy: 0, sizeScale: 1 };
+                                        return {
+                                          ...prev,
+                                          [offsetKey]: {
+                                            ...cur,
+                                            sizeScale: Math.max(
+                                              0.55,
+                                              Number((cur.sizeScale - 0.1).toFixed(2))
+                                            ),
+                                          },
+                                        };
+                                      })
+                                    }
+                                    title="Thu nhỏ ảnh tròn"
+                                    className="w-4 h-4 rounded bg-white hover:bg-slate-800 hover:text-white text-slate-700 border border-indigo-200 text-[10px] font-black flex items-center justify-center cursor-pointer"
+                                  >
+                                    -
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setMultiFrameCircleOverrides((prev) => {
+                                        const cur = prev[offsetKey] || { dx: 0, dy: 0, sizeScale: 1 };
+                                        return {
+                                          ...prev,
+                                          [offsetKey]: {
+                                            ...cur,
+                                            sizeScale: Math.min(
+                                              1.35,
+                                              Number((cur.sizeScale + 0.1).toFixed(2))
+                                            ),
+                                          },
+                                        };
+                                      })
+                                    }
+                                    title="Phóng to ảnh tròn"
+                                    className="w-4 h-4 rounded bg-white hover:bg-slate-800 hover:text-white text-slate-700 border border-indigo-200 text-[10px] font-black flex items-center justify-center cursor-pointer"
+                                  >
+                                    +
+                                  </button>
+                                  {cardCircleOverride && (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setMultiFrameCircleOverrides((prev) => {
+                                          const copy = { ...prev };
+                                          delete copy[offsetKey];
+                                          return copy;
+                                        })
+                                      }
+                                      title="Đặt lại vị trí ảnh tròn mặc định"
+                                      className="w-4 h-4 rounded bg-indigo-100 hover:bg-indigo-600 hover:text-white text-indigo-700 text-[9px] font-black flex items-center justify-center cursor-pointer"
+                                    >
+                                      ↺
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            )}
                           </div>
 
                           {/* Nút Đảo ảnh, Copy & Tải nhanh từng khung Story */}
@@ -2895,7 +3591,8 @@ export function ImageStudioTab({
                                   item.preset,
                                   item.ratio,
                                   variationSlots,
-                                  'copy'
+                                  'copy',
+                                  cardCircleMap
                                 )
                               }
                               className="flex-1 py-1 px-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
@@ -2913,7 +3610,8 @@ export function ImageStudioTab({
                                   item.preset,
                                   item.ratio,
                                   variationSlots,
-                                  'download'
+                                  'download',
+                                  cardCircleMap
                                 )
                               }
                               className="flex-1 py-1 px-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
@@ -3220,7 +3918,7 @@ export function ImageStudioTab({
               {/* KHUNG GHÉP ẢNH TƯƠNG TÁC (INTERACTIVE COLLAGE PREVIEW) */}
               <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden min-h-[460px]">
                 {/* Canvas header controls */}
-                <div className="w-full flex items-center justify-between text-xs text-white/80 mb-3 px-1">
+                <div className="w-full flex flex-wrap items-center justify-between gap-2 text-xs text-white/80 mb-3 px-1">
                   <div className="flex items-center space-x-2">
                     <span className="font-bold text-white">Xem trước bố cục:</span>
                     <span className="px-2 py-0.5 rounded bg-white/10 text-white font-mono text-[11px]">
@@ -3237,6 +3935,142 @@ export function ImageStudioTab({
                   </div>
                 </div>
 
+                {/* Thanh điều khiển vị trí & kích thước Vòng Tròn trên Bàn Chỉnh Sửa Lớn */}
+                {activePreset.slots.some((s) => s.shape === 'circle') && (
+                  <div className="w-full mb-3 p-2.5 rounded-xl bg-slate-800/95 border border-amber-500/40 flex flex-wrap items-center justify-between gap-2 text-[11px] text-white">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="font-black text-amber-300 flex items-center gap-1">
+                        <Move className="w-3.5 h-3.5" />
+                        <span>Ảnh Tròn:</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setCircleDragMode('move_circle')}
+                        className={`px-2 py-1 rounded-lg font-bold cursor-pointer transition-colors ${
+                          circleDragMode === 'move_circle'
+                            ? 'bg-amber-500 text-slate-950 shadow-2xs'
+                            : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                        }`}
+                        title="Khi kéo chuột vào hình tròn sẽ di chuyển cả khung tròn tới vị trí khác"
+                      >
+                        ✥ Kéo di chuyển khung tròn
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setCircleDragMode('pan_photo')}
+                        className={`px-2 py-1 rounded-lg font-bold cursor-pointer transition-colors ${
+                          circleDragMode === 'pan_photo'
+                            ? 'bg-rose-600 text-white shadow-2xs'
+                            : 'bg-slate-700 text-slate-200 hover:bg-slate-600'
+                        }`}
+                        title="Khi kéo chuột vào hình tròn sẽ dịch chuyển tâm bức ảnh bên trong hình tròn"
+                      >
+                        🔍 Kéo chỉnh tâm ảnh trong vòng tròn
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-1">
+                      {activePreset.slots
+                        .filter((s) => s.shape === 'circle')
+                        .map((circleSlot) => {
+                          const curOverride = mainCircleOverrides[circleSlot.id] || {
+                            dx: 0,
+                            dy: 0,
+                            sizeScale: 1,
+                          };
+                          const ratioAspect =
+                            activeRatio.exportWidth / activeRatio.exportHeight;
+                          return (
+                            <React.Fragment key={circleSlot.id}>
+                              {(
+                                [
+                                  { pos: 'top_left', label: '↖ Trái Trên' },
+                                  { pos: 'top_right', label: '↗ Phải Trên' },
+                                  { pos: 'bottom_left', label: '↙ Trái Dưới' },
+                                  { pos: 'bottom_right', label: '↘ Phải Dưới' },
+                                  { pos: 'bottom_center', label: '⬇ Giữa Dưới' },
+                                  { pos: 'center', label: '⏺ Giữa' },
+                                ] as const
+                              ).map((b) => (
+                                <button
+                                  key={b.pos}
+                                  type="button"
+                                  onClick={() =>
+                                    setMainCircleOverrides((prev) => ({
+                                      ...prev,
+                                      [circleSlot.id]: computeSnapCircleOverride(
+                                        circleSlot,
+                                        ratioAspect,
+                                        b.pos,
+                                        curOverride.sizeScale
+                                      ),
+                                    }))
+                                  }
+                                  className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-amber-500 hover:text-slate-950 text-slate-100 text-[10px] font-bold cursor-pointer transition-colors"
+                                >
+                                  {b.label}
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMainCircleOverrides((prev) => ({
+                                    ...prev,
+                                    [circleSlot.id]: {
+                                      ...curOverride,
+                                      sizeScale: Math.max(
+                                        0.55,
+                                        Number((curOverride.sizeScale - 0.1).toFixed(2))
+                                      ),
+                                    },
+                                  }))
+                                }
+                                className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-amber-300 text-[10px] font-black cursor-pointer"
+                                title="Thu nhỏ vòng tròn"
+                              >
+                                Cỡ -
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setMainCircleOverrides((prev) => ({
+                                    ...prev,
+                                    [circleSlot.id]: {
+                                      ...curOverride,
+                                      sizeScale: Math.min(
+                                        1.35,
+                                        Number((curOverride.sizeScale + 0.1).toFixed(2))
+                                      ),
+                                    },
+                                  }))
+                                }
+                                className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-amber-300 text-[10px] font-black cursor-pointer"
+                                title="Phóng to vòng tròn"
+                              >
+                                Cỡ +
+                              </button>
+                              {mainCircleOverrides[circleSlot.id] && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setMainCircleOverrides((prev) => {
+                                      const copy = { ...prev };
+                                      delete copy[circleSlot.id];
+                                      return copy;
+                                    })
+                                  }
+                                  className="px-1.5 py-0.5 rounded bg-rose-600/80 hover:bg-rose-600 text-white text-[10px] font-bold cursor-pointer"
+                                >
+                                  ↺ Mặc định
+                                </button>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
                 {/* CONTAINER GIỮ TỶ LỆ CHUẨN */}
                 <div
                   style={{
@@ -3252,16 +4086,28 @@ export function ImageStudioTab({
                     const assignedPhoto = slotAssignments[slot.id];
                     const transform = getSlotTransform(slot.id);
                     const isSelected = activeSlotId === slot.id;
+                    const isCircle = slot.shape === 'circle';
+                    const eff = getEffectiveSlotBounds(
+                      slot,
+                      activeRatio.exportWidth / activeRatio.exportHeight,
+                      isCircle ? mainCircleOverrides[slot.id] : undefined
+                    );
 
                     return (
                       <div
                         key={slot.id}
                         onClick={() => setActiveSlotId(slot.id)}
                         onMouseDown={(e) => {
+                          if (isCircle && circleDragMode === 'move_circle') {
+                            setActiveSlotId(slot.id);
+                            handleStartMainCircleDrag(e, slot.id);
+                            return;
+                          }
                           setDraggingSlot(slot.id);
                           setDragStartPos({ x: e.clientX, y: e.clientY });
                         }}
                         onMouseMove={(e) => {
+                          if (isCircle && circleDragMode === 'move_circle') return;
                           if (draggingSlot === slot.id && dragStartPos) {
                             const deltaX = (e.clientX - dragStartPos.x) / 3;
                             const deltaY = (e.clientY - dragStartPos.y) / 3;
@@ -3275,18 +4121,18 @@ export function ImageStudioTab({
                         onMouseUp={() => setDraggingSlot(null)}
                         onMouseLeave={() => setDraggingSlot(null)}
                         style={{
-                          left: `calc(${slot.x}% + ${gap / 2}px)`,
-                          top: `calc(${slot.y}% + ${gap / 2}px)`,
-                          width: `calc(${slot.width}% - ${gap}px)`,
-                          height: `calc(${slot.height}% - ${gap}px)`,
-                          borderRadius: slot.shape === 'circle' ? '9999px' : `${borderRadius}px`,
-                          zIndex: slot.zIndex || 1,
-                          border:
-                            slot.shape === 'circle'
-                              ? `${slot.borderWidth || 4}px solid ${slot.borderColor || '#FFFFFF'}`
-                              : isSelected
-                              ? '2px solid #e11d48'
-                              : 'none',
+                          left: `calc(${eff.x}% + ${gap / 2}px)`,
+                          top: `calc(${eff.y}% + ${gap / 2}px)`,
+                          width: `calc(${eff.width}% - ${gap}px)`,
+                          height: `calc(${eff.height}% - ${gap}px)`,
+                          borderRadius: isCircle ? '9999px' : `${borderRadius}px`,
+                          zIndex: isCircle ? 25 : slot.zIndex || 1,
+                          border: isCircle
+                            ? `${slot.borderWidth || 4}px solid ${slot.borderColor || '#FFFFFF'}`
+                            : isSelected
+                            ? '2px solid #e11d48'
+                            : 'none',
+                          boxShadow: isCircle ? '0 8px 24px rgba(0,0,0,0.4)' : 'none',
                         }}
                         className="absolute overflow-hidden cursor-move group transition-shadow"
                       >
