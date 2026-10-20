@@ -208,6 +208,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   const [customYtQuery, setCustomYtQuery] = useState('');
   const [searchingYt, setSearchingYt] = useState(false);
   const [searchingExtImages, setSearchingExtImages] = useState(false);
+  const [extImageNotice, setExtImageNotice] = useState<string | null>(null);
 
   // Trạng thái đang đẩy bài & kết quả trả về
   const [isPublishing, setIsPublishing] = useState(false);
@@ -1677,12 +1678,14 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     const cleanTopicText = aiTopic.replace(/https?:\/\/[^\s"'<>]+/gi, '').trim();
     const strippedContentText = content
       .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+      .replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/gi, ' ')
+      .replace(/<\/p>/gi, '\n\n')
       .replace(/<[^>]*>/g, ' ')
-      .replace(/\s+/g, ' ')
+      .replace(/[ \t]+/g, ' ')
       .trim();
 
     let resolvedTitle = title.trim();
-    let resolvedBodyText = [strippedContentText, cleanTopicText, excerpt.trim()]
+    let resolvedBodyText = [cleanTopicText, strippedContentText, excerpt.trim()]
       .filter(Boolean)
       .join('\n\n')
       .slice(0, 8000);
@@ -1696,13 +1699,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       sourceLink;
 
     if (!q && !sourceLink && currentOrigImages.length === 0) {
-      setPublishError(
-        'Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Từ khóa nhân vật để tìm thêm ảnh ngoài tương tự!'
-      );
+      const msg =
+        'Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Từ khóa nhân vật để tìm thêm ảnh ngoài tương tự!';
+      setExtImageNotice(msg);
+      setPublishError(msg);
       return;
     }
 
     setSearchingExtImages(true);
+    setExtImageNotice('⏳ Đang tìm kiếm ảnh ngoài tương tự cùng nhân vật & bối cảnh bài viết...');
     setPublishError(null);
     try {
       if (sourceLink && (resolvedBodyText.length < 150 || currentOrigImages.length === 0)) {
@@ -1748,8 +1753,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
       // Gửi danh sách tất cả ảnh đã có + ảnh đang chờ duyệt + ảnh đã từ chối để server tìm loạt ảnh ngoài mới hoàn toàn
       const allExcludedImages = [
-        ...extractedWebImages,
-        ...(replaceExistingExternals ? [] : pendingExternalImages),
+        ...extractedWebImages.map((x) => ({ url: x.url, alt: x.alt, isExternal: x.isExternal })),
+        ...(replaceExistingExternals
+          ? []
+          : pendingExternalImages.map((x) => ({ url: x.url, alt: x.alt, isExternal: true }))),
         ...rejectedExternalUrls.map((u) => ({ url: u, isExternal: true })),
       ];
 
@@ -1804,11 +1811,19 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           }
           return next;
         });
+        setExtImageNotice(
+          `✅ Đã tìm thấy ${returnedExternals.length} ảnh ngoài tương tự (${data.primaryPerson || 'cùng chủ đề'})! Hãy xem và bấm Duyệt ở khung bên dưới.`
+        );
       } else {
-        setPublishError('Chưa tìm thêm được ảnh ngoài mới khớp với nhân vật/bối cảnh này.');
+        const errMsg =
+          data?.error || 'Chưa tìm thêm được ảnh ngoài mới khớp với nhân vật/bối cảnh này.';
+        setExtImageNotice(`⚠️ ${errMsg}`);
+        setPublishError(errMsg);
       }
     } catch (err: any) {
-      setPublishError(err?.message || 'Không thể tìm thêm ảnh ngoài');
+      const errMsg = err?.message || 'Không thể tìm thêm ảnh ngoài';
+      setExtImageNotice(`⚠️ ${errMsg}`);
+      setPublishError(errMsg);
     } finally {
       setSearchingExtImages(false);
     }
@@ -2833,6 +2848,81 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                           );
                         })}
                       </div>
+                      {pendingExternalImages.length > 0 && (
+                        <div className="mt-2 p-2.5 rounded-xl bg-indigo-50/90 border border-indigo-300 space-y-2">
+                          <div className="flex flex-wrap items-center justify-between gap-1.5">
+                            <span className="text-[11px] font-black text-indigo-950">
+                              🕵️ Khay Ảnh Lấy Ngoài Chờ Duyệt ({pendingExternalImages.length} ảnh vừa tìm được — bấm Duyệt để đưa vào bài):
+                            </span>
+                            <div className="flex flex-wrap items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleApproveAllPendingExternalImages(true)}
+                                className="px-2 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] cursor-pointer"
+                              >
+                                ✅ Duyệt tất cả &amp; Gắn vào bài
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleApproveAllPendingExternalImages(false)}
+                                className="px-2 py-0.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] cursor-pointer"
+                              >
+                                📥 Duyệt tất cả vào khay
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPendingExternalImages([])}
+                                className="px-2 py-0.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[10px] cursor-pointer"
+                              >
+                                ✕ Đóng
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                            {pendingExternalImages.map((img, pIdx) => (
+                              <div
+                                key={`${img.url}-${pIdx}`}
+                                className="relative shrink-0 w-28 rounded-lg overflow-hidden border border-indigo-300 bg-white shadow-2xs"
+                              >
+                                <div className="relative h-16 w-full bg-slate-100">
+                                  <img
+                                    src={img.url}
+                                    alt={img.alt}
+                                    referrerPolicy="no-referrer"
+                                    className="w-full h-full object-cover"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRejectPendingExternalImage(img.url)}
+                                    className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-rose-600 text-white text-[10px] font-black flex items-center justify-center cursor-pointer"
+                                    title="Từ chối ảnh này"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                                <div className="p-1 flex items-center gap-1 bg-white">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApprovePendingExternalImage(img, true)}
+                                    className="flex-1 py-0.5 px-1 rounded bg-indigo-600 hover:bg-indigo-700 text-white text-[9px] font-bold cursor-pointer"
+                                    title="Duyệt và gắn ngay vào bài viết"
+                                  >
+                                    ✓ Duyệt &amp; Gắn
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleApprovePendingExternalImage(img, false)}
+                                    className="py-0.5 px-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-900 text-[9px] font-bold cursor-pointer"
+                                    title="Duyệt đưa vào khay ảnh"
+                                  >
+                                    +Khay
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -3046,11 +3136,14 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       type="button"
                       disabled={searchingExtImages}
                       onClick={() => void handleFetchMoreExternalImages(false)}
-                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-bold cursor-pointer"
+                      className="px-2.5 py-1 rounded-lg bg-white hover:bg-emerald-100 disabled:opacity-60 text-emerald-900 border border-emerald-300 text-[11px] font-bold cursor-pointer flex items-center space-x-1"
                     >
-                      + Tìm thêm ảnh ngoài tương tự
+                      {searchingExtImages && <RefreshCw className="w-3 h-3 animate-spin text-emerald-700" />}
+                      <span>
+                        {searchingExtImages ? 'Đang tìm ảnh ngoài...' : '+ Tìm thêm ảnh ngoài tương tự'}
+                      </span>
                     </button>
-                    {extractedWebImages.some((x) => x.isExternal) && (
+                    {(extractedWebImages.some((x) => x.isExternal) || pendingExternalImages.length > 0) && (
                       <button
                         type="button"
                         disabled={searchingExtImages}
@@ -3063,6 +3156,109 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     )}
                   </div>
                 </div>
+
+                {extImageNotice && (
+                  <div className="px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-[11px] font-bold text-indigo-950 flex items-center justify-between gap-2">
+                    <span>{extImageNotice}</span>
+                    <button
+                      type="button"
+                      onClick={() => setExtImageNotice(null)}
+                      className="text-indigo-600 hover:text-indigo-900 font-black cursor-pointer"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
+                {pendingExternalImages.length > 0 && (
+                  <div className="p-3 rounded-xl bg-indigo-50/90 border-2 border-indigo-300 space-y-2.5 shadow-2xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center space-x-1.5">
+                        <span className="text-xs font-black text-indigo-950">
+                          🕵️ Khay Ảnh Lấy Ngoài Chờ Duyệt ({pendingExternalImages.length} ảnh mới tìm được — Hãy bấm Duyệt để gắn vào bài):
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleApproveAllPendingExternalImages(true)}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-black cursor-pointer shadow-2xs"
+                        >
+                          ✅ Duyệt tất cả &amp; Gắn đều vào bài ({pendingExternalImages.length} ảnh)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleApproveAllPendingExternalImages(false)}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold cursor-pointer"
+                        >
+                          📥 Duyệt tất cả vào khay ảnh
+                        </button>
+                        <button
+                          type="button"
+                          disabled={searchingExtImages}
+                          onClick={() => void handleFetchMoreExternalImages(true)}
+                          className="px-2 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-900 border border-indigo-300 text-[11px] font-bold cursor-pointer"
+                        >
+                          🔄 Đổi loạt ảnh khác
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPendingExternalImages([])}
+                          className="px-2 py-1 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-700 text-[11px] font-bold cursor-pointer"
+                        >
+                          ✕ Đóng khay chờ
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                      {pendingExternalImages.map((img, pIdx) => (
+                        <div
+                          key={`${img.url}-${pIdx}`}
+                          className="group relative rounded-xl overflow-hidden border-2 border-indigo-300 bg-white shadow-2xs transition-all hover:border-indigo-500"
+                        >
+                          <div className="relative h-24 w-full bg-slate-100">
+                            <img
+                              src={img.url}
+                              alt={img.alt || `Ảnh ngoài #${pIdx + 1}`}
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover"
+                            />
+                            <span className="absolute top-1 left-1 text-[9px] font-black px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 shadow-2xs">
+                              Chờ duyệt #{pIdx + 1}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleRejectPendingExternalImage(img.url)}
+                              className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-600/90 hover:bg-rose-700 text-white text-[10px] font-black flex items-center justify-center cursor-pointer shadow-2xs"
+                              title="Từ chối / Bỏ qua ảnh này"
+                            >
+                              ×
+                            </button>
+                          </div>
+                          <div className="p-1.5 flex items-center justify-between gap-1 bg-white text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => handleApprovePendingExternalImage(img, true)}
+                              className="flex-1 py-1 px-1.5 rounded bg-indigo-600 hover:bg-indigo-700 text-white font-black truncate cursor-pointer"
+                              title="Duyệt ảnh này và gắn ngay vào nội dung bài viết"
+                            >
+                              ✓ Duyệt &amp; Gắn
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleApprovePendingExternalImage(img, false)}
+                              className="py-1 px-1.5 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold cursor-pointer shrink-0"
+                              title="Duyệt đưa vào khay ảnh trong bài"
+                            >
+                              + Duyệt
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {extractedWebImages.length > 0 ? (
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-1">

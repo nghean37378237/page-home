@@ -1251,7 +1251,9 @@ export function analyzeArticleSubjectAndContext(
     'Marriage', 'Never', 'End', 'Late', 'Year', 'Old', 'Year-Old', 'Emotional', 'Moment',
     'Choice', 'Understands', 'Former', 'Youngest', 'Oldest', 'Teenager', 'Medical', 'Doctor',
     'Hospital', 'Home', 'Near', 'First', 'Time', 'Death', 'Tragic', 'Passing', 'Grief',
-    'Sorrow', 'House', 'Outside', 'Woman', 'Man', 'Child', 'Baby', 'Twin', 'Brother', 'Sister'
+    'Sorrow', 'House', 'Outside', 'Woman', 'Man', 'Child', 'Baby', 'Twin', 'Brother', 'Sister',
+    'Standout', 'Beachwear', 'Snapshots', 'Sunlit', 'Breakdown', 'Complete', 'Documented',
+    'Featuring', 'Signature', 'Modeling', 'Recognizing', 'Closer', 'Look', 'Details', 'Moments'
   ]);
 
   const stopPhrases = new Set([
@@ -1583,6 +1585,13 @@ export function analyzeArticleSubjectAndContext(
   const ageMatch = `${cleanTitle} ${sample.slice(0, 400)}`.match(/\b(\d{2})-year-old\b|\bat\s+(\d{2})\b/i);
   const agePhrase = ageMatch ? `${ageMatch[1] || ageMatch[2]} year old` : '';
 
+  const eventWords = [
+    ...storylineKeywords.slice(0, 3),
+    ...eventKeywords.slice(0, 2),
+    ...outfitKeywords.slice(0, 2),
+    ...locationKeywords.slice(0, 2),
+  ].slice(0, 7);
+
   const youtubeSearchQueries: string[] = [];
   if (primaryPerson) {
     const q1 = [
@@ -1670,13 +1679,6 @@ export function analyzeArticleSubjectAndContext(
     articleCategory = 'city_neighborhood_outing';
   }
 
-  const eventWords = [
-    ...storylineKeywords.slice(0, 3),
-    ...eventKeywords.slice(0, 2),
-    ...outfitKeywords.slice(0, 2),
-    ...locationKeywords.slice(0, 2),
-  ].slice(0, 7);
-
   const subjectDisplay = secondaryPerson
     ? `${primaryPerson} and ${secondaryPerson}`
     : primaryPerson || strippedHeadline.split(/\s+/).slice(0, 5).join(' ') || 'the featured story';
@@ -1752,16 +1754,39 @@ export async function searchExternalRelatedImages(
     return [];
   }
 
-  const specificEvent = eventKeywords.find((e) => e !== 'beach' && e !== 'swimsuit' && e !== 'bikini') || eventKeywords[0] || '';
-  const secondaryEvent = eventKeywords.find((e) => e !== specificEvent) || '';
+  const supportingEntities = effectiveProfile.supportingEntities || [];
+  const storylineKeywords = effectiveProfile.storylineKeywords || [];
+
+  const specificEvent =
+    eventKeywords.find((e) => e !== 'beach' && e !== 'swimsuit' && e !== 'bikini') ||
+    eventKeywords[0] ||
+    supportingEntities[0] ||
+    storylineKeywords[0] ||
+    '';
+  const secondaryEvent =
+    eventKeywords.find((e) => e !== specificEvent) ||
+    supportingEntities[1] ||
+    storylineKeywords[1] ||
+    '';
 
   // Xây dựng bộ truy vấn đối chiếu sát nhất với bộ ảnh gốc (Cùng nhân vật + Cùng dự án/sự kiện + Cùng trang phục + Cùng địa điểm)
   const queries = [
-    [primaryPerson, secondaryPerson, specificEvent, outfitKeywords[0], secondaryEvent === 'beach set' || secondaryEvent === 'on set' ? 'set' : locationKeywords[0]]
+    [
+      primaryPerson,
+      secondaryPerson,
+      specificEvent,
+      outfitKeywords[0],
+      secondaryEvent === 'beach set' || secondaryEvent === 'on set' ? 'set' : locationKeywords[0],
+    ]
       .filter(Boolean)
       .join(' ')
       .trim(),
-    [primaryPerson, specificEvent, outfitKeywords[0], 'set', timeframeKeywords[0] || '2026']
+    [
+      primaryPerson,
+      supportingEntities[0] || specificEvent,
+      storylineKeywords[0] || outfitKeywords[0],
+      timeframeKeywords[0] || '',
+    ]
       .filter(Boolean)
       .join(' ')
       .trim(),
@@ -1769,15 +1794,33 @@ export async function searchExternalRelatedImages(
       .filter(Boolean)
       .join(' ')
       .trim(),
-    [primaryPerson, specificEvent, outfitKeywords[0], 'celebmafia OR justjared OR dailymail OR hawtcelebs']
-      .filter(Boolean)
-      .join(' ')
-      .trim(),
+    ...(effectiveProfile.articleCategory === 'retrospective_feature'
+      ? [
+          [primaryPerson, supportingEntities[0], 'young actress photo']
+            .filter(Boolean)
+            .join(' ')
+            .trim(),
+          [primaryPerson, storylineKeywords[0], 'vintage portrait']
+            .filter(Boolean)
+            .join(' ')
+            .trim(),
+        ]
+      : [
+          [
+            primaryPerson,
+            specificEvent,
+            outfitKeywords[0],
+            'celebmafia OR justjared OR dailymail OR hawtcelebs',
+          ]
+            .filter(Boolean)
+            .join(' ')
+            .trim(),
+        ]),
     [primaryPerson, secondaryPerson, specificEvent, locationKeywords[0]]
       .filter(Boolean)
       .join(' ')
       .trim(),
-    [primaryPerson, secondaryPerson, outfitKeywords[0]].filter(Boolean).join(' ').trim(),
+    [primaryPerson, secondaryPerson || supportingEntities[0], 'photos'].filter(Boolean).join(' ').trim(),
   ].filter(Boolean);
 
   const uniqueQueries = [...new Set(queries)];
@@ -1793,12 +1836,16 @@ export async function searchExternalRelatedImages(
     .flatMap((w) => w.toLowerCase().split(/\s+/))
     .filter((t) => t.length >= 3);
   const locTokens = locationKeywords.map((w) => w.toLowerCase()).filter(Boolean);
-  const evTokens = eventKeywords
+  const evTokens = [
+    ...eventKeywords,
+    ...supportingEntities.slice(0, 2),
+    ...storylineKeywords.slice(0, 3),
+  ]
     .flatMap((w) => w.toLowerCase().split(/\s+/))
     .filter((t) => t.length >= 3);
 
   const stockOrGenericBlockRe =
-    /gettyimages\.|alamy\.|shutterstock\.|istockphoto\.|dreamstime\.|depositphotos\.|123rf\.|pond5\.|prettylittlething\.|shein\.|ido\.org\.tw|tiktok\.com\/api|pexels\.com|pixabay\.com|unsplash\.com|wallpaperaccess\.com|wallpapercave\.com|hdwallpapers|freepik\.com|vecteezy\.com|burst\.shopify\.com|kaboompics\.com|theplanetd\.com|cntraveler\.com|tripadvisor\.|booking\.com|expedia\.|coloring|clipart/i;
+    /gettyimages\.|alamy\.|shutterstock\.|istockphoto\.|dreamstime\.|depositphotos\.|123rf\.|pond5\.|prettylittlething\.|shein\.|ido\.org\.tw|tiktok\.com\/api|pexels\.com|pixabay\.com|unsplash\.com|wallpaperaccess\.com|wallpapercave\.com|hdwallpapers|freepik\.com|vecteezy\.com|burst\.shopify\.com|kaboompics\.com|theplanetd\.com|cntraveler\.com|tripadvisor\.|booking\.com|expedia\.|coloring|clipart|[?&](Expires|Signature|AWSAccessKeyId|X-Amz-Signature)=/i;
 
   const normalizeFullResWpUrl = (rawImgUrl: string): string => {
     let cleaned = String(rawImgUrl || '').trim();
