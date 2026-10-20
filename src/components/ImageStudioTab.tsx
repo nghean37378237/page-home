@@ -84,7 +84,7 @@ interface QuickWpArticleOption {
   employeeCode?: string;
 }
 
-// Danh sách các bộ khung đa dạng được đề xuất tự động khi lấy ảnh từ bài viết web
+// Hàng 1: 8 mẫu ảnh cho bài viết (Kích thước ưu tiên mặc định: 3:4)
 const AUTO_MULTI_FRAME_IDS: {
   presetId: string;
   ratioId: string;
@@ -101,34 +101,62 @@ const AUTO_MULTI_FRAME_IDS: {
     badge: '2 Ngang + 1 Tròn Phải',
   },
   {
-    presetId: 'story-fb-before-after-classic',
-    ratioId: '9:16',
-    badge: 'Story FB Before/After',
-  },
-  {
-    presetId: 'story-fb-headline-now-then',
-    ratioId: '9:16',
-    badge: 'Story Báo Chí Viral',
-  },
-  {
     presetId: '3-circle-split-v',
-    ratioId: '1:1',
+    ratioId: '3:4',
     badge: '2 Cột + 1 Tròn Tâm PiP',
   },
   {
     presetId: '3-top-big',
-    ratioId: '4:5',
-    badge: '1 Lớn Trên + 2 Dưới (4:5)',
+    ratioId: '3:4',
+    badge: '1 Banner Trên + 2 Ô Dưới',
   },
   {
     presetId: '4-grid-2x2',
-    ratioId: '1:1',
-    badge: 'Lưới 4 Ảnh (2x2 Vuông)',
+    ratioId: '3:4',
+    badge: 'Lưới 4 Ảnh (2x2)',
   },
   {
     presetId: '2-split-v',
-    ratioId: '4:5',
-    badge: '2 Cột Song Song (4:5)',
+    ratioId: '3:4',
+    badge: '2 Cột Đôi Song Song',
+  },
+  {
+    presetId: '2-split-h',
+    ratioId: '3:4',
+    badge: '2 Hàng Ngang (Trên - Dưới)',
+  },
+  {
+    presetId: '4-circle-banner-trio',
+    ratioId: '3:4',
+    badge: 'Banner Trên + 2 Dưới + Tròn',
+  },
+];
+
+// Hàng 2: 4 mẫu ảnh Story (Kích thước mặc định: 9:16)
+const AUTO_STORY_FRAME_IDS: {
+  presetId: string;
+  ratioId: string;
+  badge: string;
+}[] = [
+  {
+    presetId: 'story-fb-before-after-classic',
+    ratioId: '9:16',
+    badge: 'Story FB: Before & After',
+  },
+  {
+    presetId: 'story-fb-headline-now-then',
+    ratioId: '9:16',
+    badge: 'Story FB: Báo Chí Viral',
+  },
+  {
+    presetId: 'story-fb-swipe-up-divider',
+    ratioId: '9:16',
+    badge: 'Story FB: Swipe Up 2 Ảnh',
+  },
+  {
+    presetId: 'story-fb-circle-signature',
+    ratioId: '9:16',
+    badge: 'Story FB: Khung Dọc + Tròn',
   },
 ];
 
@@ -168,8 +196,8 @@ export function ImageStudioTab({
   const [multiFrameOffsets, setMultiFrameOffsets] = useState<Record<string, number>>({});
   const [exportingPresetId, setExportingPresetId] = useState<string | null>(null);
 
-  // --- 8 MẪU PHỔ BIẾN HAY DÙNG NHẤT CỦA NGƯỜI DÙNG (LƯU TRỮ RIÊNG THEO TÀI KHOẢN) ---
-  const favStorageKey = `celeb24h_fav8_presets_${currentUser?.id || currentUser?.name || 'default'}`;
+  // --- HÀNG 1: 8 MẪU ẢNH CHO BÀI VIẾT (ƯU TIÊN MẶC ĐỊNH 3:4) ---
+  const favStorageKey = `celeb24h_fav8_post_v2_${currentUser?.id || currentUser?.name || 'default'}`;
   const [favoritePresetIds, setFavoritePresetIds] = useState<string[]>(() => {
     try {
       const saved = localStorage.getItem(favStorageKey);
@@ -179,7 +207,7 @@ export function ImageStudioTab({
           const valid = parsed.filter((id: string) =>
             COLLAGE_PRESETS.some((p) => p.id === id)
           );
-          if (valid.length > 0) return valid.slice(0, 8);
+          if (valid.length === 8) return valid;
         }
       }
     } catch {
@@ -187,6 +215,27 @@ export function ImageStudioTab({
     }
     return AUTO_MULTI_FRAME_IDS.map((item) => item.presetId);
   });
+
+  // --- HÀNG 2: 4 MẪU ẢNH STORY (MẶC ĐỊNH 9:16) ---
+  const storyStorageKey = `celeb24h_fav4_story_v2_${currentUser?.id || currentUser?.name || 'default'}`;
+  const [favoriteStoryPresetIds, setFavoriteStoryPresetIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(storyStorageKey);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const valid = parsed.filter((id: string) =>
+            COLLAGE_PRESETS.some((p) => p.id === id)
+          );
+          if (valid.length === 4) return valid;
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return AUTO_STORY_FRAME_IDS.map((item) => item.presetId);
+  });
+
   const [showFavoriteManager, setShowFavoriteManager] = useState<boolean>(false);
 
   useEffect(() => {
@@ -197,7 +246,15 @@ export function ImageStudioTab({
     }
   }, [favoritePresetIds, favStorageKey]);
 
-  // Hàm bật/tắt 1 mẫu vào danh sách 8 mẫu phổ biến hay dùng nhất
+  useEffect(() => {
+    try {
+      localStorage.setItem(storyStorageKey, JSON.stringify(favoriteStoryPresetIds));
+    } catch {
+      // ignore storage errors
+    }
+  }, [favoriteStoryPresetIds, storyStorageKey]);
+
+  // Hàm bật/tắt 1 mẫu vào danh sách 8 mẫu bài viết hay dùng nhất
   const handleToggleFavoritePreset = useCallback((presetId: string) => {
     setFavoritePresetIds((prev) => {
       if (prev.includes(presetId)) {
@@ -207,23 +264,22 @@ export function ImageStudioTab({
           return prev;
         }
         const presetObj = COLLAGE_PRESETS.find((p) => p.id === presetId);
-        setExportNotice(`Đã bỏ "${presetObj?.name || presetId}" khỏi bộ 8 mẫu hay dùng.`);
+        setExportNotice(`Đã bỏ "${presetObj?.name || presetId}" khỏi bộ 8 mẫu bài viết.`);
         setTimeout(() => setExportNotice(null), 2500);
         return prev.filter((id) => id !== presetId);
       } else {
         const presetObj = COLLAGE_PRESETS.find((p) => p.id === presetId);
         if (prev.length >= 8) {
-          // Thay thế mẫu số 8 cuối cùng bằng mẫu mới vừa chọn
           const next = [...prev.slice(0, 7), presetId];
           setExportNotice(
-            `Đã ghim "${presetObj?.name || presetId}" vào vị trí #8 trong 8 mẫu hay dùng nhất!`
+            `Đã ghim "${presetObj?.name || presetId}" vào vị trí #8 trong Hàng 1 (8 mẫu bài viết)!`
           );
           setTimeout(() => setExportNotice(null), 3000);
           return next;
         }
         const next = [...prev, presetId];
         setExportNotice(
-          `Đã thêm "${presetObj?.name || presetId}" vào bộ 8 mẫu hay dùng (${next.length}/8)!`
+          `Đã thêm "${presetObj?.name || presetId}" vào Hàng 1 (${next.length}/8 mẫu bài viết)!`
         );
         setTimeout(() => setExportNotice(null), 2500);
         return next;
@@ -231,13 +287,12 @@ export function ImageStudioTab({
     });
   }, []);
 
-  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ #1 đến #8) trong bộ 8 mẫu hay dùng
+  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ #1 đến #8) trong Hàng 1 (8 mẫu bài viết)
   const handleReplaceFavoriteSlot = useCallback((slotIndex: number, newPresetId: string) => {
     setFavoritePresetIds((prev) => {
       const next = [...prev];
       const existingIdx = next.indexOf(newPresetId);
       if (existingIdx !== -1 && existingIdx !== slotIndex) {
-        // Hoán đổi vị trí nếu mẫu đã có trong 8 mẫu
         const temp = next[slotIndex];
         next[slotIndex] = newPresetId;
         next[existingIdx] = temp;
@@ -248,10 +303,26 @@ export function ImageStudioTab({
     });
   }, []);
 
+  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ Story #1 đến Story #4) trong Hàng 2 (4 mẫu Story)
+  const handleReplaceStorySlot = useCallback((slotIndex: number, newPresetId: string) => {
+    setFavoriteStoryPresetIds((prev) => {
+      const next = [...prev];
+      const existingIdx = next.indexOf(newPresetId);
+      if (existingIdx !== -1 && existingIdx !== slotIndex) {
+        const temp = next[slotIndex];
+        next[slotIndex] = newPresetId;
+        next[existingIdx] = temp;
+      } else {
+        next[slotIndex] = newPresetId;
+      }
+      return next.slice(0, 4);
+    });
+  }, []);
+
   const handleResetDefaultFavorites = useCallback(() => {
-    const defaults = AUTO_MULTI_FRAME_IDS.map((item) => item.presetId);
-    setFavoritePresetIds(defaults);
-    setExportNotice('Đã khôi phục 8 mẫu phổ biến chuẩn mặc định!');
+    setFavoritePresetIds(AUTO_MULTI_FRAME_IDS.map((item) => item.presetId));
+    setFavoriteStoryPresetIds(AUTO_STORY_FRAME_IDS.map((item) => item.presetId));
+    setExportNotice('Đã khôi phục mặc định: Hàng 1 (8 mẫu bài viết 3:4) & Hàng 2 (4 mẫu Story 9:16)!');
     setTimeout(() => setExportNotice(null), 2500);
   }, []);
 
@@ -369,11 +440,13 @@ export function ImageStudioTab({
     );
   }, [selectedRatioId]);
 
-  // Sync slots when preset changes
+  // Sync slots when preset changes (Ưu tiên mặc định 3:4 cho ảnh bài viết, 9:16 cho ảnh Story)
   useEffect(() => {
     if (activePreset) {
-      if (activePreset.recommendedRatio) {
-        setSelectedRatioId(activePreset.recommendedRatio);
+      if (activePreset.id.startsWith('story-fb') || activePreset.recommendedRatio === '9:16') {
+        setSelectedRatioId('9:16');
+      } else {
+        setSelectedRatioId('3:4');
       }
       setSlotAssignments((prev) => {
         const next: Record<number, string> = {};
@@ -694,91 +767,102 @@ export function ImageStudioTab({
     return COLLAGE_PRESETS.filter((p) => p.category === categoryFilter);
   }, [categoryFilter, favoritePresetIds]);
 
-  // Danh sách các khung hiển thị trong Bảng "Ghép Đa Khung Tự Động Theo Yêu Cầu"
+  // HÀNG 1: Danh sách 8 mẫu ảnh cho bài viết (Kích thước ưu tiên mặc định: 3:4)
   const multiFrameVariations = useMemo(() => {
-    let baseList = favoritePresetIds.map((presetId, idx) => {
+    const ratio34 = COLLAGE_RATIOS.find((r) => r.id === '3:4') || COLLAGE_RATIOS[3];
+    const ratio45 = COLLAGE_RATIOS.find((r) => r.id === '4:5') || COLLAGE_RATIOS[1];
+
+    let baseList = favoritePresetIds.slice(0, 8).map((presetId, idx) => {
       const preset = COLLAGE_PRESETS.find((p) => p.id === presetId) || COLLAGE_PRESETS[0];
       const defaultMeta = AUTO_MULTI_FRAME_IDS.find((m) => m.presetId === preset.id);
-      const ratioId = preset.recommendedRatio || defaultMeta?.ratioId || '3:4';
-      const ratio = COLLAGE_RATIOS.find((r) => r.id === ratioId) || COLLAGE_RATIOS[0];
       return {
         slotIdx: idx,
         presetId: preset.id,
-        ratioId: ratio.id,
+        ratioId: '3:4',
         badge: defaultMeta?.badge || preset.name,
         preset,
-        ratio,
+        ratio: ratio34,
       };
     });
 
     if (selectedQuickRequirement === 'circle_pip') {
-      const circlePresets = COLLAGE_PRESETS.filter((p) => p.hasCircleAccent).slice(0, 8);
+      const circlePresets = COLLAGE_PRESETS.filter(
+        (p) => p.hasCircleAccent && !p.id.startsWith('story-fb')
+      ).slice(0, 8);
       baseList = circlePresets.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
-        ratioId: preset.recommendedRatio || '3:4',
+        ratioId: '3:4',
         badge: preset.name,
         preset,
-        ratio:
-          COLLAGE_RATIOS.find((r) => r.id === (preset.recommendedRatio || '3:4')) ||
-          COLLAGE_RATIOS[3],
-      }));
-    } else if (selectedQuickRequirement === 'story_fb') {
-      const storyPresets = COLLAGE_PRESETS.filter((p) => p.id.startsWith('story-fb')).slice(0, 8);
-      baseList = storyPresets.map((preset, idx) => ({
-        slotIdx: idx,
-        presetId: preset.id,
-        ratioId: '9:16',
-        badge: preset.name,
-        preset,
-        ratio: COLLAGE_RATIOS.find((r) => r.id === '9:16') || COLLAGE_RATIOS[2],
+        ratio: ratio34,
       }));
     } else if (selectedQuickRequirement === '2_photos') {
-      const p2 = COLLAGE_PRESETS.filter((p) => p.photoCount === 2).slice(0, 8);
+      const p2 = COLLAGE_PRESETS.filter(
+        (p) => p.photoCount === 2 && !p.id.startsWith('story-fb')
+      ).slice(0, 8);
       baseList = p2.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
-        ratioId: preset.recommendedRatio || '3:4',
+        ratioId: '3:4',
         badge: preset.name,
         preset,
-        ratio:
-          COLLAGE_RATIOS.find((r) => r.id === (preset.recommendedRatio || '3:4')) ||
-          COLLAGE_RATIOS[3],
+        ratio: ratio34,
       }));
     } else if (selectedQuickRequirement === '3_photos') {
-      const p3 = COLLAGE_PRESETS.filter((p) => p.photoCount === 3).slice(0, 8);
+      const p3 = COLLAGE_PRESETS.filter(
+        (p) => p.photoCount === 3 && !p.id.startsWith('story-fb')
+      ).slice(0, 8);
       baseList = p3.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
-        ratioId: preset.recommendedRatio || '3:4',
+        ratioId: '3:4',
         badge: preset.name,
         preset,
-        ratio:
-          COLLAGE_RATIOS.find((r) => r.id === (preset.recommendedRatio || '3:4')) ||
-          COLLAGE_RATIOS[3],
+        ratio: ratio34,
       }));
     } else if (selectedQuickRequirement === '4_photos') {
-      const p4 = COLLAGE_PRESETS.filter((p) => p.photoCount === 4).slice(0, 8);
+      const p4 = COLLAGE_PRESETS.filter(
+        (p) => p.photoCount === 4 && !p.id.startsWith('story-fb')
+      ).slice(0, 8);
       baseList = p4.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
-        ratioId: preset.recommendedRatio || '1:1',
+        ratioId: '3:4',
         badge: preset.name,
         preset,
-        ratio:
-          COLLAGE_RATIOS.find((r) => r.id === (preset.recommendedRatio || '1:1')) ||
-          COLLAGE_RATIOS[0],
+        ratio: ratio34,
       }));
     } else if (selectedQuickRequirement === 'feed_vertical') {
       baseList = baseList.map((item) => ({
         ...item,
         ratioId: '4:5',
-        ratio: COLLAGE_RATIOS.find((r) => r.id === '4:5') || COLLAGE_RATIOS[1],
+        ratio: ratio45,
       }));
     }
 
     return baseList;
   }, [selectedQuickRequirement, favoritePresetIds]);
+
+  // HÀNG 2: Danh sách 4 mẫu ảnh Story (Kích thước mặc định: 9:16)
+  const storyFrameVariations = useMemo(() => {
+    const ratio916 = COLLAGE_RATIOS.find((r) => r.id === '9:16') || COLLAGE_RATIOS[2];
+    return favoriteStoryPresetIds.slice(0, 4).map((presetId, idx) => {
+      const preset =
+        COLLAGE_PRESETS.find((p) => p.id === presetId) ||
+        COLLAGE_PRESETS.find((p) => p.id.startsWith('story-fb')) ||
+        COLLAGE_PRESETS[0];
+      const defaultMeta = AUTO_STORY_FRAME_IDS.find((m) => m.presetId === preset.id);
+      return {
+        slotIdx: idx,
+        presetId: preset.id,
+        ratioId: '9:16',
+        badge: defaultMeta?.badge || preset.name,
+        preset,
+        ratio: ratio916,
+      };
+    });
+  }, [favoriteStoryPresetIds]);
 
   // Hàm vẽ Canvas dùng chung cho cả Khung Chính và từng Khung trong Bộ Sưu Tập Đa Khung
   const generateCanvasForConfig = async (options: {
@@ -1649,16 +1733,14 @@ export function ImageStudioTab({
               </div>
             )}
 
-            {/* BỘ SƯU TẬP 8 KHUNG GHÉP TỰ ĐỘNG TỪ ẢNH BÀI VIẾT WEB (1 CHẠM TẢI HOẶC CHỌN) */}
+            {/* BỘ SƯU TẬP KHUNG GHÉP TỰ ĐỘNG 2 HÀNG: HÀNG 1 (8 MẪU BÀI VIẾT 3:4) + HÀNG 2 (4 MẪU STORY 9:16) */}
             {showMultiFrameGallery && uploadedPhotos.length > 0 && (
-              <div className="pt-2 border-t border-rose-200/60 space-y-2.5">
+              <div className="pt-2 border-t border-rose-200/60 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-xs font-black text-slate-800 flex items-center gap-2">
                     <Layers className="w-4 h-4 text-rose-600" />
                     <span>
-                      {selectedQuickRequirement === 'all_frames'
-                        ? `⭐ 8 Mẫu Phổ Biến Hay Dùng Nhất Của Bạn (Đổi mẫu trực tiếp ở từng ô #1 → #8 hoặc bấm Tuỳ chỉnh)`
-                        : `Các Khung Ghép Tự Động Theo Nhóm (${multiFrameVariations.length} mẫu từ bộ ${uploadedPhotos.length} ảnh)`}
+                      ⭐ Bộ Ghép Tự Động 2 Hàng: Hàng 1 (8 Mẫu Bài Viết • Mặc định 3:4) & Hàng 2 (4 Mẫu Story • Mặc định 9:16)
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -1672,16 +1754,20 @@ export function ImageStudioTab({
                       }`}
                     >
                       <Settings2 className="w-3 h-3" />
-                      <span>{showFavoriteManager ? 'Đóng bảng chọn 8 mẫu' : '⭐ Chọn 8 Mẫu Hay Dùng'}</span>
+                      <span>{showFavoriteManager ? 'Đóng bảng chọn mẫu' : '⭐ Chọn 8 Mẫu Bài & 4 Mẫu Story'}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => {
-                        // Đảo đồng loạt vị trí ảnh cho tất cả các khung
                         setMultiFrameOffsets((prev) => {
-                          const next: Record<string, number> = {};
-                          multiFrameVariations.forEach((v) => {
-                            next[v.preset.id] = ((prev[v.preset.id] || 0) + 1) % Math.max(1, uploadedPhotos.length);
+                          const next: Record<string, number> = { ...prev };
+                          multiFrameVariations.forEach((v, idx) => {
+                            const key = `post-${idx}-${v.preset.id}`;
+                            next[key] = ((prev[key] || 0) + 1) % Math.max(1, uploadedPhotos.length);
+                          });
+                          storyFrameVariations.forEach((v, idx) => {
+                            const key = `story-${idx}-${v.preset.id}`;
+                            next[key] = ((prev[key] || 0) + 1) % Math.max(1, uploadedPhotos.length);
                           });
                           return next;
                         });
@@ -1694,17 +1780,17 @@ export function ImageStudioTab({
                   </div>
                 </div>
 
-                {/* BẢNG TÙY CHỈNH NHANH 8 MẪU PHỔ BIẾN HAY DÙNG NHẤT */}
+                {/* BẢNG TÙY CHỈNH NHANH 8 MẪU BÀI VIẾT + 4 MẪU STORY */}
                 {showFavoriteManager && (
-                  <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-300 space-y-2.5">
+                  <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-300 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                           <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                          <span>Thiết Lập 8 Mẫu Khung Phổ Biến Bạn Hay Dùng Nhất ({favoritePresetIds.length}/8 mẫu)</span>
+                          <span>Thiết Lập 8 Mẫu Bài Viết (3:4) & 4 Mẫu Story (9:16)</span>
                         </p>
                         <p className="text-[11px] text-amber-800">
-                          Chọn mẫu cho từng ô từ <b>#1 đến #8</b> bên dưới (hoặc bấm biểu tượng ⭐ ở kho 41 mẫu). Hệ thống tự động lưu lại để lần sau mở lên có sẵn ngay!
+                          Chọn mẫu cho từng ô bên dưới. Hệ thống tự động lưu lại theo tài khoản của bạn.
                         </p>
                       </div>
                       <button
@@ -1712,74 +1798,393 @@ export function ImageStudioTab({
                         onClick={handleResetDefaultFavorites}
                         className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold cursor-pointer"
                       >
-                        Khôi phục 8 mẫu chuẩn
+                        Khôi phục mặc định (8 + 4 mẫu)
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                      {Array.from({ length: 8 }).map((_, idx) => {
-                        const currentId = favoritePresetIds[idx] || COLLAGE_PRESETS[idx]?.id || COLLAGE_PRESETS[0].id;
-                        return (
-                          <div
-                            key={idx}
-                            className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-amber-200 shadow-2xs"
-                          >
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white font-black text-[10px] shrink-0">
-                              #{idx + 1}
-                            </span>
-                            <select
-                              value={currentId}
-                              onChange={(e) => handleReplaceFavoriteSlot(idx, e.target.value)}
-                              className="w-full text-[11px] font-bold text-slate-800 bg-transparent focus:outline-none cursor-pointer truncate"
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-extrabold text-amber-950">
+                        Hàng 1 — 8 Mẫu Ảnh Cho Bài Viết (Mặc định 3:4):
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                        {Array.from({ length: 8 }).map((_, idx) => {
+                          const currentId =
+                            favoritePresetIds[idx] || COLLAGE_PRESETS[idx]?.id || COLLAGE_PRESETS[0].id;
+                          return (
+                            <div
+                              key={idx}
+                              className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-amber-200 shadow-2xs"
                             >
-                              {COLLAGE_PRESETS.map((p) => (
-                                <option key={p.id} value={p.id}>
-                                  {p.name} ({p.photoCount} ảnh - {p.recommendedRatio || '3:4'})
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        );
-                      })}
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500 text-white font-black text-[10px] shrink-0">
+                                #{idx + 1}
+                              </span>
+                              <select
+                                value={currentId}
+                                onChange={(e) => handleReplaceFavoriteSlot(idx, e.target.value)}
+                                className="w-full text-[11px] font-bold text-slate-800 bg-transparent focus:outline-none cursor-pointer truncate"
+                              >
+                                {COLLAGE_PRESETS.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name} ({p.photoCount} ảnh)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1 border-t border-amber-200/80">
+                      <div className="text-[11px] font-extrabold text-indigo-950">
+                        Hàng 2 — 4 Mẫu Ảnh Story (Mặc định 9:16):
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
+                        {Array.from({ length: 4 }).map((_, idx) => {
+                          const currentId =
+                            favoriteStoryPresetIds[idx] ||
+                            AUTO_STORY_FRAME_IDS[idx]?.presetId ||
+                            COLLAGE_PRESETS[0].id;
+                          return (
+                            <div
+                              key={idx}
+                              className="flex items-center gap-1.5 bg-white p-1.5 rounded-lg border border-indigo-200 shadow-2xs"
+                            >
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-white font-black text-[10px] shrink-0">
+                                Story #{idx + 1}
+                              </span>
+                              <select
+                                value={currentId}
+                                onChange={(e) => handleReplaceStorySlot(idx, e.target.value)}
+                                className="w-full text-[11px] font-bold text-slate-800 bg-transparent focus:outline-none cursor-pointer truncate"
+                              >
+                                {COLLAGE_PRESETS.map((p) => (
+                                  <option key={p.id} value={p.id}>
+                                    {p.name} ({p.photoCount} ảnh)
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
-                  {multiFrameVariations.map((item, idx) => {
-                    const offset = multiFrameOffsets[item.preset.id] || 0;
-                    const variationSlots: Record<number, string> = {};
-                    item.preset.slots.forEach((s, sIdx) => {
-                      variationSlots[s.id] =
-                        uploadedPhotos[(sIdx + offset) % Math.max(1, uploadedPhotos.length)] || '';
-                    });
-                    const isCurrentPreset = selectedPresetId === item.preset.id;
-                    const isBusy = exportingPresetId === item.preset.id;
+                {/* ========================================================= */}
+                {/* HÀNG 1: 8 MẪU ẢNH CHO BÀI VIẾT (KÍCH THƯỚC MẶC ĐỊNH 3:4) */}
+                {/* ========================================================= */}
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black uppercase tracking-wide">
+                        Hàng 1
+                      </span>
+                      <span className="text-xs font-extrabold text-slate-800">
+                        8 Mẫu Ảnh Cho Bài Viết
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold font-mono">
+                        Kích thước ưu tiên mặc định: 3:4 (1080×1440)
+                      </span>
+                    </div>
+                  </div>
 
-                    return (
-                      <div
-                        key={`${item.preset.id}-${idx}`}
-                        className={`rounded-xl border p-2 bg-white flex flex-col justify-between transition-all ${
-                          isCurrentPreset
-                            ? 'border-rose-600 ring-2 ring-rose-500/20 shadow-sm'
-                            : 'border-slate-200 hover:border-rose-300'
-                        }`}
-                      >
-                        <div>
-                          <div className="flex items-center justify-between gap-1 mb-1">
-                            <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-black text-[9px] shrink-0">
-                              #{idx + 1}
-                            </span>
-                            {selectedQuickRequirement === 'all_frames' ? (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+                    {multiFrameVariations.map((item, idx) => {
+                      const offsetKey = `post-${idx}-${item.preset.id}`;
+                      const offset = multiFrameOffsets[offsetKey] || 0;
+                      const variationSlots: Record<number, string> = {};
+                      item.preset.slots.forEach((s, sIdx) => {
+                        variationSlots[s.id] =
+                          uploadedPhotos[(sIdx + offset) % Math.max(1, uploadedPhotos.length)] || '';
+                      });
+                      const isCurrentPreset =
+                        selectedPresetId === item.preset.id && selectedRatioId === item.ratio.id;
+                      const isBusy = exportingPresetId === item.preset.id;
+
+                      return (
+                        <div
+                          key={`post-${item.preset.id}-${idx}`}
+                          className={`rounded-xl border p-2 bg-white flex flex-col justify-between transition-all ${
+                            isCurrentPreset
+                              ? 'border-rose-600 ring-2 ring-rose-500/20 shadow-sm'
+                              : 'border-slate-200 hover:border-rose-300'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <span className="px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-black text-[9px] shrink-0">
+                                #{idx + 1}
+                              </span>
+                              {selectedQuickRequirement === 'all_frames' ? (
+                                <select
+                                  value={item.preset.id}
+                                  onChange={(e) => {
+                                    const newId = e.target.value;
+                                    handleReplaceFavoriteSlot(idx, newId);
+                                    setSelectedPresetId(newId);
+                                    setSelectedRatioId('3:4');
+                                  }}
+                                  title="Đổi mẫu bài viết cho ô này"
+                                  className="flex-1 min-w-0 text-[10px] font-extrabold text-slate-800 bg-slate-50 hover:bg-amber-50 border border-slate-200 rounded px-1 py-0.5 cursor-pointer truncate"
+                                >
+                                  {COLLAGE_PRESETS.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : (
+                                <span
+                                  className="text-[10px] font-extrabold text-slate-800 truncate"
+                                  title={item.badge}
+                                >
+                                  {item.badge}
+                                </span>
+                              )}
+                              <span className="text-[9px] font-mono font-bold px-1 py-0.2 rounded bg-rose-50 text-rose-700 border border-rose-200 shrink-0">
+                                {item.ratio.id}
+                              </span>
+                            </div>
+
+                            {/* Bản xem trước trực tiếp (Live Mini Collage - Chuẩn 3:4) */}
+                            <div
+                              onClick={() => {
+                                setSelectedPresetId(item.preset.id);
+                                setSelectedRatioId(item.ratio.id);
+                                setSlotAssignments(variationSlots);
+                                setSlotTransforms({});
+                              }}
+                              style={{
+                                aspectRatio: '3/4',
+                                background: selectedBackground.value,
+                              }}
+                              className="w-full rounded-lg relative overflow-hidden border border-slate-200 cursor-pointer group"
+                              title="Bấm để mở khung bài viết 3:4 này xuống bàn chỉnh sửa lớn"
+                            >
+                              {item.preset.slots.map((slot) => {
+                                const photoSrc = variationSlots[slot.id];
+                                return (
+                                  <div
+                                    key={slot.id}
+                                    style={{
+                                      left: `calc(${slot.x}% + 1.5px)`,
+                                      top: `calc(${slot.y}% + 1.5px)`,
+                                      width: `calc(${slot.width}% - 3px)`,
+                                      height: `calc(${slot.height}% - 3px)`,
+                                      borderRadius: slot.shape === 'circle' ? '9999px' : '4px',
+                                      zIndex: slot.zIndex || 1,
+                                      border:
+                                        slot.shape === 'circle' ? '2px solid #FFFFFF' : 'none',
+                                    }}
+                                    className="absolute overflow-hidden bg-slate-200"
+                                  >
+                                    {photoSrc && (
+                                      <img
+                                        src={photoSrc}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {showWatermark && watermarkText.trim() && (
+                                <div
+                                  style={{
+                                    opacity: Math.max(0.18, Math.min(1, watermarkOpacity / 100)),
+                                    ...(watermarkPosition === 'center'
+                                      ? {
+                                          top: '50%',
+                                          left: '50%',
+                                          transform: `translate(-50%, -50%) ${
+                                            watermarkStyle === 'diagonal_stamp'
+                                              ? 'rotate(-18deg)'
+                                              : ''
+                                          }`,
+                                        }
+                                      : watermarkPosition === 'top'
+                                      ? { top: '10%', left: '50%', transform: 'translate(-50%, -50%)' }
+                                      : watermarkPosition === 'bottom'
+                                      ? { bottom: '6%', left: '50%', transform: 'translateX(-50%)' }
+                                      : watermarkPosition === 'bottom_right'
+                                      ? { bottom: '5%', right: '5%' }
+                                      : watermarkPosition === 'bottom_left'
+                                      ? { bottom: '5%', left: '5%' }
+                                      : { top: '5%', right: '5%' }),
+                                  }}
+                                  className="absolute z-20 pointer-events-none select-none"
+                                >
+                                  <span
+                                    style={{
+                                      color: watermarkTextColor,
+                                      backgroundColor:
+                                        watermarkStyle === 'solid_banner'
+                                          ? watermarkBgColor
+                                          : watermarkStyle === 'glass_badge'
+                                          ? 'rgba(15,23,42,0.45)'
+                                          : 'transparent',
+                                      textShadow:
+                                        watermarkStyle === 'solid_banner'
+                                          ? 'none'
+                                          : '-0.5px -0.5px 0 rgba(255,255,255,0.85), 1px 1px 1.5px rgba(0,0,0,0.85), 0 0 4px rgba(0,0,0,0.55)',
+                                      border:
+                                        watermarkStyle === 'diagonal_stamp'
+                                          ? `1px solid ${watermarkTextColor}`
+                                          : watermarkStyle === 'glass_badge'
+                                          ? '1px solid rgba(255,255,255,0.55)'
+                                          : 'none',
+                                    }}
+                                    className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-wider whitespace-nowrap block"
+                                  >
+                                    {watermarkText}
+                                  </span>
+                                </div>
+                              )}
+
+                              {showCornerCta && cornerCtaText.trim() && (
+                                <div
+                                  style={{
+                                    bottom: '4%',
+                                    ...(cornerCtaPosition === 'bottom_right'
+                                      ? { right: '4%' }
+                                      : cornerCtaPosition === 'bottom_left'
+                                      ? { left: '4%' }
+                                      : { left: '50%', transform: 'translateX(-50%)' }),
+                                  }}
+                                  className="absolute z-20 pointer-events-none select-none"
+                                >
+                                  <span className="px-1.5 py-0.5 rounded-full bg-black/85 text-white border border-white/25 text-[7px] font-extrabold tracking-tight shadow whitespace-nowrap block">
+                                    {cornerCtaText}
+                                  </span>
+                                </div>
+                              )}
+
+                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-30">
+                                <span className="px-2 py-1 rounded-md bg-white text-slate-900 font-black text-[10px] shadow">
+                                  Chọn Khung 3:4
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Nút Đảo ảnh, Copy & Tải nhanh từng khung */}
+                          <div className="flex items-center justify-between gap-1 mt-2 pt-1.5 border-t border-slate-100">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMultiFrameOffsets((prev) => ({
+                                  ...prev,
+                                  [offsetKey]:
+                                    ((prev[offsetKey] || 0) + 1) %
+                                    Math.max(1, uploadedPhotos.length),
+                                }))
+                              }
+                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
+                              title="Đảo vị trí ảnh trong khung này"
+                            >
+                              <Shuffle className="w-3 h-3" />
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() =>
+                                void handleQuickDownloadVariation(
+                                  item.preset,
+                                  item.ratio,
+                                  variationSlots,
+                                  'copy'
+                                )
+                              }
+                              className="flex-1 py-1 px-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
+                              title="Copy ảnh khung 3:4 này vào Clipboard"
+                            >
+                              <Copy className="w-2.5 h-2.5" />
+                              <span>Copy</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() =>
+                                void handleQuickDownloadVariation(
+                                  item.preset,
+                                  item.ratio,
+                                  variationSlots,
+                                  'download'
+                                )
+                              }
+                              className="flex-1 py-1 px-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
+                              title="Tải ảnh PNG 3:4 khung này về máy"
+                            >
+                              <Download className="w-2.5 h-2.5" />
+                              <span>Tải</span>
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* ========================================================= */}
+                {/* HÀNG 2: 4 MẪU ẢNH STORY (KÍCH THƯỚC MẶC ĐỊNH 9:16)        */}
+                {/* ========================================================= */}
+                <div className="space-y-2 pt-2 border-t border-rose-200/50">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wide">
+                        Hàng 2
+                      </span>
+                      <span className="text-xs font-extrabold text-slate-800">
+                        4 Mẫu Ảnh Story Facebook / Reels
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold font-mono">
+                        Kích thước mặc định: 9:16 (1080×1920)
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+                    {storyFrameVariations.map((item, idx) => {
+                      const offsetKey = `story-${idx}-${item.preset.id}`;
+                      const offset = multiFrameOffsets[offsetKey] || 0;
+                      const variationSlots: Record<number, string> = {};
+                      item.preset.slots.forEach((s, sIdx) => {
+                        variationSlots[s.id] =
+                          uploadedPhotos[(sIdx + offset) % Math.max(1, uploadedPhotos.length)] || '';
+                      });
+                      const isCurrentPreset =
+                        selectedPresetId === item.preset.id && selectedRatioId === '9:16';
+                      const isBusy = exportingPresetId === item.preset.id;
+
+                      return (
+                        <div
+                          key={`story-${item.preset.id}-${idx}`}
+                          className={`rounded-xl border p-2 bg-white flex flex-col justify-between transition-all ${
+                            isCurrentPreset
+                              ? 'border-indigo-600 ring-2 ring-indigo-500/20 shadow-sm'
+                              : 'border-slate-200 hover:border-indigo-300'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-center justify-between gap-1 mb-1">
+                              <span className="px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-900 font-black text-[9px] shrink-0">
+                                S#{idx + 1}
+                              </span>
                               <select
                                 value={item.preset.id}
                                 onChange={(e) => {
                                   const newId = e.target.value;
-                                  handleReplaceFavoriteSlot(idx, newId);
+                                  handleReplaceStorySlot(idx, newId);
                                   setSelectedPresetId(newId);
+                                  setSelectedRatioId('9:16');
                                 }}
-                                title="Đổi mẫu thường dùng cho ô này"
-                                className="flex-1 min-w-0 text-[10px] font-extrabold text-slate-800 bg-slate-50 hover:bg-amber-50 border border-slate-200 rounded px-1 py-0.5 cursor-pointer truncate"
+                                title="Đổi mẫu Story 9:16 cho ô này"
+                                className="flex-1 min-w-0 text-[10px] font-extrabold text-slate-800 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded px-1 py-0.5 cursor-pointer truncate"
                               >
                                 {COLLAGE_PRESETS.map((p) => (
                                   <option key={p.id} value={p.id}>
@@ -1787,191 +2192,191 @@ export function ImageStudioTab({
                                   </option>
                                 ))}
                               </select>
-                            ) : (
-                              <span className="text-[10px] font-extrabold text-slate-800 truncate" title={item.badge}>
-                                {item.badge}
-                              </span>
-                            )}
-                            <span className="text-[9px] font-mono font-bold px-1 py-0.2 rounded bg-slate-100 text-slate-600 shrink-0">
-                              {item.ratio.id}
-                            </span>
-                          </div>
-
-                          {/* Bản xem trước trực tiếp (Live Mini Collage) */}
-                          <div
-                            onClick={() => {
-                              setSelectedPresetId(item.preset.id);
-                              setSelectedRatioId(item.ratio.id);
-                              setSlotAssignments(variationSlots);
-                              setSlotTransforms({});
-                            }}
-                            style={{
-                              aspectRatio: '3/4',
-                              background: selectedBackground.value,
-                            }}
-                            className="w-full rounded-lg relative overflow-hidden border border-slate-200 cursor-pointer group"
-                            title="Bấm để mở khung này xuống bàn chỉnh sửa lớn"
-                          >
-                            {item.preset.slots.map((slot) => {
-                              const photoSrc = variationSlots[slot.id];
-                              return (
-                                <div
-                                  key={slot.id}
-                                  style={{
-                                    left: `calc(${slot.x}% + 1.5px)`,
-                                    top: `calc(${slot.y}% + 1.5px)`,
-                                    width: `calc(${slot.width}% - 3px)`,
-                                    height: `calc(${slot.height}% - 3px)`,
-                                    borderRadius: slot.shape === 'circle' ? '9999px' : '4px',
-                                    zIndex: slot.zIndex || 1,
-                                    border:
-                                      slot.shape === 'circle'
-                                        ? '2px solid #FFFFFF'
-                                        : 'none',
-                                  }}
-                                  className="absolute overflow-hidden bg-slate-200"
-                                >
-                                  {photoSrc && (
-                                    <img
-                                      src={photoSrc}
-                                      alt=""
-                                      className="w-full h-full object-cover"
-                                    />
-                                  )}
-                                </div>
-                              );
-                            })}
-
-                            {/* Hiển thị Watermark Logo Nổi Mờ trực tiếp trên từng khung nhỏ */}
-                            {showWatermark && watermarkText.trim() && (
-                              <div
-                                style={{
-                                  opacity: Math.max(0.18, Math.min(1, watermarkOpacity / 100)),
-                                  ...(watermarkPosition === 'center'
-                                    ? { top: '50%', left: '50%', transform: `translate(-50%, -50%) ${watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''}` }
-                                    : watermarkPosition === 'top'
-                                    ? { top: '10%', left: '50%', transform: 'translate(-50%, -50%)' }
-                                    : watermarkPosition === 'bottom'
-                                    ? { bottom: '6%', left: '50%', transform: 'translateX(-50%)' }
-                                    : watermarkPosition === 'bottom_right'
-                                    ? { bottom: '5%', right: '5%' }
-                                    : watermarkPosition === 'bottom_left'
-                                    ? { bottom: '5%', left: '5%' }
-                                    : { top: '5%', right: '5%' }),
-                                }}
-                                className="absolute z-20 pointer-events-none select-none"
-                              >
-                                <span
-                                  style={{
-                                    color: watermarkTextColor,
-                                    backgroundColor:
-                                      watermarkStyle === 'solid_banner'
-                                        ? watermarkBgColor
-                                        : watermarkStyle === 'glass_badge'
-                                        ? 'rgba(15,23,42,0.45)'
-                                        : 'transparent',
-                                    textShadow:
-                                      watermarkStyle === 'solid_banner'
-                                        ? 'none'
-                                        : '-0.5px -0.5px 0 rgba(255,255,255,0.85), 1px 1px 1.5px rgba(0,0,0,0.85), 0 0 4px rgba(0,0,0,0.55)',
-                                    border:
-                                      watermarkStyle === 'diagonal_stamp'
-                                        ? `1px solid ${watermarkTextColor}`
-                                        : watermarkStyle === 'glass_badge'
-                                        ? '1px solid rgba(255,255,255,0.55)'
-                                        : 'none',
-                                  }}
-                                  className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-wider whitespace-nowrap block"
-                                >
-                                  {watermarkText}
-                                </span>
-                              </div>
-                            )}
-
-                            {/* Hiển thị nhãn góc cuối ảnh bên phải ("Full Comments 👇") trên từng khung nhỏ */}
-                            {showCornerCta && cornerCtaText.trim() && (
-                              <div
-                                style={{
-                                  bottom: '4%',
-                                  ...(cornerCtaPosition === 'bottom_right'
-                                    ? { right: '4%' }
-                                    : cornerCtaPosition === 'bottom_left'
-                                    ? { left: '4%' }
-                                    : { left: '50%', transform: 'translateX(-50%)' }),
-                                }}
-                                className="absolute z-20 pointer-events-none select-none"
-                              >
-                                <span className="px-1.5 py-0.5 rounded-full bg-black/85 text-white border border-white/25 text-[7px] font-extrabold tracking-tight shadow whitespace-nowrap block">
-                                  {cornerCtaText}
-                                </span>
-                              </div>
-                            )}
-
-                            <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-30">
-                              <span className="px-2 py-1 rounded-md bg-white text-slate-900 font-black text-[10px] shadow">
-                                Chọn Khung Này
+                              <span className="text-[9px] font-mono font-bold px-1 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
+                                9:16
                               </span>
                             </div>
+
+                            {/* Bản xem trước trực tiếp (Live Mini Story - Chuẩn 9:16) */}
+                            <div
+                              onClick={() => {
+                                setSelectedPresetId(item.preset.id);
+                                setSelectedRatioId('9:16');
+                                setSlotAssignments(variationSlots);
+                                setSlotTransforms({});
+                              }}
+                              style={{
+                                aspectRatio: '9/16',
+                                background: selectedBackground.value,
+                              }}
+                              className="w-full rounded-lg relative overflow-hidden border border-slate-200 cursor-pointer group"
+                              title="Bấm để mở khung Story 9:16 này xuống bàn chỉnh sửa lớn"
+                            >
+                              {item.preset.slots.map((slot) => {
+                                const photoSrc = variationSlots[slot.id];
+                                return (
+                                  <div
+                                    key={slot.id}
+                                    style={{
+                                      left: `calc(${slot.x}% + 1.5px)`,
+                                      top: `calc(${slot.y}% + 1.5px)`,
+                                      width: `calc(${slot.width}% - 3px)`,
+                                      height: `calc(${slot.height}% - 3px)`,
+                                      borderRadius: slot.shape === 'circle' ? '9999px' : '4px',
+                                      zIndex: slot.zIndex || 1,
+                                      border:
+                                        slot.shape === 'circle' ? '2px solid #FFFFFF' : 'none',
+                                    }}
+                                    className="absolute overflow-hidden bg-slate-200"
+                                  >
+                                    {photoSrc && (
+                                      <img
+                                        src={photoSrc}
+                                        alt=""
+                                        className="w-full h-full object-cover"
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })}
+
+                              {showWatermark && watermarkText.trim() && (
+                                <div
+                                  style={{
+                                    opacity: Math.max(0.18, Math.min(1, watermarkOpacity / 100)),
+                                    ...(watermarkPosition === 'center'
+                                      ? {
+                                          top: '50%',
+                                          left: '50%',
+                                          transform: `translate(-50%, -50%) ${
+                                            watermarkStyle === 'diagonal_stamp'
+                                              ? 'rotate(-18deg)'
+                                              : ''
+                                          }`,
+                                        }
+                                      : watermarkPosition === 'top'
+                                      ? { top: '10%', left: '50%', transform: 'translate(-50%, -50%)' }
+                                      : watermarkPosition === 'bottom'
+                                      ? { bottom: '6%', left: '50%', transform: 'translateX(-50%)' }
+                                      : watermarkPosition === 'bottom_right'
+                                      ? { bottom: '5%', right: '5%' }
+                                      : watermarkPosition === 'bottom_left'
+                                      ? { bottom: '5%', left: '5%' }
+                                      : { top: '5%', right: '5%' }),
+                                  }}
+                                  className="absolute z-20 pointer-events-none select-none"
+                                >
+                                  <span
+                                    style={{
+                                      color: watermarkTextColor,
+                                      backgroundColor:
+                                        watermarkStyle === 'solid_banner'
+                                          ? watermarkBgColor
+                                          : watermarkStyle === 'glass_badge'
+                                          ? 'rgba(15,23,42,0.45)'
+                                          : 'transparent',
+                                      textShadow:
+                                        watermarkStyle === 'solid_banner'
+                                          ? 'none'
+                                          : '-0.5px -0.5px 0 rgba(255,255,255,0.85), 1px 1px 1.5px rgba(0,0,0,0.85), 0 0 4px rgba(0,0,0,0.55)',
+                                      border:
+                                        watermarkStyle === 'diagonal_stamp'
+                                          ? `1px solid ${watermarkTextColor}`
+                                          : watermarkStyle === 'glass_badge'
+                                          ? '1px solid rgba(255,255,255,0.55)'
+                                          : 'none',
+                                    }}
+                                    className="px-1.5 py-0.5 rounded text-[8px] font-black tracking-wider whitespace-nowrap block"
+                                  >
+                                    {watermarkText}
+                                  </span>
+                                </div>
+                              )}
+
+                              {showCornerCta && cornerCtaText.trim() && (
+                                <div
+                                  style={{
+                                    bottom: '4%',
+                                    ...(cornerCtaPosition === 'bottom_right'
+                                      ? { right: '4%' }
+                                      : cornerCtaPosition === 'bottom_left'
+                                      ? { left: '4%' }
+                                      : { left: '50%', transform: 'translateX(-50%)' }),
+                                  }}
+                                  className="absolute z-20 pointer-events-none select-none"
+                                >
+                                  <span className="px-1.5 py-0.5 rounded-full bg-black/85 text-white border border-white/25 text-[7px] font-extrabold tracking-tight shadow whitespace-nowrap block">
+                                    {cornerCtaText}
+                                  </span>
+                                </div>
+                              )}
+
+                              <div className="absolute inset-0 bg-black/35 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center z-30">
+                                <span className="px-2 py-1 rounded-md bg-white text-slate-900 font-black text-[10px] shadow">
+                                  Chọn Story 9:16
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Nút Đảo ảnh, Copy & Tải nhanh từng khung Story */}
+                          <div className="flex items-center justify-between gap-1 mt-2 pt-1.5 border-t border-slate-100">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setMultiFrameOffsets((prev) => ({
+                                  ...prev,
+                                  [offsetKey]:
+                                    ((prev[offsetKey] || 0) + 1) %
+                                    Math.max(1, uploadedPhotos.length),
+                                }))
+                              }
+                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
+                              title="Đảo vị trí ảnh trong khung Story này"
+                            >
+                              <Shuffle className="w-3 h-3" />
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() =>
+                                void handleQuickDownloadVariation(
+                                  item.preset,
+                                  item.ratio,
+                                  variationSlots,
+                                  'copy'
+                                )
+                              }
+                              className="flex-1 py-1 px-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
+                              title="Copy ảnh Story 9:16 này vào Clipboard"
+                            >
+                              <Copy className="w-2.5 h-2.5" />
+                              <span>Copy</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() =>
+                                void handleQuickDownloadVariation(
+                                  item.preset,
+                                  item.ratio,
+                                  variationSlots,
+                                  'download'
+                                )
+                              }
+                              className="flex-1 py-1 px-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
+                              title="Tải ảnh Story 9:16 PNG về máy"
+                            >
+                              <Download className="w-2.5 h-2.5" />
+                              <span>Tải</span>
+                            </button>
                           </div>
                         </div>
-
-                        {/* Nút Đảo ảnh, Copy & Tải nhanh từng khung */}
-                        <div className="flex items-center justify-between gap-1 mt-2 pt-1.5 border-t border-slate-100">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setMultiFrameOffsets((prev) => ({
-                                ...prev,
-                                [item.preset.id]:
-                                  ((prev[item.preset.id] || 0) + 1) %
-                                  Math.max(1, uploadedPhotos.length),
-                              }))
-                            }
-                            className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
-                            title="Đảo vị trí ảnh trong khung này"
-                          >
-                            <Shuffle className="w-3 h-3" />
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() =>
-                              void handleQuickDownloadVariation(
-                                item.preset,
-                                item.ratio,
-                                variationSlots,
-                                'copy'
-                              )
-                            }
-                            className="flex-1 py-1 px-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
-                            title="Copy ảnh khung này vào Clipboard"
-                          >
-                            <Copy className="w-2.5 h-2.5" />
-                            <span>Copy</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() =>
-                              void handleQuickDownloadVariation(
-                                item.preset,
-                                item.ratio,
-                                variationSlots,
-                                'download'
-                              )
-                            }
-                            className="flex-1 py-1 px-1.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
-                            title="Tải ảnh PNG khung này về máy"
-                          >
-                            <Download className="w-2.5 h-2.5" />
-                            <span>Tải</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}
