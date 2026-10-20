@@ -450,6 +450,7 @@ export function resolveAccountWpEmployeeCode(
   if (explicit) return explicit;
 
   const rawName = (acc?.username || nameHint || '').trim().toLowerCase();
+  const rawFullName = (acc?.fullName || nameHint || '').trim().toLowerCase();
   const rawEmail = (acc?.email || '').trim().toLowerCase();
 
   if (
@@ -458,6 +459,8 @@ export function resolveAccountWpEmployeeCode(
     rawName === 'ly' ||
     rawName.includes('trà ly') ||
     rawName.includes('tra ly') ||
+    rawFullName.includes('trà ly') ||
+    rawFullName.includes('tra ly') ||
     rawEmail === 'ly@gmail.com' ||
     rawEmail === 'nghean3737@gmail.com'
   ) {
@@ -469,6 +472,8 @@ export function resolveAccountWpEmployeeCode(
     rawName === 'huyen' ||
     rawName.includes('thị huyền') ||
     rawName.includes('thi huyen') ||
+    rawFullName.includes('thị huyền') ||
+    rawFullName.includes('thi huyen') ||
     rawEmail === 'huyen@gmail.com' ||
     rawEmail === 'xunghe3737@gmail.com'
   ) {
@@ -482,6 +487,8 @@ export function resolveAccountWpEmployeeCode(
     rawName === 'hiep ms' ||
     rawName.includes('thị hiệp') ||
     rawName.includes('thi hiep') ||
+    rawFullName.includes('thị hiệp') ||
+    rawFullName.includes('thi hiep') ||
     rawEmail === 'hiep@gmail.com' ||
     rawEmail === 'nghean@gmail.com'
   ) {
@@ -491,6 +498,7 @@ export function resolveAccountWpEmployeeCode(
     rawName === 'ms.nhi' ||
     rawName === 'ms nhi' ||
     rawName === 'nhi' ||
+    rawFullName.includes('nhi') ||
     rawEmail === 'ms.nhi@gmail.com' ||
     rawEmail === 'pronhi@gmail.com'
   ) {
@@ -734,9 +742,19 @@ export function normalizeVietnameseText(input?: string): string {
     .trim();
 }
 
+export function isSpecialNonStaffIdentity(norm?: string): boolean {
+  if (!norm) return false;
+  return (
+    norm.includes('admin') ||
+    norm.includes('quan ly') ||
+    norm.includes('kho cho') ||
+    norm.includes('chua gan')
+  );
+}
+
 export function extractStaffGivenToken(name?: string): string {
   const norm = normalizeVietnameseText(name);
-  if (!norm) return '';
+  if (!norm || isSpecialNonStaffIdentity(norm)) return '';
   // Nếu dạng MS.HUYEN, MS.LY, MR.BAO, MSHIEP, MS HIEP...
   const cleanedPrefix = norm
     .replace(/^(ms|mr|mrs|miss)[\.\s_\-]*/i, '')
@@ -747,56 +765,108 @@ export function extractStaffGivenToken(name?: string): string {
   return parts[parts.length - 1];
 }
 
+export function areStaffNamesEquivalent(name1?: string, name2?: string): boolean {
+  const n1 = normalizeVietnameseText(name1);
+  const n2 = normalizeVietnameseText(name2);
+  if (!n1 || !n2) return false;
+
+  const isSpec1 = isSpecialNonStaffIdentity(n1);
+  const isSpec2 = isSpecialNonStaffIdentity(n2);
+  if (isSpec1 || isSpec2) {
+    return n1 === n2;
+  }
+
+  if (n1 === n2) return true;
+
+  const t1 = extractStaffGivenToken(n1);
+  const t2 = extractStaffGivenToken(n2);
+  if (t1 && t2 && t1.length >= 2 && t1 === t2) {
+    return true;
+  }
+
+  return false;
+}
+
 export function isSameStaffIdentity(
   nameA?: string,
   nameB?: string,
   acc?: Partial<UserAccount> | null,
   sal?: Partial<StaffSalaryItem> | null
 ): boolean {
-  const candidatesA = new Set<string>();
-  const candidatesB = new Set<string>();
+  if (!nameA && !nameB) return false;
 
-  if (nameA) candidatesA.add(normalizeVietnameseText(nameA));
-  if (acc?.username) candidatesA.add(normalizeVietnameseText(acc.username));
-  if (acc?.fullName) candidatesA.add(normalizeVietnameseText(acc.fullName));
+  // 1. So khớp trực tiếp 2 tên truyền vào (nameA vs nameB)
+  if (nameA && nameB && areStaffNamesEquivalent(nameA, nameB)) {
+    return true;
+  }
 
-  if (nameB) candidatesB.add(normalizeVietnameseText(nameB));
-  if (sal?.staffName) candidatesB.add(normalizeVietnameseText(sal.staffName));
-  if (sal?.accountUsername) candidatesB.add(normalizeVietnameseText(sal.accountUsername));
-  if (sal?.bankAccountHolder) candidatesB.add(normalizeVietnameseText(sal.bankAccountHolder));
+  // 2. Tách biệt tuyệt đối tập tên của Bên A và Bên B (không bao giờ trộn chéo acc/sal sang bên kia)
+  const sideA = new Set<string>();
+  const sideB = new Set<string>();
 
-  for (const a of candidatesA) {
-    if (!a) continue;
-    for (const b of candidatesB) {
-      if (!b) continue;
-      if (a === b) return true;
+  if (nameA?.trim()) sideA.add(nameA.trim());
+  if (nameB?.trim()) sideB.add(nameB.trim());
+
+  if (acc) {
+    const accUser = acc.username?.trim();
+    // Chỉ dùng fullName của tài khoản nếu nó không bị lệch với mã username (VD: MS.HUYEN <-> CHU THỊ HUYỀN)
+    const accFull =
+      acc.fullName?.trim() &&
+      (!accUser || !extractStaffGivenToken(accUser) || areStaffNamesEquivalent(accUser, acc.fullName))
+        ? acc.fullName.trim()
+        : undefined;
+
+    const accMatchesA =
+      Boolean(nameA) &&
+      (areStaffNamesEquivalent(nameA, accUser) || (Boolean(accFull) && areStaffNamesEquivalent(nameA, accFull)));
+    const accMatchesB =
+      Boolean(nameB) &&
+      (areStaffNamesEquivalent(nameB, accUser) || (Boolean(accFull) && areStaffNamesEquivalent(nameB, accFull)));
+
+    if (accMatchesA && accMatchesB) return true;
+    if (accMatchesA && !accMatchesB) {
+      if (accUser) sideA.add(accUser);
+      if (accFull) sideA.add(accFull);
+    } else if (accMatchesB && !accMatchesA) {
+      if (accUser) sideB.add(accUser);
+      if (accFull) sideB.add(accFull);
     }
   }
 
-  // So khớp theo tên gọi / mã nhân viên (VD: MS.HUYEN <-> CHU THỊ HUYỀN, MS.LY <-> VÕ THỊ TRÀ LY, MS.HIEN <-> Lưu Thị Thúy Hiền, MSHIEP <-> Phạm Thị Hiệp)
-  const tokenSetA = new Set<string>();
-  for (const a of candidatesA) {
-    const t = extractStaffGivenToken(a);
-    if (t && t.length >= 2 && t !== 'admin' && t !== 'quan' && t !== 'ly' ? true : t === 'ly') {
-      tokenSetA.add(t);
+  if (sal) {
+    const salName = sal.staffName?.trim();
+    // Chỉ dùng accountUsername của bảng lương nếu hợp lệ với họ tên nhân viên trong bảng lương
+    const salAccUser =
+      sal.accountUsername?.trim() &&
+      (!salName || !extractStaffGivenToken(salName) || areStaffNamesEquivalent(salName, sal.accountUsername))
+        ? sal.accountUsername.trim()
+        : undefined;
+
+    const salMatchesA =
+      Boolean(nameA) &&
+      (areStaffNamesEquivalent(nameA, salName) ||
+        (Boolean(salAccUser) && areStaffNamesEquivalent(nameA, salAccUser)));
+    const salMatchesB =
+      Boolean(nameB) &&
+      (areStaffNamesEquivalent(nameB, salName) ||
+        (Boolean(salAccUser) && areStaffNamesEquivalent(nameB, salAccUser)));
+
+    if (salMatchesA && salMatchesB) return true;
+    if (salMatchesA && !salMatchesB) {
+      if (salName) sideA.add(salName);
+      if (salAccUser) sideA.add(salAccUser);
+    } else if (salMatchesB && !salMatchesA) {
+      if (salName) sideB.add(salName);
+      if (salAccUser) sideB.add(salAccUser);
     }
   }
 
-  const tokenSetB = new Set<string>();
-  for (const b of candidatesB) {
-    const t = extractStaffGivenToken(b);
-    if (t && t.length >= 2) {
-      tokenSetB.add(t);
+  for (const a of sideA) {
+    for (const b of sideB) {
+      if (areStaffNamesEquivalent(a, b)) {
+        return true;
+      }
     }
-  }
-
-  // Tránh khớp nhầm "Quản Lý (Admin)" với "MS.LY"
-  const isAdminA = Array.from(candidatesA).some((x) => x.includes('admin') || x.includes('quan ly'));
-  const isAdminB = Array.from(candidatesB).some((x) => x.includes('admin') || x.includes('quan ly'));
-  if (isAdminA !== isAdminB) return false;
-
-  for (const ta of tokenSetA) {
-    if (tokenSetB.has(ta)) return true;
   }
 
   return false;

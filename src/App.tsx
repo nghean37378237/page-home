@@ -16,6 +16,8 @@ import {
   ADMIN_WAITING_POOL,
   isAdminWaitingPool,
   resolveAccountWpEmployeeCode,
+  areStaffNamesEquivalent,
+  isSameStaffIdentity,
 } from './types';
 import {
   testFirestoreConnection,
@@ -486,6 +488,11 @@ export default function App() {
             customExpenses: [],
             totalExpenses: 0,
             netProfit: 0,
+            salaryItems: (rec.salaryItems || []).filter(
+              (s) =>
+                areStaffNamesEquivalent(s.staffName, currentUser.name) ||
+                (Boolean(s.accountUsername) && areStaffNamesEquivalent(s.accountUsername, currentUser.name))
+            ),
           }));
         };
 
@@ -640,9 +647,8 @@ export default function App() {
     if (currentUser.role === 'admin') {
       return records;
     }
-    const currentStaffLower = currentUser.name.trim().toLowerCase();
     return records.filter(
-      (r) => r.staffName.trim().toLowerCase() === currentStaffLower
+      (r) => !isAdminWaitingPool(r.staffName) && areStaffNamesEquivalent(r.staffName, currentUser.name)
     );
   }, [records, currentUser]);
 
@@ -650,9 +656,8 @@ export default function App() {
     if (currentUser.role === 'admin') {
       return viaList;
     }
-    const currentStaffLower = currentUser.name.trim().toLowerCase();
     return viaList.filter(
-      (v) => v.staffName && v.staffName.trim().toLowerCase() === currentStaffLower
+      (v) => v.staffName && !isAdminWaitingPool(v.staffName) && areStaffNamesEquivalent(v.staffName, currentUser.name)
     );
   }, [viaList, currentUser]);
 
@@ -973,7 +978,7 @@ export default function App() {
       title: 'Thông Tin NV',
       fullTitle: 'Thông Tin Nhân Viên, Ngày Sinh, Lương & Doanh Thu (Từ Bảng 7)',
       icon: Contact,
-      count: 1,
+      count: currentUser.role === 'admin' ? Math.max(allStaffNames.length, 1) : 1,
       newCount: 0,
       unit: 'Hồ sơ',
       activeClass: 'bg-blue-700 text-white shadow-xs ring-2 ring-blue-500/25',
@@ -4287,6 +4292,13 @@ export default function App() {
             records={records}
             availableStaffNames={allStaffNames}
             onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
+            onNavigateToStaffPages={(staffCode) => {
+              setFilter((prev) => ({
+                ...prev,
+                staffName: staffCode,
+              }));
+              setActiveTab('fanpage');
+            }}
             onSaveMonthlyFinance={async (record) => {
               await setCloudMonthlyFinance(record);
               setFinances((prev) => {

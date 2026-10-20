@@ -7,6 +7,10 @@ import {
   PageRecord,
   EmployeeContractType,
   isSameStaffIdentity,
+  areStaffNamesEquivalent,
+  extractStaffGivenToken,
+  isAdminWaitingPool,
+  resolveAccountWpEmployeeCode,
 } from '../types';
 import {
   User,
@@ -35,6 +39,8 @@ import {
   Edit2,
   Save,
   X,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 interface StaffInfoTableProps {
@@ -44,6 +50,7 @@ interface StaffInfoTableProps {
   availableStaffNames?: string[];
   records?: PageRecord[];
   onNavigateToTab?: (tab: string) => void;
+  onNavigateToStaffPages?: (staffName: string) => void;
   onSaveMonthlyFinance?: (record: MonthlyFinanceRecord) => Promise<void>;
   onUpdateAccount?: (accountId: string, data: Partial<UserAccount>) => Promise<void>;
 }
@@ -55,10 +62,12 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
   availableStaffNames = [],
   records = [],
   onNavigateToTab,
+  onNavigateToStaffPages,
   onSaveMonthlyFinance,
   onUpdateAccount,
 }) => {
   const isAdmin = currentUser.role === 'admin';
+  const [showMyPagesList, setShowMyPagesList] = useState(false);
 
   // Danh sách các tháng có dữ liệu
   const availableMonths = useMemo(() => {
@@ -90,7 +99,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
     return availableMonths.find((m) => m.monthKey === selectedMonthKey) || availableMonths[0];
   }, [availableMonths, selectedMonthKey]);
 
-  // Danh sách nhân viên đã gộp thông minh (tránh tách rời MS.HUYEN và CHU THỊ HUYỀN)
+  // Danh sách nhân viên đã gộp chuẩn xác từng người (tách biệt rõ Mã NV, Họ tên và số Page của từng người)
   const staffOptionEntries = useMemo(() => {
     const staffAccounts = accounts.filter((a) => a.role === 'staff');
     const allSalaryItems: StaffSalaryItem[] = [];
@@ -98,43 +107,88 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
       (f.salaryItems || []).forEach((s) => allSalaryItems.push(s));
     });
 
-    const entries: { value: string; label: string }[] = [];
-    const addedIdentities: { username?: string; fullName?: string }[] = [];
+    const entries: {
+      value: string;
+      label: string;
+      accountCode: string;
+      fullName: string;
+      wpCode: string;
+      pageCount: number;
+    }[] = [];
+    const addedIdentities: { username: string; fullName?: string }[] = [];
 
     // 1. Ưu tiên từ danh sách tài khoản nhân viên
     for (const acc of staffAccounts) {
       const matchedSal = allSalaryItems.find((s) =>
-        isSameStaffIdentity(acc.username, s.staffName, acc, s)
+        areStaffNamesEquivalent(acc.username, s.staffName)
       );
-      const fullName = acc.fullName || matchedSal?.staffName || '';
+      const validAccFullName =
+        acc.fullName &&
+        (!extractStaffGivenToken(acc.username) ||
+          areStaffNamesEquivalent(acc.username, acc.fullName))
+          ? acc.fullName
+          : '';
+      const fullName = matchedSal?.staffName || validAccFullName || '';
+      const wpCode = resolveAccountWpEmployeeCode(acc, fullName || acc.username);
+      const pageCount = (records || []).filter((r) => {
+        if (!r.staffName || isAdminWaitingPool(r.staffName)) return false;
+        return (
+          areStaffNamesEquivalent(acc.username, r.staffName) ||
+          (Boolean(fullName) && areStaffNamesEquivalent(fullName, r.staffName))
+        );
+      }).length;
+
       const label =
         fullName && fullName.trim().toLowerCase() !== acc.username.trim().toLowerCase()
-          ? `${acc.username} (${fullName})`
-          : acc.username;
-      entries.push({ value: acc.username, label });
+          ? `${acc.username} — ${fullName}${wpCode ? ` (${wpCode})` : ''} [${pageCount} Page]`
+          : `${acc.username}${wpCode ? ` (${wpCode})` : ''} [${pageCount} Page]`;
+
+      entries.push({
+        value: acc.username,
+        label,
+        accountCode: acc.username,
+        fullName: fullName || acc.username,
+        wpCode,
+        pageCount,
+      });
       addedIdentities.push({ username: acc.username, fullName });
     }
 
     // 2. Bổ sung từ availableStaffNames hoặc bảng lương nếu chưa khớp tài khoản nào
     const extraCandidates = new Set<string>();
-    availableStaffNames.forEach((n) => extraCandidates.add(n));
-    allSalaryItems.forEach((s) => extraCandidates.add(s.staffName));
+    availableStaffNames.forEach((n) => {
+      if (n && !isAdminWaitingPool(n)) extraCandidates.add(n);
+    });
+    allSalaryItems.forEach((s) => {
+      if (s.staffName && !isAdminWaitingPool(s.staffName)) extraCandidates.add(s.staffName);
+    });
 
     for (const cand of Array.from(extraCandidates)) {
       if (!cand) continue;
       const alreadyExists = addedIdentities.some(
         (id) =>
-          isSameStaffIdentity(id.username, cand) ||
-          (id.fullName && isSameStaffIdentity(id.fullName, cand))
+          areStaffNamesEquivalent(id.username, cand) ||
+          (Boolean(id.fullName) && areStaffNamesEquivalent(id.fullName, cand))
       );
       if (!alreadyExists) {
-        entries.push({ value: cand, label: cand });
+        const pageCount = (records || []).filter(
+          (r) => r.staffName && !isAdminWaitingPool(r.staffName) && areStaffNamesEquivalent(cand, r.staffName)
+        ).length;
+        const wpCode = resolveAccountWpEmployeeCode(null, cand);
+        entries.push({
+          value: cand,
+          label: `${cand}${wpCode ? ` (${wpCode})` : ''} [${pageCount} Page]`,
+          accountCode: cand,
+          fullName: cand,
+          wpCode,
+          pageCount,
+        });
         addedIdentities.push({ username: cand, fullName: cand });
       }
     }
 
     return entries;
-  }, [accounts, availableStaffNames, finances]);
+  }, [accounts, availableStaffNames, finances, records]);
 
   // Nhân viên đang xem (Nếu là Staff thì cố định tên của currentUser, nếu Admin thì có thể chọn)
   const [selectedStaffName, setSelectedStaffName] = useState<string>(() => {
@@ -142,30 +196,40 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
     return staffOptionEntries[0]?.value || currentUser.name;
   });
 
-  // Cập nhật selectedStaffName nếu currentUser là staff
+  // Cập nhật selectedStaffName nếu currentUser là staff hoặc khi danh sách NV tải xong
   React.useEffect(() => {
     if (!isAdmin) {
       setSelectedStaffName(currentUser.name);
     } else if (
       staffOptionEntries.length > 0 &&
-      !staffOptionEntries.some((e) => isSameStaffIdentity(e.value, selectedStaffName))
+      !staffOptionEntries.some((e) => areStaffNamesEquivalent(e.value, selectedStaffName))
     ) {
       setSelectedStaffName(staffOptionEntries[0].value);
     }
   }, [isAdmin, currentUser.name, staffOptionEntries, selectedStaffName]);
 
-  // Tìm thông tin tài khoản nhân sự từ danh sách Accounts (khớp cả tên đăng nhập MS.HUYEN lẫn họ tên CHU THỊ HUYỀN)
+  // Tìm thông tin tài khoản nhân sự từ danh sách Accounts (khớp chính xác từng người, không bao giờ trộn chéo)
   const matchedAccount = useMemo<UserAccount | undefined>(() => {
-    return accounts.find(
-      (a) => a.role === 'staff' && isSameStaffIdentity(selectedStaffName, a.username, a, null)
-    );
+    return accounts.find((a) => {
+      if (a.role !== 'staff') return false;
+      if (areStaffNamesEquivalent(selectedStaffName, a.username)) return true;
+      const validAccFull =
+        a.fullName &&
+        (!extractStaffGivenToken(a.username) || areStaffNamesEquivalent(a.username, a.fullName))
+          ? a.fullName
+          : '';
+      return Boolean(validAccFull && areStaffNamesEquivalent(selectedStaffName, validAccFull));
+    });
   }, [accounts, selectedStaffName]);
 
-  // Tìm thông tin lương của nhân viên này trong tháng được chọn (khớp thông minh MS.HUYEN <-> CHU THỊ HUYỀN)
+  // Tìm thông tin lương của nhân viên này trong tháng được chọn (khớp chính xác từng người)
   const staffSalaryItem = useMemo<StaffSalaryItem | undefined>(() => {
     if (!activeMonthRecord || !activeMonthRecord.salaryItems) return undefined;
-    return activeMonthRecord.salaryItems.find((item) =>
-      isSameStaffIdentity(selectedStaffName, item.staffName, matchedAccount, item)
+    return activeMonthRecord.salaryItems.find(
+      (item) =>
+        areStaffNamesEquivalent(selectedStaffName, item.staffName) ||
+        (Boolean(matchedAccount?.username) &&
+          areStaffNamesEquivalent(matchedAccount!.username, item.staffName))
     );
   }, [activeMonthRecord, selectedStaffName, matchedAccount]);
 
@@ -173,57 +237,76 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
   const fallbackSalaryProfile = useMemo<StaffSalaryItem | undefined>(() => {
     if (staffSalaryItem) return staffSalaryItem;
     for (const monthRec of availableMonths) {
-      const found = (monthRec.salaryItems || []).find((item) =>
-        isSameStaffIdentity(selectedStaffName, item.staffName, matchedAccount, item)
+      const found = (monthRec.salaryItems || []).find(
+        (item) =>
+          areStaffNamesEquivalent(selectedStaffName, item.staffName) ||
+          (Boolean(matchedAccount?.username) &&
+            areStaffNamesEquivalent(matchedAccount!.username, item.staffName))
       );
       if (found) return found;
     }
     return undefined;
   }, [staffSalaryItem, availableMonths, selectedStaffName, matchedAccount]);
 
-  // Tổng hợp thông tin Hồ Sơ Nhân Sự từ Bảng 7 & Tài khoản
+  // Tổng hợp thông tin Hồ Sơ Nhân Sự từ Bảng 7 & Tài khoản (đảm bảo Tên & Mã của đúng người đó)
   const resolvedProfile = useMemo(() => {
+    const validAccountFullName =
+      matchedAccount?.fullName &&
+      (!extractStaffGivenToken(matchedAccount.username) ||
+        areStaffNamesEquivalent(matchedAccount.username, matchedAccount.fullName))
+        ? matchedAccount.fullName
+        : '';
+
     const fullName =
       staffSalaryItem?.staffName ||
       fallbackSalaryProfile?.staffName ||
-      matchedAccount?.fullName ||
+      validAccountFullName ||
       matchedAccount?.username ||
       selectedStaffName;
-    const accountCode = matchedAccount?.username || staffSalaryItem?.accountUsername || '';
+
+    const validSalaryAccountUsername =
+      staffSalaryItem?.accountUsername &&
+      areStaffNamesEquivalent(staffSalaryItem.staffName, staffSalaryItem.accountUsername)
+        ? staffSalaryItem.accountUsername
+        : '';
+
+    const accountCode = matchedAccount?.username || validSalaryAccountUsername || '';
+    const wpEmployeeCode = resolveAccountWpEmployeeCode(matchedAccount, fullName);
+
     const contractType: EmployeeContractType =
       staffSalaryItem?.contractType ||
       fallbackSalaryProfile?.contractType ||
-      matchedAccount?.contractType ||
+      (validAccountFullName ? matchedAccount?.contractType : undefined) ||
       'official';
     const dateOfBirth =
       staffSalaryItem?.dateOfBirth ||
       fallbackSalaryProfile?.dateOfBirth ||
-      matchedAccount?.dateOfBirth ||
+      (validAccountFullName ? matchedAccount?.dateOfBirth : '') ||
       '';
     const citizenId =
       staffSalaryItem?.citizenId ||
       fallbackSalaryProfile?.citizenId ||
-      matchedAccount?.citizenId ||
+      (validAccountFullName ? matchedAccount?.citizenId : '') ||
       '';
     const startDate =
       staffSalaryItem?.startDate ||
       fallbackSalaryProfile?.startDate ||
-      matchedAccount?.startDate ||
+      (validAccountFullName ? matchedAccount?.startDate : '') ||
       '';
     const bankName =
       staffSalaryItem?.bankName ||
       fallbackSalaryProfile?.bankName ||
-      matchedAccount?.bankName ||
+      (validAccountFullName ? matchedAccount?.bankName : '') ||
       '';
     const bankAccountNumber =
       staffSalaryItem?.bankAccountNumber ||
       fallbackSalaryProfile?.bankAccountNumber ||
-      matchedAccount?.bankAccountNumber ||
+      (validAccountFullName ? matchedAccount?.bankAccountNumber : '') ||
       '';
     const bankAccountHolder =
       staffSalaryItem?.bankAccountHolder ||
       fallbackSalaryProfile?.bankAccountHolder ||
-      matchedAccount?.bankAccountHolder ||
+      (validAccountFullName ? matchedAccount?.bankAccountHolder : '') ||
       fullName;
 
     // Quyền hiển thị ô Hồ Sơ Nhân Sự cho nhân viên đó xem
@@ -237,6 +320,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
     return {
       fullName,
       accountCode,
+      wpEmployeeCode,
       contractType,
       dateOfBirth,
       citizenId,
@@ -307,7 +391,11 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
       // 2. Đồng bộ trạng thái vào bản ghi tháng hiện tại (Bảng 7)
       if (activeMonthRecord && onSaveMonthlyFinance) {
         const updatedItems = (activeMonthRecord.salaryItems || []).map((item) => {
-          if (isSameStaffIdentity(selectedStaffName, item.staffName, matchedAccount, item)) {
+          if (
+            areStaffNamesEquivalent(selectedStaffName, item.staffName) ||
+            (matchedAccount?.username &&
+              areStaffNamesEquivalent(matchedAccount.username, item.staffName))
+          ) {
             return {
               ...item,
               accountUsername: matchedAccount?.username || item.accountUsername,
@@ -337,7 +425,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
     }
   };
 
-  // Admin tích hiện thông tin Hồ Sơ Nhân Sự cho TẤT CẢ nhân viên cùng lúc
+  // Admin tích hiện thông tin Hồ Sơ Nhân Sự cho TẤT CẢ nhân viên cùng lúc (khớp đúng từng người)
   const handleEnableProfileForAllStaff = async () => {
     if (!isAdmin) return;
     setIsSavingAction(true);
@@ -350,17 +438,28 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
       if (onUpdateAccount) {
         for (const acc of accounts.filter((a) => a.role === 'staff')) {
           const matchedSal = allSalaryItems.find((s) =>
-            isSameStaffIdentity(acc.username, s.staffName, acc, s)
+            areStaffNamesEquivalent(acc.username, s.staffName)
           );
+          const validAccFull =
+            acc.fullName &&
+            (!extractStaffGivenToken(acc.username) ||
+              areStaffNamesEquivalent(acc.username, acc.fullName))
+              ? acc.fullName
+              : '';
           await onUpdateAccount(acc.id, {
-            fullName: matchedSal?.staffName || acc.fullName || acc.username,
+            fullName: matchedSal?.staffName || validAccFull || acc.username,
             contractType: matchedSal?.contractType || acc.contractType || 'official',
-            dateOfBirth: matchedSal?.dateOfBirth || acc.dateOfBirth || '',
-            citizenId: matchedSal?.citizenId || acc.citizenId || '',
-            startDate: matchedSal?.startDate || acc.startDate || '',
-            bankName: matchedSal?.bankName || acc.bankName || '',
-            bankAccountNumber: matchedSal?.bankAccountNumber || acc.bankAccountNumber || '',
-            bankAccountHolder: matchedSal?.bankAccountHolder || acc.bankAccountHolder || matchedSal?.staffName || acc.username,
+            dateOfBirth: matchedSal?.dateOfBirth || (validAccFull ? acc.dateOfBirth : '') || '',
+            citizenId: matchedSal?.citizenId || (validAccFull ? acc.citizenId : '') || '',
+            startDate: matchedSal?.startDate || (validAccFull ? acc.startDate : '') || '',
+            bankName: matchedSal?.bankName || (validAccFull ? acc.bankName : '') || '',
+            bankAccountNumber:
+              matchedSal?.bankAccountNumber || (validAccFull ? acc.bankAccountNumber : '') || '',
+            bankAccountHolder:
+              matchedSal?.bankAccountHolder ||
+              (validAccFull ? acc.bankAccountHolder : '') ||
+              matchedSal?.staffName ||
+              acc.username,
             isProfileVisibleToStaff: true,
           });
         }
@@ -369,7 +468,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
       if (activeMonthRecord && onSaveMonthlyFinance) {
         const updatedItems = (activeMonthRecord.salaryItems || []).map((item) => {
           const matchedAcc = accounts.find(
-            (a) => a.role === 'staff' && isSameStaffIdentity(a.username, item.staffName, a, item)
+            (a) => a.role === 'staff' && areStaffNamesEquivalent(a.username, item.staffName)
           );
           return {
             ...item,
@@ -385,7 +484,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
         });
       }
 
-      showToast('Đã tích hiển thị & đồng bộ Hồ Sơ Nhân Sự cho tất cả nhân viên!');
+      showToast('Đã tích hiển thị & đồng bộ chuẩn xác Hồ Sơ Nhân Sự cho từng nhân viên!');
     } catch (err) {
       console.error('Lỗi đồng bộ tất cả hồ sơ:', err);
     } finally {
@@ -414,14 +513,21 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
       }
 
       if (activeMonthRecord && onSaveMonthlyFinance) {
-        const existingMatch = (activeMonthRecord.salaryItems || []).some((item) =>
-          isSameStaffIdentity(selectedStaffName, item.staffName, matchedAccount, item)
+        const existingMatch = (activeMonthRecord.salaryItems || []).some(
+          (item) =>
+            areStaffNamesEquivalent(selectedStaffName, item.staffName) ||
+            (matchedAccount?.username &&
+              areStaffNamesEquivalent(matchedAccount.username, item.staffName))
         );
 
         let updatedItems: StaffSalaryItem[];
         if (existingMatch) {
           updatedItems = (activeMonthRecord.salaryItems || []).map((item) => {
-            if (isSameStaffIdentity(selectedStaffName, item.staffName, matchedAccount, item)) {
+            if (
+              areStaffNamesEquivalent(selectedStaffName, item.staffName) ||
+              (matchedAccount?.username &&
+                areStaffNamesEquivalent(matchedAccount.username, item.staffName))
+            ) {
               return {
                 ...item,
                 staffName: editFullName.trim() || item.staffName,
@@ -487,7 +593,11 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
     setIsSavingAction(true);
     try {
       const updatedItems = (activeMonthRecord.salaryItems || []).map((item) => {
-        if (isSameStaffIdentity(selectedStaffName, item.staffName, matchedAccount, item)) {
+        if (
+          areStaffNamesEquivalent(selectedStaffName, item.staffName) ||
+          (matchedAccount?.username &&
+            areStaffNamesEquivalent(matchedAccount.username, item.staffName))
+        ) {
           return {
             ...item,
             accountUsername: matchedAccount?.username || item.accountUsername,
@@ -514,11 +624,18 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
     }
   };
 
-  // Thống kê số lượng Page Đăng Tay vs Tool của nhân viên đang xem
+  // Thống kê số lượng Page Đăng Tay vs Tool CỦA RIÊNG NHÂN VIÊN ĐANG XEM (tuyệt đối không gộp chung)
   const staffWorkStats = useMemo(() => {
-    const myPages = (records || []).filter((r) =>
-      isSameStaffIdentity(selectedStaffName, r.staffName, matchedAccount, staffSalaryItem)
-    );
+    const myPages = (records || []).filter((r) => {
+      if (!r.staffName || isAdminWaitingPool(r.staffName)) return false;
+      return (
+        areStaffNamesEquivalent(selectedStaffName, r.staffName) ||
+        (Boolean(matchedAccount?.username) &&
+          areStaffNamesEquivalent(matchedAccount!.username, r.staffName)) ||
+        (Boolean(staffSalaryItem?.staffName) &&
+          areStaffNamesEquivalent(staffSalaryItem!.staffName, r.staffName))
+      );
+    });
     const manualPages = myPages.filter((r) => r.postingMethod === 'Đăng Tay');
     const toolPages = myPages.filter((r) => r.postingMethod === 'Tool');
     const timerPages = myPages.filter((r) => r.postingMethod === 'Hẹn Giờ');
@@ -537,6 +654,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
     const toolRatio = myPages.length > 0 ? Math.round((toolPages.length / myPages.length) * 100) : 0;
 
     return {
+      myPages,
       totalPages: myPages.length,
       manualCount: manualPages.length,
       toolCount: toolPages.length,
@@ -591,7 +709,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                   Thông Tin Nhân Viên & Bảng Lương Cá Nhân
                 </h1>
                 <p className="text-xs sm:text-sm text-blue-100 font-medium mt-0.5">
-                  Dữ liệu đồng bộ trực tiếp từ Bảng 7: Doanh Thu & Thu Chi
+                  Dữ liệu đồng bộ trực tiếp từ Bảng 7: Doanh Thu & Thu Chi • Phân tách riêng từng nhân sự
                 </p>
               </div>
             </div>
@@ -665,6 +783,86 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
         </div>
       </div>
 
+      {/* THANH CHỌN NHANH TỪNG NHÂN SỰ DÀNH CHO ADMIN (HIỂN THỊ RÕ HỌ TÊN + MÃ NV + SỐ PAGE RIÊNG CỦA TỪNG NGƯỜI) */}
+      {isAdmin && staffOptionEntries.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-2xs space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center space-x-2">
+              <span className="px-2.5 py-1 bg-blue-100 text-blue-800 rounded-xl text-xs font-black">
+                Danh Sách Hồ Sơ Từng Nhân Viên ({staffOptionEntries.length} NV)
+              </span>
+              <span className="text-xs text-slate-500">
+                Bấm chọn từng người để xem đúng Họ tên, Mã NV, Bảng lương và Số lượng Fanpage riêng của người đó
+              </span>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            {staffOptionEntries.map((entry) => {
+              const isSelected = areStaffNamesEquivalent(entry.value, selectedStaffName);
+              return (
+                <button
+                  key={entry.value}
+                  type="button"
+                  onClick={() => {
+                    setSelectedStaffName(entry.value);
+                    setIsEditingProfile(false);
+                  }}
+                  className={`p-3 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between gap-1.5 ${
+                    isSelected
+                      ? 'bg-blue-600 text-white border-blue-700 shadow-md ring-2 ring-blue-300'
+                      : 'bg-slate-50 hover:bg-blue-50/70 text-slate-800 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span
+                      className={`text-[11px] font-black px-2 py-0.5 rounded-lg font-mono ${
+                        isSelected
+                          ? 'bg-white text-blue-700'
+                          : 'bg-blue-100 text-blue-800 border border-blue-200'
+                      }`}
+                    >
+                      {entry.accountCode}
+                    </span>
+                    {entry.wpCode && (
+                      <span
+                        className={`text-[10px] font-bold px-1.5 py-0.5 rounded font-mono ${
+                          isSelected
+                            ? 'bg-blue-800 text-blue-100'
+                            : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                        }`}
+                      >
+                        {entry.wpCode}
+                      </span>
+                    )}
+                  </div>
+
+                  <div
+                    className={`text-xs font-black truncate ${
+                      isSelected ? 'text-white' : 'text-slate-900'
+                    }`}
+                    title={entry.fullName}
+                  >
+                    {entry.fullName}
+                  </div>
+
+                  <div
+                    className={`text-[10px] font-bold flex items-center justify-between pt-1 border-t ${
+                      isSelected
+                        ? 'border-white/20 text-blue-100'
+                        : 'border-slate-200/80 text-teal-700'
+                    }`}
+                  >
+                    <span>Page phụ trách:</span>
+                    <span className="font-mono font-black">{entry.pageCount} Page</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* DÀN NỘI DUNG CHÍNH: 2 KHỐI (HỒ SƠ CÁ NHÂN & THU NHẬP THÁNG) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* ========================================================= */}
@@ -678,9 +876,11 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
               </div>
               <div>
                 <h2 className="text-sm sm:text-base font-black text-slate-900">
-                  Hồ Sơ Nhân Sự
+                  Hồ Sơ Nhân Sự ({resolvedProfile.accountCode || selectedStaffName})
                 </h2>
-                <p className="text-[11px] text-slate-500">Thông tin lý lịch nhân viên</p>
+                <p className="text-[11px] text-slate-500">
+                  Thông tin lý lịch cá nhân của {resolvedProfile.fullName}
+                </p>
               </div>
             </div>
 
@@ -721,8 +921,8 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                     </span>
                     <span className="text-[11px] opacity-85 block mt-0.5">
                       {resolvedProfile.isProfileVisible
-                        ? `Đang HIỂN THỊ đầy đủ Họ tên, Ngày sinh, CCCD, Ngày đi làm & STK cho ${resolvedProfile.accountCode || resolvedProfile.fullName}`
-                        : `Đang ẨN với nhân viên — Tích vào ô này để hiển thị ngay cho ${resolvedProfile.accountCode || resolvedProfile.fullName}`}
+                        ? `Đang HIỂN THỊ đầy đủ Họ tên, Ngày sinh, CCCD, Ngày đi làm & STK cho ${resolvedProfile.fullName} (${resolvedProfile.accountCode || selectedStaffName})`
+                        : `Đang ẨN với nhân viên — Tích vào ô này để hiển thị ngay cho ${resolvedProfile.fullName} (${resolvedProfile.accountCode || selectedStaffName})`}
                     </span>
                   </div>
                 </label>
@@ -740,7 +940,7 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
 
               <div className="flex flex-wrap items-center justify-between gap-1.5 pt-2 border-t border-black/10">
                 <span className="text-[10px] font-bold opacity-80">
-                  Đồng bộ từ Bảng 7 ({resolvedProfile.fullName})
+                  Đồng bộ từ Bảng 7 ({resolvedProfile.fullName} • {resolvedProfile.accountCode})
                 </span>
                 <button
                   type="button"
@@ -903,10 +1103,10 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
             </form>
           ) : (
             <>
-              {/* Họ và tên nhân viên */}
+              {/* Họ và tên nhân viên & Mã định danh chuẩn của nhân viên đó */}
               <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">
-                  Họ Và Tên Nhân Viên
+                  Họ Và Tên Nhân Viên & Mã Định Danh
                 </span>
                 <div className="text-base sm:text-lg font-black text-slate-900 mt-0.5 flex flex-wrap items-center gap-1.5">
                   <span>
@@ -914,13 +1114,22 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                       ? resolvedProfile.fullName
                       : resolvedProfile.accountCode || selectedStaffName}
                   </span>
-                  {resolvedProfile.accountCode &&
-                    resolvedProfile.fullName.trim().toLowerCase() !==
-                      resolvedProfile.accountCode.trim().toLowerCase() && (
-                      <span className="text-xs font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-lg border border-blue-200">
-                        {resolvedProfile.accountCode}
-                      </span>
-                    )}
+                  {resolvedProfile.accountCode && (
+                    <span
+                      className="text-xs font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-lg border border-blue-200 font-mono"
+                      title="Mã tài khoản nhân viên"
+                    >
+                      {resolvedProfile.accountCode}
+                    </span>
+                  )}
+                  {resolvedProfile.wpEmployeeCode && (
+                    <span
+                      className="text-xs font-bold text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200 font-mono"
+                      title="Mã nhân viên Website (WordPress)"
+                    >
+                      Mã Web: {resolvedProfile.wpEmployeeCode}
+                    </span>
+                  )}
                   <span
                     className="w-2 h-2 rounded-full bg-emerald-500"
                     title="Nhân viên chính thức"
@@ -1040,23 +1249,23 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
             </>
           )}
 
-          {/* KHỐI THỐNG KÊ QUẢN LÝ FANPAGE: ĐĂNG TAY VS TOOL */}
+          {/* KHỐI THỐNG KÊ QUẢN LÝ FANPAGE CỦA RIÊNG NHÂN VIÊN NÀY: ĐĂNG TAY VS TOOL */}
           <div className="p-4 bg-gradient-to-br from-teal-50 via-emerald-50/60 to-white border-2 border-teal-300 rounded-2xl shadow-2xs space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-2">
               <div className="flex items-center space-x-2">
-                <span className="p-1.5 bg-teal-600 text-white rounded-xl shadow-2xs">
+                <span className="p-1.5 bg-teal-600 text-white rounded-xl shadow-2xs shrink-0">
                   <FileSpreadsheet className="w-4 h-4" />
                 </span>
                 <div>
                   <h4 className="text-xs font-black text-slate-900 uppercase tracking-wide">
-                    Fanpage Đang Phụ Trách
+                    Fanpage Của {resolvedProfile.accountCode || resolvedProfile.fullName}
                   </h4>
                   <p className="text-[10px] text-slate-500">
-                    Phân loại Đăng Tay vs Tool (Bảng 1)
+                    Chỉ tính riêng Page do <strong>{resolvedProfile.fullName}</strong> phụ trách
                   </p>
                 </div>
               </div>
-              <span className="font-mono font-black text-teal-800 text-xs bg-teal-100 px-2.5 py-0.5 rounded-full border border-teal-300">
+              <span className="font-mono font-black text-teal-800 text-xs bg-teal-100 px-2.5 py-0.5 rounded-full border border-teal-300 shrink-0">
                 {staffWorkStats.totalPages} Page
               </span>
             </div>
@@ -1106,9 +1315,9 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
               </div>
             </div>
 
-            {/* Thanh tỷ lệ & nút mở bảng 1 */}
-            {staffWorkStats.totalPages > 0 && (
-              <div className="space-y-1 pt-0.5">
+            {/* Thanh tỷ lệ & danh sách Page riêng của nhân viên này */}
+            {staffWorkStats.totalPages > 0 ? (
+              <div className="space-y-2 pt-0.5">
                 <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden flex shadow-inner">
                   <div
                     style={{ width: `${staffWorkStats.manualRatio}%` }}
@@ -1121,22 +1330,81 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                     title={`Đăng Tool: ${staffWorkStats.toolRatio}%`}
                   />
                 </div>
-                <div className="flex items-center justify-between text-[10px] text-slate-500 font-bold">
+                <div className="flex flex-wrap items-center justify-between gap-1 text-[10px] text-slate-500 font-bold">
                   <span>
                     Tiến độ: {staffWorkStats.completionRate}% ({staffWorkStats.totalActual}/
                     {staffWorkStats.totalTarget} bài)
                   </span>
-                  {onNavigateToTab && (
+                  <div className="flex items-center space-x-2">
                     <button
                       type="button"
-                      onClick={() => onNavigateToTab('fanpage')}
-                      className="text-teal-700 hover:text-teal-900 inline-flex items-center space-x-0.5 cursor-pointer font-bold"
+                      onClick={() => setShowMyPagesList((prev) => !prev)}
+                      className="text-slate-700 hover:text-slate-900 inline-flex items-center space-x-0.5 cursor-pointer font-bold bg-white px-2 py-0.5 rounded-lg border border-slate-300"
                     >
-                      <span>Vào Bảng 1</span>
-                      <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                      <span>{showMyPagesList ? 'Ẩn DS Page' : `Xem ${staffWorkStats.totalPages} Page`}</span>
+                      {showMyPagesList ? (
+                        <ChevronUp className="w-3 h-3 ml-0.5" />
+                      ) : (
+                        <ChevronDown className="w-3 h-3 ml-0.5" />
+                      )}
                     </button>
-                  )}
+                    {(onNavigateToStaffPages || onNavigateToTab) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetStaff = resolvedProfile.accountCode || selectedStaffName;
+                          if (onNavigateToStaffPages) {
+                            onNavigateToStaffPages(targetStaff);
+                          } else if (onNavigateToTab) {
+                            onNavigateToTab('fanpage');
+                          }
+                        }}
+                        className="text-teal-700 hover:text-teal-900 inline-flex items-center space-x-0.5 cursor-pointer font-bold"
+                      >
+                        <span>Lọc ở Bảng 1</span>
+                        <ExternalLink className="w-2.5 h-2.5 ml-0.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {showMyPagesList && (
+                  <div className="mt-2 max-h-56 overflow-y-auto bg-white border border-teal-200 rounded-xl divide-y divide-slate-100 text-[11px]">
+                    {staffWorkStats.myPages.map((pg, idx) => (
+                      <div
+                        key={pg.id || idx}
+                        className="px-2.5 py-1.5 flex items-center justify-between gap-2 hover:bg-slate-50"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-slate-800 truncate">
+                            {idx + 1}. {pg.pageName}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono truncate">
+                            Via: {pg.viaUid} • NV: {pg.staffName}
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-black ${
+                              pg.postingMethod === 'Tool'
+                                ? 'bg-purple-100 text-purple-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
+                          >
+                            {pg.postingMethod}
+                          </span>
+                          <span className="font-mono text-[10px] font-bold text-slate-600">
+                            {pg.actualPosts || 0}/{pg.targetPosts || 0}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-[11px] text-slate-400 italic pt-1">
+                Nhân sự {resolvedProfile.accountCode || resolvedProfile.fullName} hiện chưa có Fanpage nào được gán ở Bảng 1.
               </div>
             )}
           </div>
