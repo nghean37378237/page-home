@@ -525,61 +525,8 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
       } catch {}
     }
 
-    if (!/<img\b/i.test(finalContent)) {
-      if (candidateImgs.length === 0 && input.sourceUrl) {
-        try {
-          const scraped = await scrapeWebArticleForSeoRewrite(input.sourceUrl);
-          if (scraped.images.length > 0) {
-            candidateImgs = [...scraped.images];
-          }
-        } catch {}
-      }
-      if (candidateImgs.length === 0 && (input.title || finalContent)) {
-        try {
-          const discovered = await tryDiscoverSourceArticleImagesFromText(input.title, finalContent);
-          if (discovered && discovered.images.length > 0) {
-            candidateImgs = [...discovered.images];
-            if (discovered.title && !/[?!:]/.test(input.title) && /[?!:]/.test(discovered.title)) {
-              input.title = discovered.title;
-            }
-          }
-        } catch {}
-      }
-      if (candidateImgs.length < 5) {
-        try {
-          const ctxProfile = analyzeArticleSubjectAndContext(
-            input.title,
-            finalContent,
-            undefined,
-            candidateImgs
-          );
-          const excludeKeys = new Set(
-            candidateImgs.map((im) =>
-              im.url
-                .split('?')[0]
-                .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
-                .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
-                .toLowerCase()
-            )
-          );
-          const needed = Math.max(0, 6 - candidateImgs.length);
-          if (needed > 0) {
-            const ext = await searchExternalRelatedImages(
-              ctxProfile.combinedSearchQuery || input.title,
-              needed,
-              excludeKeys,
-              ctxProfile
-            );
-            candidateImgs = [...candidateImgs, ...ext];
-          }
-        } catch {}
-      }
-      if (candidateImgs.length === 0 && input.featuredImageUrl) {
-        candidateImgs = [{ url: input.featuredImageUrl, alt: input.title }];
-      }
-      if (candidateImgs.length > 0) {
-        finalContent = injectImagesIntoHtmlContent(finalContent, candidateImgs, input.title);
-      }
+    if (!/<img\b/i.test(finalContent) && candidateImgs.length > 0) {
+      finalContent = injectImagesIntoHtmlContent(finalContent, candidateImgs, input.title);
     }
   }
 
@@ -3673,46 +3620,23 @@ export async function generateSeoArticleWithAi(params: {
   const searchTopicQuery =
     contextProfile.combinedSearchQuery || generatedKeyword || generatedTitle;
 
-  const existingKeys = new Set(
-    scrapedImages.map((img) =>
-      img.url
-        .split('?')[0]
-        .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
-        .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
-        .toLowerCase()
-    )
-  );
+  const originalOnlyImages: ScrapedArticleImage[] = scrapedImages.filter((im) => !im.isExternal);
+  const relatedVideos = await searchRelatedYouTubeVideos(searchTopicQuery, 2, contextProfile);
 
-  const neededExternalCount =
-    scrapedImages.length >= 5 ? 0 : Math.max(0, 6 - scrapedImages.length);
-
-  const [externalImages, relatedVideos] = await Promise.all([
-    neededExternalCount > 0
-      ? searchExternalRelatedImages(
-          searchTopicQuery,
-          neededExternalCount,
-          existingKeys,
-          contextProfile
-        )
-      : Promise.resolve([]),
-    searchRelatedYouTubeVideos(searchTopicQuery, 2, contextProfile),
-  ]);
-
-  const allCombinedImages: ScrapedArticleImage[] = [...scrapedImages, ...externalImages];
-
-  // Xây dựng bài viết dài 2.000 - 5.000 từ bám sát 100% nội dung trong đoạn văn & ảnh minh họa
+  // Xây dựng bài viết dài 2.000 - 5.000 từ bám sát 100% nội dung bài gốc (40-50 từ/đoạn + 2 video YouTube cuối bài)
+  // Phần ảnh bài gốc trả về trong extractedImages để hiện ở khay chờ người dùng bấm gắn vào bài; ảnh ngoài chờ người dùng bấm tìm và duyệt
   const longFormResult = buildLongFormSeoArticle2000To5000Words({
     articleTitle: generatedTitle,
     focusKeyword: contextProfile.subjectDisplay || generatedKeyword,
     sourceArticleText,
     aiDraftHtml: '',
-    images: allCombinedImages,
+    images: [],
     youtubeVideos: relatedVideos,
     language,
     contextProfile,
   });
 
-  const primaryFeaturedImage = allCombinedImages[0]?.url || '';
+  const primaryFeaturedImage = originalOnlyImages[0]?.url || '';
 
   return {
     ok: true,
@@ -3728,9 +3652,9 @@ export async function generateSeoArticleWithAi(params: {
     wordCount: longFormResult.wordCount,
     paragraphCount: longFormResult.paragraphCount,
     featuredImageUrl: primaryFeaturedImage,
-    extractedImages: allCombinedImages,
-    originalImageCount: scrapedImages.length,
-    externalImageCount: externalImages.length,
+    extractedImages: originalOnlyImages,
+    originalImageCount: originalOnlyImages.length,
+    externalImageCount: 0,
     youtubeVideos: relatedVideos,
   };
 }

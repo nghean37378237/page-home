@@ -248,9 +248,7 @@ async function startServer() {
         const requestedLimit = Number(body.limit) || 6;
         const neededCount = forceExternalSearch
           ? requestedLimit
-          : discoveredOrigImgs.length >= 5
-          ? 0
-          : Math.max(0, requestedLimit - discoveredOrigImgs.length);
+          : Math.max(1, requestedLimit);
 
         const extImages =
           neededCount > 0
@@ -264,6 +262,7 @@ async function startServer() {
         res.json({
           ok: true,
           images: [...discoveredOrigImgs, ...extImages],
+          externalImages: extImages,
           originalImages: discoveredOrigImgs,
           primaryPerson: ctxProfile?.primaryPerson || '',
           searchQuery: ctxProfile?.combinedSearchQuery || query,

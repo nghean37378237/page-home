@@ -192,6 +192,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   const [extractedWebImages, setExtractedWebImages] = useState<
     { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[]
   >([]);
+  const [pendingExternalImages, setPendingExternalImages] = useState<
+    { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[]
+  >([]);
+  const [rejectedExternalUrls, setRejectedExternalUrls] = useState<string[]>([]);
   const [attachedYoutubeVideos, setAttachedYoutubeVideos] = useState<
     { videoId: string; title: string; watchUrl: string; embedUrl: string; thumbnailUrl: string }[]
   >([]);
@@ -655,37 +659,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         ? `${primaryPerson} and ${secondaryPerson}`
         : primaryPerson || 'the featured star';
 
-    if (origImgs.length + extImgs.length < 5) {
-      try {
-        const needed = Math.max(0, 6 - (origImgs.length + extImgs.length));
-        const extRes = await fetch('/api/wp-publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'search_external_images',
-            query: primaryPerson || subjectDisplay,
-            title: finalTitle,
-            articleText: fullBodySample || rawInput,
-            existingImages: origImgs,
-            limit: needed,
-          }),
-        });
-        const extData = await safeParseApiJson(extRes);
-        if (extRes.ok && extData.ok && Array.isArray(extData.images)) {
-          extImgs = [
-            ...extImgs,
-            ...extData.images.map((im: any) => ({
-              url: String(im.url || ''),
-              alt: String(im.alt || primaryPerson || finalTitle),
-              isFeatured: false,
-              isExternal: true,
-            })),
-          ];
-        }
-      } catch {}
-    }
-
-    const extractedImgs = [...origImgs, ...extImgs];
+    // Chỉ giữ ảnh bài gốc hiện trong khay chờ người dùng ấn gắn vào bài (không tự động lấy ảnh ngoài khi chưa ấn)
+    const extractedImgs = [...origImgs];
     const isVi = lang === 'vi';
 
     const rawSentences = bodyParagraphs
@@ -784,28 +759,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     }
 
     const htmlBlocks: string[] = [];
-    const imgStep =
-      extractedImgs.length > 0
-        ? Math.max(2, Math.floor(shortParagraphs40To50.length / (extractedImgs.length + 1)))
-        : 999;
-    let imgIdx = 0;
 
-    if (extractedImgs.length > 0) {
-      const firstIm = extractedImgs[imgIdx++];
-      const firstAlt = String(
-        firstIm.alt && firstIm.alt !== finalTitle && !/\?$/.test(firstIm.alt)
-          ? firstIm.alt
-          : `${subjectDisplay} - Featured Story Photo #1`
-      ).replace(/"/g, '&quot;');
-      htmlBlocks.push(
-        `<figure class="wp-block-image size-large" style="margin: 24px 0; text-align: center;">
-  <img src="${firstIm.url}" alt="${firstAlt}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${firstAlt}</figcaption>
-</figure>`
-      );
-    }
-
-    shortParagraphs40To50.forEach((item, idx) => {
+    shortParagraphs40To50.forEach((item) => {
       if (item.h2) {
         htmlBlocks.push(
           `<h2 style="margin: 28px 0 14px 0; font-weight: 800; line-height: 1.35;">${item.h2}</h2>`
@@ -814,40 +769,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       htmlBlocks.push(
         `<p style="margin: 0 0 18px 0; line-height: 1.85; font-size: 17px;">${item.text}</p>`
       );
-      if (
-        imgIdx < extractedImgs.length &&
-        ((idx + 1) % imgStep === 0 || idx === shortParagraphs40To50.length - 2)
-      ) {
-        const im = extractedImgs[imgIdx++];
-        const rawSentCaption = rawSentences[(imgIdx - 1) % Math.max(1, rawSentences.length)] || '';
-        const cleanAlt =
-          im.alt && im.alt !== finalTitle && !/\?$/.test(im.alt)
-            ? im.alt
-            : rawSentCaption
-            ? `${subjectDisplay}: ${rawSentCaption.split(/\s+/).slice(0, 16).join(' ')}...`
-            : `${subjectDisplay} - Photo #${imgIdx}`;
-        const altText = String(cleanAlt).replace(/"/g, '&quot;');
-        htmlBlocks.push(
-          `<figure class="wp-block-image size-large" style="margin: 24px 0; text-align: center;">
-  <img src="${im.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
-</figure>`
-        );
-      }
     });
-
-    while (imgIdx < extractedImgs.length) {
-      const im = extractedImgs[imgIdx++];
-      const altText = String(
-        im.alt && im.alt !== finalTitle ? im.alt : `${subjectDisplay} - Photo #${imgIdx}`
-      ).replace(/"/g, '&quot;');
-      htmlBlocks.push(
-        `<figure class="wp-block-image size-large" style="margin: 24px 0; text-align: center;">
-  <img src="${im.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
-  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>
-</figure>`
-      );
-    }
 
     let fallbackYtVideos: {
       videoId: string;
@@ -1064,168 +986,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     return '';
   };
 
-  // Tự động hút toàn bộ Ảnh gốc + Tiêu đề + Đoạn văn ngay khi người dùng dán Link (vượt qua mọi web chặn copy chuột phải / bôi đen như beaware.fun)
-  const autoExtractArticleFromPastedUrl = useCallback(
-    async (rawUrl: string) => {
-      const cleanLink = extractFirstArticleUrl(rawUrl);
-      if (!cleanLink || cleanLink.length < 12) return;
-      if (lastAutoExtractedUrlRef.current === cleanLink) return;
-      lastAutoExtractedUrlRef.current = cleanLink;
-
-      setSearchingExtImages(true);
-      try {
-        let fetchedTitle = '';
-        let fetchedExcerpt = '';
-        let fetchedText = '';
-        let rawImgs: { url: string; alt?: string }[] = [];
-
-        try {
-          const res = await fetch('/api/extract-web-images', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ url: cleanLink }),
-          });
-          const data = await safeParseApiJson(res);
-          if (res.ok && data.ok) {
-            fetchedTitle = String(data.title || '').trim();
-            fetchedExcerpt = String(data.excerpt || '').trim();
-            fetchedText = String(data.articleText || '').trim();
-            if (Array.isArray(data.images)) {
-              rawImgs = data.images;
-            }
-          }
-        } catch {}
-
-        // Nếu web gốc chặn IP máy chủ hoặc ẩn ảnh chống copy khiến lấy được < 2 ảnh hoặc thiếu văn bản -> kích hoạt Jina Cloud Headless Browser trực tiếp từ trình duyệt
-        if (rawImgs.length < 2 || fetchedText.length < 150) {
-          const jinaData = await extractViaJinaReaderClient(cleanLink);
-          if (jinaData) {
-            if (
-              jinaData.title &&
-              (!fetchedTitle || (!/[?!:]/.test(fetchedTitle) && /[?!:]/.test(jinaData.title)))
-            ) {
-              fetchedTitle = jinaData.title;
-            }
-            if (!fetchedExcerpt && jinaData.excerpt) fetchedExcerpt = jinaData.excerpt;
-            if (jinaData.articleText && jinaData.articleText.length > fetchedText.length) {
-              fetchedText = jinaData.articleText;
-            }
-            if (jinaData.images.length > 0) {
-              const seen = new Set(rawImgs.map((im) => String(im.url || '').split('?')[0].toLowerCase()));
-              for (const jim of jinaData.images) {
-                const k = jim.url.split('?')[0].toLowerCase();
-                if (!seen.has(k)) {
-                  seen.add(k);
-                  rawImgs.push(jim);
-                }
-              }
-            }
-          }
-        }
-
-        // Khi dán Link bài viết mới, cập nhật ngay Tiêu đề, Tóm tắt, Nội dung gốc và xóa từ khóa tìm kiếm cũ của bài trước để không bị lệch chủ đề
-        setCustomYtQuery('');
-        if (fetchedTitle) {
-          setTitle(fetchedTitle);
-        }
-        if (fetchedExcerpt) {
-          setExcerpt(fetchedExcerpt);
-        }
-        let detectedPerson = '';
-        if (fetchedText) {
-          setAiTopic(fetchedText);
-          // Tự động nhận diện tên nhân vật chính trong bài gốc để điền vào Từ khóa trọng tâm (Focus Keyword)
-          const personMatch = fetchedText.match(
-            /\b([A-Z][a-z]{2,15}(?:\s+(?:de|van|von|del|da|di|la|le|st\.?))?(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g
-          );
-          if (personMatch && personMatch.length > 0) {
-            const ignoreWords = new Set([
-              'The', 'This', 'That', 'There', 'When', 'While', 'Where', 'What', 'Who', 'Why', 'How',
-              'Los', 'Angeles', 'New', 'York', 'Miami', 'Beach', 'Venice', 'Malibu', 'Beverly', 'Hills',
-              'Santa', 'Monica', 'United', 'States', 'Sports', 'Illustrated', 'Daily', 'Mail', 'Page', 'Six',
-              'Heartbroken', 'Heartbreaking', 'Embraces', 'Wrinkles', 'Sagging', 'Jawline', 'Dramatic', 'Full',
-              'Facelift', 'Plastic', 'Surgery', 'Selling', 'Artwork', 'Paintings', 'Shares', 'Health', 'Ability'
-            ]);
-            const freq = new Map<string, number>();
-            for (const cand of personMatch) {
-              const parts = cand.trim().split(/\s+/);
-              if (parts.some((w) => ignoreWords.has(w))) continue;
-              freq.set(cand.trim(), (freq.get(cand.trim()) || 0) + 1);
-            }
-            detectedPerson = Array.from(freq.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
-            setFocusKeyword(detectedPerson);
-          }
-        }
-        const origImgs = rawImgs.map((im: any, idx: number) => ({
-          url: String(im.url || im.dataUrl || ''),
-          alt: String(im.alt || fetchedTitle || `Photo ${idx + 1}`),
-          isFeatured: idx === 0,
-          isExternal: false,
-        }));
-        if (origImgs.length > 0) {
-          setExtractedWebImages(origImgs);
-          if (origImgs[0]?.url) {
-            setFeaturedImageUrl(origImgs[0].url);
-            setFeaturedMediaId(0);
-            setFeaturedImageBase64('');
-          }
-          setContent((prevContent) => {
-            if (prevContent.trim() && !/<img\b/i.test(prevContent)) {
-              return distributeAndAttachImagesToHtml(
-                prevContent,
-                origImgs,
-                fetchedTitle || title || 'Exclusive Story'
-              );
-            }
-            return prevContent;
-          });
-        }
-
-        // Tự động tìm luôn 2 video YouTube chuẩn theo đúng nhân vật & sự kiện của bài vừa dán
-        if (fetchedTitle || fetchedText) {
-          try {
-            const ytRes = await fetch('/api/wp-publish', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'search_youtube',
-                query: detectedPerson || fetchedTitle,
-                sourceUrl: cleanLink,
-                title: fetchedTitle,
-                articleText: fetchedText,
-                existingImages: origImgs,
-                limit: 2,
-              }),
-            });
-            const ytData = await safeParseApiJson(ytRes);
-            if (ytRes.ok && ytData.ok && Array.isArray(ytData.videos) && ytData.videos.length > 0) {
-              setAttachedYoutubeVideos(ytData.videos);
-              if (ytData.primaryPerson) {
-                setFocusKeyword(String(ytData.primaryPerson));
-              }
-            }
-          } catch {}
-        }
-      } catch {
-        // ignore background pre-extract error
-      } finally {
-        setSearchingExtImages(false);
-      }
-    },
-    [title, excerpt]
-  );
-
-  // Tự động nhận diện khi người dùng dán Link vào ô aiSourceUrl hoặc aiTopic
-  useEffect(() => {
-    const candidate = aiSourceUrl.trim() || extractFirstArticleUrl(aiTopic);
-    if (!candidate || !/^https?:\/\/[a-z0-9.-]+\.[a-z]{2,}\/\S+/i.test(candidate)) return;
-    const timer = setTimeout(() => {
-      void autoExtractArticleFromPastedUrl(candidate);
-    }, 180);
-    return () => clearTimeout(timer);
-  }, [aiSourceUrl, aiTopic, autoExtractArticleFromPastedUrl]);
-
-  // Tự động bóc tách ảnh minh họa (<img src/data-src/srcset>) khi người dùng Copy & Paste trực tiếp nội dung từ trang web (như beaware.fun) vào ô văn bản
+  // Tự động bóc tách ảnh minh họa (<img src/data-src/srcset>) khi người dùng Copy & Paste trực tiếp nội dung từ trang web vào ô văn bản
   const handlePasteRichArticleContent = (
     e: React.ClipboardEvent<HTMLTextAreaElement | HTMLInputElement>
   ) => {
@@ -1233,9 +994,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       const htmlClip = e.clipboardData?.getData('text/html') || '';
       const textClip = e.clipboardData?.getData('text/plain') || '';
       const pastedUrl = extractFirstArticleUrl(textClip) || extractFirstArticleUrl(htmlClip);
-      if (pastedUrl) {
-        if (!aiSourceUrl.trim()) setAiSourceUrl(pastedUrl);
-        void autoExtractArticleFromPastedUrl(pastedUrl);
+      if (pastedUrl && !aiSourceUrl.trim()) {
+        setAiSourceUrl(pastedUrl);
       }
       if (!htmlClip || !/<img\b/i.test(htmlClip)) return;
 
@@ -1398,37 +1158,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       let preExtractedTitle = title.trim();
       let preExtractedImages = [...extractedWebImages];
 
-      // Nếu có Link bài gốc (như beaware.fun chặn copy), chủ động hút trước cả văn bản lẫn ảnh qua trình duyệt Jina Cloud Headless Browser để truyền thẳng xuống server (đảm bảo 100% có đủ văn bản gốc & ảnh gốc kể cả khi web chặn IP máy chủ)
-      if (detectedSourceUrl && (preExtractedImages.filter((im) => !im.isExternal).length < 2 || cleanExistingContent.length < 180)) {
-        const jinaPre = await extractViaJinaReaderClient(detectedSourceUrl);
-        if (jinaPre) {
-          if (jinaPre.title && (!preExtractedTitle || preExtractedTitle.startsWith('http'))) {
-            preExtractedTitle = jinaPre.title;
-            setTitle(jinaPre.title);
-          }
-          if (jinaPre.articleText && jinaPre.articleText.length > 100) {
-            cleanExistingContent = jinaPre.articleText;
-            if (!aiTopic.trim() || aiTopic.trim() === detectedSourceUrl) {
-              setAiTopic(jinaPre.articleText);
-            }
-          }
-          if (jinaPre.images.length > 0) {
-            const seen = new Set(preExtractedImages.map((im) => im.url.split('?')[0].toLowerCase()));
-            for (const jim of jinaPre.images) {
-              const k = jim.url.split('?')[0].toLowerCase();
-              if (!seen.has(k)) {
-                seen.add(k);
-                preExtractedImages.push({
-                  url: jim.url,
-                  alt: jim.alt || preExtractedTitle || 'Article Image',
-                  isFeatured: preExtractedImages.length === 0,
-                  isExternal: false,
-                });
-              }
-            }
-            setExtractedWebImages(preExtractedImages);
-          }
-        }
+      // Khi ấn nút Mở Rộng Sát Bài Gốc 1 lần duy nhất: gọi thẳng server để mở rộng bài viết 40-50 từ/đoạn + 2 video YouTube ngay lập tức
+      const isNewUrl = detectedSourceUrl && lastAutoExtractedUrlRef.current !== detectedSourceUrl;
+      if (isNewUrl) {
+        lastAutoExtractedUrlRef.current = detectedSourceUrl;
+        setPendingExternalImages([]);
+        setRejectedExternalUrls([]);
       }
 
       const res = await fetch('/api/wp-publish', {
@@ -1442,14 +1177,47 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           keyword: activeMode === 'from_url' ? undefined : focusKeyword.trim() || undefined,
           language: aiLanguage,
           categoryName: primaryCatName,
-          existingTitle: preExtractedTitle || undefined,
-          existingContent: cleanExistingContent || undefined,
-          existingImages: preExtractedImages.length > 0 ? preExtractedImages : undefined,
+          existingTitle: isNewUrl ? undefined : preExtractedTitle || undefined,
+          existingContent: isNewUrl ? undefined : cleanExistingContent || undefined,
+          existingImages:
+            !isNewUrl && preExtractedImages.length > 0 ? preExtractedImages : undefined,
         }),
       });
       let data = await safeParseApiJson(res);
-      if (!res.ok || !data.ok) {
-        // Tự động chuyển sang bộ viết bài dự phòng ngay lập tức nếu server bị lỗi/timeout
+
+      // Nếu trang web gốc chặn IP máy chủ khiến chưa lấy được ảnh gốc hoặc văn bản gốc, tự động dùng Jina Cloud Headless Browser ngay trong cùng 1 lần bấm
+      if (
+        detectedSourceUrl &&
+        (!res.ok ||
+          !data.ok ||
+          !Array.isArray(data.extractedImages) ||
+          data.extractedImages.length === 0)
+      ) {
+        const jinaPre = await extractViaJinaReaderClient(detectedSourceUrl);
+        if (jinaPre && (jinaPre.articleText || jinaPre.images.length > 0)) {
+          const retryRes = await fetch('/api/wp-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'ai_write',
+              mode: activeMode,
+              topic: jinaPre.articleText || rawTarget,
+              sourceUrl: detectedSourceUrl,
+              language: aiLanguage,
+              categoryName: primaryCatName,
+              existingTitle: jinaPre.title || preExtractedTitle || undefined,
+              existingContent: jinaPre.articleText || cleanExistingContent || undefined,
+              existingImages: jinaPre.images.length > 0 ? jinaPre.images : undefined,
+            }),
+          });
+          const retryData = await safeParseApiJson(retryRes);
+          if (retryRes.ok && retryData.ok) {
+            data = retryData;
+          }
+        }
+      }
+
+      if (!data || !data.ok) {
         data = await buildClientFallbackSeoArticle(
           activeMode,
           detectedSourceUrl || rawTarget,
@@ -1468,31 +1236,25 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         setCustomYtQuery('');
       }
       if (Array.isArray(data.tags)) setTagsInput(data.tags.join(', '));
-      if (data.contentHtml) setContent(data.contentHtml);
 
-      const imgsList = Array.isArray(data.extractedImages) ? data.extractedImages : [];
-      if (imgsList.length > 0) {
-        setExtractedWebImages(imgsList);
+      // Chỉ lấy ảnh bài gốc đưa vào khay "Phần Ảnh Trong Bài Viết" chờ người dùng ấn gắn vào bài (KHÔNG tự động chèn ảnh vào bài và KHÔNG tự động nhét ảnh ngoài chưa duyệt)
+      const origImgsList = (Array.isArray(data.extractedImages) ? data.extractedImages : []).filter(
+        (im: any) => !im.isExternal
+      );
+      if (origImgsList.length > 0) {
+        setExtractedWebImages(origImgsList);
       }
       if (data.featuredImageUrl) {
         setFeaturedImageUrl(data.featuredImageUrl);
         setFeaturedMediaId(0);
         setFeaturedImageBase64('');
-      } else if (imgsList[0]?.url) {
-        setFeaturedImageUrl(imgsList[0].url);
+      } else if (origImgsList[0]?.url) {
+        setFeaturedImageUrl(origImgsList[0].url);
         setFeaturedMediaId(0);
         setFeaturedImageBase64('');
       }
 
-      let finalArticleHtml = String(data.contentHtml || content);
-      const attachedImgCount = (finalArticleHtml.match(/<img\b/gi) || []).length;
-      if (imgsList.length > 0 && attachedImgCount < imgsList.length) {
-        finalArticleHtml = distributeAndAttachImagesToHtml(
-          finalArticleHtml,
-          imgsList,
-          String(data.title || title)
-        );
-      }
+      const finalArticleHtml = String(data.contentHtml || '');
       if (finalArticleHtml) {
         setContent(finalArticleHtml);
       }
@@ -1503,11 +1265,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       setAiArticleStats({
         wordCount: Number(data.wordCount || 2750),
         paragraphCount: Number(data.paragraphCount || 45),
-        originalImageCount: Number(data.originalImageCount || 0),
-        externalImageCount: Number(data.externalImageCount || 0),
+        originalImageCount: origImgsList.length,
+        externalImageCount: 0,
       });
 
-      // Tự động chuyển sang chế độ Xem Trực Quan Có Ảnh để người dùng thấy toàn bộ ảnh đã gắn trong bài ngay lập tức
       setEditorViewMode('preview');
 
       return {
@@ -1515,7 +1276,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         contentHtml: finalArticleHtml,
         excerpt: String(data.excerpt || excerpt),
         slug: String(data.slug || slug),
-        featuredImageUrl: String(data.featuredImageUrl || imgsList[0]?.url || featuredImageUrl),
+        featuredImageUrl: String(
+          data.featuredImageUrl || origImgsList[0]?.url || featuredImageUrl
+        ),
         tags: Array.isArray(data.tags) ? data.tags.map(String) : [],
       };
     } catch (err: any) {
@@ -1540,7 +1303,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           wordCount: fallbackData.wordCount,
           paragraphCount: fallbackData.paragraphCount,
           originalImageCount: fallbackData.originalImageCount,
-          externalImageCount: fallbackData.externalImageCount,
+          externalImageCount: 0,
         });
         setEditorViewMode('preview');
         return fallbackData;
@@ -1553,8 +1316,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     }
   };
 
-  // Nút chuyên biệt: Lấy toàn bộ ảnh từ Link bài viết (cộng thêm ảnh ngoài nếu < 5 ảnh) và gắn trực tiếp vào bài viết hiện tại
-  const handleExtractAndAttachArticleImages = async () => {
+  // Nút lấy ảnh trong bài gốc: hiện danh sách ảnh bài gốc ở khay chờ ấn để gắn vào bài (hoặc gắn ngay nếu người dùng bấm nút Gắn Ảnh Vào Bài)
+  const handleExtractAndAttachArticleImages = async (attachImmediately: boolean = false) => {
     const sourceLink =
       aiSourceUrl.trim() ||
       extractFirstArticleUrl(aiTopic) ||
@@ -1565,8 +1328,23 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     }
     const cleanTopicText = aiTopic.replace(/https?:\/\/[^\s"'<>]+/gi, '').trim();
     const currentTitle = title.trim() || cleanTopicText;
+
+    // Nếu người dùng đã có sẵn ảnh trong khay và bấm "Gắn Ảnh Vào Bài", gắn ngay vào bài viết hiện tại!
+    if (attachImmediately && extractedWebImages.length > 0 && content.trim()) {
+      const updatedHtml = distributeAndAttachImagesToHtml(
+        content,
+        extractedWebImages,
+        currentTitle || 'Exclusive Story'
+      );
+      setContent(updatedHtml);
+      setEditorViewMode('preview');
+      return;
+    }
+
     if (!sourceLink && !currentTitle && !content.trim()) {
-      setPublishError('Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Đoạn văn bài viết để hệ thống lấy ảnh và gắn vào bài!');
+      setPublishError(
+        'Vui lòng dán Link bài viết vào ô trên để hệ thống lấy toàn bộ ảnh bài gốc!'
+      );
       return;
     }
 
@@ -1603,7 +1381,6 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           }
         } catch {}
 
-        // Nếu site chặn copy hoặc chặn IP máy chủ khiến lấy được < 2 ảnh, gọi thêm Jina Cloud Headless Browser trực tiếp từ trình duyệt
         if (origImgs.length < 2) {
           const jinaData = await extractViaJinaReaderClient(sourceLink);
           if (jinaData) {
@@ -1636,49 +1413,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         origImgs = extractedWebImages.filter((im) => !im.isExternal);
       }
 
-      let extImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
-      if (origImgs.length < 5) {
-        const needed = Math.max(0, 6 - origImgs.length);
-        const q = customYtQuery.trim() || focusKeyword.trim() || resolvedTitle || resolvedBodyText.slice(0, 120);
-        if ((q || sourceLink) && needed > 0) {
-          const extRes = await fetch('/api/wp-publish', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'search_external_images',
-              query: q,
-              sourceUrl: sourceLink || undefined,
-              title: resolvedTitle,
-              articleText: resolvedBodyText,
-              existingImages: origImgs,
-              limit: needed,
-            }),
-          });
-          const extData = await safeParseApiJson(extRes);
-          if (extRes.ok && extData.ok && Array.isArray(extData.images)) {
-            const returnedOriginals = extData.images.filter((im: any) => !im.isExternal);
-            const returnedExternals = extData.images.filter((im: any) => im.isExternal);
-            if (returnedOriginals.length > 0 && origImgs.length === 0) {
-              origImgs = returnedOriginals.map((im: any, idx: number) => ({
-                url: String(im.url || ''),
-                alt: String(im.alt || resolvedTitle || `Photo ${idx + 1}`),
-                isFeatured: idx === 0,
-                isExternal: false,
-              }));
-            }
-            extImgs = returnedExternals.map((im: any) => ({
-              url: String(im.url || ''),
-              alt: String(im.alt || resolvedTitle),
-              isFeatured: false,
-              isExternal: true,
-            }));
-          }
-        }
-      }
-
-      const combined = [...origImgs, ...extImgs];
+      const approvedExternals = extractedWebImages.filter((im) => im.isExternal);
+      const combined = [...origImgs, ...approvedExternals];
       if (combined.length === 0) {
-        setPublishError('Không tìm thấy ảnh nào từ link/chủ đề này. Hãy thử kiểm tra lại đường dẫn!');
+        setPublishError(
+          'Không tìm thấy ảnh bài gốc nào từ đường dẫn này. Hãy kiểm tra lại Link bài viết!'
+        );
         return;
       }
 
@@ -1689,32 +1429,30 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         setFeaturedImageBase64('');
       }
 
-      if (content.trim()) {
+      if (attachImmediately && content.trim()) {
         const updatedHtml = distributeAndAttachImagesToHtml(
           content,
           combined,
           resolvedTitle || 'Exclusive Story'
         );
         setContent(updatedHtml);
-      } else {
-        await handleGenerateSeoArticle(sourceLink ? 'from_url' : 'from_text');
       }
 
       setAiArticleStats((prev) => ({
-        wordCount: prev?.wordCount || seoAnalysis.words || 2750,
-        paragraphCount: prev?.paragraphCount || 18,
+        wordCount: prev?.wordCount || seoAnalysis.words || 0,
+        paragraphCount: prev?.paragraphCount || 0,
         originalImageCount: origImgs.length,
-        externalImageCount: extImgs.length,
+        externalImageCount: approvedExternals.length,
       }));
       setEditorViewMode('preview');
     } catch (err: any) {
-      setPublishError(err?.message || 'Lỗi khi lấy và gắn ảnh vào bài viết');
+      setPublishError(err?.message || 'Lỗi khi lấy ảnh bài viết');
     } finally {
       setSearchingExtImages(false);
     }
   };
 
-  // Tìm và bổ sung thêm ảnh ngoài tương tự (cùng nhân vật, cùng trang phục, cùng bối cảnh sự kiện/buổi chụp với ảnh gốc và đoạn văn trong bài)
+  // Tìm thêm ảnh ngoài tương tự: Khi ấn nút mới tìm và đưa vào danh sách CHỜ DUYỆT (pendingExternalImages) để người dùng xem & bấm Duyệt
   const handleFetchMoreExternalImages = async (replaceExistingExternals: boolean = false) => {
     const sourceLink =
       aiSourceUrl.trim() ||
@@ -1747,14 +1485,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       sourceLink;
 
     if (!q && !sourceLink && currentOrigImages.length === 0) {
-      setPublishError('Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Từ khóa nhân vật để tìm thêm ảnh ngoài tương tự!');
+      setPublishError(
+        'Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Từ khóa nhân vật để tìm thêm ảnh ngoài tương tự!'
+      );
       return;
     }
 
     setSearchingExtImages(true);
     setPublishError(null);
     try {
-      // Nếu chưa có đủ nội dung văn bản để nhận diện tên nhân vật & trang phục mà có sourceLink -> hút nhanh văn bản bài gốc trước
       if (sourceLink && (resolvedBodyText.length < 150 || currentOrigImages.length === 0)) {
         try {
           const exRes = await fetch('/api/extract-web-images', {
@@ -1768,144 +1507,92 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               resolvedTitle = String(exData.title).trim();
               setTitle(resolvedTitle);
             }
-            if (exData.articleText && String(exData.articleText).trim().length > resolvedBodyText.length) {
+            if (
+              exData.articleText &&
+              String(exData.articleText).trim().length > resolvedBodyText.length
+            ) {
               resolvedBodyText = String(exData.articleText).trim();
               if (!aiTopic.trim() || /^https?:\/\/\S+$/i.test(aiTopic.trim())) {
                 setAiTopic(resolvedBodyText);
               }
             }
-            if (currentOrigImages.length === 0 && Array.isArray(exData.images) && exData.images.length > 0) {
+            if (
+              currentOrigImages.length === 0 &&
+              Array.isArray(exData.images) &&
+              exData.images.length > 0
+            ) {
               currentOrigImages = exData.images.map((im: any, idx: number) => ({
                 url: String(im.url || im.dataUrl || ''),
                 alt: String(im.alt || resolvedTitle || `Photo ${idx + 1}`),
                 isFeatured: idx === 0,
                 isExternal: false,
               }));
+              setExtractedWebImages((prev) =>
+                prev.length === 0 ? currentOrigImages : prev
+              );
             }
           }
         } catch {}
-
-        if (resolvedBodyText.length < 150 || currentOrigImages.length === 0) {
-          const jinaData = await extractViaJinaReaderClient(sourceLink);
-          if (jinaData) {
-            if (!resolvedTitle && jinaData.title) {
-              resolvedTitle = jinaData.title;
-              setTitle(resolvedTitle);
-            }
-            if (jinaData.articleText && jinaData.articleText.length > resolvedBodyText.length) {
-              resolvedBodyText = jinaData.articleText;
-              if (!aiTopic.trim() || /^https?:\/\/\S+$/i.test(aiTopic.trim())) {
-                setAiTopic(resolvedBodyText);
-              }
-            }
-            if (currentOrigImages.length === 0 && jinaData.images.length > 0) {
-              currentOrigImages = jinaData.images;
-            }
-          }
-        }
       }
 
-      // Loại bỏ các ảnh stock phong cảnh Pexels/Unsplash cũ (nếu có) để thay bằng ảnh thật đúng nhân vật & bối cảnh
-      const cleanExistingImages = (replaceExistingExternals
-        ? currentOrigImages
-        : extractedWebImages.length > 0
-        ? extractedWebImages
-        : currentOrigImages
-      ).filter(
-        (im) =>
-          !im.isExternal ||
-          !/pexels\.com|unsplash\.com|pixabay\.com|freepik\.com/i.test(im.url)
-      );
+      // Gửi danh sách tất cả ảnh đã có + ảnh đang chờ duyệt + ảnh đã từ chối để server tìm loạt ảnh ngoài mới hoàn toàn
+      const allExcludedImages = [
+        ...extractedWebImages,
+        ...(replaceExistingExternals ? [] : pendingExternalImages),
+        ...rejectedExternalUrls.map((u) => ({ url: u, isExternal: true })),
+      ];
 
       const res = await fetch('/api/wp-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'search_external_images',
+          forceExternalSearch: true,
           query: customYtQuery.trim() || focusKeyword.trim() || resolvedTitle || q,
           sourceUrl: sourceLink || undefined,
           title: resolvedTitle,
           articleText: resolvedBodyText,
-          existingImages: cleanExistingImages,
+          existingImages: allExcludedImages,
           limit: 6,
         }),
       });
       const data = await safeParseApiJson(res);
-      if (res.ok && data.ok && Array.isArray(data.images) && data.images.length > 0) {
+      const rawExtList = Array.isArray(data.externalImages)
+        ? data.externalImages
+        : Array.isArray(data.images)
+        ? data.images.filter((im: any) => im.isExternal !== false)
+        : [];
+
+      if (res.ok && data.ok && rawExtList.length > 0) {
         if (data.primaryPerson && !focusKeyword.trim()) {
           setFocusKeyword(String(data.primaryPerson));
         }
 
-        const returnedOriginals = data.images
-          .filter((im: any) => !im.isExternal)
-          .map((im: any, idx: number) => ({
-            url: String(im.url || ''),
-            alt: String(im.alt || resolvedTitle || `Photo ${idx + 1}`),
-            isFeatured: idx === 0,
-            isExternal: false,
-          }));
-        const returnedExternals = data.images
-          .filter((im: any) => im.isExternal !== false)
-          .map((im: any) => ({
-            url: String(im.url || ''),
-            alt: String(im.alt || data.primaryPerson || resolvedTitle || q),
-            isFeatured: false,
-            isExternal: true,
-          }));
-
-        const baseOriginals =
-          currentOrigImages.length > 0 ? currentOrigImages : returnedOriginals;
-        const keptExternals = replaceExistingExternals
-          ? []
-          : cleanExistingImages.filter((im) => im.isExternal);
-
-        const seenUrls = new Set<string>();
-        const mergedAll: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
-        for (const im of [...baseOriginals, ...keptExternals, ...returnedExternals]) {
-          const normKey = String(im.url || '').split('?')[0].toLowerCase();
-          if (!normKey || seenUrls.has(normKey)) continue;
-          seenUrls.add(normKey);
-          mergedAll.push({
-            ...im,
-            isFeatured: mergedAll.length === 0,
-          });
-        }
-
-        setExtractedWebImages(mergedAll);
-        if (!featuredImageUrl && mergedAll[0]?.url) {
-          setFeaturedImageUrl(mergedAll[0].url);
-          setFeaturedMediaId(0);
-          setFeaturedImageBase64('');
-        }
-
-        // Gắn đều toàn bộ cả Ảnh bài gốc lẫn Ảnh ngoài tương tự vào bài viết để không bao giờ bị mất ảnh gốc hoặc chỉ hiện ảnh ngoài
-        const hasRealParagraphs = /<p\b[^>]*>[\s\S]{20,}?<\/p>/i.test(content);
-        let baseHtmlForAttach = content;
-        if (!hasRealParagraphs && resolvedBodyText.length > 40) {
-          const paraChunks = splitClientTextInto40To50WordParagraphs(resolvedBodyText);
-          if (paraChunks.length > 0) {
-            baseHtmlForAttach = paraChunks
-              .map(
-                (p) =>
-                  `<p style="margin: 0 0 18px 0; line-height: 1.85; font-size: 17px;">${p}</p>`
-              )
-              .join('\n\n');
-          }
-        }
-
-        const updatedHtml = distributeAndAttachImagesToHtml(
-          baseHtmlForAttach,
-          mergedAll,
-          resolvedTitle || 'Exclusive Story'
-        );
-        setContent(updatedHtml);
-        setAiArticleStats((prev) => ({
-          wordCount: prev?.wordCount || seoAnalysis.words || 0,
-          paragraphCount: prev?.paragraphCount || 0,
-          originalImageCount: mergedAll.filter((x) => !x.isExternal).length,
-          externalImageCount: mergedAll.filter((x) => x.isExternal).length,
+        const returnedExternals = rawExtList.map((im: any) => ({
+          url: String(im.url || ''),
+          alt: String(im.alt || data.primaryPerson || resolvedTitle || q),
+          isFeatured: false,
+          isExternal: true,
         }));
-        setEditorViewMode('preview');
+
+        // Đưa ảnh ngoài vừa tìm được vào khay CHỜ DUYỆT (pendingExternalImages) để người dùng duyệt trước khi gắn!
+        setPendingExternalImages((prev) => {
+          const base = replaceExistingExternals ? [] : prev;
+          const existingSet = new Set(
+            [...extractedWebImages, ...base, ...rejectedExternalUrls.map((u) => ({ url: u }))].map(
+              (x) => String(x.url || '').split('?')[0].toLowerCase()
+            )
+          );
+          const next = [...base];
+          for (const item of returnedExternals) {
+            const key = item.url.split('?')[0].toLowerCase();
+            if (key && !existingSet.has(key)) {
+              existingSet.add(key);
+              next.push(item);
+            }
+          }
+          return next;
+        });
       } else {
         setPublishError('Chưa tìm thêm được ảnh ngoài mới khớp với nhân vật/bối cảnh này.');
       }
@@ -1914,6 +1601,81 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     } finally {
       setSearchingExtImages(false);
     }
+  };
+
+  // Duyệt 1 ảnh lấy ngoài từ danh sách Chờ Duyệt -> đưa vào Khay Ảnh Chính (và gắn luôn vào bài nếu chọn attachNow)
+  const handleApprovePendingExternalImage = (
+    img: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean },
+    attachNow: boolean = false
+  ) => {
+    const approvedItem = { ...img, isExternal: true };
+    setPendingExternalImages((prev) => prev.filter((x) => x.url !== img.url));
+    const nextImages = [...extractedWebImages];
+    if (!nextImages.some((x) => x.url.split('?')[0].toLowerCase() === img.url.split('?')[0].toLowerCase())) {
+      nextImages.push(approvedItem);
+    }
+    setExtractedWebImages(nextImages);
+    if (!featuredImageUrl && approvedItem.url) {
+      setFeaturedImageUrl(approvedItem.url);
+    }
+    if (attachNow) {
+      const altText = String(approvedItem.alt || title || 'Story Image').replace(/"/g, '&quot;');
+      const figHtml = `<figure class="wp-block-image size-large" style="margin: 26px 0; text-align: center;">\n  <img src="${approvedItem.url}" alt="${altText}" referrerpolicy="no-referrer" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />\n  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText}</figcaption>\n</figure>`;
+      setContent((prev) => (prev.includes(approvedItem.url) ? prev : `${prev}\n\n${figHtml}`));
+      setEditorViewMode('preview');
+    }
+    setAiArticleStats((prev) =>
+      prev
+        ? {
+            ...prev,
+            originalImageCount: nextImages.filter((x) => !x.isExternal).length,
+            externalImageCount: nextImages.filter((x) => x.isExternal).length,
+          }
+        : prev
+    );
+  };
+
+  // Duyệt toàn bộ ảnh ngoài đang chờ duyệt
+  const handleApproveAllPendingExternalImages = (attachNow: boolean = false) => {
+    if (pendingExternalImages.length === 0) return;
+    const seen = new Set(extractedWebImages.map((x) => x.url.split('?')[0].toLowerCase()));
+    const merged = [...extractedWebImages];
+    for (const im of pendingExternalImages) {
+      const k = im.url.split('?')[0].toLowerCase();
+      if (!seen.has(k)) {
+        seen.add(k);
+        merged.push({ ...im, isExternal: true });
+      }
+    }
+    setExtractedWebImages(merged);
+    setPendingExternalImages([]);
+    if (!featuredImageUrl && merged[0]?.url) {
+      setFeaturedImageUrl(merged[0].url);
+    }
+    if (attachNow && content.trim()) {
+      const updatedHtml = distributeAndAttachImagesToHtml(
+        content,
+        merged,
+        title || 'Exclusive Story'
+      );
+      setContent(updatedHtml);
+      setEditorViewMode('preview');
+    }
+    setAiArticleStats((prev) =>
+      prev
+        ? {
+            ...prev,
+            originalImageCount: merged.filter((x) => !x.isExternal).length,
+            externalImageCount: merged.filter((x) => x.isExternal).length,
+          }
+        : prev
+    );
+  };
+
+  // Loại bỏ / Không duyệt 1 ảnh ngoài
+  const handleRejectPendingExternalImage = (imgUrl: string) => {
+    setPendingExternalImages((prev) => prev.filter((x) => x.url !== imgUrl));
+    setRejectedExternalUrls((prev) => (prev.includes(imgUrl) ? prev : [...prev, imgUrl]));
   };
 
   // Tìm và thay thế 2 video YouTube liên quan ở cuối bài viết theo đúng chủ đề, nhân vật và sự kiện đang viết

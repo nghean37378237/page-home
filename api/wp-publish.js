@@ -2718,40 +2718,17 @@ async function generateSeoArticleWithAiFast(params) {
     'Celeb24h',
   ];
 
-  const existingKeys = new Set(
-    scrapedImages.map((img) =>
-      img.url
-        .split('?')[0]
-        .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
-        .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
-        .toLowerCase()
-    )
-  );
   const searchTopicQuery =
     contextProfile.combinedSearchQuery || generatedKeyword || generatedTitle;
 
-  const neededExternalCount =
-    scrapedImages.length >= 5 ? 0 : Math.max(0, 6 - scrapedImages.length);
-
-  const [externalImages, relatedVideos] = await Promise.all([
-    neededExternalCount > 0
-      ? searchExternalRelatedImages(
-          searchTopicQuery,
-          neededExternalCount,
-          existingKeys,
-          contextProfile
-        )
-      : Promise.resolve([]),
-    searchRelatedYouTubeVideos(searchTopicQuery, 2, contextProfile),
-  ]);
-
-  const allCombinedImages = [...scrapedImages, ...externalImages];
+  const originalOnlyImages = scrapedImages.filter((im) => !im.isExternal);
+  const relatedVideos = await searchRelatedYouTubeVideos(searchTopicQuery, 2, contextProfile);
 
   const longFormResult = buildLongFormSeoArticle2000To5000Words({
     articleTitle: generatedTitle,
     focusKeyword: contextProfile.subjectDisplay || generatedKeyword,
     sourceArticleText,
-    images: allCombinedImages,
+    images: [],
     youtubeVideos: relatedVideos,
     language,
     contextProfile,
@@ -2770,15 +2747,12 @@ async function generateSeoArticleWithAiFast(params) {
     contentHtml: longFormResult.html,
     wordCount: longFormResult.wordCount,
     paragraphCount: longFormResult.paragraphCount,
-    featuredImageUrl:
-      (scrapedImages[0] && scrapedImages[0].url) ||
-      (allCombinedImages[0] && allCombinedImages[0].url) ||
-      '',
-    extractedImages: allCombinedImages,
-    sourceImages: scrapedImages,
-    externalImages,
-    originalImageCount: scrapedImages.length,
-    externalImageCount: externalImages.length,
+    featuredImageUrl: (originalOnlyImages[0] && originalOnlyImages[0].url) || '',
+    extractedImages: originalOnlyImages,
+    sourceImages: originalOnlyImages,
+    externalImages: [],
+    originalImageCount: originalOnlyImages.length,
+    externalImageCount: 0,
     youtubeVideos: relatedVideos,
   };
 }
@@ -3131,9 +3105,7 @@ export default async function handler(req, res) {
         const requestedLimit = Number(body.limit || 6);
         const neededCount = forceExternalSearch
           ? requestedLimit
-          : discoveredOrigImgs.length >= 5
-          ? 0
-          : Math.max(0, requestedLimit - discoveredOrigImgs.length);
+          : Math.max(1, requestedLimit);
         const extImages =
           neededCount > 0
             ? await searchExternalRelatedImages(
@@ -3146,6 +3118,7 @@ export default async function handler(req, res) {
         return res.status(200).json({
           ok: true,
           images: [...discoveredOrigImgs, ...extImages],
+          externalImages: extImages,
           originalImages: discoveredOrigImgs,
           primaryPerson: (ctxProfile && ctxProfile.primaryPerson) || '',
           searchQuery: (ctxProfile && ctxProfile.combinedSearchQuery) || query,
