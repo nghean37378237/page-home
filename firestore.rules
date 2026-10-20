@@ -136,6 +136,7 @@ service cloud.firestore {
              (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
              (!('joinStatus' in data) || (data.joinStatus is string && data.joinStatus.size() <= 50)) &&
              (!('interactionStatus' in data) || (data.interactionStatus is string && data.interactionStatus.size() <= 50)) &&
+             (!('interactionDate' in data) || (data.interactionDate is string && data.interactionDate.size() <= 50)) &&
              (!('isHighlighted' in data) || data.isHighlighted is bool) &&
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 50));

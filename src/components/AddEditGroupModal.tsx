@@ -94,6 +94,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   const [viaName, setViaName] = useState('');
   const [joinStatus, setJoinStatus] = useState<GroupJoinStatus>('Đã Jon');
   const [interactionStatus, setInteractionStatus] = useState<GroupInteractionStatus | ''>('');
+  const [interactionDate, setInteractionDate] = useState<string>('');
   const [note, setNote] = useState('');
   const [isHighlighted, setIsHighlighted] = useState(false);
   const [staffName, setStaffName] = useState('');
@@ -102,8 +103,14 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   const [batchRawText, setBatchRawText] = useState('');
   const [batchDefaultJoinStatus, setBatchDefaultJoinStatus] = useState<GroupJoinStatus>('Đã Jon');
   const [batchDefaultInteractionStatus, setBatchDefaultInteractionStatus] = useState<GroupInteractionStatus | ''>('');
+  const [batchDefaultInteractionDate, setBatchDefaultInteractionDate] = useState<string>('');
   const [batchDefaultNote, setBatchDefaultNote] = useState<string>('');
   const [batchDefaultHighlighted, setBatchDefaultHighlighted] = useState<boolean>(false);
+
+  const getTodayShortStr = () => {
+    const now = new Date();
+    return `${now.getDate()}/${now.getMonth() + 1}`;
+  };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -142,6 +149,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setViaName(initialRecord.viaName || '');
       setJoinStatus(initialRecord.joinStatus || 'Đã Jon');
       setInteractionStatus(initialRecord.interactionStatus || '');
+      setInteractionDate(initialRecord.interactionDate || '');
       setNote(initialRecord.note || '');
       setIsHighlighted(Boolean(initialRecord.isHighlighted));
       setStaffName(initialRecord.staffName || currentUser.name || 'Anh Quỳnh');
@@ -153,6 +161,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setViaName('');
       setJoinStatus('Đã Jon');
       setInteractionStatus((presetGroup as any).interactionStatus || '');
+      setInteractionDate((presetGroup as any).interactionDate || '');
       setNote('');
       setIsHighlighted(false);
       setStaffName(presetGroup.staffName || currentUser.name || 'Anh Quỳnh');
@@ -164,6 +173,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setViaName('');
       setJoinStatus('Đã Jon');
       setInteractionStatus('');
+      setInteractionDate('');
       setNote('');
       setIsHighlighted(false);
       setStaffName(currentUser.name || availableStaffNames[0] || 'Anh Quỳnh');
@@ -277,6 +287,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
           viaName: cleanViaName || `Via ${cleanUid.slice(-4)}`,
           joinStatus,
           interactionStatus: (interactionStatus || undefined) as any,
+          interactionDate: interactionDate.trim() || (interactionStatus ? getTodayShortStr() : undefined),
           note: note.trim(),
           isHighlighted,
           staffName: effectiveStaff,
@@ -307,6 +318,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
           viaName: item.viaName,
           joinStatus: batchDefaultJoinStatus,
           interactionStatus: (batchDefaultInteractionStatus || undefined) as any,
+          interactionDate: batchDefaultInteractionDate.trim() || (batchDefaultInteractionStatus ? getTodayShortStr() : undefined),
           note: item.note,
           isHighlighted: item.isHighlighted,
           staffName: effectiveStaff,
@@ -596,29 +608,84 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                 </div>
               </div>
 
-              {/* Màu & Mức Độ Tương Tác Của Nhóm: Tương tác ổn, Tương tác vừa, Không có tương tác */}
-              <div className="pt-1">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Màu & Mức Độ Tương Tác</span>
-                  <span className="text-[10px] text-slate-500 font-normal">(Ô chọn màu nhóm)</span>
-                </label>
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {/* Màu & Ghi Chú Tương Tác Của Nhóm + Cột Nhảy Ngày Tương Tác */}
+              <div className="pt-1 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Ghi Chú & Mức Độ Tương Tác (Tự nhảy ngày TT)
+                  </label>
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-[11px] font-bold text-slate-600">Ngày TT:</span>
+                    <input
+                      type="text"
+                      value={interactionDate}
+                      onChange={(e) => setInteractionDate(e.target.value)}
+                      onDoubleClick={() => setInteractionDate(getTodayShortStr())}
+                      placeholder={getTodayShortStr()}
+                      className="w-16 px-2 py-1 text-center text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                      title="Ngày chọn có tương tác (tự động nhảy khi chọn tương tác, hoặc nhấp đúp để lấy ngày hôm nay)"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => setInteractionStatus(interactionStatus === 'Tương tác ổn' ? '' : 'Tương tác ổn')}
+                    onClick={() => {
+                      const next = interactionStatus === 'Đang lên tương tác' ? '' : 'Đang lên tương tác';
+                      setInteractionStatus(next);
+                      setInteractionDate(next ? getTodayShortStr() : '');
+                    }}
                     className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      interactionStatus === 'Tương tác ổn'
+                      interactionStatus === 'Đang lên tương tác'
+                        ? 'bg-sky-600 text-white border-sky-700 shadow-xs ring-2 ring-sky-500/30'
+                        : 'bg-sky-50 text-sky-900 border-sky-300 hover:bg-sky-100'
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
+                    <span>🔥 Đang lên tương tác</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = interactionStatus === 'Có tương tác' ? '' : 'Có tương tác';
+                      setInteractionStatus(next);
+                      setInteractionDate(next ? getTodayShortStr() : '');
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      interactionStatus === 'Có tương tác'
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/30'
-                        : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                        : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
                     }`}
                   >
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                    <span>🟢 Có tương tác</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = interactionStatus === 'Tương tác ổn' ? '' : 'Tương tác ổn';
+                      setInteractionStatus(next);
+                      setInteractionDate(next ? getTodayShortStr() : '');
+                    }}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      interactionStatus === 'Tương tác ổn'
+                        ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-500/30'
+                        : 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
                     <span>Tương tác ổn</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setInteractionStatus(interactionStatus === 'Tương tác vừa' ? '' : 'Tương tác vừa')}
+                    onClick={() => {
+                      const next = interactionStatus === 'Tương tác vừa' ? '' : 'Tương tác vừa';
+                      setInteractionStatus(next);
+                      setInteractionDate(next ? getTodayShortStr() : '');
+                    }}
                     className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
                       interactionStatus === 'Tương tác vừa'
                         ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/30'
@@ -631,7 +698,11 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setInteractionStatus(interactionStatus === 'Không có tương tác' ? '' : 'Không có tương tác')}
+                    onClick={() => {
+                      const next = interactionStatus === 'Không có tương tác' ? '' : 'Không có tương tác';
+                      setInteractionStatus(next);
+                      setInteractionDate(next ? getTodayShortStr() : '');
+                    }}
                     className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
                       interactionStatus === 'Không có tương tác'
                         ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-500/30'
@@ -644,8 +715,11 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setInteractionStatus('')}
-                    className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center justify-center space-x-1 col-span-3 sm:col-span-1 ${
+                    onClick={() => {
+                      setInteractionStatus('');
+                      setInteractionDate('');
+                    }}
+                    className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
                       !interactionStatus
                         ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
                         : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
@@ -814,27 +888,80 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
               </div>
 
               {/* Mức tương tác mặc định cho danh sách batch */}
-              <div className="pt-1 border-t border-slate-200/80">
-                <div className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Màu & Mức độ tương tác mặc định:</span>
+              <div className="pt-1 border-t border-slate-200/80 space-y-2">
+                <div className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                  <span>Ghi chú & Mức độ tương tác mặc định (tự nhảy ngày TT):</span>
+                  <div className="flex items-center space-x-1.5">
+                    <span className="text-[11px] font-bold text-slate-600">Ngày TT:</span>
+                    <input
+                      type="text"
+                      value={batchDefaultInteractionDate}
+                      onChange={(e) => setBatchDefaultInteractionDate(e.target.value)}
+                      onDoubleClick={() => setBatchDefaultInteractionDate(getTodayShortStr())}
+                      placeholder={getTodayShortStr()}
+                      className="w-16 px-2 py-0.5 text-center text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg focus:outline-hidden"
+                    />
+                  </div>
                 </div>
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => setBatchDefaultInteractionStatus(batchDefaultInteractionStatus === 'Tương tác ổn' ? '' : 'Tương tác ổn')}
+                    onClick={() => {
+                      const next = batchDefaultInteractionStatus === 'Đang lên tương tác' ? '' : 'Đang lên tương tác';
+                      setBatchDefaultInteractionStatus(next);
+                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                    }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultInteractionStatus === 'Tương tác ổn'
+                      batchDefaultInteractionStatus === 'Đang lên tương tác'
+                        ? 'bg-sky-600 text-white border-sky-700 shadow-xs'
+                        : 'bg-sky-50 text-sky-900 border-sky-300 hover:bg-sky-100'
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
+                    <span>🔥 Đang lên tương tác</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = batchDefaultInteractionStatus === 'Có tương tác' ? '' : 'Có tương tác';
+                      setBatchDefaultInteractionStatus(next);
+                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      batchDefaultInteractionStatus === 'Có tương tác'
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                        : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                        : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
                     }`}
                   >
                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                    <span>🟢 Có tương tác</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = batchDefaultInteractionStatus === 'Tương tác ổn' ? '' : 'Tương tác ổn';
+                      setBatchDefaultInteractionStatus(next);
+                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                      batchDefaultInteractionStatus === 'Tương tác ổn'
+                        ? 'bg-teal-600 text-white border-teal-700 shadow-xs'
+                        : 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
+                    }`}
+                  >
+                    <span className="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
                     <span>Tương tác ổn</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => setBatchDefaultInteractionStatus(batchDefaultInteractionStatus === 'Tương tác vừa' ? '' : 'Tương tác vừa')}
+                    onClick={() => {
+                      const next = batchDefaultInteractionStatus === 'Tương tác vừa' ? '' : 'Tương tác vừa';
+                      setBatchDefaultInteractionStatus(next);
+                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                    }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
                       batchDefaultInteractionStatus === 'Tương tác vừa'
                         ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
@@ -847,7 +974,11 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setBatchDefaultInteractionStatus(batchDefaultInteractionStatus === 'Không có tương tác' ? '' : 'Không có tương tác')}
+                    onClick={() => {
+                      const next = batchDefaultInteractionStatus === 'Không có tương tác' ? '' : 'Không có tương tác';
+                      setBatchDefaultInteractionStatus(next);
+                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                    }}
                     className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
                       batchDefaultInteractionStatus === 'Không có tương tác'
                         ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
@@ -860,8 +991,11 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setBatchDefaultInteractionStatus('')}
-                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center justify-center col-span-3 sm:col-span-1 ${
+                    onClick={() => {
+                      setBatchDefaultInteractionStatus('');
+                      setBatchDefaultInteractionDate('');
+                    }}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center justify-center ${
                       !batchDefaultInteractionStatus
                         ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
                         : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'

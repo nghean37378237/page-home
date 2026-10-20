@@ -3310,8 +3310,13 @@ export default function App() {
       }
     }
 
-    // Nếu cập nhật ghi chú (VHH, 282, 956, Hạn Chế, Trống) cho 1 UID thì đồng bộ cho cả các dòng cùng UID trong Group
-    if ('note' in updates && targetUid) {
+    // Nếu cập nhật ghi chú tình trạng Via (VHH, 282, 956, Hạn Chế, Live, Trống) cho 1 UID thì đồng bộ cho cả các dòng cùng UID trong Group
+    const noteValLower = (updates.note || '').trim().toLowerCase();
+    const isGroupInteractionNote =
+      noteValLower === 'đang lên tương tác' ||
+      noteValLower === 'có tương tác';
+
+    if ('note' in updates && targetUid && !isGroupInteractionNote) {
       const targetUidLower = targetUid.toLowerCase();
       const sameUidRecords = groupRecords.filter(
         (g) => (g.uid || '').trim().toLowerCase() === targetUidLower

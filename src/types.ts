@@ -592,8 +592,15 @@ export interface SharedAccount {
 export type GroupJoinStatus = 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa';
 export const GROUP_JOIN_STATUS_OPTIONS: GroupJoinStatus[] = ['Đã Jon', 'Jon chờ duyệt', 'Chưa'];
 
-export type GroupInteractionStatus = 'Tương tác ổn' | 'Tương tác vừa' | 'Không có tương tác';
+export type GroupInteractionStatus =
+  | 'Đang lên tương tác'
+  | 'Có tương tác'
+  | 'Tương tác ổn'
+  | 'Tương tác vừa'
+  | 'Không có tương tác';
 export const GROUP_INTERACTION_STATUS_OPTIONS: GroupInteractionStatus[] = [
+  'Đang lên tương tác',
+  'Có tương tác',
   'Tương tác ổn',
   'Tương tác vừa',
   'Không có tương tác',
@@ -607,7 +614,8 @@ export interface GroupRecord {
   uid: string; // Cột B: UID nick Facebook (VD: '100060665184656')
   viaName: string; // Cột C: TÊN VIA (VD: 'Lucas Santos', 'Rupesh Yadav'...)
   joinStatus?: GroupJoinStatus; // Cột TRẠNG THÁI: 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa'
-  interactionStatus?: GroupInteractionStatus; // Ô chọn màu tương tác: 'Tương tác ổn' (Xanh) | 'Tương tác vừa' (Vàng) | 'Không có tương tác' (Đỏ)
+  interactionStatus?: GroupInteractionStatus; // Ô chọn màu / ghi chú tương tác: 'Đang lên tương tác' | 'Có tương tác' | 'Tương tác ổn' | 'Tương tác vừa' | 'Không có tương tác'
+  interactionDate?: string; // Cột NGÀY TT: Tự động nhảy theo ngày hiện tại (VD: '20/10') khi chọn tương tác
   note: string; // Cột F: Ghi Chú (VD: 'vhh', 'hạn chế', 'đình chỉ'...)
   isHighlighted?: boolean; // Ô bôi xanh lá (dòng via chính / via duyệt theo yêu cầu hình ảnh)
   staffName: string; // TÊN NV (Quản lý phân quyền tài khoản tương tự như Page)
