@@ -849,6 +849,52 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       );
     }
 
+    let fallbackYtVideos: {
+      videoId: string;
+      title: string;
+      watchUrl: string;
+      embedUrl: string;
+      thumbnailUrl: string;
+    }[] = [];
+    try {
+      const ytRes = await fetch('/api/wp-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'search_youtube',
+          query: primaryPerson || finalTitle,
+          sourceUrl: targetUrl || undefined,
+          title: finalTitle,
+          articleText: fullBodySample || rawInput,
+          existingImages: extractedImgs,
+          limit: 2,
+        }),
+      });
+      const ytData = await safeParseApiJson(ytRes);
+      if (ytRes.ok && ytData.ok && Array.isArray(ytData.videos) && ytData.videos.length > 0) {
+        fallbackYtVideos = ytData.videos;
+        const headingText =
+          isVi ? '🎬 Video Liên Quan Đáng Chú Ý' : '🎬 Related Videos & Exclusive Moments';
+        const videoBlocks = fallbackYtVideos
+          .map((v, idx) => {
+            const safeTitle = String(v.title || '').replace(/"/g, '&quot;');
+            return `<div class="wp-youtube-embed-box" style="margin: 20px 0 28px 0;">
+  <p><strong>Video #${idx + 1}: ${v.title}</strong></p>
+  <figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio" style="margin: 12px 0;">
+    <div class="wp-block-embed__wrapper" style="position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000;">
+      <iframe src="https://www.youtube.com/embed/${v.videoId}" title="${safeTitle}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    </div>
+  </figure>
+  <p style="font-size: 13px; color: #475569;">👉 <a href="${v.watchUrl}" target="_blank" rel="noopener noreferrer">${
+              isVi ? 'Xem trực tiếp trên YouTube' : 'Watch on YouTube'
+            }: ${v.title}</a></p>
+</div>`;
+          })
+          .join('\n');
+        htmlBlocks.push(`<h2>${headingText}</h2>\n${videoBlocks}`);
+      }
+    } catch {}
+
     const finalHtml = htmlBlocks.join('\n\n');
     const wordCount = finalHtml.replace(/<[^>]*>/g, ' ').split(/\s+/).filter(Boolean).length;
 
@@ -869,7 +915,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       extractedImages: extractedImgs,
       originalImageCount: origImgs.length,
       externalImageCount: extImgs.length,
-      youtubeVideos: [],
+      youtubeVideos: fallbackYtVideos,
     };
   };
 
@@ -1077,21 +1123,18 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           }
         }
 
-        if (fetchedTitle && (!title.trim() || title.trim().startsWith('http'))) {
+        // Khi dán Link bài viết mới, cập nhật ngay Tiêu đề, Tóm tắt, Nội dung gốc và xóa từ khóa tìm kiếm cũ của bài trước để không bị lệch chủ đề
+        setCustomYtQuery('');
+        if (fetchedTitle) {
           setTitle(fetchedTitle);
         }
-        if (fetchedExcerpt && !excerpt.trim()) {
+        if (fetchedExcerpt) {
           setExcerpt(fetchedExcerpt);
         }
+        let detectedPerson = '';
         if (fetchedText) {
-          setAiTopic((prev) => {
-            const trimmed = prev.trim();
-            if (!trimmed || trimmed === cleanLink || /^https?:\/\/\S+$/i.test(trimmed)) {
-              return fetchedText;
-            }
-            return prev;
-          });
-          // Tự động nhận diện tên nhân vật chính trong bài gốc để điền sẵn vào Từ khóa trọng tâm (Focus Keyword)
+          setAiTopic(fetchedText);
+          // Tự động nhận diện tên nhân vật chính trong bài gốc để điền vào Từ khóa trọng tâm (Focus Keyword)
           const personMatch = fetchedText.match(
             /\b([A-Z][a-z]{2,15}(?:\s+(?:de|van|von|del|da|di|la|le|st\.?))?(?:\s+[A-Z][a-z]{2,15}){1,2})\b/g
           );
@@ -1099,7 +1142,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             const ignoreWords = new Set([
               'The', 'This', 'That', 'There', 'When', 'While', 'Where', 'What', 'Who', 'Why', 'How',
               'Los', 'Angeles', 'New', 'York', 'Miami', 'Beach', 'Venice', 'Malibu', 'Beverly', 'Hills',
-              'Santa', 'Monica', 'United', 'States', 'Sports', 'Illustrated', 'Daily', 'Mail', 'Page', 'Six'
+              'Santa', 'Monica', 'United', 'States', 'Sports', 'Illustrated', 'Daily', 'Mail', 'Page', 'Six',
+              'Heartbroken', 'Heartbreaking', 'Embraces', 'Wrinkles', 'Sagging', 'Jawline', 'Dramatic', 'Full',
+              'Facelift', 'Plastic', 'Surgery', 'Selling', 'Artwork', 'Paintings', 'Shares', 'Health', 'Ability'
             ]);
             const freq = new Map<string, number>();
             for (const cand of personMatch) {
@@ -1107,19 +1152,17 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               if (parts.some((w) => ignoreWords.has(w))) continue;
               freq.set(cand.trim(), (freq.get(cand.trim()) || 0) + 1);
             }
-            const bestPerson = Array.from(freq.entries()).sort((a, b) => b[1] - a[1])[0]?.[0];
-            if (bestPerson) {
-              setFocusKeyword((prevKw) => (prevKw.trim() ? prevKw : bestPerson));
-            }
+            detectedPerson = Array.from(freq.entries()).sort((a, b) => b[1] - a[1])[0]?.[0] || '';
+            setFocusKeyword(detectedPerson);
           }
         }
-        if (rawImgs.length > 0) {
-          const origImgs = rawImgs.map((im: any, idx: number) => ({
-            url: String(im.url || im.dataUrl || ''),
-            alt: String(im.alt || fetchedTitle || `Photo ${idx + 1}`),
-            isFeatured: idx === 0,
-            isExternal: false,
-          }));
+        const origImgs = rawImgs.map((im: any, idx: number) => ({
+          url: String(im.url || im.dataUrl || ''),
+          alt: String(im.alt || fetchedTitle || `Photo ${idx + 1}`),
+          isFeatured: idx === 0,
+          isExternal: false,
+        }));
+        if (origImgs.length > 0) {
           setExtractedWebImages(origImgs);
           if (origImgs[0]?.url) {
             setFeaturedImageUrl(origImgs[0].url);
@@ -1136,6 +1179,32 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             }
             return prevContent;
           });
+        }
+
+        // Tự động tìm luôn 2 video YouTube chuẩn theo đúng nhân vật & sự kiện của bài vừa dán
+        if (fetchedTitle || fetchedText) {
+          try {
+            const ytRes = await fetch('/api/wp-publish', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'search_youtube',
+                query: detectedPerson || fetchedTitle,
+                sourceUrl: cleanLink,
+                title: fetchedTitle,
+                articleText: fetchedText,
+                existingImages: origImgs,
+                limit: 2,
+              }),
+            });
+            const ytData = await safeParseApiJson(ytRes);
+            if (ytRes.ok && ytData.ok && Array.isArray(ytData.videos) && ytData.videos.length > 0) {
+              setAttachedYoutubeVideos(ytData.videos);
+              if (ytData.primaryPerson) {
+                setFocusKeyword(String(ytData.primaryPerson));
+              }
+            }
+          } catch {}
         }
       } catch {
         // ignore background pre-extract error
@@ -1396,7 +1465,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       if (data.excerpt) setExcerpt(data.excerpt);
       if (data.focusKeyword) {
         setFocusKeyword(data.focusKeyword);
-        setCustomYtQuery(String(data.searchQuery || data.focusKeyword));
+        setCustomYtQuery('');
       }
       if (Array.isArray(data.tags)) setTagsInput(data.tags.join(', '));
       if (data.contentHtml) setContent(data.contentHtml);
@@ -1847,19 +1916,30 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     }
   };
 
-  // Tìm và thay thế 2 video YouTube liên quan ở cuối bài viết theo từ khóa / tên nhân vật
-  const handleRefreshYoutubeVideos = async () => {
+  // Tìm và thay thế 2 video YouTube liên quan ở cuối bài viết theo đúng chủ đề, nhân vật và sự kiện đang viết
+  const handleRefreshYoutubeVideos = async (excludeCurrentVideos: boolean = false) => {
     const sourceLink =
       aiSourceUrl.trim() ||
       extractFirstArticleUrl(aiTopic) ||
       extractFirstArticleUrl(content) ||
       extractFirstArticleUrl(title);
-    const effectiveArticleText = [content, aiTopic, excerpt]
-      .map((s) => String(s || '').trim())
+    const cleanTopicText = aiTopic.replace(/https?:\/\/[^\s"'<>]+/gi, '').trim();
+    const strippedContentText = content
+      .replace(/<h2[^>]*>🎬 (Video Liên Quan Đáng Chú Ý|Related Videos & Exclusive Moments)<\/h2>[\s\S]*$/i, ' ')
+      .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    const effectiveArticleText = [cleanTopicText, strippedContentText, excerpt.trim()]
       .filter(Boolean)
       .join('\n\n')
       .slice(0, 8000);
-    const q = customYtQuery.trim() || focusKeyword.trim() || title.trim() || aiTopic.trim().slice(0, 100);
+    const q =
+      customYtQuery.trim() ||
+      focusKeyword.trim() ||
+      title.trim() ||
+      cleanTopicText.slice(0, 120) ||
+      sourceLink;
     if (!q && !sourceLink) {
       setPublishError('Vui lòng nhập tên nhân vật hoặc chủ đề để tìm 2 video YouTube liên quan!');
       return;
@@ -1873,6 +1953,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         body: JSON.stringify({
           action: 'search_youtube',
           query: q,
+          customQuery: customYtQuery.trim() || undefined,
+          excludeVideoIds: excludeCurrentVideos
+            ? attachedYoutubeVideos.map((v) => v.videoId).filter(Boolean)
+            : [],
           sourceUrl: sourceLink || undefined,
           title: title.trim(),
           articleText: effectiveArticleText,
@@ -1882,6 +1966,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       });
       const data = await safeParseApiJson(res);
       if (res.ok && data.ok && Array.isArray(data.videos) && data.videos.length > 0) {
+        if (data.primaryPerson && !focusKeyword.trim()) {
+          setFocusKeyword(String(data.primaryPerson));
+        }
         setAttachedYoutubeVideos(data.videos);
         const headingText =
           aiLanguage === 'vi'
@@ -1912,6 +1999,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           ).trim();
           return `${cleaned}\n\n<h2>${headingText}</h2>\n${videoBlocks}`;
         });
+      } else {
+        setPublishError('Không tìm thấy video YouTube phù hợp hơn. Bạn có thể nhập tên nhân vật / sự kiện cụ thể vào ô bên dưới.');
       }
     } catch (err: any) {
       setPublishError(err?.message || 'Không thể tìm video YouTube');
@@ -2776,10 +2865,30 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
                   {/* 2 Video YouTube liên quan đã gắn ở cuối bài */}
                   <div className="bg-white p-3 rounded-xl border border-rose-200 space-y-2">
-                    <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
                       <span className="text-xs font-black text-rose-900">
-                        🎬 2 Video YouTube liên quan gắn ở cuối bài ({attachedYoutubeVideos.length} video):
+                        🎬 2 Video YouTube đúng chủ đề gắn ở cuối bài ({attachedYoutubeVideos.length} video):
                       </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          disabled={searchingYt}
+                          onClick={() => void handleRefreshYoutubeVideos(false)}
+                          className="px-2 py-0.5 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-900 font-bold text-[10px] cursor-pointer"
+                          title="Phân tích lại nội dung bài viết hiện tại để lấy 2 video YouTube chuẩn nhất với chủ đề đang nói đến"
+                        >
+                          {searchingYt ? 'Đang tìm...' : '🎯 Lấy chuẩn theo bài'}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={searchingYt}
+                          onClick={() => void handleRefreshYoutubeVideos(true)}
+                          className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] cursor-pointer"
+                          title="Đổi 2 video YouTube khác cùng chủ đề (loại trừ 2 video đang hiện)"
+                        >
+                          {searchingYt ? 'Đang đổi...' : '🔄 Đổi 2 Video khác'}
+                        </button>
+                      </div>
                     </div>
 
                     {attachedYoutubeVideos.length > 0 && (
@@ -2811,22 +2920,32 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       </div>
                     )}
 
-                    {/* Tìm đổi 2 video YouTube khác theo tên nhân vật */}
+                    {/* Tìm đổi 2 video YouTube khác theo tên nhân vật / sự kiện tùy chọn */}
                     <div className="flex items-center gap-1.5 pt-0.5">
                       <input
                         type="text"
                         value={customYtQuery}
                         onChange={(e) => setCustomYtQuery(e.target.value)}
-                        placeholder="Nhập tên nhân vật để đổi 2 video YT khác..."
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void handleRefreshYoutubeVideos(false);
+                          }
+                        }}
+                        placeholder={
+                          focusKeyword.trim()
+                            ? `Đang bám sát: ${focusKeyword.trim()} (nhập từ khóa khác nếu muốn tự tìm)...`
+                            : 'Nhập tên nhân vật / sự kiện cụ thể nếu muốn tự tìm video YT...'
+                        }
                         className="flex-1 px-2.5 py-1 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-rose-500"
                       />
                       <button
                         type="button"
                         disabled={searchingYt}
-                        onClick={handleRefreshYoutubeVideos}
-                        className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-[11px] font-bold cursor-pointer shrink-0"
+                        onClick={() => void handleRefreshYoutubeVideos(false)}
+                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-[11px] font-bold cursor-pointer shrink-0"
                       >
-                        {searchingYt ? 'Đang tìm...' : 'Đổi 2 Video YT'}
+                        {searchingYt ? 'Đang tìm...' : 'Tìm Video'}
                       </button>
                     </div>
                   </div>

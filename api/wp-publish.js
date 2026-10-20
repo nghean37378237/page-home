@@ -298,6 +298,12 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     .replace(/&#8220;|&#8221;/g, '"')
     .replace(/\s+/g, ' ')
     .trim();
+  const cleanTitle = decodeHtmlEntities(String(title || ''))
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&#8217;|&#8216;/g, "'")
+    .replace(/&#8220;|&#8221;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
 
   const imgAltText = Array.isArray(existingImages)
     ? existingImages
@@ -311,106 +317,66 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     'What', 'Who', 'Why', 'How', 'Proving', 'Looking', 'Taking', 'Channeling',
     'Addressing', 'Stepping', 'Enjoying', 'Sharing', 'Showing', 'Making', 'Soaking',
     'Confirming', 'Embracing', 'Walking', 'Strolling', 'Wearing', 'Smiling', 'Spotted',
-    'Showcasing', 'Exiting', 'Following', 'Considering', 'Because', 'Although', 'Though',
-    'Whether', 'Unless', 'Since', 'Once', 'Whereas', 'Whenever', 'Wherever', 'However',
-    'Meanwhile', 'Furthermore', 'Moreover', 'Nevertheless', 'Nonetheless', 'Instead',
-    'Otherwise', 'Therefore', 'Thus', 'Hence', 'Accordingly', 'Consequently', 'Subsequently',
-    'Previously', 'Recently', 'Currently', 'Finally', 'Ultimately', 'Initially', 'Originally',
-    'Fortunately', 'Unfortunately', 'Thankfully', 'Luckily', 'Sadly', 'Happily',
-    'Reportedly', 'Allegedly', 'Apparently', 'Obviously', 'Clearly', 'Certainly', 'Surely',
-    'Indeed', 'Actually', 'Naturally', 'Typically', 'Usually', 'Generally', 'Normally',
-    'Frequently', 'Occasionally', 'Sometimes', 'Often', 'Rarely', 'Seldom', 'Never', 'Always',
-    'Perhaps', 'Maybe', 'Possibly', 'Probably', 'Likely', 'Unlikely', 'Doubtless', 'Undoubtedly',
-    'As', 'If', 'So', 'Yet', 'Nor', 'Or', 'And', 'But', 'For', 'To', 'Of', 'In', 'On', 'At', 'By',
-    'With', 'From', 'Into', 'Onto', 'Upon', 'Out', 'Off', 'Over', 'Under', 'Above', 'Below',
-    'Up', 'Down', 'Across', 'Along', 'Around', 'Through', 'Throughout', 'During', 'Before',
-    'After', 'Until', 'Till', 'Between', 'Among', 'Amidst', 'Within', 'Without',
-    'Inside', 'Outside', 'Behind', 'Beyond', 'Beside', 'Besides', 'Near', 'Next', 'Toward',
-    'Towards', 'Against', 'Despite', 'Concerning', 'According', 'Speaking',
-    'Shielding', 'Completing', 'Expecting', 'Running', 'Visiting', 'Both', 'Holding', 'Wrapping',
-    'Turning', 'Adding', 'Bringing', 'Giving', 'Getting', 'Keeping', 'Leaving', 'Letting',
-    'Putting', 'Setting', 'Standing', 'Sitting', 'Lying', 'Going', 'Coming', 'Being', 'Having',
-    'Doing', 'Saying', 'Telling', 'Asking', 'Thinking', 'Knowing', 'Seeing', 'Hearing', 'Feeling',
-    'Finding', 'Calling', 'Trying', 'Working', 'Playing', 'Living', 'Moving', 'Starting',
-    'Stopping', 'Beginning', 'Ending', 'Continuing', 'Growing', 'Changing', 'Leading',
-    'Understanding', 'Watching', 'Creating', 'Spending', 'Opening', 'Closing',
-    'Winning', 'Losing', 'Falling', 'Rising', 'Building', 'Breaking', 'Carrying', 'Catching',
-    'Choosing', 'Drawing', 'Driving', 'Eating', 'Fighting', 'Flying', 'Forgetting', 'Forgiving',
-    'Freezing', 'Hanging', 'Hiding', 'Hitting', 'Hurting', 'Laying', 'Learning', 'Lending',
-    'Meaning', 'Meeting', 'Paying', 'Reading', 'Riding', 'Ringing', 'Seeking', 'Selling', 'Sending',
-    'Shaking', 'Shining', 'Shooting', 'Shutting', 'Singing', 'Sinking', 'Sleeping', 'Sliding',
-    'Stealing', 'Sticking', 'Stinging', 'Striking', 'Swearing', 'Sweeping', 'Swimming', 'Swinging',
-    'Teaching', 'Tearing', 'Throwing', 'Waking', 'Weaving', 'Weeping', 'Winding', 'Withdrawing', 'Writing',
-    'His', 'Her', 'Their', 'Our', 'Your', 'My', 'Its', 'Hers', 'Theirs', 'Ours', 'Yours', 'Mine',
-    'He', 'She', 'They', 'We', 'You', 'It', 'One', 'Someone', 'Anyone', 'Everyone', 'No', 'None',
-    'Nothing', 'Something', 'Anything', 'Everything', 'Some', 'Any', 'All', 'Many', 'Much',
-    'More', 'Most', 'Few', 'Fewer', 'Fewest', 'Little', 'Less', 'Least', 'Several', 'Enough',
-    'Each', 'Every', 'Either', 'Neither', 'Other', 'Another', 'Such', 'Same', 'Different',
-    'Various', 'Certain', 'Numerous', 'Countless', 'Multiple', 'Single', 'Double', 'Triple',
-    'First', 'Second', 'Third', 'Fourth', 'Fifth', 'Last', 'Previous', 'Former', 'Latter',
-    'Hollywood', 'Caribbean', 'Barbados', 'London', 'West', 'North', 'South', 'East',
-    'Southern', 'Northern', 'Eastern', 'Western', 'Central', 'California', 'Florida',
-    'United', 'States', 'America', 'British', 'English', 'American', 'Great', 'Britain',
-    'French', 'Riviera', 'Mediterranean', 'German', 'Italian', 'Spanish', 'Mexican',
-    'Saint', 'Tropez', 'Cannes', 'Rome', 'Malibu', 'Hawaii', 'Manhattan',
-    'Cabo', 'San', 'Lucas', 'Ibiza', 'Mallorca', 'Mykonos', 'Santorini', 'Sardinia', 'Capri',
-    'Amalfi', 'Positano', 'Portofino', 'Como', 'Venice', 'Milan', 'Tuscany',
-    'Bora', 'Tahiti', 'Fiji', 'Maui', 'Kauai', 'Oahu', 'Honolulu', 'Aspen', 'Hamptons',
-    'Montauk', 'Palm', 'Springs', 'Miami', 'Beach', 'Lane', 'Hills',
-    'Bel', 'Air', 'Calabasas', 'Santa', 'Brentwood', 'tribeca', 'Soho',
-    'Notting', 'Hill', 'Mayfair', 'Chelsea', 'Kensington', 'glastonbury', 'Coachella',
-    'Monday', 'Tuesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
-    'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
-    'September', 'October', 'November', 'December', 'Instagram', 'Twitter',
-    'Facebook', 'YouTube', 'TikTok', 'Daily', 'Mail', 'Page', 'Six', 'People',
-    'Los', 'Angeles', 'New', 'York',
+    'Showcasing', 'Exiting', 'Following', 'Among', 'At', 'In', 'On', 'By', 'With',
+    'From', 'For', 'After', 'Before', 'During', 'Despite', 'Between', 'Beyond',
+    'Within', 'Without', 'Through', 'Throughout', 'Against', 'Around', 'Behind',
+    'Inside', 'Outside', 'Under', 'Until', 'Upon', 'According', 'Speaking', 'Shielding',
+    'Completing', 'Expecting', 'Running', 'Visiting', 'Both', 'Holding', 'Wrapping',
+    'Considering', 'Regarding', 'Debuting', 'Watching', 'Adding', 'Dazzling', 'Posing',
+    'Demonstrating', 'Discussing', 'Working', 'Seeing', 'Revealing', 'Unveiling',
+    'Because', 'Although', 'Though', 'Since', 'Unless', 'Whether', 'Whenever', 'Whatever',
+    'However', 'Moreover', 'Furthermore', 'Meanwhile', 'Instead', 'Otherwise', 'Therefore',
+    'Thus', 'Hence', 'Yet', 'Still', 'Even', 'Only', 'Just', 'Also', 'Either', 'Neither',
+    'Each', 'Every', 'Many', 'Most', 'Some', 'Several', 'Few', 'Other', 'Another', 'Such',
+    'Same', 'Certain', 'Various', 'Different', 'Similar', 'Special', 'Specific', 'Additional',
+    'Ultimately', 'As', 'If', 'Or', 'And', 'But', 'Nor', 'So', 'Once',
+    'Hollywood', 'Caribbean', 'Barbados', 'Bahamas', 'Bora', 'Cabo', 'Ibiza', 'Mykonos',
+    'Maui', 'Tahiti', 'Sardinia', 'Capri', 'Amalfi', 'Portofino', 'London', 'West', 'North',
+    'South', 'East', 'Southern', 'Northern', 'Eastern', 'Western', 'Central', 'California',
+    'Florida', 'Connecticut', 'Greenwich', 'United', 'States', 'America', 'British',
+    'English', 'American', 'Great', 'Britain', 'French', 'Riviera', 'Mediterranean',
+    'German', 'Italian', 'Spanish', 'Mexican', 'Saint', 'Tropez', 'Cannes',
+    'Rome', 'Malibu', 'Hawaii', 'Manhattan', 'Dublin', 'Ireland', 'Nashville', 'Byron',
+    'Bay', 'Australia', 'Australian', 'Monday', 'Tuesday', 'Thursday', 'Friday', 'Saturday',
+    'Sunday', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+    'September', 'October', 'November', 'December', 'Instagram', 'Twitter', 'Facebook',
+    'YouTube', 'TikTok', 'Daily', 'Mail', 'Page', 'Six', 'People', 'Weekly', 'Magazine',
+    'Notting', 'Hill', 'Los', 'Angeles', 'New', 'York', 'Miami', 'Beach', 'Lane',
     'Golden', 'Globes', 'Academy', 'Award', 'Awards', 'Oscar', 'Oscars', 'Emmy', 'Grammy',
-    'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Supermodel',
-    'Actor', 'Singer', 'Partner', 'Candid', 'Photo', 'Recognize', 'Them',
+    'Anyone', 'You', 'Star', 'Legend', 'Beauty', 'Model', 'Actress', 'Supermodel',
+    'Actor', 'Singer', 'Partner', 'Candid', 'Photo', 'Photos', 'Recognize', 'Them', 'Her', 'Him',
     'Bear', 'Blur', 'Gorillaz', 'Landman', 'City', 'Street', 'Streets', 'Turns', 'Heads',
     'Jimmy', 'Kimmel', 'Live', 'Coogies', 'Cafe', 'Big', 'Apple', 'Uncharted', 'Invasion',
-    'Beatles', 'Ted', 'Lasso', 'Succession', 'Hilton',
+    'Beatles', 'Ted', 'Lasso', 'Succession', 'Hilton', 'Hills', 'Santa',
     'Stunning', 'Pregnant', 'Timeless', 'Beloved', 'Famous', 'Reality', 'Heartthrob', 'Icon',
-    'Real', 'Housewives', 'Brat', 'Pack', 'Night', 'Heat', 'Glad', 'Mark', 'Twain',
+    'Real', 'Housewives', 'Brat', 'Pack', 'Night', 'Heat', 'Glad', 'All', 'Over', 'Mark', 'Twain',
     'Morning', 'Show', 'France', 'Europe', 'European', 'Exclusive', 'Story', 'Highlights',
-    'Season', 'Episode', 'Episodes', 'Series', 'Netflix', 'Prime', 'Video', 'Disney',
-    'Max', 'Hulu', 'Paramount', 'Peacock', 'Nevermore', 'School',
-    'Part', 'Balance', 'Horror', 'Dark', 'Comedy', 'Viewers', 'Fans', 'Audience', 'Audiences',
-    'Showrunners', 'Executive', 'Producers', 'Production', 'Official', 'Trailer', 'Teaser',
-    'Premiere', 'Release', 'Date', 'Cast', 'Characters', 'Character', 'Mystery', 'Supernatural',
-    'Gothic', 'Visual', 'Style', 'Identity', 'History', 'Hidden', 'Change', 'World', 'Life',
-    'Love', 'Family', 'Friends', 'Couple', 'Romance', 'Relationship', 'Marriage', 'Wedding',
-    'Divorce', 'Split', 'Breakup', 'Children', 'Kids', 'Son', 'Daughter', 'Mother', 'Father',
-    'Parents', 'Sister', 'Brother', 'Siblings', 'Cousin', 'Aunt', 'Uncle', 'Niece', 'Nephew',
-    'Grandmother', 'Grandfather', 'Grandparents', 'Grandson', 'Granddaughter', 'Grandchildren',
-    'Boyfriend', 'Girlfriend', 'Fiance', 'Fiancee', 'Husband', 'Wife', 'Spouse', 'Ex',
-    'Late', 'Young', 'Old', 'Older', 'Younger', 'Eldest', 'Youngest', 'Middle', 'Only',
-    'Small', 'Large', 'Good', 'Best', 'Better', 'Bad', 'Worst', 'Worse',
-    'High', 'Low', 'Long', 'Short', 'Tall', 'Wide', 'Narrow', 'Deep', 'Shallow', 'Thick', 'Thin',
-    'Heavy', 'Light', 'Strong', 'Weak', 'Hard', 'Soft', 'Fast', 'Slow', 'Quick', 'Early',
-    'Modern', 'Ancient', 'Classic', 'Traditional', 'Contemporary', 'Future', 'Past', 'Present',
-    'Current', 'Recent', 'Upcoming', 'Ongoing', 'Final', 'Initial', 'Original', 'Main', 'Major',
-    'Minor', 'Primary', 'Secondary', 'Central', 'Key', 'Important', 'Significant', 'Special',
-    'Specific', 'Particular', 'General', 'Common', 'Usual', 'Normal', 'Regular', 'Standard',
-    'Rare', 'Unique', 'Unusual', 'Strange', 'Odd', 'Weird', 'Mysterious', 'Secret', 'Private',
-    'Public', 'Personal', 'Professional', 'Unofficial', 'Formal', 'Informal',
-    'True', 'False', 'Real', 'Fake', 'Actual', 'Possible', 'Impossible',
-    'Uncertain', 'Sure', 'Unsure', 'Clear', 'Unclear', 'Obvious', 'Apparent',
-    'Visible', 'Invisible', 'Known', 'Unknown', 'Popular', 'Favorite',
-    'Successful', 'Rich', 'Wealthy', 'Poor', 'Free', 'Busy', 'Ready', 'Able', 'Unable',
-    'Happy', 'Sad', 'Angry', 'Afraid', 'Scared', 'Proud', 'Sorry', 'Fond',
-    'Full', 'Empty', 'Open', 'Closed', 'Shut', 'Clean', 'Dirty', 'Bright',
-    'Warm', 'Cool', 'Cold', 'Hot', 'Dry', 'Wet', 'Sweet', 'Sour', 'Bitter', 'Salty', 'Fresh',
-    'White', 'Black', 'Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Pink', 'Orange', 'Brown',
-    'Gray', 'Grey', 'Silver', 'Gold', 'Blonde', 'Brunette', 'Bald',
-    'Legally', 'Lies', 'Walk', 'Line', 'Home', 'Alabama',
-    'Cruel', 'Intentions', 'Election', 'Wild', 'Hello', 'Sunshine', 'Book', 'Club', 'Thing',
-    'Writers', 'Creators', 'Eiffel', 'Tower', 'Famously', 'Archival',
-    'Scroll', 'Stay', 'Read', 'Click', 'Share', 'Watch', 'See', 'Know', 'About',
+    'Season', 'Seasons', 'Episode', 'Episodes', 'Series', 'Chapter', 'Chapters', 'Part',
+    'Netflix', 'Nevermore', 'Gothic', 'Visual', 'Style', 'Identity', 'History', 'Search',
+    'Heart', 'Companion', 'Companions', 'Relationship', 'Sibling', 'Cast', 'Crew',
+    'Production', 'Premiere', 'Release', 'Teaser', 'Trailer', 'Update', 'Updates',
+    'Character', 'Characters', 'Mystery', 'Mysteries', 'Horror', 'Comedy', 'Drama',
+    'Supernatural', 'Teen', 'World', 'Corridors', 'Classrooms', 'Costume', 'Wardrobe',
+    'Appearance', 'Architecture', 'Atmosphere', 'Environment', 'Locations', 'Setting',
+    'Settings', 'Islanders', 'Capital', 'Searchlight', 'University', 'College', 'Studio',
+    'Studios', 'Network', 'Channel', 'Platform', 'Power', 'Couple', 'Rare', 'Beachside',
+    'Escape', 'Relaxed', 'Day', 'Outing', 'Getaway', 'Vacation', 'Holiday', 'Chief',
+    'Content', 'Officer', 'Executive', 'Producer', 'Producers', 'Director', 'Showrunners',
+    'Writers', 'Creators', 'Eiffel', 'Tower', 'Famously', 'Contemporary', 'Archival',
+    'Scroll', 'Stay', 'Read', 'Click', 'Share', 'Watch', 'See', 'Everything', 'Know', 'About',
     'Avalon', 'Getty', 'GettyImages', 'Backgrid', 'Splash', 'Shutterstock', 'WireImage',
-    'Fatal', 'Attraction', 'Natural', 'Big', 'Chill', 'World', 'Garp',
-    'Die', 'Pulp', 'Fiction', 'Sixth', 'Sense', 'Unbreakable', 'Moonlighting',
-    'Matrix', 'Reloaded', 'Revolutions', 'Spectre', 'Malena', 'Irreversible', 'Beetlejuice'
+    'Fatal', 'Attraction', 'Natural', 'Big', 'Chill', 'World', 'Garp', 'Friends', 'Key',
+    'Die', 'Hard', 'Pulp', 'Fiction', 'Sixth', 'Sense', 'Unbreakable', 'Moonlighting',
+    'Matrix', 'Reloaded', 'Revolutions', 'Spectre', 'Malena', 'Irreversible', 'Beetlejuice',
+    'Heartbroken', 'Heartbreaking', 'Embraces', 'Wrinkles', 'Sagging', 'Jawline', 'Refusing',
+    'Plastic', 'Surgery', 'Facelift', 'Dramatic', 'Full', 'Patient', 'Endure', 'Pain',
+    'Leaves', 'Everyone', 'Talking', 'Daughter', 'Son', 'Father', 'Mother', 'Parents',
+    'Children', 'Kids', 'Shares', 'Shared', 'Health', 'Ability', 'Speak', 'Walk', 'Lost',
+    'Almost', 'Selling', 'Artwork', 'Paintings', 'Surprising', 'New', 'Life', 'Romance',
+    'Marriage', 'Never', 'End', 'Late', 'Year', 'Old', 'Year-Old', 'Emotional', 'Moment',
+    'Choice', 'Understands', 'Former', 'Youngest', 'Oldest', 'Teenager', 'Medical', 'Doctor',
+    'Hospital', 'Home', 'Near', 'First', 'Time', 'Death', 'Tragic', 'Passing', 'Grief',
+    'Sorrow', 'House', 'Outside', 'Woman', 'Man', 'Child', 'Baby', 'Twin', 'Brother', 'Sister'
   ]);
 
   const stopPhrases = new Set([
@@ -420,11 +386,12 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     'south of france', 'byron bay', 'die hard', 'pulp fiction', 'sixth sense',
     'legally blonde', 'morning show', 'dirty dancing', 'ferris bueller', 'big little lies',
     'hello sunshine', 'daily mail', 'page six', 'people magazine', 'golden globes',
-    'academy awards', 'real housewives'
+    'academy awards', 'real housewives', 'dramatic full facelift', 'plastic surgery',
+    'sagging jawline', 'emotional moment', 'heartbreaking update'
   ]);
 
   const isWednesdayShowContext = /\b(Nevermore|Addams|Ortega|Enid|Morticia|Ophelia|Pugsley|Gomez)\b/i.test(
-    `${sample} ${title}`
+    `${sample} ${cleanTitle}`
   );
   if (!isWednesdayShowContext) {
     stopWords.add('Wednesday');
@@ -502,7 +469,10 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
   const regex =
     /\b([A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{1,15}(?:\s+(?:de|van|von|del|da|di|la|le))?(?:\s+[A-Z][a-zA-Zéèêëàâäîïôöùûüçñ'-]{2,15}){1,2})\b/g;
   let m;
-  const textToScan = `${sample} ${imgAltText} ${title || ''}`.trim();
+  const textToScan =
+    sample.length >= 100
+      ? `${sample} ${imgAltText}`.trim()
+      : `${sample} ${imgAltText} ${cleanTitle}`.trim();
   while ((m = regex.exec(textToScan)) !== null) {
     const rawName = m[1].trim().replace(/['’]s$/i, '');
     const parts = rawName.split(/\s+/);
@@ -523,22 +493,19 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     stats.set(candidate, prev);
   }
 
+  const lowerCleanTitle = cleanTitle.toLowerCase();
   for (const [fullName, info] of stats.entries()) {
+    if (lowerCleanTitle.includes(fullName.toLowerCase())) {
+      info.bioBoost += 22;
+    }
     const tokens = fullName.split(/\s+/);
-    const firstName = tokens[0];
     const lastName = tokens[tokens.length - 1];
     if (lastName && lastName.length >= 4 && !stopWords.has(lastName)) {
-      const lastRegex = new RegExp(`\\b${lastName}\\b`, 'g');
+      const escapedLast = lastName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const lastRegex = new RegExp(`(?<![a-zA-Z-])${escapedLast}(?![a-zA-Z-])`, 'g');
       const totalLastMentions = (sample.match(lastRegex) || []).length;
       if (totalLastMentions > info.count) {
         info.bioBoost += Math.min(35, (totalLastMentions - info.count) * 7);
-      }
-    }
-    if (firstName && firstName.length >= 4 && !stopWords.has(firstName)) {
-      const firstRegex = new RegExp(`\\b${firstName}\\b`, 'g');
-      const totalFirstMentions = (sample.match(firstRegex) || []).length;
-      if (totalFirstMentions > info.count) {
-        info.bioBoost += Math.min(24, (totalFirstMentions - info.count) * 5);
       }
     }
   }
@@ -561,7 +528,7 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
   const isInvalidUserKw =
     !cleanUserKw ||
     cleanUserKw.split(/\s+/).length > 4 ||
-    /\?|\b(spotted|soaking|beach|recognize|who|what|where|when|why|how|model|actress|actor|star|celebrity|outfits|turns|heads|look|like|can|you|her|him|them|familiar|face|sunny|carefree|stylish|moment)\b/i.test(
+    /\?|\b(spotted|soaking|beach|recognize|who|what|where|when|why|how|model|actress|actor|star|celebrity|outfits|turns|heads|look|like|can|you|her|him|them|familiar|face|sunny|carefree|stylish|moment|facelift|patient|endure|pain)\b/i.test(
       cleanUserKw
     );
 
@@ -588,6 +555,7 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
       (p) =>
         p !== primaryPerson &&
         p !== secondaryPerson &&
+        !exPartnerSet.has(p) &&
         !primaryPerson.toLowerCase().includes(p.toLowerCase()) &&
         (!secondaryPerson || !secondaryPerson.toLowerCase().includes(p.toLowerCase()))
     )
@@ -642,20 +610,24 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     }
   }
 
+  const affirmativeContentLower = bodyLower.replace(
+    /\b(?:away\s+from|far\s+from|instead\s+of|rather\s+than|unlike|outside\s+of|avoiding|skipping)\s+[^.,;!\n]{3,70}/gi,
+    ' '
+  );
+
   const eventGlossary = [
     'baywatch', 'on set', 'beach set', 'reboot', 'lifeguard', 'miami swim week',
     'bikini', 'swimsuit', 'bathing suit', 'yacht', 'beach', 'boat', 'pregnant',
-    'pregnancy', 'baby bump', 'stroll', 'walk', 'shopping', 'lunch', 'brunch',
-    'dinner', 'coffee', 'kiss', 'kisses', 'holding hands', 'arm-in-arm',
-    'motorcycle', 'red carpet', 'vacation', 'getaway', 'holiday', 'season 3',
-    'season 2', 'netflix', 'filming', 'premiere', 'cast', 'gothic', 'nevermore'
+    'pregnancy', 'baby bump', 'stroll', 'lunch', 'brunch', 'kiss', 'kisses',
+    'motorcycle', 'red carpet', 'vacation', 'getaway', 'holiday', 'filming',
+    'season 3', 'cast', 'premiere', 'talk show', 'interview'
   ];
   const eventKeywords = [];
   for (const ev of eventGlossary) {
     const escaped = ev.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const evRe = new RegExp(`\\b${escaped}\\b`, 'i');
     if (
-      evRe.test(bodyLower) &&
+      evRe.test(affirmativeContentLower) &&
       eventKeywords.length < 5 &&
       !outfitKeywords.some((o) => o === ev)
     ) {
@@ -663,46 +635,173 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     }
   }
 
+  const leadStorySample = `${cleanTitle} ${sample.slice(0, 1200)}`.toLowerCase();
+  const storylineGlossary = [
+    'frontotemporal dementia', 'dementia', 'aphasia', 'health update', 'health',
+    'speak and walk', 'lost the ability', 'deep plane facelift', 'full facelift',
+    'facelift', 'plastic surgery', 'cosmetic surgery', 'sagging jawline', 'turkey neck',
+    'wrinkles', 'aging naturally', 'aging', 'selling her artwork', 'selling artwork',
+    'handmade paintings', 'artwork', 'street fair', 'late 27-year-old son', 'late son',
+    'tragic passing', 'grief', 'heartbroken', 'romance', 'marriage', 'walk down the aisle',
+    'baywatch', 'reboot', 'beach set', 'black swimsuit', 'venice beach'
+  ];
+  const storylineKeywords = [];
+  for (const sk of storylineGlossary) {
+    const escaped = sk.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const skRe = new RegExp(`\\b${escaped}\\b`, 'i');
+    if (skRe.test(leadStorySample) && storylineKeywords.length < 6) {
+      if (!storylineKeywords.some((existing) => existing.includes(sk) || sk.includes(existing))) {
+        storylineKeywords.push(sk);
+      }
+    }
+  }
+
+  const strippedHeadline = cleanTitle
+    .replace(/\b(?:can|do|would)\s+you\s+recognize\s+(?:her|him|them|this\s+[a-z\s]+)\??/gi, '')
+    .replace(/\b(?:leaves\s+everyone\s+talking|and\s+not\s+everyone\s+understands\s+(?:her|his)\s+choice|a\s+surprising\s+new\s+chapter\s+in\s+(?:her|his)\s+life)\b!?/gi, '')
+    .replace(/["“”'’?!:;—–-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const headlineIgnoreSet = new Set([
+    'the', 'and', 'for', 'with', 'near', 'from', 'into', 'onto', 'over', 'after', 'before',
+    'about', 'that', 'this', 'what', 'when', 'where', 'which', 'while', 'why', 'how', 'who',
+    'her', 'his', 'their', 'she', 'he', 'they', 'them', 'him', 'you', 'your', 'our', 'has',
+    'have', 'had', 'was', 'were', 'are', 'been', 'being', 'almost', 'may', 'never', 'end',
+    'such', 'spotted', 'soaking', 'sun', 'model', 'actress', 'actor', 'star', 'celebrity',
+    'moments', 'moment', 'emotional', 'heartbreaking', 'surprising', 'new', 'chapter', 'life'
+  ]);
+  const personNameTokensLower = new Set(
+    `${primaryPerson} ${secondaryPerson} ${supportingEntities.join(' ')}`
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+  );
+  for (const w of strippedHeadline.toLowerCase().split(/\s+/)) {
+    const cleanW = w.replace(/^['’]+|['’]+$/g, '').replace(/['’]s$/i, '');
+    if (
+      cleanW.length >= 4 &&
+      !headlineIgnoreSet.has(cleanW) &&
+      !personNameTokensLower.has(cleanW) &&
+      !storylineKeywords.some((sk) => sk.includes(cleanW)) &&
+      storylineKeywords.length < 7
+    ) {
+      storylineKeywords.push(cleanW);
+    }
+  }
+
+  const isChildStory = /\b(daughter|son|children|teenager|18-year-old|27-year-old)\b/i.test(
+    `${cleanTitle} ${sample.slice(0, 500)}`
+  );
+  const featuredFamilyEntity = isChildStory ? supportingEntities[0] || '' : '';
+
+  const ageMatch = `${cleanTitle} ${sample.slice(0, 400)}`.match(/\b(\d{2})-year-old\b|\bat\s+(\d{2})\b/i);
+  const agePhrase = ageMatch ? `${ageMatch[1] || ageMatch[2]} year old` : '';
+
+  const youtubeSearchQueries = [];
+  if (primaryPerson) {
+    const q1 = [
+      primaryPerson,
+      secondaryPerson || featuredFamilyEntity,
+      ...storylineKeywords.slice(0, 2),
+      ...(storylineKeywords.length === 0 ? eventKeywords.slice(0, 2) : []),
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    if (q1) youtubeSearchQueries.push(q1);
+
+    if (
+      strippedHeadline.length >= 15 &&
+      !/\bmodel\s+spotted\s+soaking\b/i.test(cleanTitle)
+    ) {
+      const headlineQ = [
+        !strippedHeadline.toLowerCase().includes(primaryPerson.toLowerCase()) ? primaryPerson : '',
+        featuredFamilyEntity &&
+        !strippedHeadline.toLowerCase().includes(featuredFamilyEntity.toLowerCase())
+          ? featuredFamilyEntity
+          : '',
+        strippedHeadline.split(/\s+/).slice(0, 9).join(' '),
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+      if (headlineQ && !youtubeSearchQueries.includes(headlineQ)) {
+        youtubeSearchQueries.push(headlineQ);
+      }
+    }
+
+    const q3 = [
+      primaryPerson,
+      featuredFamilyEntity || secondaryPerson,
+      ...(eventKeywords.length > 0 ? eventKeywords.slice(0, 2) : storylineKeywords.slice(0, 2)),
+      locationKeywords[0] || '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    if (q3 && !youtubeSearchQueries.includes(q3)) {
+      youtubeSearchQueries.push(q3);
+    }
+  } else {
+    const nonCelebQ1 = [agePhrase, ...storylineKeywords.slice(0, 3), 'transformation']
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+    if (nonCelebQ1) youtubeSearchQueries.push(nonCelebQ1);
+    if (strippedHeadline) youtubeSearchQueries.push(strippedHeadline);
+  }
+
   let articleCategory = 'celebrity_romance_vacation';
   if (
     /\b(season\s+\d|netflix|showrunners?|episodes?|filming|cast|series|character|sequel|spin-?off|nevermore|addams|reboot|on\s+set|beach\s+set|baywatch)\b/i.test(
-      sample
+      affirmativeContentLower
     )
   ) {
     articleCategory = 'screen_production';
   } else if (
     /\b(red\s+carpet|awards?|gala|premiere|ceremony|gown|golden\s+globes|oscars|emmys|grammys)\b/i.test(
-      sample
+      affirmativeContentLower
+    ) &&
+    !/\b(yacht|beach|bikini|bathing\s+suit|swim\s+shorts|selling\s+her\s+artwork|street)\b/i.test(
+      affirmativeContentLower
     )
   ) {
     articleCategory = 'red_carpet_event';
-  } else if (/\b(19[6789]\d|archival|throwback|decades\s+ago|late\s+actor|legacy)\b/i.test(sample)) {
+  } else if (/\b(19[6789]\d|archival|throwback|decades\s+ago|late\s+actor|legacy)\b/i.test(affirmativeContentLower)) {
     articleCategory = 'retrospective_feature';
   } else if (
-    /\b(notting\s+hill|neighborhood|stroll|streets?\s+of|sidewalk|cafe|coffee|shopping|london|manhattan|new\s+york|west\s+hollywood|beverly\s+hills)\b/i.test(
-      sample
+    /\b(notting\s+hill|neighborhood|stroll|streets?\s+of|sidewalk|cafe|coffee|shopping|london|manhattan|new\s+york|west\s+hollywood|beverly\s+hills|selling\s+her\s+artwork)\b/i.test(
+      affirmativeContentLower
     ) &&
-    !/\b(beach|bikini|swimsuit|ocean|surf|waves|sand|yacht|resort|island|tropical)\b/i.test(sample)
+    !/\b(beach|bikini|swimsuit|ocean|surf|waves|sand|yacht|resort|island|tropical)\b/i.test(affirmativeContentLower)
   ) {
     articleCategory = 'city_neighborhood_outing';
   }
 
-  const eventWords = [...eventKeywords.slice(0, 2), ...outfitKeywords.slice(0, 2), ...locationKeywords.slice(0, 2)].slice(0, 6);
+  const eventWords = [
+    ...storylineKeywords.slice(0, 3),
+    ...eventKeywords.slice(0, 2),
+    ...outfitKeywords.slice(0, 2),
+    ...locationKeywords.slice(0, 2),
+  ].slice(0, 7);
 
   const subjectDisplay = secondaryPerson
     ? `${primaryPerson} and ${secondaryPerson}`
-    : primaryPerson || 'the cast and creators';
+    : primaryPerson || strippedHeadline.split(/\s+/).slice(0, 5).join(' ') || 'the featured story';
 
-  const combinedSearchQuery = [
-    primaryPerson,
-    secondaryPerson,
-    eventKeywords[0] || '',
-    outfitKeywords[0] || '',
-    locationKeywords[0] || '',
-  ]
-    .filter(Boolean)
-    .join(' ')
-    .trim();
+  const combinedSearchQuery =
+    youtubeSearchQueries[0] ||
+    [
+      primaryPerson,
+      secondaryPerson,
+      eventKeywords[0] || storylineKeywords[0] || '',
+      outfitKeywords[0] || '',
+      locationKeywords[0] || '',
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
 
   return {
     primaryPerson,
@@ -712,10 +811,12 @@ function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImage
     locationKeywords,
     timeframeKeywords,
     eventKeywords,
+    storylineKeywords,
+    youtubeSearchQueries,
     eventWords,
     articleCategory,
     subjectDisplay,
-    combinedSearchQuery: combinedSearchQuery || primaryPerson || '',
+    combinedSearchQuery: combinedSearchQuery || primaryPerson || strippedHeadline,
   };
 }
 
@@ -1066,30 +1167,52 @@ async function searchExternalRelatedImages(rawQuery, limit = 6, excludeKeys = ne
   return scoredCandidates.slice(0, limit).map(({ score: _s, purl: _p, ...rest }) => rest);
 }
 
-async function searchRelatedYouTubeVideos(rawQuery, limit = 2, contextProfile) {
+async function searchRelatedYouTubeVideos(rawQuery, limit = 2, contextProfile, excludeVideoIds = []) {
   const cleanQuery = String(rawQuery || '')
     .replace(/<[^>]*>/g, '')
     .replace(/[^\p{L}\p{N}\s-]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  if (!cleanQuery && !(contextProfile && contextProfile.primaryPerson)) return [];
+  if (
+    !cleanQuery &&
+    !(contextProfile && contextProfile.primaryPerson) &&
+    !(contextProfile && contextProfile.youtubeSearchQueries && contextProfile.youtubeSearchQueries.length)
+  ) {
+    return [];
+  }
 
-  const primaryPerson = (
-    (contextProfile && contextProfile.primaryPerson) ||
-    cleanQuery.split(/\s+/).slice(0, 3).join(' ')
-  ).trim();
+  const primaryPerson = ((contextProfile && contextProfile.primaryPerson) || '').trim();
   const secondaryPerson = ((contextProfile && contextProfile.secondaryPerson) || '').trim();
-  const eventWords = (contextProfile && contextProfile.eventWords) || [];
+  const supportingEntities = (contextProfile && contextProfile.supportingEntities) || [];
+  const storylineKeywords = (contextProfile && contextProfile.storylineKeywords) || [];
+  const eventKeywords = (contextProfile && contextProfile.eventKeywords) || [];
+  const outfitKeywords = (contextProfile && contextProfile.outfitKeywords) || [];
+  const locationKeywords = (contextProfile && contextProfile.locationKeywords) || [];
+  const profileQueries = (contextProfile && contextProfile.youtubeSearchQueries) || [];
+
+  const isCustomUserQuery =
+    cleanQuery.length >= 4 &&
+    cleanQuery.toLowerCase() !== primaryPerson.toLowerCase() &&
+    cleanQuery.toLowerCase() !== String((contextProfile && contextProfile.combinedSearchQuery) || '').toLowerCase() &&
+    !/\b(can you recognize|do you recognize|leaves everyone talking)\b/i.test(cleanQuery);
 
   const queries = [
-    [primaryPerson, secondaryPerson, eventWords.slice(0, 2).join(' ')].filter(Boolean).join(' ').trim(),
-    [primaryPerson, eventWords.slice(0, 3).join(' ')].filter(Boolean).join(' ').trim(),
-    [primaryPerson, secondaryPerson].filter(Boolean).join(' ').trim(),
-    cleanQuery.split(/\s+/).slice(0, 8).join(' '),
-  ].filter(Boolean);
+    ...(isCustomUserQuery
+      ? [
+          primaryPerson && !cleanQuery.toLowerCase().includes(primaryPerson.toLowerCase())
+            ? `${primaryPerson} ${cleanQuery}`
+            : cleanQuery,
+        ]
+      : []),
+    ...profileQueries,
+    [primaryPerson, secondaryPerson, ...storylineKeywords.slice(0, 3)].filter(Boolean).join(' ').trim(),
+    [primaryPerson, ...eventKeywords.slice(0, 2), ...outfitKeywords.slice(0, 1)].filter(Boolean).join(' ').trim(),
+    cleanQuery.split(/\s+/).slice(0, 9).join(' '),
+  ].filter((q) => q && q.length >= 3);
 
-  const uniqueQueries = [...new Set(queries)];
+  const uniqueQueries = [...new Set(queries)].slice(0, 3);
+
   const pTokens = primaryPerson
     .toLowerCase()
     .split(/\s+/)
@@ -1098,70 +1221,206 @@ async function searchRelatedYouTubeVideos(rawQuery, limit = 2, contextProfile) {
     .toLowerCase()
     .split(/\s+/)
     .filter((t) => t.length >= 3);
-  const eTokens = eventWords.map((w) => w.toLowerCase()).filter(Boolean);
+  const supTokens = supportingEntities
+    .slice(0, 2)
+    .flatMap((e) => String(e || '').toLowerCase().split(/[\s-]+/))
+    .filter((t) => t.length >= 3 && !pTokens.includes(t) && !sTokens.includes(t));
 
+  const rawTopicWords = [
+    ...storylineKeywords,
+    ...eventKeywords,
+    ...outfitKeywords,
+    ...locationKeywords,
+  ];
+  const topicTokenStop = new Set([
+    'the', 'and', 'with', 'from', 'into', 'near', 'home', 'year', 'old', 'ability',
+    'lost', 'almost', 'shares', 'spotted', 'beach', 'los', 'angeles', 'new', 'york'
+  ]);
+  const storyTokens = [
+    ...new Set(
+      rawTopicWords
+        .flatMap((phrase) => String(phrase || '').toLowerCase().split(/[\s-]+/))
+        .filter((w) => w.length >= 3 && !topicTokenStop.has(w) && !pTokens.includes(w) && !sTokens.includes(w))
+    ),
+  ];
+
+  const expandedStoryTokens = new Set(storyTokens);
+  if (storyTokens.some((w) => ['son', 'late', 'grief', 'tragic', 'passing'].includes(w))) {
+    ['son', 'death', 'dies', 'dead', 'tragic', 'cremated', 'autopsy', 'grief', 'seen', 'spotted'].forEach((w) =>
+      expandedStoryTokens.add(w)
+    );
+  }
+  if (storyTokens.some((w) => ['health', 'dementia', 'speak', 'walk', 'aphasia'].includes(w))) {
+    ['health', 'dementia', 'update', 'condition', 'battle', 'frontotemporal', 'daughter', 'wife'].forEach((w) =>
+      expandedStoryTokens.add(w)
+    );
+  }
+  if (storyTokens.some((w) => ['wrinkles', 'aging', 'jawline', 'plastic', 'surgery'].includes(w))) {
+    ['aging', 'age', 'wrinkles', 'beauty', 'timeless', 'natural', 'secrets', 'older', 'interview'].forEach((w) =>
+      expandedStoryTokens.add(w)
+    );
+  }
+  if (storyTokens.some((w) => ['artwork', 'paintings', 'selling', 'street'].includes(w))) {
+    ['artwork', 'art', 'sells', 'selling', 'street', 'fair', 'vivienne', 'knox', 'daughter'].forEach((w) =>
+      expandedStoryTokens.add(w)
+    );
+  }
+  if (storyTokens.some((w) => ['romance', 'marriage', 'aisle'].includes(w))) {
+    ['romance', 'marriage', 'girlfriend', 'relationship', 'milestone', 'date', 'serious'].forEach((w) =>
+      expandedStoryTokens.add(w)
+    );
+  }
+  if (storyTokens.some((w) => ['facelift', 'turkey', 'neck'].includes(w))) {
+    ['facelift', 'rejuvenation', 'transformation', 'before', 'after', 'plastic', 'surgery', 'deep', 'plane'].forEach(
+      (w) => expandedStoryTokens.add(w)
+    );
+  }
+  if (storyTokens.some((w) => ['baywatch', 'reboot', 'swimsuit'].includes(w))) {
+    ['baywatch', 'reboot', 'set', 'beach', 'swimsuit', 'filming', 'photoshoot', 'venice'].forEach((w) =>
+      expandedStoryTokens.add(w)
+    );
+  }
+
+  const isChildStory =
+    storyTokens.includes('daughter') ||
+    storyTokens.includes('son') ||
+    supTokens.length > 0;
+
+  const excludedSet = new Set(
+    (Array.isArray(excludeVideoIds) ? excludeVideoIds : []).map((id) => String(id || '').trim()).filter(Boolean)
+  );
   const candidates = [];
-  const seen = new Set();
+  const seen = new Set(excludedSet);
 
-  for (const q of uniqueQueries) {
-    if (candidates.length >= 12) break;
-    try {
-      const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
-      const res = await fetchWithTimeout(
-        searchUrl,
-        {
-          headers: {
-            'User-Agent': SCRAPER_USER_AGENT,
-            'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+  const decodeYtJsonText = (raw) =>
+    decodeHtmlEntities(
+      String(raw || '')
+        .replace(/\\u0026/g, '&')
+        .replace(/\\"/g, '"')
+        .replace(/\\\\/g, '\\')
+        .trim()
+    );
+
+  const queryHtmlResults = await Promise.all(
+    uniqueQueries.map(async (q, qIdx) => {
+      try {
+        const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}`;
+        const res = await fetchWithTimeout(
+          searchUrl,
+          {
+            headers: {
+              'User-Agent': SCRAPER_USER_AGENT,
+              'Accept-Language': 'en-US,en;q=0.9,vi;q=0.8',
+            },
           },
-        },
-        4200
-      );
-      if (!res.ok) continue;
-      const html = await res.text();
-
-      const rendererRegex =
-        /"videoRenderer":\{"videoId":"([a-zA-Z0-9_-]{11})"[\s\S]*?"title":\{"runs":\[\{"text":"([^"]+)"/g;
-      let match;
-      while ((match = rendererRegex.exec(html)) !== null && candidates.length < 18) {
-        const videoId = match[1];
-        const rawTitle = decodeHtmlEntities(
-          match[2]
-            .replace(/\\u0026/g, '&')
-            .replace(/\\"/g, '"')
-            .trim()
+          4200
         );
-        if (!videoId || seen.has(videoId)) continue;
-
-        const lowerTitle = rawTitle.toLowerCase();
-        const hasPerson =
-          (primaryPerson && lowerTitle.includes(primaryPerson.toLowerCase())) ||
-          pTokens.some((tk) => lowerTitle.includes(tk));
-        if (!hasPerson && candidates.length >= limit) continue;
-
-        let score = 0;
-        if (primaryPerson && lowerTitle.includes(primaryPerson.toLowerCase())) score += 50;
-        else if (hasPerson) score += 25;
-
-        if (secondaryPerson && lowerTitle.includes(secondaryPerson.toLowerCase())) score += 45;
-        else if (sTokens.some((tk) => lowerTitle.includes(tk))) score += 20;
-
-        for (const ew of eTokens) {
-          if (lowerTitle.includes(ew)) score += 15;
-        }
-
-        seen.add(videoId);
-        candidates.push({
-          videoId,
-          title: rawTitle,
-          watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
-          embedUrl: `https://www.youtube.com/embed/${videoId}`,
-          thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-          score,
-        });
+        if (!res.ok) return { qIdx, html: '' };
+        return { qIdx, html: await res.text() };
+      } catch {
+        return { qIdx, html: '' };
       }
-    } catch {
-      // ignore timeout
+    })
+  );
+
+  for (const { qIdx, html } of queryHtmlResults) {
+    if (!html) continue;
+    const rawBlocks = html.split('"videoRenderer":{"videoId":"').slice(1, 15);
+    let rankInQuery = 0;
+    for (const rawBlock of rawBlocks) {
+      rankInQuery++;
+      const videoId = rawBlock.slice(0, 11);
+      if (!/^[a-zA-Z0-9_-]{11}$/.test(videoId) || seen.has(videoId)) continue;
+
+      const cardChunk = rawBlock.slice(0, 4200);
+      const titleMatch = cardChunk.match(/"title":\{"runs":\[\{"text":"((?:\\.|[^"\\])+)"/);
+      if (!titleMatch) continue;
+
+      const rawTitle = decodeYtJsonText(titleMatch[1]);
+      if (!rawTitle || rawTitle.length < 6) continue;
+
+      const snippetMatches = [...cardChunk.matchAll(/"text":"((?:\\.|[^"\\])+)"/g)]
+        .map((mItem) => decodeYtJsonText(mItem[1]))
+        .filter((s) => s.length >= 15 && s !== rawTitle)
+        .slice(0, 3)
+        .join(' ');
+      const pubTimeMatch = cardChunk.match(/"publishedTimeText":\{"simpleText":"([^"]+)"\}/);
+      const pubTimeText = pubTimeMatch ? pubTimeMatch[1].toLowerCase() : '';
+
+      const lowerTitle = rawTitle.toLowerCase();
+      const lowerCombined = `${lowerTitle} ${snippetMatches.toLowerCase()}`;
+
+      if (primaryPerson) {
+        const hasFullPrimary = lowerCombined.includes(primaryPerson.toLowerCase());
+        const hasPrimaryToken = pTokens.some((tk) => lowerTitle.includes(tk));
+        const hasSupToken = supTokens.some((tk) => lowerTitle.includes(tk));
+        if (!hasFullPrimary && !hasPrimaryToken && !hasSupToken) {
+          continue;
+        }
+      }
+
+      let score = Math.max(0, 24 - qIdx * 6 - rankInQuery * 2);
+
+      if (primaryPerson) {
+        if (lowerTitle.includes(primaryPerson.toLowerCase())) score += 60;
+        else if (pTokens.every((tk) => lowerTitle.includes(tk))) score += 48;
+        else if (pTokens.some((tk) => lowerTitle.includes(tk))) score += 26;
+      }
+
+      if (secondaryPerson) {
+        if (lowerTitle.includes(secondaryPerson.toLowerCase())) score += 50;
+        else if (sTokens.some((tk) => lowerTitle.includes(tk))) score += 28;
+      }
+
+      for (const st of supTokens) {
+        if (lowerTitle.includes(st)) score += 42;
+      }
+
+      let matchedTopicCount = 0;
+      for (const tok of expandedStoryTokens) {
+        const escaped = tok.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const tokRe = new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i');
+        if (tokRe.test(lowerTitle)) {
+          score += 34;
+          matchedTopicCount++;
+        } else if (tokRe.test(lowerCombined)) {
+          score += 14;
+          matchedTopicCount++;
+        }
+      }
+
+      if (expandedStoryTokens.size > 0 && matchedTopicCount === 0) {
+        score -= 85;
+      }
+
+      if (!isChildStory && /\b(daughter|son)\b/i.test(lowerTitle)) {
+        score -= 55;
+      }
+
+      if (
+        /\b(movie clip|full movie|official trailer|soundtrack|ost|02 \[4k\]|\[4k\]|fan edit|tribute|amv|#shorts)\b/i.test(
+          lowerTitle
+        ) &&
+        (contextProfile && contextProfile.articleCategory) !== 'screen_production'
+      ) {
+        score -= 50;
+      }
+
+      if (/\b(hour|hours|day|days|week|weeks|month|months)\s+ago\b/i.test(pubTimeText)) {
+        score += 22;
+      } else if (/\b([5-9]|1\d)\s+years\s+ago\b/i.test(pubTimeText)) {
+        score -= 30;
+      }
+
+      seen.add(videoId);
+      candidates.push({
+        videoId,
+        title: rawTitle,
+        watchUrl: `https://www.youtube.com/watch?v=${videoId}`,
+        embedUrl: `https://www.youtube.com/embed/${videoId}`,
+        thumbnailUrl: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        score,
+      });
     }
   }
 
@@ -2707,6 +2966,8 @@ export default async function handler(req, res) {
       // 2. Xử lý tìm 2 Video YouTube liên quan
       if (action === 'search_youtube') {
         const query = String(body.query || '');
+        const customQuery = String(body.customQuery || '').trim();
+        const excludeVideoIds = Array.isArray(body.excludeVideoIds) ? body.excludeVideoIds : [];
         const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
         let effectiveTitle = String(body.title || query);
         let effectiveText = String(body.articleText || '')
@@ -2718,7 +2979,7 @@ export default async function handler(req, res) {
         let ctxProfile = analyzeArticleSubjectAndContext(
           effectiveTitle,
           effectiveText || query,
-          query,
+          customQuery || query,
           existingImgs
         );
 
@@ -2748,21 +3009,24 @@ export default async function handler(req, res) {
           ctxProfile = analyzeArticleSubjectAndContext(
             effectiveTitle,
             effectiveText || query,
-            query,
+            customQuery || query,
             existingImgs
           );
         }
 
+        const effectiveSearchInput =
+          customQuery || (ctxProfile && ctxProfile.combinedSearchQuery) || query;
         const videos = await searchRelatedYouTubeVideos(
-          (ctxProfile && ctxProfile.combinedSearchQuery) || query,
+          effectiveSearchInput,
           Number(body.limit || 2),
-          ctxProfile
+          ctxProfile,
+          excludeVideoIds
         );
         return res.status(200).json({
           ok: true,
           videos,
           primaryPerson: (ctxProfile && ctxProfile.primaryPerson) || '',
-          searchQuery: (ctxProfile && ctxProfile.combinedSearchQuery) || query,
+          searchQuery: effectiveSearchInput,
         });
       }
 

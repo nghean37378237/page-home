@@ -82,6 +82,8 @@ async function startServer() {
 
       if (action === 'search_youtube') {
         const query = String(body.query || '');
+        const customQuery = String(body.customQuery || '').trim();
+        const excludeVideoIds = Array.isArray(body.excludeVideoIds) ? body.excludeVideoIds : [];
         const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
         let effectiveTitle = String(body.title || query);
         let effectiveText = String(body.articleText || '')
@@ -93,7 +95,7 @@ async function startServer() {
         let ctxProfile = analyzeArticleSubjectAndContext(
           effectiveTitle,
           effectiveText || query,
-          query,
+          customQuery || query,
           existingImgs
         );
 
@@ -122,21 +124,24 @@ async function startServer() {
           ctxProfile = analyzeArticleSubjectAndContext(
             effectiveTitle,
             effectiveText || query,
-            query,
+            customQuery || query,
             existingImgs
           );
         }
 
+        const effectiveSearchInput =
+          customQuery || ctxProfile?.combinedSearchQuery || query;
         const videos = await searchRelatedYouTubeVideos(
-          ctxProfile?.combinedSearchQuery || query,
+          effectiveSearchInput,
           Number(body.limit) || 2,
-          ctxProfile
+          ctxProfile,
+          excludeVideoIds
         );
         res.json({
           ok: true,
           videos,
           primaryPerson: ctxProfile?.primaryPerson || '',
-          searchQuery: ctxProfile?.combinedSearchQuery || query,
+          searchQuery: effectiveSearchInput,
         });
         return;
       }
