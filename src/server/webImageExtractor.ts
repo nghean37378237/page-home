@@ -346,7 +346,7 @@ function extractImagesFromHtmlChunk(
     const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
     const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
 
-    if (isJunkImageUrl('https://placeholder.local/check.jpg', alt, tag)) continue;
+    if (isJunkImageUrl('https://example.com/photo.jpg', alt, tag)) continue;
 
     const widthMatch = tag.match(/\bwidth=["']?(\d+)/i);
     const heightMatch = tag.match(/\bheight=["']?(\d+)/i);

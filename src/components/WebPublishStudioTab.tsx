@@ -377,29 +377,134 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       const foundImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
       const seenKeys = new Set<string>();
 
-      const pushImg = (rawU: string, altTxt: string) => {
-        let u = String(rawU || '').trim();
-        if (!u || !/^https?:\/\//i.test(u)) return;
-        const lower = u.toLowerCase();
+      const isClientAdOrJunkImage = (rawUrl: string, altTxt = '', tagHtml = ''): boolean => {
+        const lower = String(rawUrl || '').toLowerCase().trim();
         if (
+          !lower ||
+          lower.startsWith('data:') ||
+          lower.startsWith('blob:') ||
           lower.endsWith('.svg') ||
           lower.endsWith('.gif') ||
           lower.endsWith('.ico') ||
+          lower.includes('.svg?') ||
+          lower.includes('.gif?') ||
+          lower.includes('.ico?') ||
           lower.includes('gravatar.com') ||
+          lower.includes('/plugins/') ||
+          lower.includes('/themes/') ||
           lower.includes('avatar') ||
           lower.includes('logo') ||
+          lower.includes('favicon') ||
           lower.includes('emoji') ||
+          lower.includes('smilies') ||
+          lower.includes('icon') ||
+          lower.includes('badge') ||
+          lower.includes('button') ||
           lower.includes('pixel') ||
-          lower.includes('1x1')
+          lower.includes('analytics') ||
+          lower.includes('doubleclick') ||
+          lower.includes('googlesyndication') ||
+          lower.includes('googleadservices') ||
+          lower.includes('adservice') ||
+          lower.includes('mgid.com') ||
+          lower.includes('avplayer.com') ||
+          lower.includes('taboola') ||
+          lower.includes('outbrain') ||
+          lower.includes('revcontent') ||
+          lower.includes('adskeeper') ||
+          lower.includes('adblade') ||
+          lower.includes('zergnet') ||
+          lower.includes('criteo') ||
+          lower.includes('adnxs') ||
+          lower.includes('rubiconproject') ||
+          lower.includes('pubmatic') ||
+          lower.includes('openx') ||
+          lower.includes('amazon-adsystem') ||
+          lower.includes('media.net') ||
+          lower.includes('propellerads') ||
+          lower.includes('popads') ||
+          lower.includes('adsterra') ||
+          lower.includes('mediavine') ||
+          lower.includes('adthrive') ||
+          lower.includes('ezoic') ||
+          lower.includes('connatix') ||
+          lower.includes('primis') ||
+          lower.includes('teads') ||
+          lower.includes('1x1') ||
+          lower.includes('spacer') ||
+          lower.includes('blank.') ||
+          lower.includes('placeholder') ||
+          lower.includes('loading.') ||
+          lower.includes('spinner') ||
+          lower.includes('adbanner') ||
+          lower.includes('ad-banner') ||
+          lower.includes('ad_banner') ||
+          lower.includes('adsense') ||
+          lower.includes('adsbygoogle') ||
+          lower.includes('sponsored') ||
+          lower.includes('affiliate')
         ) {
-          return;
+          return true;
         }
+        if (
+          /(\/|^)(ads?|adv|advert|advertisement|banners?|sponsors?|sponsored|promo|promotions?|affiliates?|popups?|cta|dfp|adserver|adunit|adslot)(\/|-|_|\.|\?|$)/i.test(
+            lower
+          )
+        ) {
+          return true;
+        }
+        const adDims = new Set([
+          '728x90', '970x90', '970x250', '468x60', '320x50', '320x100',
+          '300x50', '300x100', '300x250', '336x280', '160x600', '120x600',
+          '120x240', '300x600', '250x250', '200x200', '180x150', '125x125',
+          '88x31', '120x90', '120x60', '234x60', '240x400', '300x1050',
+        ]);
+        const dimMatches = [
+          ...lower.matchAll(/[_-](\d{2,4})x(\d{2,4})(?=\.(jpg|jpeg|png|webp|avif)|[_-]|$)/gi),
+        ];
+        for (const dm of dimMatches) {
+          const w = Number(dm[1]);
+          const h = Number(dm[2]);
+          if (adDims.has(`${w}x${h}`)) return true;
+          if (w > 0 && h > 0) {
+            if (w < 180 || h < 140 || w * h < 32000) return true;
+            if (w >= 300 && h <= 120 && w / h >= 3.2) return true;
+            if (h >= 400 && w <= 200 && h / w >= 2.4) return true;
+          }
+        }
+        if (altTxt) {
+          const lowerAlt = altTxt.toLowerCase().trim();
+          if (
+            /^(advertisement|sponsored|promoted|ad|ads|banner|quảng cáo|tài trợ)$/i.test(lowerAlt) ||
+            /\b(advertisement|sponsored content|promoted link|ad banner|quảng cáo)\b/i.test(lowerAlt)
+          ) {
+            return true;
+          }
+        }
+        if (tagHtml) {
+          const lowerTag = tagHtml.toLowerCase();
+          if (
+            /\b(class|id|data-ad|data-widget)=["'][^"']*(ad-|ads-|advert|banner|sponsor|promo|affiliate|mgid|taboola|outbrain|revcontent|adsbygoogle|code-block|ai-insert|quads|advads|adrotate|widget|sidebar|related-post)/i.test(
+              lowerTag
+            )
+          ) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      const pushImg = (rawU: string, altTxt: string) => {
+        let u = String(rawU || '').trim();
+        if (!u || !/^https?:\/\//i.test(u)) return;
+        if (isClientAdOrJunkImage(u, altTxt)) return;
         if (u.includes('/wp-content/uploads/')) {
           u = u.replace(
-            /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
+            /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+|768x\d+)(?=\.(jpg|jpeg|png|webp|avif)(\?|$))/i,
             ''
           );
         }
+        if (isClientAdOrJunkImage(u, altTxt)) return;
         const key = u.split('?')[0].toLowerCase();
         if (seenKeys.has(key)) return;
         seenKeys.add(key);
@@ -411,17 +516,59 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         });
       };
 
-      if (jData.images && typeof jData.images === 'object') {
-        for (const [k, v] of Object.entries(jData.images)) {
-          pushImg(String(v || ''), String(k || ''));
-        }
+      let mdContent = String(jData.content || '');
+      const footerCutoff = mdContent.search(
+        /\n(?:#{1,4}\s*)?(?:Leave a Reply|Leave a Comment|Related Posts|Related Articles|You May Also Like|More From|Recent Posts|Popular Posts|Trending Now|Sponsored Content|Promoted Links|Around the Web)\b/i
+      );
+      if (footerCutoff !== -1) {
+        mdContent = mdContent.slice(0, footerCutoff);
       }
 
-      const mdContent = String(jData.content || '');
+      // Loại bỏ ảnh nằm trong link quảng cáo / bài liên quan [![alt](img)](link)
+      const cleanedMdForImgs = mdContent.replace(
+        /\[!\[([^\]]*)\]\((https?:\/\/[^)\s"']+)\)\]\((https?:\/\/[^)\s"']+)\)/gi,
+        (full, _alt, _imgUrl, linkUrl) => {
+          if (
+            /\.(jpg|jpeg|png|webp|avif)(\?.*)?$/i.test(linkUrl) ||
+            /\/wp-content\/uploads\//i.test(linkUrl)
+          ) {
+            return full;
+          }
+          return '';
+        }
+      );
+
       const mdImgRe = /!\[([^\]]*)\]\((https?:\/\/[^)\s]+)\)/g;
       let mim: RegExpExecArray | null;
-      while ((mim = mdImgRe.exec(mdContent)) !== null) {
+      while ((mim = mdImgRe.exec(cleanedMdForImgs)) !== null) {
         pushImg(mim[2], mim[1]);
+      }
+
+      // Chỉ xét jData.images nếu trong thân bài chưa tìm được ảnh nào (ví dụ site biến ảnh thành blob:)
+      if (foundImgs.length === 0 && jData.images && typeof jData.images === 'object') {
+        let articleHost = '';
+        try {
+          articleHost = new URL(cleanTarget).hostname.replace(/^www\./i, '').toLowerCase();
+        } catch {}
+        for (const [k, v] of Object.entries(jData.images)) {
+          const u = String(v || '').trim();
+          if (!/^https?:\/\//i.test(u)) continue;
+          if (articleHost) {
+            try {
+              const imgHost = new URL(u).hostname.replace(/^www\./i, '').toLowerCase();
+              const isSameSiteOrCdn =
+                imgHost === articleHost ||
+                imgHost.endsWith(`.${articleHost}`) ||
+                /wp\.com|cloudinary|imgix|akamaized|cloudfront|fbcdn|twimg|pinimg|imgur/i.test(
+                  imgHost
+                );
+              if (!isSameSiteOrCdn) continue;
+            } catch {
+              continue;
+            }
+          }
+          pushImg(u, String(k || ''));
+        }
       }
 
       const paras: string[] = [];
@@ -435,7 +582,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           .trim();
         if (!line || line.length < 28) continue;
         if (
-          /^(skip to content|search|menu|home|share|tweet|pin|copy link|read more|related posts|leave a comment|cancel reply|privacy policy|terms of service|we use cookies|accept all|manage preferences)/i.test(
+          /^(skip to content|search|menu|home|share|tweet|pin|copy link|read more|related posts|leave a comment|cancel reply|privacy policy|terms of service|we use cookies|accept all|manage preferences|advertisement|sponsored)/i.test(
             line
           )
         ) {
@@ -1004,16 +1151,55 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         extractedWebImages.map((im) => im.url.split('?')[0].toLowerCase())
       );
 
+      const cleanedClip = htmlClip
+        .replace(/<ins\b[^>]*>[\s\S]*?<\/ins>/gi, '')
+        .replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '')
+        .replace(
+          /<(div|section|aside|ul|figure|p|span)\b[^>]+(class|id|data-ad|data-widget)=["'][^"']*(ad-|ads-|advert|banner|sponsor|promo|affiliate|mgid|taboola|outbrain|revcontent|adsbygoogle|code-block|ai-insert|quads|advads|adrotate|related|sidebar|widget|popular-posts|recent-posts)[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi,
+          ''
+        )
+        .replace(/<a\b([^>]*)>([\s\S]*?)<\/a>/gi, (fullMatch, aAttrs, innerHtml) => {
+          if (!/<img\b/i.test(innerHtml)) return fullMatch;
+          if (/\brel=["'][^"']*sponsored/i.test(aAttrs)) return '';
+          const hrefMatch = aAttrs.match(/\bhref=["']([^"']+)["']/i);
+          if (hrefMatch && hrefMatch[1]) {
+            const rawHref = hrefMatch[1].trim();
+            if (rawHref && !rawHref.startsWith('#') && !rawHref.startsWith('javascript:')) {
+              const isDirectImageLink =
+                /\.(jpg|jpeg|png|webp|avif)(\?.*)?$/i.test(rawHref) ||
+                /\/wp-content\/uploads\//i.test(rawHref) ||
+                /\/attachment\//i.test(rawHref);
+              if (!isDirectImageLink) return '';
+            }
+          }
+          return innerHtml;
+        });
+
       const imgRegex = /<img\b[^>]*>/gi;
       let m: RegExpExecArray | null;
-      while ((m = imgRegex.exec(htmlClip)) !== null) {
+      while ((m = imgRegex.exec(cleanedClip)) !== null) {
         const tag = m[0];
+        if (
+          /\b(class|id|data-ad|data-widget)=["'][^"']*(ad-|ads-|advert|banner|sponsor|promo|affiliate|mgid|taboola|outbrain|adsbygoogle|code-block|ai-insert|widget|sidebar)/i.test(
+            tag
+          )
+        ) {
+          continue;
+        }
         const wM = tag.match(/\bwidth=["']?(\d+)/i);
         const hM = tag.match(/\bheight=["']?(\d+)/i);
         if (wM && hM) {
           const w = Number(wM[1]);
           const h = Number(hM[1]);
-          if (w > 0 && h > 0 && w < 110 && h < 110) continue;
+          if (w > 0 && h > 0) {
+            if (w < 180 || h < 140 || w * h < 32000) continue;
+            if (w >= 300 && h <= 120 && w / h >= 3.2) continue;
+            if (h >= 400 && w <= 200 && h / w >= 2.4) continue;
+          }
+        } else if (wM && Number(wM[1]) > 0 && Number(wM[1]) < 180) {
+          continue;
+        } else if (hM && Number(hM[1]) > 0 && Number(hM[1]) < 140) {
+          continue;
         }
 
         let chosen = '';
@@ -1041,10 +1227,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             tag.match(/\bsrcset=["']([^"']+)["']/i);
           if (ss && ss[1]) {
             const parts = ss[1]
-              .split(',')
+              .split(/,\s*(?=(?:https?:\/\/|\/))/i)
               .map((p) => p.trim().split(/\s+/)[0])
               .filter((u) => /^https?:\/\//i.test(u));
-            if (parts.length > 0) chosen = parts[0];
+            if (parts.length > 0) chosen = parts[parts.length - 1];
           }
         }
         if (!chosen) {
@@ -1060,13 +1246,38 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           lower.endsWith('.gif') ||
           lower.endsWith('.ico') ||
           lower.includes('gravatar.com') ||
+          lower.includes('/plugins/') ||
+          lower.includes('/themes/') ||
           lower.includes('avatar') ||
           lower.includes('logo') ||
           lower.includes('emoji') ||
           lower.includes('smilies') ||
-          lower.includes('pixel')
+          lower.includes('pixel') ||
+          lower.includes('doubleclick') ||
+          lower.includes('googlesyndication') ||
+          lower.includes('mgid.com') ||
+          lower.includes('avplayer.com') ||
+          lower.includes('taboola') ||
+          lower.includes('outbrain') ||
+          lower.includes('revcontent') ||
+          lower.includes('adskeeper') ||
+          lower.includes('amazon-adsystem') ||
+          lower.includes('adbanner') ||
+          lower.includes('ad-banner') ||
+          lower.includes('adsense') ||
+          lower.includes('sponsored') ||
+          lower.includes('affiliate') ||
+          /(\/|^)(ads?|adv|advert|advertisement|banners?|sponsors?|sponsored|promo|affiliates?)(\/|-|_|\.|\?|$)/i.test(
+            lower
+          )
         ) {
           continue;
+        }
+        const dimM = lower.match(/[_-](\d{2,4})x(\d{2,4})(?=\.(jpg|jpeg|png|webp|avif)|[_-]|$)/i);
+        if (dimM) {
+          const dw = Number(dimM[1]);
+          const dh = Number(dimM[2]);
+          if (dw > 0 && dh > 0 && (dw < 180 || dh < 140 || dw * dh < 32000)) continue;
         }
         if (chosen.includes('/wp-content/uploads/')) {
           chosen = chosen.replace(
@@ -1381,7 +1592,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           }
         } catch {}
 
-        if (origImgs.length < 2) {
+        if (origImgs.length === 0) {
           const jinaData = await extractViaJinaReaderClient(sourceLink);
           if (jinaData) {
             if (!resolvedTitle && jinaData.title) {

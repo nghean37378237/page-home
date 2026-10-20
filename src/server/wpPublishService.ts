@@ -1024,7 +1024,7 @@ function collectImgsFromHtml(htmlChunk: string, baseUrl: string): { url: string;
     const altMatch = tag.match(/\balt=["']([^"']*)["']/i);
     const alt = altMatch ? decodeHtmlEntities(altMatch[1]) : '';
 
-    if (isIgnorableImage('', alt, tag)) continue;
+    if (isIgnorableImage('https://example.com/photo.jpg', alt, tag)) continue;
 
     const wMatch = tag.match(/\bwidth=["']?(\d+)/i);
     const hMatch = tag.match(/\bheight=["']?(\d+)/i);
