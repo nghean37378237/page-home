@@ -196,6 +196,17 @@ export function ImageStudioTab({
   const [multiFrameOffsets, setMultiFrameOffsets] = useState<Record<string, number>>({});
   const [exportingPresetId, setExportingPresetId] = useState<string | null>(null);
 
+  // --- HÀNG CHỜ ẢNH TƯƠNG TỰ TỰ ĐỘNG TÌM TỪ BÀI VIẾT ĐỂ CHỌN VÔ KHO TỰ GHÉP ---
+  const [pendingSimilarImages, setPendingSimilarImages] = useState<
+    { url: string; alt: string }[]
+  >([]);
+  const [rejectedSimilarUrls, setRejectedSimilarUrls] = useState<string[]>([]);
+  const [isSearchingSimilar, setIsSearchingSimilar] = useState<boolean>(false);
+  const [similarSearchQuery, setSimilarSearchQuery] = useState<string>('');
+  const [similarSearchNotice, setSimilarSearchNotice] = useState<string | null>(null);
+  const [extractedRawUrls, setExtractedRawUrls] = useState<string[]>([]);
+  const [extractedArticleBodyText, setExtractedArticleBodyText] = useState<string>('');
+
   // --- HÀNG 1: 8 MẪU ẢNH CHO BÀI VIẾT (ƯU TIÊN MẶC ĐỊNH 3:4) ---
   const favStorageKey = `celeb24h_fav8_post_v2_${currentUser?.id || currentUser?.name || 'default'}`;
   const [favoritePresetIds, setFavoritePresetIds] = useState<string[]>(() => {
@@ -592,7 +603,205 @@ export function ImageStudioTab({
     [selectedPresetId, selectedRatioId, selectedQuickRequirement]
   );
 
-  // Hàm trích xuất toàn bộ ảnh từ Link Web và tự động ghép vào các khung
+  // Tự động hoặc chủ động tìm ảnh tương tự ngoài web đưa vào Hàng Chờ để người dùng chọn vô kho tự ghép
+  const handleSearchSimilarImagesToQueue = async (options?: {
+    titleOverride?: string;
+    articleTextOverride?: string;
+    sourceUrlOverride?: string;
+    existingRawUrlsOverride?: string[];
+    replaceQueue?: boolean;
+    customQueryOverride?: string;
+  }) => {
+    const resolvedSourceUrl = (
+      options?.sourceUrlOverride ??
+      extractedArticleInfo?.sourceUrl ??
+      webArticleUrl
+    ).trim();
+    const resolvedTitle = (
+      options?.titleOverride ??
+      extractedArticleInfo?.title ??
+      ''
+    ).trim();
+    const resolvedBodyText = (
+      options?.articleTextOverride ??
+      extractedArticleBodyText ??
+      ''
+    ).trim();
+    const resolvedQuery = (
+      options?.customQueryOverride ??
+      similarSearchQuery.trim() ??
+      ''
+    ).trim();
+
+    if (!resolvedQuery && !resolvedTitle && !resolvedSourceUrl) {
+      setSimilarSearchNotice(
+        'Vui lòng dán Link bài viết hoặc nhập Tên nhân vật / Từ khóa để tìm ảnh tương tự vào hàng chờ!'
+      );
+      return;
+    }
+
+    setIsSearchingSimilar(true);
+    setSimilarSearchNotice('⏳ Đang tự động tìm ảnh tương tự cùng nhân vật & bối cảnh vào hàng chờ...');
+    try {
+      const rawOrigUrls = options?.existingRawUrlsOverride ?? extractedRawUrls;
+      const replaceQueue = options?.replaceQueue ?? false;
+
+      const excludedList = [
+        ...rawOrigUrls.map((u) => ({ url: u, isExternal: false })),
+        ...uploadedPhotos
+          .filter((u) => u.startsWith('http'))
+          .map((u) => ({ url: u, isExternal: false })),
+        ...(replaceQueue
+          ? []
+          : pendingSimilarImages.map((x) => ({ url: x.url, alt: x.alt, isExternal: true }))),
+        ...rejectedSimilarUrls.map((u) => ({ url: u, isExternal: true })),
+      ];
+
+      const res = await fetch('/api/wp-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'search_external_images',
+          forceExternalSearch: true,
+          query: resolvedQuery || resolvedTitle || resolvedSourceUrl,
+          sourceUrl: resolvedSourceUrl || undefined,
+          title: resolvedTitle,
+          articleText: resolvedBodyText.slice(0, 8000),
+          existingImages: excludedList,
+          limit: 8,
+        }),
+      });
+      const rawText = await res.text();
+      let data: any = null;
+      try {
+        data = rawText ? JSON.parse(rawText) : null;
+      } catch {
+        data = null;
+      }
+
+      const rawExtList = Array.isArray(data?.externalImages)
+        ? data.externalImages
+        : Array.isArray(data?.images)
+        ? data.images.filter((im: any) => im.isExternal !== false)
+        : [];
+
+      if (res.ok && data?.ok && rawExtList.length > 0) {
+        if (data.primaryPerson && !similarSearchQuery.trim()) {
+          setSimilarSearchQuery(String(data.primaryPerson));
+        }
+
+        const existingKeySet = new Set(
+          [
+            ...rawOrigUrls,
+            ...uploadedPhotos.filter((u) => u.startsWith('http')),
+            ...(replaceQueue ? [] : pendingSimilarImages.map((p) => p.url)),
+          ].map((u) => u.split('?')[0].toLowerCase())
+        );
+
+        const freshItems: { url: string; alt: string }[] = [];
+        for (const item of rawExtList) {
+          const url = String(item?.url || '').trim();
+          if (!url) continue;
+          const key = url.split('?')[0].toLowerCase();
+          if (existingKeySet.has(key)) continue;
+          existingKeySet.add(key);
+          freshItems.push({
+            url,
+            alt: String(item?.alt || data?.primaryPerson || resolvedTitle || 'Ảnh tương tự'),
+          });
+        }
+
+        if (freshItems.length > 0) {
+          if (replaceQueue) {
+            setRejectedSimilarUrls((prev) => [
+              ...Array.from(new Set([...prev, ...pendingSimilarImages.map((p) => p.url)])),
+            ]);
+            setPendingSimilarImages(freshItems);
+          } else {
+            setPendingSimilarImages((prev) => [...prev, ...freshItems]);
+          }
+          setSimilarSearchNotice(
+            `✅ Đã tìm thấy ${freshItems.length} ảnh tương tự${
+              data.primaryPerson ? ` (${data.primaryPerson})` : ''
+            } vào hàng chờ! Bấm "+ Chọn vô kho" để đưa vào kho tự ghép.`
+          );
+        } else {
+          setSimilarSearchNotice(
+            'Đã lọc trùng với các ảnh hiện có. Hãy bấm "🔄 Đổi loạt khác" hoặc nhập thêm từ khóa cụ thể hơn!'
+          );
+        }
+      } else {
+        setSimilarSearchNotice(
+          'Không tìm thấy thêm ảnh tương tự mới. Bạn có thể nhập tên nhân vật vào ô tìm kiếm bên dưới rồi bấm Tìm!'
+        );
+      }
+    } catch {
+      setSimilarSearchNotice('Lỗi kết nối khi tìm ảnh tương tự. Vui lòng thử lại!');
+    } finally {
+      setIsSearchingSimilar(false);
+    }
+  };
+
+  // Chọn 1 ảnh từ Hàng Chờ Ảnh Tương Tự đưa vào Kho Ảnh Tự Ghép
+  const handleSelectSimilarToPool = (
+    item: { url: string; alt: string },
+    putAtFront: boolean = false
+  ) => {
+    setUploadedPhotos((prev) => {
+      const filtered = prev.filter((p) => p !== item.url);
+      const nextPool = putAtFront ? [item.url, ...filtered] : [...filtered, item.url];
+      setSlotAssignments((oldSlots) => {
+        const nextSlots = { ...oldSlots };
+        if (putAtFront) {
+          activePreset.slots.forEach((slot, idx) => {
+            nextSlots[slot.id] = nextPool[idx % Math.max(1, nextPool.length)] || '';
+          });
+        } else {
+          activePreset.slots.forEach((slot, idx) => {
+            if (!nextSlots[slot.id]) {
+              nextSlots[slot.id] = nextPool[idx % Math.max(1, nextPool.length)] || '';
+            }
+          });
+        }
+        return nextSlots;
+      });
+      return nextPool;
+    });
+    setPendingSimilarImages((prev) => prev.filter((x) => x.url !== item.url));
+    setShowMultiFrameGallery(true);
+    setExportNotice(
+      putAtFront
+        ? 'Đã đưa ảnh tương tự lên vị trí #1 trong Kho Tự Ghép và cập nhật tất cả khung!'
+        : 'Đã thêm ảnh tương tự vào Kho Tự Ghép!'
+    );
+    setTimeout(() => setExportNotice(null), 3000);
+  };
+
+  // Chọn toàn bộ ảnh trong Hàng Chờ đưa vào Kho Ảnh Tự Ghép
+  const handleSelectAllSimilarToPool = () => {
+    if (pendingSimilarImages.length === 0) return;
+    const urlsToAdd = pendingSimilarImages.map((x) => x.url);
+    setUploadedPhotos((prev) => {
+      const existing = new Set(prev);
+      const combined = [...prev, ...urlsToAdd.filter((u) => !existing.has(u))];
+      setSlotAssignments((oldSlots) => {
+        const nextSlots = { ...oldSlots };
+        activePreset.slots.forEach((slot, idx) => {
+          if (!nextSlots[slot.id] && combined[idx]) {
+            nextSlots[slot.id] = combined[idx];
+          }
+        });
+        return nextSlots;
+      });
+      return combined;
+    });
+    setPendingSimilarImages([]);
+    setShowMultiFrameGallery(true);
+    setExportNotice(`Đã đưa toàn bộ ${urlsToAdd.length} ảnh tương tự vào Kho Tự Ghép!`);
+    setTimeout(() => setExportNotice(null), 3500);
+  };
+
+  // Hàm trích xuất toàn bộ ảnh từ Link Web, tự động ghép khung VÀ tự động tìm ảnh tương tự vào hàng chờ
   const handleExtractImagesFromWebLink = async (overrideUrl?: string) => {
     const targetUrl = (overrideUrl ?? webArticleUrl).trim();
     if (!targetUrl) {
@@ -624,8 +833,13 @@ export function ImageStudioTab({
       const extractedPhotos: string[] = data.images.map(
         (img: ExtractedWebImageItem) => img.dataUrl || img.url
       );
+      const rawUrls: string[] = data.images
+        .map((img: ExtractedWebImageItem) => img.url)
+        .filter(Boolean);
 
       setUploadedPhotos(extractedPhotos);
+      setExtractedRawUrls(rawUrls);
+      setExtractedArticleBodyText(String(data.articleText || data.excerpt || ''));
       setExtractedArticleInfo({
         title: data.title || 'Bài viết Web',
         sourceUrl: data.sourceUrl || targetUrl,
@@ -639,9 +853,19 @@ export function ImageStudioTab({
       applyCustomRequirementToStudio(customRequirementText, extractedPhotos, data.title);
 
       setExportNotice(
-        `Đã tự động lấy ${extractedPhotos.length} ảnh từ bài "${(data.title || '').slice(0, 45)}..." và ghép sẵn vào các khung!`
+        `Đã tự động lấy ${extractedPhotos.length} ảnh từ bài "${(data.title || '').slice(0, 45)}..." vào Kho Tự Ghép & đang tìm thêm ảnh tương tự vào hàng chờ!`
       );
       setTimeout(() => setExportNotice(null), 5000);
+
+      // Tự động tìm luôn ảnh tương tự ngoài web đưa vào Hàng Chờ để người dùng chọn thêm vào kho
+      void handleSearchSimilarImagesToQueue({
+        titleOverride: data.title || '',
+        articleTextOverride: String(data.articleText || data.excerpt || ''),
+        sourceUrlOverride: data.sourceUrl || targetUrl,
+        existingRawUrlsOverride: rawUrls,
+        replaceQueue: true,
+        customQueryOverride: '',
+      });
     } catch (err: any) {
       setWebExtractError(err?.message || 'Lỗi khi lấy ảnh từ link bài viết web');
     } finally {
@@ -693,40 +917,51 @@ export function ImageStudioTab({
     return () => window.removeEventListener('paste', handlePaste);
   }, [activeSlotId]);
 
-  // File Upload handler
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // File Upload handler (hỗ trợ cả thêm vào kho hoặc thay mới toàn bộ kho ảnh tự ghép)
+  const handleFileUpload = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    mode: 'append' | 'replace' = 'append'
+  ) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
     const newPhotos: string[] = [];
     let loaded = 0;
+    const totalFiles = files.length;
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const result = event.target?.result as string;
         if (result) newPhotos.push(result);
         loaded++;
-        if (loaded === files.length) {
+        if (loaded === totalFiles) {
           setUploadedPhotos((prev) => {
-            const combined = [...newPhotos, ...prev];
+            const combined = mode === 'replace' ? [...newPhotos] : [...newPhotos, ...prev];
             setSlotAssignments((oldSlots) => {
               const next = { ...oldSlots };
               activePreset.slots.forEach((slot, idx) => {
                 if (newPhotos[idx]) {
                   next[slot.id] = newPhotos[idx];
-                } else if (!next[slot.id] && combined[idx]) {
-                  next[slot.id] = combined[idx];
+                } else if (mode === 'replace' || !next[slot.id]) {
+                  next[slot.id] = combined[idx % Math.max(1, combined.length)] || '';
                 }
               });
               return next;
             });
             return combined;
           });
-          setExportNotice(`Đã tải lên ${newPhotos.length} ảnh!`);
-          setTimeout(() => setExportNotice(null), 3000);
+          setShowMultiFrameGallery(true);
+          setMultiFrameOffsets({});
+          setExportNotice(
+            mode === 'replace'
+              ? `Đã thay mới Kho Tự Ghép bằng ${newPhotos.length} ảnh tải lên từ máy!`
+              : `Đã tải thêm ${newPhotos.length} ảnh từ máy lên Kho Tự Ghép!`
+          );
+          setTimeout(() => setExportNotice(null), 3500);
         }
       };
       reader.readAsDataURL(file);
     });
+    e.target.value = '';
   };
 
   // Helper for slot transform
@@ -941,7 +1176,20 @@ export function ImageStudioTab({
               loadedImgs[slot.id] = img;
               resolve();
             };
-            img.onerror = () => resolve();
+            img.onerror = () => {
+              if (!src.startsWith('data:') && !src.includes('wsrv.nl')) {
+                const proxyImg = new window.Image();
+                proxyImg.crossOrigin = 'anonymous';
+                proxyImg.onload = () => {
+                  loadedImgs[slot.id] = proxyImg;
+                  resolve();
+                };
+                proxyImg.onerror = () => resolve();
+                proxyImg.src = `https://wsrv.nl/?url=${encodeURIComponent(src)}&output=jpg`;
+              } else {
+                resolve();
+              }
+            };
             img.src = src;
           })
       )
@@ -1521,10 +1769,10 @@ export function ImageStudioTab({
               )}
             </div>
 
-            {/* Hàng nhập Link Web + Yêu cầu ghép khung + Nút Thực Hiện */}
+            {/* Hàng nhập Link Web + Yêu cầu ghép khung + Nút Lấy Ảnh & Tải Ảnh Từ Máy */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-2.5">
               {/* Ô nhập Link bài viết */}
-              <div className="lg:col-span-5 relative">
+              <div className="lg:col-span-4 relative">
                 <Link2 className="w-4 h-4 text-rose-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
@@ -1551,7 +1799,7 @@ export function ImageStudioTab({
               </div>
 
               {/* Ô nhập Yêu cầu ghép khung tùy ý */}
-              <div className="lg:col-span-5 relative">
+              <div className="lg:col-span-4 relative">
                 <Wand2 className="w-4 h-4 text-indigo-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
@@ -1576,13 +1824,13 @@ export function ImageStudioTab({
                 />
               </div>
 
-              {/* Nút Lấy Ảnh & Tự Ghép */}
-              <div className="lg:col-span-2 flex items-center gap-1.5">
+              {/* Cụm nút: Lấy Ảnh & Tự Ghép + Tải Ảnh Từ Máy Lên Kho */}
+              <div className="lg:col-span-4 flex items-center gap-2">
                 <button
                   type="button"
                   disabled={isExtractingWeb}
                   onClick={() => void handleExtractImagesFromWebLink()}
-                  className="w-full py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all disabled:opacity-60 whitespace-nowrap"
+                  className="flex-1 py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all disabled:opacity-60 whitespace-nowrap"
                 >
                   {isExtractingWeb ? (
                     <>
@@ -1596,6 +1844,21 @@ export function ImageStudioTab({
                     </>
                   )}
                 </button>
+
+                <label
+                  title="Tải ảnh từ máy tính của bạn lên Kho Tự Ghép"
+                  className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-sm flex items-center justify-center gap-1.5 cursor-pointer transition-all whitespace-nowrap shrink-0"
+                >
+                  <Upload className="w-4 h-4" />
+                  <span>Tải Ảnh Từ Máy Lên Kho</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*"
+                    onChange={(e) => handleFileUpload(e, 'append')}
+                    className="hidden"
+                  />
+                </label>
               </div>
             </div>
 
@@ -1622,7 +1885,6 @@ export function ImageStudioTab({
                       onClick={() => {
                         setSelectedQuickRequirement(reqItem.id as any);
                         setShowMultiFrameGallery(true);
-                        // Áp dụng luôn xuống khung chính
                         if (reqItem.id === 'all_frames' && favoritePresetIds[0]) {
                           setSelectedPresetId(favoritePresetIds[0]);
                         } else if (reqItem.id === 'circle_pip') {
@@ -1727,11 +1989,299 @@ export function ImageStudioTab({
                     onClick={() => setShowMultiFrameGallery((prev) => !prev)}
                     className="px-2.5 py-1 rounded-lg bg-rose-100 hover:bg-rose-200 text-rose-800 font-bold text-[11px] cursor-pointer"
                   >
-                    {showMultiFrameGallery ? 'Thu gọn bảng Đa Khung' : 'Hiện bảng Đa Khung (8 mẫu)'}
+                    {showMultiFrameGallery ? 'Thu gọn bảng Đa Khung' : 'Hiện bảng Đa Khung'}
                   </button>
                 </div>
               </div>
             )}
+
+            {/* ================================================================================= */}
+            {/* KHU VỰC KHO ẢNH TỰ GHÉP (TẢI TỪ MÁY LÊN KHO) & HÀNG CHỜ ẢNH TƯƠNG TỰ (CHỌN VÔ KHO) */}
+            {/* ================================================================================= */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1">
+              {/* CỘT 1 (6 COL): KHO ẢNH ĐANG DÙNG ĐỂ TỰ GHÉP + NÚT UPDATE ẢNH TỪ MÁY LÊN KHO */}
+              <div className="lg:col-span-6 bg-white/95 rounded-xl border border-emerald-200 p-3 space-y-2 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase">
+                      Kho Tự Ghép ({uploadedPhotos.length} ảnh)
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-700">
+                      Ảnh đang dùng để ghép tự động
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold cursor-pointer shadow-2xs transition-colors">
+                      <Upload className="w-3 h-3" />
+                      <span>+ Tải Ảnh Từ Máy Vào Kho</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(e) => handleFileUpload(e, 'append')}
+                        className="hidden"
+                      />
+                    </label>
+
+                    <label
+                      title="Xóa ảnh cũ và thay toàn bộ kho bằng ảnh tải từ máy lên"
+                      className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold cursor-pointer transition-colors"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>Thay Kho Bằng Ảnh Máy</span>
+                      <input
+                        type="file"
+                        multiple
+                        accept="image/*"
+                        onChange={(e) => handleFileUpload(e, 'replace')}
+                        className="hidden"
+                      />
+                    </label>
+
+                    {uploadedPhotos.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setUploadedPhotos([]);
+                          setSlotAssignments({});
+                        }}
+                        className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[10px] font-bold cursor-pointer"
+                        title="Xóa trống kho ảnh"
+                      >
+                        Xóa kho
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Danh sách ảnh trong Kho Tự Ghép */}
+                {uploadedPhotos.length > 0 ? (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                    {uploadedPhotos.map((photo, idx) => (
+                      <div
+                        key={`pool-${idx}`}
+                        className="relative group shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 border-emerald-200 hover:border-emerald-600 bg-slate-100 shadow-2xs transition-all"
+                      >
+                        <img
+                          src={photo}
+                          alt={`Kho #${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <span className="absolute top-1 left-1 bg-emerald-700/90 text-white text-[9px] font-black px-1.5 py-0.2 rounded">
+                          #{idx + 1}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setUploadedPhotos((prev) => prev.filter((_, i) => i !== idx))
+                          }
+                          title="Xóa ảnh này khỏi kho"
+                          className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                        >
+                          ×
+                        </button>
+                        <div className="absolute inset-x-0 bottom-0 bg-black/75 p-1 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {idx !== 0 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUploadedPhotos((prev) => {
+                                  const next = [
+                                    prev[idx],
+                                    ...prev.filter((_, i) => i !== idx),
+                                  ];
+                                  setSlotAssignments((oldSlots) => {
+                                    const updated = { ...oldSlots };
+                                    activePreset.slots.forEach((slot, sIdx) => {
+                                      updated[slot.id] =
+                                        next[sIdx % Math.max(1, next.length)] || '';
+                                    });
+                                    return updated;
+                                  });
+                                  return next;
+                                });
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[9px] font-black cursor-pointer"
+                              title="Đưa ảnh này lên vị trí #1 để làm ảnh chính cho toàn bộ mẫu ghép"
+                            >
+                              Đặt #1
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const targetSlot = activeSlotId !== null ? activeSlotId : 0;
+                              setSlotAssignments((prev) => ({ ...prev, [targetSlot]: photo }));
+                            }}
+                            className="px-1.5 py-0.5 rounded bg-white text-slate-900 text-[9px] font-black cursor-pointer"
+                            title="Gán vào ô đang chọn ở bàn chỉnh sửa"
+                          >
+                            Gán ô
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-4 px-3 text-center text-xs text-slate-500 border border-dashed border-emerald-300 rounded-lg bg-emerald-50/30">
+                    Kho đang trống. Hãy dán Link bài viết hoặc bấm <b>&quot;+ Tải Ảnh Từ Máy Vào Kho&quot;</b> (hoặc nhấn Ctrl+V dán ảnh) để đưa ảnh vào kho tự ghép!
+                  </div>
+                )}
+              </div>
+
+              {/* CỘT 2 (6 COL): HÀNG CHỜ ẢNH TƯƠNG TỰ TỰ ĐỘNG TÌM (CHỜ CHỌN VÔ KHO TỰ GHÉP) */}
+              <div className="lg:col-span-6 bg-indigo-50/70 rounded-xl border border-indigo-200 p-3 space-y-2 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black uppercase">
+                      Hàng Chờ Ảnh Tương Tự ({pendingSimilarImages.length})
+                    </span>
+                    <span className="text-[11px] font-bold text-indigo-950">
+                      Bấm chọn để đưa vô Kho Tự Ghép
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {pendingSimilarImages.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={handleSelectAllSimilarToPool}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold cursor-pointer shadow-2xs"
+                      >
+                        ✅ Chọn Tất Cả Vô Kho ({pendingSimilarImages.length})
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      disabled={isSearchingSimilar}
+                      onClick={() =>
+                        void handleSearchSimilarImagesToQueue({
+                          replaceQueue: pendingSimilarImages.length > 0,
+                        })
+                      }
+                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-extrabold cursor-pointer shadow-2xs disabled:opacity-60"
+                    >
+                      <RefreshCw
+                        className={`w-3 h-3 ${isSearchingSimilar ? 'animate-spin' : ''}`}
+                      />
+                      <span>
+                        {isSearchingSimilar
+                          ? 'Đang tìm...'
+                          : pendingSimilarImages.length > 0
+                          ? '🔄 Tìm Loạt Tương Tự Khác'
+                          : '🔍 Tìm Ảnh Tương Tự'}
+                      </span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Thanh nhập từ khóa nhân vật / chủ đề để tìm ảnh tương tự theo ý muốn */}
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-1">
+                    <Search className="w-3.5 h-3.5 text-indigo-500 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={similarSearchQuery}
+                      onChange={(e) => setSimilarSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleSearchSimilarImagesToQueue({
+                            customQueryOverride: similarSearchQuery,
+                            replaceQueue: false,
+                          });
+                        }
+                      }}
+                      placeholder="Nhập tên nhân vật / từ khóa để tìm thêm ảnh tương tự (hoặc tự động theo link bài)..."
+                      className="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-white border border-indigo-200 text-[11px] font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isSearchingSimilar}
+                    onClick={() =>
+                      void handleSearchSimilarImagesToQueue({
+                        customQueryOverride: similarSearchQuery,
+                        replaceQueue: false,
+                      })
+                    }
+                    className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-300 text-[11px] font-bold cursor-pointer shrink-0 disabled:opacity-50"
+                  >
+                    + Tìm thêm
+                  </button>
+                </div>
+
+                {similarSearchNotice && (
+                  <div className="text-[11px] font-semibold text-indigo-900 bg-white/80 px-2.5 py-1 rounded-lg border border-indigo-200/80">
+                    {similarSearchNotice}
+                  </div>
+                )}
+
+                {/* Danh sách ảnh tương tự đang nằm trong hàng chờ */}
+                {pendingSimilarImages.length > 0 ? (
+                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                    {pendingSimilarImages.map((item, idx) => (
+                      <div
+                        key={`sim-${idx}-${item.url}`}
+                        className="relative group shrink-0 w-24 rounded-xl overflow-hidden border-2 border-indigo-200 hover:border-indigo-600 bg-white shadow-2xs flex flex-col"
+                      >
+                        <div className="relative w-full h-16 bg-slate-100 overflow-hidden">
+                          <img
+                            src={item.url}
+                            alt={item.alt}
+                            className="w-full h-full object-cover"
+                            onError={() => {
+                              setPendingSimilarImages((prev) =>
+                                prev.filter((x) => x.url !== item.url)
+                              );
+                            }}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRejectedSimilarUrls((prev) => [...prev, item.url]);
+                              setPendingSimilarImages((prev) =>
+                                prev.filter((x) => x.url !== item.url)
+                              );
+                            }}
+                            title="Bỏ qua ảnh này"
+                            className="absolute top-1 right-1 w-4 h-4 rounded-full bg-black/70 hover:bg-red-600 text-white flex items-center justify-center text-[10px] font-black cursor-pointer"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="p-1 flex items-center gap-1 bg-white">
+                          <button
+                            type="button"
+                            onClick={() => handleSelectSimilarToPool(item, false)}
+                            className="flex-1 py-0.5 px-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-black cursor-pointer text-center truncate"
+                            title="Chọn đưa ảnh này vào Kho Tự Ghép"
+                          >
+                            + Vô kho
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectSimilarToPool(item, true)}
+                            className="py-0.5 px-1 rounded bg-amber-400 hover:bg-amber-500 text-slate-950 text-[9px] font-black cursor-pointer shrink-0"
+                            title="Chọn làm ảnh #1 chính cho toàn bộ mẫu ghép"
+                          >
+                            #1
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="py-3 px-3 text-center text-[11px] text-indigo-800/80 border border-dashed border-indigo-300 rounded-lg bg-white/50">
+                    {isSearchingSimilar
+                      ? '⏳ Hệ thống đang tự động tìm ảnh tương tự ngoài web...'
+                      : 'Khi bạn bấm "Lấy Ảnh & Tự Ghép" (hoặc bấm "🔍 Tìm Ảnh Tương Tự"), ảnh tương tự cùng nhân vật sẽ tự động hiện vào hàng chờ tại đây để bạn chọn vô kho tự ghép!'}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* BỘ SƯU TẬP KHUNG GHÉP TỰ ĐỘNG 2 HÀNG: HÀNG 1 (8 MẪU BÀI VIẾT 3:4) + HÀNG 2 (4 MẪU STORY 9:16) */}
             {showMultiFrameGallery && uploadedPhotos.length > 0 && (
