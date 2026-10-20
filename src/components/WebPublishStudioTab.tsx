@@ -338,6 +338,67 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     return out.join('');
   };
 
+  const cleanClientScrapedTitle = (rawTitle: string, sourceUrl?: string): string => {
+    let cleaned = String(rawTitle || '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (!cleaned) return '';
+
+    let hostBrand = '';
+    if (sourceUrl) {
+      try {
+        const host = new URL(sourceUrl).hostname.replace(/^www\./i, '').toLowerCase();
+        hostBrand = host.split('.')[0] || '';
+      } catch {}
+    }
+
+    cleaned = cleaned.replace(/\s+(?:\||::|«|»|\/\/)\s+[^|«»]{1,50}$/g, '').trim();
+
+    if (hostBrand && hostBrand.length >= 2) {
+      const escapedBrand = hostBrand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const spacedBrand = hostBrand.replace(/[-_]+/g, '[\\s\\-_]*');
+      cleaned = cleaned
+        .replace(
+          new RegExp(`\\s+[-–—|:]\\s+(?:${escapedBrand}|${spacedBrand})(?:\\.[a-z.]{2,6})?\\s*$`, 'i'),
+          ''
+        )
+        .trim();
+    }
+
+    cleaned = cleaned
+      .replace(
+        /\s+[-–—|]\s+[^|–—-]{2,40}\.(com|net|org|fun|vn|info|us|co\.uk|io|me|tv|news|live|online|site|xyz|club|buzz|today|world|media|press|daily|post|times|magazine)$/i,
+        ''
+      )
+      .trim();
+
+    const tailMatch = cleaned.match(/^(.*?\S)\s+[-–—]\s+([^|–—-]{2,35})$/);
+    if (tailMatch && tailMatch[1].length >= 18) {
+      const mainPart = tailMatch[1].trim();
+      const tailPart = tailMatch[2].trim();
+      const tailWords = tailPart.split(/\s+/);
+      const isQuestionOrExclamation = /[?!]$/.test(tailPart);
+      const hasStoryClauseWords =
+        /\b(her|his|their|them|him|she|he|they|you|your|our|who|what|when|where|why|how|can|do|does|did|would|could|will|is|are|was|were|has|have|had|not|no|never|everyone|anyone|someone|nobody|choice|life|look|looks|years|year|old|age|now|today|after|before|without|with|from|into|about|because|while|still|even|more|most|less|part|episode|season|chapter|actress|actor|star|singer|model|fans|people|world|heart|hearts|plastic|surgery|wrinkles|beach|wedding|divorce|baby|son|daughter|husband|wife|partner)\b/i.test(
+          tailPart
+        );
+      const isKnownSitePattern =
+        /^(beaware|tvus|celeb24h|dailymail|daily\s+mail(?:\s+online)?|page\s+six|pagesix|tmz|just\s+jared|justjared|people|us\s+weekly|radaronline|radar\s+online|the\s+sun|the\s+mirror|mirror\s+online|bright\s+side|bored\s+panda|yahoo(?:\s+[a-z]+)?|msn|fox\s+news|cnn|bbc|ny\s+post|new\s+york\s+post|hollywood\s+life|e!\s*online|et\s+online|entertainment\s+tonight|vogue|elle|glamour|cosmopolitan|marie\s+claire|harper'?s\s+bazaar|vanity\s+fair|buzzfeed|huffpost|upworthy|littlethings|goalcast|newsner|apost|fabiosa|amebo|lifedaily|relieved|the\s+dodo|screen\s*rant|collider|deadline|variety|the\s+hollywood\s+reporter|indiewire|popcrush|allmusic|billboard|rolling\s+stone|nme|pitchfork|parade|woman'?s\s+world|closer\s+weekly|in\s+touch\s+weekly|life\s*&\s*style|ok!\s*magazine|star\s+magazine|national\s+enquirer|daily\s+express|daily\s+star|metro|independent|the\s+guardian|telegraph)$/i.test(
+          tailPart
+        );
+
+      if (
+        isKnownSitePattern ||
+        (!isQuestionOrExclamation && !hasStoryClauseWords && tailWords.length <= 3 && tailPart.length <= 25)
+      ) {
+        cleaned = mainPart;
+      }
+    }
+
+    return cleaned;
+  };
+
   // Bộ hút nội dung & ảnh vượt tường lửa / chống copy trực tiếp từ trình duyệt qua Jina Cloud Headless Browser (CORS *)
   const extractViaJinaReaderClient = async (rawTargetUrl: string): Promise<{
     title: string;
@@ -371,9 +432,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       const jData = json?.data;
       if (!jData) return null;
 
-      const titleText = String(jData.title || '')
-        .replace(/\s+[|–—-]\s+[^|–—-]{2,35}\.(com|net|org|fun|vn|info|us|co\.uk)$/i, '')
-        .trim();
+      const titleText = cleanClientScrapedTitle(String(jData.title || ''), cleanTarget);
       const excerptText = String(jData.description || '').trim();
       const foundImgs: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] = [];
       const seenKeys = new Set<string>();
@@ -746,10 +805,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       }
     }
 
-    const finalTitle =
+    const finalTitle = cleanClientScrapedTitle(
       extractedTitle ||
-      rawInput.split('\n')[0]?.trim().slice(0, 95) ||
-      'Exclusive Feature Story & In-Depth Analysis';
+        rawInput.split('\n')[0]?.trim().slice(0, 95) ||
+        'Exclusive Feature Story & In-Depth Analysis',
+      targetUrl
+    );
 
     // Trích xuất các đoạn văn sạch từ HTML hoặc văn bản thuần (tuyệt đối không dùng tiêu đề câu hỏi tò mò làm đoạn văn)
     const cleanHtmlText = String(extractedBodyText || extractedExcerpt || '')
@@ -1437,7 +1498,11 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         );
       }
 
-      if (data.title) setTitle(data.title);
+      if (data.title) {
+        const cleanedT = cleanClientScrapedTitle(data.title, detectedSourceUrl);
+        data.title = cleanedT;
+        setTitle(cleanedT);
+      }
       if (data.slug) {
         setSlug(data.slug);
         setAutoSlug(false);

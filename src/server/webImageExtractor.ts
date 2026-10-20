@@ -580,7 +580,7 @@ export async function extractImagesFromWebUrl(
       const postJson = Array.isArray(rawJson) ? rawJson[0] : rawJson;
       if (postJson && postJson.id) {
         matchedWpPostId = Number(postJson.id) || 0;
-        if (!title) title = decodeHtmlEntities(postJson.title?.rendered || '');
+        if (!title) title = decodeHtmlEntities(postJson.title?.rendered || '').replace(/<[^>]+>/g, '').trim();
         if (!excerpt) {
           excerpt = decodeHtmlEntities(
             String(postJson.excerpt?.rendered || '').replace(/<[^>]+>/g, '')
@@ -895,10 +895,39 @@ export async function extractImagesFromWebUrl(
     throw new Error('Không tìm thấy ảnh hợp lệ nào trong bài viết này. Vui lòng thử link bài viết khác!');
   }
 
+  let cleanedTitle = (title || '')
+    .replace(/\s+(?:\||::|«|»|\/\/)\s+[^|«»]{1,50}$/g, '')
+    .replace(
+      /\s+[-–—|]\s+[^|–—-]{2,40}\.(com|net|org|fun|vn|info|us|co\.uk|io|me|tv|news|live|online|site|xyz|club|buzz|today|world|media|press|daily|post|times|magazine)$/i,
+      ''
+    )
+    .trim();
+  const hostBrand = parsedUrl.hostname.replace(/^www\./i, '').split('.')[0] || '';
+  if (hostBrand && hostBrand.length >= 2) {
+    const escapedBrand = hostBrand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    cleanedTitle = cleanedTitle
+      .replace(new RegExp(`\\s+[-–—|:]\\s+${escapedBrand}(?:\\.[a-z.]{2,6})?\\s*$`, 'i'), '')
+      .trim();
+  }
+  const tailMatch = cleanedTitle.match(/^(.*?\S)\s+[-–—]\s+([^|–—-]{2,35})$/);
+  if (tailMatch && tailMatch[1].length >= 18) {
+    const mainPart = tailMatch[1].trim();
+    const tailPart = tailMatch[2].trim();
+    const tailWords = tailPart.split(/\s+/);
+    const isQuestionOrExclamation = /[?!]$/.test(tailPart);
+    const hasStoryClauseWords =
+      /\b(her|his|their|them|him|she|he|they|you|your|our|who|what|when|where|why|how|can|do|does|did|would|could|will|is|are|was|were|has|have|had|not|no|never|everyone|anyone|someone|nobody|choice|life|look|looks|years|year|old|age|now|today|after|before|without|with|from|into|about|because|while|still|even|more|most|less|part|episode|season|chapter|actress|actor|star|singer|model|fans|people|world|heart|hearts|plastic|surgery|wrinkles|beach|wedding|divorce|baby|son|daughter|husband|wife|partner)\b/i.test(
+        tailPart
+      );
+    if (!isQuestionOrExclamation && !hasStoryClauseWords && tailWords.length <= 3 && tailPart.length <= 25) {
+      cleanedTitle = mainPart;
+    }
+  }
+
   return {
     ok: true,
     sourceUrl: cleanUrl,
-    title: title || 'Bài viết từ Website',
+    title: cleanedTitle || 'Bài viết từ Website',
     excerpt,
     articleText: extractedParagraphs.join('\n\n').slice(0, 16000) || articleBodySample,
     siteName: parsedUrl.hostname.replace(/^www\./, ''),

@@ -451,20 +451,71 @@ function humanizeUrlSlugToTitle(pathname) {
   return cleaned.replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function cleanScrapedTitle(rawTitle) {
-  const decoded = decodeHtmlEntities(rawTitle || '')
+function cleanScrapedTitle(rawTitle, sourceUrl) {
+  let cleaned = decodeHtmlEntities(rawTitle || '')
     .replace(/<[^>]*>/g, '')
     .replace(/\s+/g, ' ')
     .trim();
-  const strippedSite = decoded
-    .replace(/\s+[|–—-]\s+[^|–—-]{2,35}\.(com|net|org|fun|vn|info|us|co\.uk)$/i, '')
+
+  if (!cleaned) return '';
+
+  let hostBrand = '';
+  if (sourceUrl) {
+    try {
+      const host = new URL(sourceUrl).hostname.replace(/^www\./i, '').toLowerCase();
+      hostBrand = host.split('.')[0] || '';
+    } catch {}
+  }
+
+  cleaned = cleaned.replace(/\s+(?:\||::|«|»|\/\/)\s+[^|«»]{1,50}$/g, '').trim();
+
+  if (hostBrand && hostBrand.length >= 2) {
+    const escapedBrand = hostBrand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const spacedBrand = hostBrand.replace(/[-_]+/g, '[\\s\\-_]*');
+    cleaned = cleaned
+      .replace(
+        new RegExp(`\\s+[-–—|:]\\s+(?:${escapedBrand}|${spacedBrand})(?:\\.[a-z.]{2,6})?\\s*$`, 'i'),
+        ''
+      )
+      .trim();
+  }
+
+  cleaned = cleaned
+    .replace(
+      /\s+[-–—|]\s+[^|–—-]{2,40}\.(com|net|org|fun|vn|info|us|co\.uk|io|me|tv|news|live|online|site|xyz|club|buzz|today|world|media|press|daily|post|times|magazine)$/i,
+      ''
+    )
     .trim();
-  if (strippedSite && strippedSite === strippedSite.toLowerCase()) {
-    return strippedSite.replace(/(^\w|\.\s+\w|\b[a-z]{4,})/g, (m) =>
+
+  const tailMatch = cleaned.match(/^(.*?\S)\s+[-–—]\s+([^|–—-]{2,35})$/);
+  if (tailMatch && tailMatch[1].length >= 18) {
+    const mainPart = tailMatch[1].trim();
+    const tailPart = tailMatch[2].trim();
+    const tailWords = tailPart.split(/\s+/);
+    const isQuestionOrExclamation = /[?!]$/.test(tailPart);
+    const hasStoryClauseWords =
+      /\b(her|his|their|them|him|she|he|they|you|your|our|who|what|when|where|why|how|can|do|does|did|would|could|will|is|are|was|were|has|have|had|not|no|never|everyone|anyone|someone|nobody|choice|life|look|looks|years|year|old|age|now|today|after|before|without|with|from|into|about|because|while|still|even|more|most|less|part|episode|season|chapter|actress|actor|star|singer|model|fans|people|world|heart|hearts|plastic|surgery|wrinkles|beach|wedding|divorce|baby|son|daughter|husband|wife|partner)\b/i.test(
+        tailPart
+      );
+    const isKnownSitePattern =
+      /^(beaware|tvus|celeb24h|dailymail|daily\s+mail(?:\s+online)?|page\s+six|pagesix|tmz|just\s+jared|justjared|people|us\s+weekly|radaronline|radar\s+online|the\s+sun|the\s+mirror|mirror\s+online|bright\s+side|bored\s+panda|yahoo(?:\s+[a-z]+)?|msn|fox\s+news|cnn|bbc|ny\s+post|new\s+york\s+post|hollywood\s+life|e!\s*online|et\s+online|entertainment\s+tonight|vogue|elle|glamour|cosmopolitan|marie\s+claire|harper'?s\s+bazaar|vanity\s+fair|buzzfeed|huffpost|upworthy|littlethings|goalcast|newsner|apost|fabiosa|amebo|lifedaily|relieved|the\s+dodo|screen\s*rant|collider|deadline|variety|the\s+hollywood\s+reporter|indiewire|popcrush|allmusic|billboard|rolling\s+stone|nme|pitchfork|parade|woman'?s\s+world|closer\s+weekly|in\s+touch\s+weekly|life\s*&\s*style|ok!\s*magazine|star\s+magazine|national\s+enquirer|daily\s+express|daily\s+star|metro|independent|the\s+guardian|telegraph)$/i.test(
+        tailPart
+      );
+
+    if (
+      isKnownSitePattern ||
+      (!isQuestionOrExclamation && !hasStoryClauseWords && tailWords.length <= 3 && tailPart.length <= 25)
+    ) {
+      cleaned = mainPart;
+    }
+  }
+
+  if (cleaned && cleaned === cleaned.toLowerCase()) {
+    return cleaned.replace(/(^\w|\.\s+\w|\b[a-z]{4,})/g, (m) =>
       m.charAt(0).toUpperCase() + m.slice(1)
     );
   }
-  return strippedSite;
+  return cleaned;
 }
 
 function analyzeArticleSubjectAndContext(title, text, userKeyword, existingImages) {
@@ -1747,7 +1798,7 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
   const parseWpPostObject = async (postJson) => {
     if (!postJson || !postJson.id) return;
     if (postJson.title && postJson.title.rendered) {
-      originalTitle = cleanScrapedTitle(postJson.title.rendered);
+      originalTitle = cleanScrapedTitle(postJson.title.rendered, cleanUrl);
     }
     if (postJson.excerpt && postJson.excerpt.rendered) {
       originalExcerpt = stripHtmlTags(postJson.excerpt.rendered);
@@ -1919,9 +1970,9 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
               html.match(/<meta[^>]+name=["']twitter:title["'][^>]+content=["']([^"']+)["']/i) ||
               html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
             if (h1Match && stripHtmlTags(h1Match[1]).length > 10) {
-              originalTitle = cleanScrapedTitle(h1Match[1]);
+              originalTitle = cleanScrapedTitle(h1Match[1], cleanUrl);
             } else if (ogTitle && ogTitle[1]) {
-              originalTitle = cleanScrapedTitle(ogTitle[1]);
+              originalTitle = cleanScrapedTitle(ogTitle[1], cleanUrl);
             }
           }
 
@@ -1997,7 +2048,7 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
         const jData = jinaJson && jinaJson.data;
         if (jData) {
           if (!originalTitle && jData.title) {
-            originalTitle = cleanScrapedTitle(String(jData.title));
+            originalTitle = cleanScrapedTitle(String(jData.title), cleanUrl);
           }
           if (!originalExcerpt && jData.description) {
             originalExcerpt = decodeHtmlEntities(String(jData.description));
@@ -2083,6 +2134,7 @@ async function scrapeWebArticleForSeoRewrite(rawUrl) {
   if (!originalTitle) {
     originalTitle = humanizeUrlSlugToTitle(parsedUrl.pathname) || 'Exclusive Celebrity Story';
   }
+  originalTitle = cleanScrapedTitle(originalTitle, cleanUrl);
 
   return {
     sourceUrl: cleanUrl,
@@ -2898,10 +2950,12 @@ async function generateSeoArticleWithAiFast(params) {
     String(params.keyword || '').trim() ||
     effectiveTopic.split(/[:–—|-]/)[0].trim();
 
-  const generatedTitle =
+  const generatedTitle = cleanScrapedTitle(
     sourceTitle ||
-    String(params.topic || '').split('\n')[0].trim().slice(0, 95) ||
-    'Exclusive Celebrity Story & Highlights';
+      String(params.topic || '').split('\n')[0].trim().slice(0, 95) ||
+      'Exclusive Celebrity Story & Highlights',
+    resolvedSourceUrl || urlToScrape
+  );
 
   const generatedSlug = generatedTitle
     .normalize('NFD')
