@@ -324,17 +324,8 @@ export default function App() {
             seedCloudFirestoreIfEmpty().catch(() => {});
             return;
           }
-          const cleanedAccounts = cloudAccounts.filter((acc) => {
-            const lowerEmail = (acc.email || '').trim().toLowerCase();
-            const lowerUser = (acc.username || '').trim().toLowerCase();
-            if (acc.role !== 'admin' && (lowerEmail === 'myphuong2295@gmail.com' || lowerUser === 'myphuong2295@gmail.com')) {
-              deleteCloudAccount(acc.id).catch(() => {});
-              return false;
-            }
-            return true;
-          });
-          setAccounts(cleanedAccounts);
-          const adminAcc = cleanedAccounts.find((a) => a.role === 'admin');
+          setAccounts(cloudAccounts);
+          const adminAcc = cloudAccounts.find((a) => a.role === 'admin');
           if (adminAcc && adminAcc.email !== MASTER_OWNER_EMAIL) {
             updateCloudAccount(adminAcc.id, { email: MASTER_OWNER_EMAIL }).catch(() => {});
           }

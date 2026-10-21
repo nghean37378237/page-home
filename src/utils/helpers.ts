@@ -161,7 +161,7 @@ export function normalizeVietnamese(str: string): string {
  * - Khớp không khoảng trắng (VD: 'anhquynh' -> 'Anh Quỳnh')
  * - Khớp phần prefix email (VD: 'anhquynh@gmail.com' -> 'Anh Quỳnh')
  */
-export function findMatchingAccount<T extends { username: string; email?: string }>(
+export function findMatchingAccount<T extends { username: string; email?: string; fullName?: string }>(
   identifier: string,
   accounts: T[]
 ): T | undefined {
@@ -173,10 +173,11 @@ export function findMatchingAccount<T extends { username: string; email?: string
   const emailPrefix = raw.includes('@') ? raw.split('@')[0] : raw;
   const normEmailPrefix = normalizeVietnamese(emailPrefix).replace(/\s+/g, '');
 
-  // 1. Khớp chính xác hoàn toàn username hoặc email
+  // 1. Khớp chính xác hoàn toàn username, fullName hoặc email
   let found = accounts.find(
     (a) =>
       a.username.trim().toLowerCase() === raw ||
+      (a.fullName && a.fullName.trim().toLowerCase() === raw) ||
       (a.email && a.email.trim().toLowerCase() === raw)
   );
   if (found) return found;
@@ -185,6 +186,7 @@ export function findMatchingAccount<T extends { username: string; email?: string
   found = accounts.find(
     (a) =>
       a.username.trim().toLowerCase().replace(/\s+/g, '') === cleanId ||
+      (a.fullName && a.fullName.trim().toLowerCase().replace(/\s+/g, '') === cleanId) ||
       (a.email && a.email.trim().toLowerCase().replace(/\s+/g, '') === cleanId)
   );
   if (found) return found;
@@ -192,6 +194,7 @@ export function findMatchingAccount<T extends { username: string; email?: string
   // 3. Khớp Tiếng Việt không dấu và tiền tố email
   found = accounts.find((a) => {
     const normUsername = normalizeVietnamese(a.username).replace(/\s+/g, '');
+    const normFullName = a.fullName ? normalizeVietnamese(a.fullName).replace(/\s+/g, '') : '';
     const normUserEmail = a.email
       ? normalizeVietnamese(a.email.split('@')[0]).replace(/\s+/g, '')
       : '';
@@ -199,6 +202,7 @@ export function findMatchingAccount<T extends { username: string; email?: string
     return (
       normUsername === normId ||
       normUsername === normEmailPrefix ||
+      (normFullName && (normFullName === normId || normFullName === normEmailPrefix)) ||
       (normUserEmail && (normUserEmail === normId || normUserEmail === normEmailPrefix))
     );
   });

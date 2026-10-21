@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { UserAccount, AppUser } from '../types';
+import { UserAccount, AppUser, ALL_TAB_KEYS } from '../types';
 import {
   Lock,
   Shield,
@@ -24,8 +24,8 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { findMatchingAccount, normalizeVietnamese } from '../utils/helpers';
-import { getCloudAccounts, subscribeToAccounts, auth } from '../services/firebase';
-import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { getCloudAccounts, subscribeToAccounts, defaultFirebaseConfig, googlePopupAuth } from '../services/firebase';
+import { GoogleAuthProvider, signInWithPopup, signInWithCredential } from 'firebase/auth';
 
 interface LoginScreenProps {
   accounts: UserAccount[];
@@ -229,6 +229,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           status: 'approved',
           isAuthenticated: true,
           allowedTabs: updated.allowedTabs,
+          wpEmployeeCode: updated.wpEmployeeCode,
+          wpAllowedEmployeeCodes: updated.wpAllowedEmployeeCodes,
         });
         return;
       }
@@ -368,6 +370,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       status: 'approved',
       isAuthenticated: true,
       allowedTabs: account.allowedTabs,
+      wpEmployeeCode: account.wpEmployeeCode,
+      wpAllowedEmployeeCodes: account.wpAllowedEmployeeCodes,
     });
   };
 
@@ -400,6 +404,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         role: 'admin',
         status: 'approved',
         isAuthenticated: true,
+        allowedTabs: ALL_TAB_KEYS,
       });
     } else {
       const nextFails = adminFailedAttempts + 1;
@@ -416,103 +421,227 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
   };
 
-  // 2b. Native Firebase Google Sign-In with real Google OAuth Popup
+  // Xử lý danh tính Google đã xác thực thành công từ Popup Google OAuth
+  const handleAuthenticatedGoogleIdentity = async (rawEmail: string, rawDisplayName: string) => {
+    const email = (rawEmail || '').toLowerCase().trim();
+    const displayName = (rawDisplayName || '').trim();
+
+    if (!email) {
+      setGoogleError('Không thể lấy địa chỉ Email từ tài khoản Google.');
+      setIsGoogleSigningIn(false);
+      return;
+    }
+
+    let freshAccounts = getFreshAccounts();
+    if (freshAccounts.length === 0) {
+      try {
+        const cloudAccs = await getCloudAccounts();
+        if (cloudAccs.length > 0) {
+          setLiveAccounts(cloudAccs);
+          freshAccounts = cloudAccs;
+        }
+      } catch (e) {
+        console.warn('[LoginScreen] Lỗi tải danh sách tài khoản khi xác thực Google:', e);
+      }
+    }
+
+    const currentAdminEmail = (adminEmail || 'cualokhachsan@gmail.com').trim().toLowerCase();
+
+    // 1. Check Admin Google Account (cualokhachsan@gmail.com)
+    if (
+      email === currentAdminEmail ||
+      email === 'cualokhachsan@gmail.com' ||
+      freshAccounts.some((a) => a.role === 'admin' && a.email?.toLowerCase() === email)
+    ) {
+      setIsGoogleSigningIn(false);
+      onLoginSuccess({
+        id: 'admin',
+        name: adminName || displayName || 'Quản Lý (Admin)',
+        email: email,
+        role: 'admin',
+        status: 'approved',
+        isAuthenticated: true,
+        allowedTabs: ALL_TAB_KEYS,
+      });
+      return;
+    }
+
+    // 2. Check Staff Google Account granted by Admin in system
+    let matched =
+      findMatchingAccount(email, freshAccounts) ||
+      (displayName ? findMatchingAccount(displayName, freshAccounts) : undefined);
+
+    if (!matched) {
+      try {
+        const latestCloud = await getCloudAccounts();
+        if (latestCloud.length > 0) {
+          setLiveAccounts(latestCloud);
+          freshAccounts = latestCloud;
+          matched =
+            findMatchingAccount(email, latestCloud) ||
+            (displayName ? findMatchingAccount(displayName, latestCloud) : undefined);
+        }
+      } catch {}
+    }
+
+    if (matched) {
+      setIsGoogleSigningIn(false);
+      if (matched.status === 'blocked') {
+        setGoogleError(`Tài khoản Gmail "${email}" (${matched.username}) đang bị Quản Lý (${currentAdminEmail}) tạm khóa.`);
+        return;
+      }
+      if (matched.status === 'pending') {
+        setPendingApprovalState({
+          email,
+          username: matched.username,
+          createdAt: matched.createdAt,
+          isExistingRequest: true,
+        });
+        setGoogleError(null);
+        return;
+      }
+
+      // Auto-link email if not linked yet
+      if (!matched.email || matched.email.toLowerCase() !== email) {
+        onLinkAccountEmail?.(matched.id, email);
+      }
+
+      // Successfully verified staff by Google OAuth -> Direct access granted!
+      onLoginSuccess({
+        id: matched.id,
+        name: matched.username,
+        email: email,
+        role: 'staff',
+        status: 'approved',
+        isAuthenticated: true,
+        allowedTabs: matched.allowedTabs,
+        wpEmployeeCode: matched.wpEmployeeCode,
+        wpAllowedEmployeeCodes: matched.wpAllowedEmployeeCodes,
+      });
+      return;
+    }
+
+    // 3. Nếu Gmail vừa chọn qua Google OAuth chưa gắn vào tài khoản nhân viên nào trên hệ thống:
+    // Cho phép liên kết nhanh với tên nhân viên có sẵn hoặc xin cấp quyền ngay lập tức!
+    setIsGoogleSigningIn(false);
+    setNewGoogleUserPrompt({
+      email,
+      displayName: displayName || email.split('@')[0],
+    });
+    setNewGoogleStaffName(displayName || email.split('@')[0]);
+    setShowLinkingBox(true);
+    setGoogleError(null);
+  };
+
+  // Liên kết Gmail vừa đăng nhập Google với tài khoản nhân viên có sẵn
+  const handleLinkVerifiedGmailToStaff = (staff: UserAccount) => {
+    const verifiedEmail = newGoogleUserPrompt?.email?.trim().toLowerCase();
+    if (!verifiedEmail) return;
+
+    onLinkAccountEmail?.(staff.id, verifiedEmail);
+    setNewGoogleUserPrompt(null);
+    setShowLinkingBox(false);
+
+    onLoginSuccess({
+      id: staff.id,
+      name: staff.username,
+      email: verifiedEmail,
+      role: 'staff',
+      status: 'approved',
+      isAuthenticated: true,
+      allowedTabs: staff.allowedTabs,
+      wpEmployeeCode: staff.wpEmployeeCode,
+      wpAllowedEmployeeCodes: staff.wpAllowedEmployeeCodes,
+    });
+  };
+
+  // 2b. Google Sign-In Popup: Ưu tiên Google Identity Services (direct postMessage, không bị lỗi đóng cửa sổ sớm trong iframe) + Fallback Firebase Popup
   const handleFirebaseGoogleSignIn = async () => {
     setIsGoogleSigningIn(true);
     setGoogleError(null);
     setShowLinkingBox(false);
     setPendingApprovalState(null);
+    setNewGoogleUserPrompt(null);
+
+    const gsiOAuth = (window as any).google?.accounts?.oauth2;
+    const oauthClientId = defaultFirebaseConfig.oAuthClientId;
+
+    if (gsiOAuth && oauthClientId) {
+      try {
+        const tokenClient = gsiOAuth.initTokenClient({
+          client_id: oauthClientId,
+          scope: 'openid email profile',
+          prompt: 'select_account',
+          callback: async (tokenResponse: any) => {
+            if (tokenResponse?.error) {
+              console.warn('[LoginScreen] Google TokenClient error:', tokenResponse);
+              setIsGoogleSigningIn(false);
+              if (tokenResponse.error !== 'access_denied') {
+                setGoogleError(`Đăng nhập Google không thành công (${tokenResponse.error}). Bạn có thể thử lại hoặc chọn Gmail bên dưới.`);
+              }
+              return;
+            }
+
+            const accessToken = tokenResponse?.access_token;
+            if (!accessToken) {
+              setIsGoogleSigningIn(false);
+              setGoogleError('Không nhận được mã xác thực từ Google. Vui lòng thử lại.');
+              return;
+            }
+
+            try {
+              // Đăng nhập đồng thời vào Firebase Auth ở chế độ nền
+              const cred = GoogleAuthProvider.credential(null, accessToken);
+              signInWithCredential(googlePopupAuth, cred).catch(() => {});
+
+              // Lấy thông tin email & tên đã xác thực trực tiếp từ Google UserInfo API
+              const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                headers: { Authorization: `Bearer ${accessToken}` },
+              });
+              if (!userInfoRes.ok) {
+                throw new Error('Không thể lấy thông tin tài khoản từ Google UserInfo API.');
+              }
+              const profile = await userInfoRes.json();
+              await handleAuthenticatedGoogleIdentity(profile.email || '', profile.name || '');
+            } catch (profileErr: any) {
+              console.error('[LoginScreen] Lỗi đọc thông tin Google:', profileErr);
+              setIsGoogleSigningIn(false);
+              setGoogleError(profileErr?.message || 'Lỗi xác thực thông tin tài khoản Google.');
+            }
+          },
+          error_callback: (err: any) => {
+            console.warn('[LoginScreen] GIS Popup error_callback:', err);
+            setIsGoogleSigningIn(false);
+            if (err?.type === 'popup_closed') {
+              setGoogleError('Cửa sổ chọn tài khoản Google đã đóng. Bạn có thể bấm lại hoặc chọn nhanh Gmail đã cấp quyền bên dưới.');
+            } else if (err?.type === 'popup_failed_to_open') {
+              setGoogleError('Trình duyệt đang chặn cửa sổ Pop-up. Vui lòng cho phép Pop-up hoặc chọn Gmail trực tiếp bên dưới.');
+              setIsGoogleChooserOpen(true);
+            }
+          },
+        });
+
+        tokenClient.requestAccessToken({ prompt: 'select_account' });
+        return;
+      } catch (gsiErr) {
+        console.warn('[LoginScreen] Fallback từ GIS sang signInWithPopup:', gsiErr);
+      }
+    }
 
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: 'select_account' });
-      const result = await signInWithPopup(auth, provider);
+      const result = await signInWithPopup(googlePopupAuth, provider);
 
       if (!result.user || !result.user.email) {
         throw new Error('Không thể lấy địa chỉ Email từ tài khoản Google.');
       }
 
-      const email = result.user.email.toLowerCase().trim();
-      const displayName = result.user.displayName || '';
-
-      const freshAccounts = getFreshAccounts();
-      const currentAdminEmail = (adminEmail || 'cualokhachsan@gmail.com').trim().toLowerCase();
-
-      // 1. Check Admin Google Account (Chỉ cualokhachsan@gmail.com)
-      if (
-        email === currentAdminEmail ||
-        email === 'cualokhachsan@gmail.com' ||
-        freshAccounts.some((a) => a.role === 'admin' && a.email?.toLowerCase() === email)
-      ) {
-        onLoginSuccess({
-          id: 'admin',
-          name: adminName || displayName || 'Quản Lý (Admin)',
-          email: email,
-          role: 'admin',
-          status: 'approved',
-          isAuthenticated: true,
-          allowedTabs: [
-            'fanpage',
-            'group',
-            'proxy',
-            'fullvia',
-            'staff_management',
-            'shared_accounts',
-            'revenue',
-            'staff_info',
-            'image_studio',
-          ],
-        });
-        return;
-      }
-
-      // 2. Check Staff Google Account granted by Admin in system
-      const matched =
-        findMatchingAccount(email, freshAccounts) ||
-        (displayName ? findMatchingAccount(displayName, freshAccounts) : undefined);
-
-      if (matched) {
-        if (matched.status === 'blocked') {
-          setGoogleError(`Tài khoản Gmail "${email}" (${matched.username}) đang bị Quản Lý (${currentAdminEmail}) tạm khóa.`);
-          return;
-        }
-        if (matched.status === 'pending') {
-          setPendingApprovalState({
-            email,
-            username: matched.username,
-            createdAt: matched.createdAt,
-            isExistingRequest: true,
-          });
-          setGoogleError(null);
-          return;
-        }
-
-        // Auto-link email if not linked yet
-        if (!matched.email || matched.email.toLowerCase() !== email) {
-          onLinkAccountEmail?.(matched.id, email);
-        }
-
-        // Successfully verified staff by Google OAuth -> Direct access granted!
-        onLoginSuccess({
-          id: matched.id,
-          name: matched.username,
-          email: email,
-          role: 'staff',
-          status: 'approved',
-          isAuthenticated: true,
-          allowedTabs: matched.allowedTabs,
-        });
-        return;
-      }
-
-      // 3. Email not granted in system by Admin
-      setGoogleError(
-        `Email Gmail "${email}" chưa được Quản Lý (${currentAdminEmail}) cấp quyền trong hệ thống. Vui lòng báo Quản Lý thêm Gmail này vào danh sách nhân viên!`
-      );
+      await handleAuthenticatedGoogleIdentity(result.user.email, result.user.displayName || '');
     } catch (err: any) {
       console.warn('[LoginScreen] Lỗi Google OAuth popup:', err);
-      if (err.code === 'auth/popup-closed-by-user') {
-        setGoogleError('Bạn đã đóng cửa sổ đăng nhập Google trước khi hoàn tất. Bạn có thể thử lại hoặc nhập Gmail bên dưới.');
+      if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
+        setGoogleError('Cửa sổ đăng nhập Google đã đóng trước khi hoàn tất. Bạn có thể bấm thử lại hoặc chọn Gmail đã cấp quyền bên dưới.');
       } else if (err.code === 'auth/popup-blocked') {
         setGoogleError('Trình duyệt hoặc khung hiển thị (iFrame) đang chặn cửa sổ đăng nhập Google (Pop-up). Bạn có thể bấm chọn hoặc nhập Gmail bên dưới.');
         setIsGoogleChooserOpen(true);
@@ -526,7 +655,6 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         setGoogleError(`Không thể mở cửa sổ Google (${err.message || err.code}). Bạn có thể chuyển sang nhập Gmail bên dưới để tiếp tục.`);
         setIsGoogleChooserOpen(true);
       }
-    } finally {
       setIsGoogleSigningIn(false);
     }
   };
@@ -596,6 +724,8 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         status: 'approved',
         isAuthenticated: true,
         allowedTabs: matched.allowedTabs,
+        wpEmployeeCode: matched.wpEmployeeCode,
+        wpAllowedEmployeeCodes: matched.wpAllowedEmployeeCodes,
       });
       return;
     }
@@ -640,6 +770,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
         role: 'admin',
         status: 'approved',
         isAuthenticated: true,
+        allowedTabs: ALL_TAB_KEYS,
       });
     } else {
       setGoogleError('Mật khẩu Quản Trị Viên (Admin) không đúng! Vui lòng nhập lại chính xác.');
@@ -867,6 +998,72 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                   <div className="flex items-start space-x-2">
                     <AlertTriangle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
                     <span className="leading-snug">{googleError}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* HỘP LIÊN KẾT NHANH KHI ĐĂNG NHẬP GMAIL GOOGLE THÀNH CÔNG NHƯNG GMAIL CHƯA GẮN VÀO NHÂN VIÊN */}
+              {showLinkingBox && newGoogleUserPrompt && (
+                <div className="p-4 bg-emerald-950/80 border-2 border-emerald-500/80 rounded-2xl text-emerald-100 text-xs space-y-3 shadow-2xl animate-fadeIn">
+                  <div className="flex items-start space-x-2.5">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <div className="font-extrabold text-sm text-emerald-300">
+                        Đã xác thực Google: {newGoogleUserPrompt.email}
+                      </div>
+                      <p className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                        Chọn tên nhân viên của bạn bên dưới để liên kết Gmail này và vào thẳng hệ thống (hoặc mở khóa quyền Quản Lý):
+                      </p>
+                    </div>
+                  </div>
+
+                  {approvedStaffAccounts.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="text-[11px] font-bold text-emerald-300">
+                        1. Chọn Tên Nhân Viên Của Bạn Để Vào Ngay:
+                      </div>
+                      <div className="grid grid-cols-2 gap-1.5 max-h-40 overflow-y-auto pr-1">
+                        {approvedStaffAccounts.map((staff) => (
+                          <button
+                            key={staff.id}
+                            type="button"
+                            onClick={() => handleLinkVerifiedGmailToStaff(staff)}
+                            className="p-2 bg-slate-950/90 hover:bg-emerald-900/60 border border-emerald-500/40 hover:border-emerald-400 rounded-xl text-left transition-all flex items-center justify-between cursor-pointer"
+                          >
+                            <span className="font-bold text-white truncate text-xs">{staff.username}</span>
+                            <span className="text-[10px] text-emerald-400 font-bold shrink-0">Vào →</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="pt-2 border-t border-emerald-800/60 flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowLinkingBox(false);
+                        setPendingGoogleAuth({
+                          role: 'admin',
+                          adminName: adminName || 'Quản Lý (Admin)',
+                          email: newGoogleUserPrompt.email,
+                        });
+                        setGooglePasswordInput('');
+                      }}
+                      className="px-3 py-2 bg-amber-600 hover:bg-amber-500 text-white font-bold rounded-xl text-[11px] cursor-pointer transition-colors flex items-center space-x-1.5"
+                    >
+                      <Shield className="w-3.5 h-3.5" />
+                      <span>Tôi là Quản Lý (Admin)</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleQuickSubmitGoogleRequest()}
+                      className="px-3 py-2 bg-sky-600 hover:bg-sky-500 text-white font-bold rounded-xl text-[11px] cursor-pointer transition-colors flex items-center space-x-1.5"
+                    >
+                      <UserPlus className="w-3.5 h-3.5" />
+                      <span>Xin Cấp Quyền Nhân Viên Mới</span>
+                    </button>
                   </div>
                 </div>
               )}

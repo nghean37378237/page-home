@@ -60,6 +60,7 @@ function getActiveFirebaseConfig(): typeof firebaseConfigDefault {
   return firebaseConfigDefault;
 }
 
+export const defaultFirebaseConfig = firebaseConfigDefault;
 export const firebaseConfig = getActiveFirebaseConfig();
 
 export function hasCustomFirebaseConfig(): boolean {
@@ -75,12 +76,20 @@ export function clearCustomFirebaseConfig(): void {
 // 1. Initialize Firebase App and Firestore Database instance with ignoreUndefinedProperties: true
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
+// Dedicated Auth instance bound to the AI Studio provisioned Firebase project so Google OAuth popups always have authorized domains & oAuthClientId
+const defaultOAuthApp =
+  firebaseConfig.projectId === firebaseConfigDefault.projectId
+    ? app
+    : getApps().find((a) => a.name === 'aistudio_oauth_default') ||
+      initializeApp(firebaseConfigDefault, 'aistudio_oauth_default');
+
 // CRITICAL: Must pass firebaseConfig.firestoreDatabaseId and enable ignoreUndefinedProperties
 export const db =
   !firebaseConfig.firestoreDatabaseId || firebaseConfig.firestoreDatabaseId === '(default)'
     ? initializeFirestore(app, { ignoreUndefinedProperties: true })
     : initializeFirestore(app, { ignoreUndefinedProperties: true }, firebaseConfig.firestoreDatabaseId);
 export const auth = getAuth(app);
+export const googlePopupAuth = getAuth(defaultOAuthApp);
 
 /**
  * Loại bỏ hoàn toàn các trường undefined trước khi ghi vào Cloud Firestore
@@ -338,14 +347,6 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       await writeBundledCollection(ACCOUNTS_COLLECTION, bundledAccounts);
     } else {
       const existingDocs = accountsSnapshot.docs.map((d) => ({ id: d.id, ...(d.data() as UserAccount) }));
-      // Xóa bỏ hoàn toàn tài khoản phụ thuộc mail cũ nếu tồn tại
-      for (const acc of existingDocs) {
-        const lowerEmail = (acc.email || '').trim().toLowerCase();
-        const lowerUser = (acc.username || '').trim().toLowerCase();
-        if (acc.role !== 'admin' && (lowerEmail === 'myphuong2295@gmail.com' || lowerUser === 'myphuong2295@gmail.com')) {
-          await deleteDoc(doc(db, ACCOUNTS_COLLECTION, acc.id)).catch(() => {});
-        }
-      }
       const adminAcc = existingDocs.find((a) => a.role === 'admin');
       if (!adminAcc) {
         await setDoc(doc(db, ACCOUNTS_COLLECTION, DEFAULT_ADMIN_ACCOUNT.id), DEFAULT_ADMIN_ACCOUNT);
