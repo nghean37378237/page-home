@@ -238,6 +238,25 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     trackingLink: string;
     status: string;
     employeeCode: string;
+    wasDuplicateUpdated?: boolean;
+    duplicateMatchReason?: string;
+    oldWordCount?: number;
+    newWordCount?: number;
+  } | null>(null);
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false);
+  const [duplicateCheckStatus, setDuplicateCheckStatus] = useState<{
+    checked: boolean;
+    duplicateFound: boolean;
+    message: string;
+    post?: {
+      id: number;
+      title: string;
+      slug: string;
+      link: string;
+      oldWordCount?: number;
+      matchReason: string;
+      employeeCode?: string;
+    } | null;
   } | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -1473,6 +1492,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           existingContent: isNewUrl ? undefined : cleanExistingContent || undefined,
           existingImages:
             !isNewUrl && preExtractedImages.length > 0 ? preExtractedImages : undefined,
+          employeeCode: selectedEmployeeCode,
+          autoUpdateIfDuplicate: true,
         }),
       });
       let data = await safeParseApiJson(res);
@@ -1500,6 +1521,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               existingTitle: jinaPre.title || preExtractedTitle || undefined,
               existingContent: jinaPre.articleText || cleanExistingContent || undefined,
               existingImages: jinaPre.images.length > 0 ? jinaPre.images : undefined,
+              employeeCode: selectedEmployeeCode,
+              autoUpdateIfDuplicate: true,
             }),
           });
           const retryData = await safeParseApiJson(retryRes);
@@ -1533,7 +1556,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       }
       if (Array.isArray(data.tags)) setTagsInput(data.tags.join(', '));
 
-      // Chỉ lấy ảnh bài gốc đưa vào khay "Phần Ảnh Trong Bài Viết" chờ người dùng ấn gắn vào bài (KHÔNG tự động chèn ảnh vào bài và KHÔNG tự động nhét ảnh ngoài chưa duyệt)
+      // Chỉ lấy ảnh bài gốc đưa vào khay "Phần Ảnh Trong Bài Viết" chờ người dùng ấn gắn vào bài (nếu bài trùng đã update thì ảnh gốc cũng đã được gắn vào nội dung bài cũ)
       const origImgsList = (Array.isArray(data.extractedImages) ? data.extractedImages : []).filter(
         (im: any) => !im.isExternal
       );
@@ -1564,6 +1587,57 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         originalImageCount: origImgsList.length,
         externalImageCount: 0,
       });
+
+      // Nếu phát hiện bài viết đã có trên celeb24h.com và đã tự động bổ sung mở rộng + update ngay bài cũ -> Hiện ngay hộp báo Link cho nhân viên!
+      if (data.duplicateFound && data.updatedPost) {
+        setEditingPostId(Number(data.updatedPost.id));
+        setPublishResult({
+          ...data.updatedPost,
+          wasDuplicateUpdated: true,
+          duplicateMatchReason:
+            data.duplicateMatchReason || 'Bài viết đã tồn tại trên celeb24h.com',
+          oldWordCount: Number(data.oldWordCount || 0),
+          newWordCount: Number(data.wordCount || 2750),
+        });
+        setDuplicateCheckStatus({
+          checked: true,
+          duplicateFound: true,
+          message: `🔄 Bài này đã có trên celeb24h.com (ID #${data.updatedPost.id})! Hệ thống đã tự động bổ sung theo văn phong mở rộng (${Number(data.oldWordCount || 0)} từ → ${Number(data.wordCount || 2750)} từ) và UPDATE NGAY BÀI CŨ!`,
+          post: {
+            id: Number(data.updatedPost.id),
+            title: String(data.updatedPost.title || data.title),
+            slug: String(data.updatedPost.slug || data.slug),
+            link: String(data.updatedPost.link),
+            oldWordCount: Number(data.oldWordCount || 0),
+            matchReason: String(data.duplicateMatchReason || 'Trùng bài trên celeb24h.com'),
+            employeeCode: String(data.updatedPost.employeeCode || selectedEmployeeCode),
+          },
+        });
+        fetchRemoteWpData();
+      } else if (data.duplicateFound && data.existingPostId) {
+        setEditingPostId(Number(data.existingPostId));
+        setDuplicateCheckStatus({
+          checked: true,
+          duplicateFound: true,
+          message: `⚠️ Phát hiện bài đã có trên celeb24h.com (ID #${data.existingPostId}) — đã chuyển sang chế độ Cập Nhật Bài Cũ.`,
+          post: {
+            id: Number(data.existingPostId),
+            title: String(data.title),
+            slug: String(data.slug),
+            link: String(data.existingPostLink || `${siteUrl}/${data.existingPostId}`),
+            oldWordCount: Number(data.oldWordCount || 0),
+            matchReason: String(data.duplicateMatchReason || 'Trùng bài trên celeb24h.com'),
+            employeeCode: selectedEmployeeCode,
+          },
+        });
+      } else {
+        setDuplicateCheckStatus({
+          checked: true,
+          duplicateFound: false,
+          message: '✅ Đã kiểm tra trên celeb24h.com: Chưa có bài trùng — Đây là bài viết mới hoàn toàn!',
+          post: null,
+        });
+      }
 
       setEditorViewMode('preview');
 
@@ -2128,6 +2202,80 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     setFeaturedImageAlt('');
     setPublishResult(null);
     setPublishError(null);
+    setDuplicateCheckStatus(null);
+  };
+
+  // Kiểm tra trùng bài trực tiếp trên celeb24h.com: nếu đã có bài rồi thì tự động bổ sung theo văn phong mở rộng và update ngay bài cũ luôn + báo link cho NV
+  const handleCheckDuplicateOnCeleb24h = async (autoSupplementIfFound: boolean = true) => {
+    const sourceLink =
+      aiSourceUrl.trim() ||
+      extractFirstArticleUrl(aiTopic) ||
+      extractFirstArticleUrl(content) ||
+      extractFirstArticleUrl(title);
+    const cleanTopic = aiTopic.replace(/https?:\/\/[^\s"'<>]+/gi, '').trim();
+    const checkTitle = title.trim() || cleanTopic.split('\n')[0]?.trim() || '';
+    const checkText = [cleanTopic, content.replace(/<[^>]*>/g, ' ').trim()]
+      .filter(Boolean)
+      .join('\n\n')
+      .slice(0, 5000);
+
+    if (!sourceLink && !checkTitle && !checkText) {
+      setPublishError(
+        'Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Nội dung để kiểm tra trùng bài trên celeb24h.com!'
+      );
+      return;
+    }
+
+    setCheckingDuplicate(true);
+    setPublishError(null);
+    try {
+      const res = await fetch('/api/wp-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'check_duplicate',
+          sourceUrl: sourceLink || undefined,
+          title: checkTitle || undefined,
+          slug: slug.trim() || undefined,
+          articleText: checkText || undefined,
+        }),
+      });
+      const data = await safeParseApiJson(res);
+      if (res.ok && data.ok && data.duplicateFound && data.duplicate) {
+        const dup = data.duplicate;
+        setEditingPostId(Number(dup.id));
+        setDuplicateCheckStatus({
+          checked: true,
+          duplicateFound: true,
+          message: `⚠️ Phát hiện bài viết đã có trên celeb24h.com (ID #${dup.id}: "${dup.title}" — ${dup.oldWordCount || 0} từ). Đang tự động bổ sung theo văn phong mở rộng và update ngay bài cũ...`,
+          post: {
+            id: Number(dup.id),
+            title: String(dup.title),
+            slug: String(dup.slug),
+            link: String(dup.link),
+            oldWordCount: Number(dup.oldWordCount || 0),
+            matchReason: String(dup.matchReason || 'Trùng bài trên celeb24h.com'),
+            employeeCode: String(dup.employeeCode || selectedEmployeeCode),
+          },
+        });
+
+        if (autoSupplementIfFound) {
+          await handleGenerateSeoArticle(sourceLink ? 'from_url' : 'from_text');
+        }
+      } else {
+        setDuplicateCheckStatus({
+          checked: true,
+          duplicateFound: false,
+          message:
+            '✅ Đã kiểm tra trên celeb24h.com: Chưa có bài viết này trên web chính — Bạn có thể bấm Mở Rộng Sát Bài Gốc & Đẩy Bài Mới!',
+          post: null,
+        });
+      }
+    } catch (err: any) {
+      setPublishError(err?.message || 'Lỗi khi kiểm tra trùng bài trên celeb24h.com');
+    } finally {
+      setCheckingDuplicate(false);
+    }
   };
 
   // Nạp bài viết từ danh sách vào trình soạn thảo để chỉnh sửa
@@ -2551,22 +2699,52 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         )}
       </div>
 
-      {/* KẾT QUẢ ĐẨY BÀI THÀNH CÔNG (HIỂN THỊ NỔI BẬT LINK GỐC & LINK GẮN MÃ NHÂN VIÊN) */}
+      {/* KẾT QUẢ ĐẨY BÀI HOẶC BỔ SUNG UPDATE BÀI CŨ THÀNH CÔNG (HIỂN THỊ NỔI BẬT LINK GỐC & LINK GẮN MÃ NHÂN VIÊN) */}
       {publishResult && (
-        <div className="bg-emerald-50 border-2 border-emerald-500 rounded-2xl p-4 sm:p-5 shadow-md space-y-3 animate-fadeIn">
+        <div
+          className={`${
+            publishResult.wasDuplicateUpdated
+              ? 'bg-amber-50/95 border-2 border-amber-500'
+              : 'bg-emerald-50 border-2 border-emerald-500'
+          } rounded-2xl p-4 sm:p-5 shadow-md space-y-3 animate-fadeIn`}
+        >
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center space-x-2.5">
-              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+              <div
+                className={`w-9 h-9 rounded-xl ${
+                  publishResult.wasDuplicateUpdated ? 'bg-amber-600' : 'bg-emerald-600'
+                } text-white flex items-center justify-center shrink-0`}
+              >
                 <CheckCircle2 className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm sm:text-base font-black text-emerald-950">
-                  🎉 Đã đẩy bài viết lên Website thành công! (ID #{publishResult.id})
+                <h3
+                  className={`text-sm sm:text-base font-black ${
+                    publishResult.wasDuplicateUpdated ? 'text-amber-950' : 'text-emerald-950'
+                  }`}
+                >
+                  {publishResult.wasDuplicateUpdated
+                    ? `🔄 BÀI ĐÃ CÓ TRÊN CELEB24H.COM — ĐÃ BỔ SUNG THEO VĂN PHONG MỞ RỘNG & UPDATE NGAY BÀI CŨ! (ID #${publishResult.id})`
+                    : `🎉 Đã đẩy bài viết lên Website thành công! (ID #${publishResult.id})`}
                 </h3>
-                <p className="text-xs text-emerald-800">
+                <p
+                  className={`text-xs ${
+                    publishResult.wasDuplicateUpdated ? 'text-amber-900' : 'text-emerald-800'
+                  }`}
+                >
                   Bài viết: <strong>{publishResult.title}</strong> · Trạng thái:{' '}
                   <strong className="uppercase">{publishResult.status}</strong> · Mã NV:{' '}
                   <strong>{publishResult.employeeCode}</strong>
+                  {publishResult.wasDuplicateUpdated && (
+                    <span className="ml-1.5 inline-block px-2 py-0.5 rounded bg-amber-200/80 text-amber-950 font-black text-[11px]">
+                      {publishResult.duplicateMatchReason || 'Trùng bài cũ'} · Bổ sung từ{' '}
+                      {Number(publishResult.oldWordCount || 0).toLocaleString('vi-VN')} từ →{' '}
+                      {Number(publishResult.newWordCount || seoAnalysis.words || 2750).toLocaleString(
+                        'vi-VN'
+                      )}{' '}
+                      từ
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -2589,7 +2767,11 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 rel="noopener noreferrer"
                 className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-xs"
               >
-                <span>Mở Xem Bài Trên Web</span>
+                <span>
+                  {publishResult.wasDuplicateUpdated
+                    ? 'Mở Xem Bài Cũ Đã Được Bổ Sung'
+                    : 'Mở Xem Bài Trên Web'}
+                </span>
                 <ExternalLink className="w-3.5 h-3.5" />
               </a>
               <button
@@ -2608,7 +2790,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             <div className="p-3 bg-white border-2 border-emerald-400 rounded-xl flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <span className="text-[10px] font-black text-emerald-800 uppercase block">
-                  🔥 Link Gắn Mã Nhân Viên ({publishResult.employeeCode}) — Dùng đăng Fanpage / Group tính View:
+                  {publishResult.wasDuplicateUpdated
+                    ? `🔥 Link Bài Đã Được Bổ Sung Gắn Mã NV (${publishResult.employeeCode}) — Nhân Viên Copy Đi Đăng Ngay:`
+                    : `🔥 Link Gắn Mã Nhân Viên (${publishResult.employeeCode}) — Dùng đăng Fanpage / Group tính View:`}
                 </span>
                 <div className="font-mono font-black text-xs sm:text-sm text-slate-900 truncate mt-0.5">
                   {publishResult.trackingLink}
@@ -2637,7 +2821,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             <div className="p-3 bg-white border border-slate-200 rounded-xl flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <span className="text-[10px] font-bold text-slate-500 uppercase block">
-                  Link gốc bài viết trên Website:
+                  {publishResult.wasDuplicateUpdated
+                    ? 'Link gốc bài cũ đã được bổ sung & update trên celeb24h.com:'
+                    : 'Link gốc bài viết trên Website:'}
                 </span>
                 <div className="font-mono font-bold text-xs sm:text-sm text-slate-700 truncate mt-0.5">
                   {publishResult.link}
@@ -2822,14 +3008,28 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       {aiLoading ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang hút bài gốc, mở rộng 40–50 từ/đoạn &amp; gắn ảnh...</span>
+                          <span>Đang kiểm tra trùng celeb24h.com, mở rộng 40–50 từ/đoạn &amp; cập nhật...</span>
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          <span>Mở Rộng Sát Bài Gốc (40–50 Từ/Đoạn) + Lấy Hết Ảnh &amp; Gắn Vào Bài</span>
+                          <span>Mở Rộng Sát Bài Gốc (40–50 Từ/Đoạn) · Nếu Trùng Tự Bổ Sung &amp; Update Bài Cũ</span>
                         </>
                       )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={checkingDuplicate || aiLoading}
+                      onClick={() => void handleCheckDuplicateOnCeleb24h(true)}
+                      className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
+                      title="Kiểm tra xem bài này đã có trên celeb24h.com chưa; nếu đã có sẽ tự động bổ sung theo văn phong mở rộng và update ngay bài cũ + báo link cho NV"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>
+                        {checkingDuplicate
+                          ? 'Đang kiểm tra celeb24h.com...'
+                          : '🔍 Kiểm Tra Trùng & Bổ Sung Bài Cũ'}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -2888,6 +3088,19 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   <div className="flex flex-wrap justify-end gap-2">
                     <button
                       type="button"
+                      disabled={checkingDuplicate || aiLoading}
+                      onClick={() => void handleCheckDuplicateOnCeleb24h(true)}
+                      className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      <span>
+                        {checkingDuplicate
+                          ? 'Đang kiểm tra celeb24h.com...'
+                          : '🔍 Kiểm Tra Trùng & Bổ Sung Bài Cũ'}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
                       disabled={searchingExtImages || aiLoading}
                       onClick={() => void handleExtractAndAttachArticleImages()}
                       className="px-3.5 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
@@ -2904,16 +3117,87 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       {aiLoading ? (
                         <>
                           <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang mở rộng sát bài gốc (40–50 từ/đoạn), tìm ảnh &amp; 2 Video...</span>
+                          <span>Đang kiểm tra trùng celeb24h.com, mở rộng 40–50 từ/đoạn &amp; cập nhật...</span>
                         </>
                       ) : (
                         <>
                           <Sparkles className="w-4 h-4" />
-                          <span>Mở Rộng Sát Bài Gốc (40–50 Từ/Đoạn) + Gắn Ảnh &amp; 2 Video YT</span>
+                          <span>Mở Rộng Sát Bài Gốc (40–50 Từ/Đoạn) · Nếu Trùng Tự Bổ Sung &amp; Update Bài Cũ</span>
                         </>
                       )}
                     </button>
                   </div>
+                </div>
+              )}
+
+              {/* THÔNG BÁO KẾT QUẢ KIỂM TRA TRÙNG BÀI TRÊN CELEB24H.COM */}
+              {duplicateCheckStatus && (
+                <div
+                  className={`p-3 rounded-xl border-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs ${
+                    duplicateCheckStatus.duplicateFound
+                      ? 'bg-amber-50 border-amber-400 text-amber-950'
+                      : 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                  }`}
+                >
+                  <div className="space-y-0.5">
+                    <div className="font-black">{duplicateCheckStatus.message}</div>
+                    {duplicateCheckStatus.post && (
+                      <div className="text-[11px] font-semibold text-amber-900">
+                        Lý do khớp: <b>{duplicateCheckStatus.post.matchReason}</b> · Link bài đã bổ sung cho NV:{' '}
+                        <a
+                          href={`${duplicateCheckStatus.post.link.replace(/\/+$/, '')}${
+                            duplicateCheckStatus.post.link.includes('?') ? '&' : '?'
+                          }${selectedEmployeeCode}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-mono font-black underline text-emerald-800 hover:text-emerald-950"
+                        >
+                          {`${duplicateCheckStatus.post.link.replace(/\/+$/, '')}${
+                            duplicateCheckStatus.post.link.includes('?') ? '&' : '?'
+                          }${selectedEmployeeCode}`}
+                        </a>
+                      </div>
+                    )}
+                  </div>
+                  {duplicateCheckStatus.post && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleCopyText(
+                            `${duplicateCheckStatus.post!.link.replace(/\/+$/, '')}${
+                              duplicateCheckStatus.post!.link.includes('?') ? '&' : '?'
+                            }${selectedEmployeeCode}`,
+                            'dup-status-copy'
+                          )
+                        }
+                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center space-x-1 cursor-pointer shadow-2xs"
+                      >
+                        {copiedKey === 'dup-status-copy' ? (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Đã Copy Link NV</span>
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3.5 h-3.5" />
+                            <span>Copy Link ?{selectedEmployeeCode}</span>
+                          </>
+                        )}
+                      </button>
+                      <a
+                        href={`${duplicateCheckStatus.post.link.replace(/\/+$/, '')}${
+                          duplicateCheckStatus.post.link.includes('?') ? '&' : '?'
+                        }${selectedEmployeeCode}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-amber-100 text-amber-950 border border-amber-300 font-bold text-xs flex items-center space-x-1"
+                      >
+                        <span>Mở bài</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+                  )}
                 </div>
               )}
 

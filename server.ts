@@ -12,6 +12,7 @@ import {
   analyzeArticleSubjectAndContext,
   scrapeWebArticleForSeoRewrite,
   tryDiscoverSourceArticleImagesFromText,
+  findExistingDuplicatePostOnWp,
 } from './src/server/wpPublishService';
 import { extractImagesFromWebUrl } from './src/server/webImageExtractor';
 
@@ -270,6 +271,32 @@ async function startServer() {
         return;
       }
 
+      if (action === 'check_duplicate') {
+        let checkTitle = String(body.title || '').trim();
+        let checkText = String(body.articleText || '').trim();
+        const checkUrl = String(body.sourceUrl || '').trim();
+        if (checkUrl && (!checkTitle || !checkText)) {
+          try {
+            const scraped = await scrapeWebArticleForSeoRewrite(checkUrl);
+            if (!checkTitle && scraped.originalTitle) checkTitle = scraped.originalTitle;
+            if (!checkText && scraped.articleText) checkText = scraped.articleText;
+          } catch {}
+        }
+        const duplicate = await findExistingDuplicatePostOnWp({
+          title: checkTitle,
+          slug: body.slug ? String(body.slug) : undefined,
+          sourceUrl: checkUrl || undefined,
+          articleText: checkText || undefined,
+          baseSiteUrl: body.customWpUrl ? String(body.customWpUrl) : undefined,
+        });
+        res.json({
+          ok: true,
+          duplicateFound: Boolean(duplicate),
+          duplicate: duplicate || null,
+        });
+        return;
+      }
+
       if (action === 'ai_write' || action === 'ai_generate') {
         const result = await generateSeoArticleWithAi({
           topic: String(body.topic || ''),
@@ -281,6 +308,8 @@ async function startServer() {
           existingTitle: body.existingTitle ? String(body.existingTitle) : undefined,
           existingContent: body.existingContent ? String(body.existingContent) : undefined,
           existingImages: Array.isArray(body.existingImages) ? body.existingImages : undefined,
+          employeeCode: body.employeeCode ? String(body.employeeCode) : undefined,
+          autoUpdateIfDuplicate: body.autoUpdateIfDuplicate !== false,
         });
         res.json(result);
         return;

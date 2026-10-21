@@ -2809,6 +2809,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                 invited: 'blue',
                                 waiting: 'purple',
                                 failed: 'red',
+                                via_deleted: 'gray',
                               };
                               onUpdateRecord(record.id, {
                                 viaTransferStatus: newStatus,
