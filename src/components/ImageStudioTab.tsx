@@ -218,6 +218,20 @@ export function ImageStudioTab({
   const [showMultiFrameGallery, setShowMultiFrameGallery] = useState<boolean>(true);
   // Offset xoay vòng thứ tự ảnh cho từng khung trong bảng ghép đa khung
   const [multiFrameOffsets, setMultiFrameOffsets] = useState<Record<string, number>>({});
+  // Chế độ phân bổ ảnh từ Kho Tự Ghép vào 8 khung bài viết & 4 khung Story
+  const [poolDistributionMode, setPoolDistributionMode] = useState<
+    'diverse_8_frames' | 'hero_lock_random' | 'same_set'
+  >('diverse_8_frames');
+  // Tổ hợp chỉ số ảnh riêng cho từng khung (khi bấm Tự Ghép Ngẫu Nhiên Phong Phú 8 Khung hoặc Đảo riêng từng khung)
+  const [multiFrameCustomIndices, setMultiFrameCustomIndices] = useState<Record<string, number[]>>(
+    {}
+  );
+  // Các ảnh trong Kho Tự Ghép tạm thời bỏ tích (không đưa vào đảo ngẫu nhiên)
+  const [excludedPoolIndices, setExcludedPoolIndices] = useState<number[]>([]);
+  // Mục Đảo Tổ Hợp Ảnh Ngẫu Nhiên Để Chọn & Tự Ghép ngay trong Kho Tự Ghép
+  const [showRandomComboPicker, setShowRandomComboPicker] = useState<boolean>(true);
+  const [randomComboPacks, setRandomComboPacks] = useState<number[][]>([]);
+  const [activeSelectedComboIdx, setActiveSelectedComboIdx] = useState<number | null>(null);
   const [exportingPresetId, setExportingPresetId] = useState<string | null>(null);
 
   // --- HÀNG CHỜ ẢNH TƯƠNG TỰ TỰ ĐỘNG TÌM TỪ BÀI VIẾT ĐỂ CHỌN VÔ KHO TỰ GHÉP ---
@@ -1442,6 +1456,309 @@ export function ImageStudioTab({
     });
   }, [favoriteStoryPresetIds]);
 
+  // Danh sách chỉ số ảnh đang được bật chọn trong Kho Tự Ghép
+  const activePoolPhotoIndices = useMemo(() => {
+    const total = uploadedPhotos.length;
+    if (total === 0) return [];
+    const excludedSet = new Set(excludedPoolIndices);
+    const filtered = Array.from({ length: total }, (_, i) => i).filter((i) => !excludedSet.has(i));
+    return filtered.length > 0 ? filtered : Array.from({ length: total }, (_, i) => i);
+  }, [uploadedPhotos.length, excludedPoolIndices]);
+
+  // Hàm rút ngẫu nhiên k chỉ số ảnh không trùng nhau từ Kho Tự Ghép
+  const pickRandomDistinctIndices = useCallback(
+    (countNeeded: number, lockFirstIndex?: number, avoidFirstSet?: Set<number>): number[] => {
+      const pool = activePoolPhotoIndices;
+      if (pool.length === 0) return [0];
+      const result: number[] = [];
+
+      if (typeof lockFirstIndex === 'number' && lockFirstIndex >= 0 && lockFirstIndex < uploadedPhotos.length) {
+        result.push(lockFirstIndex);
+      }
+
+      const candidates = pool.filter((idx) => !result.includes(idx));
+      // Shuffle candidates using Fisher-Yates
+      const shuffled = [...candidates];
+      for (let i = shuffled.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = shuffled[i];
+        shuffled[i] = shuffled[j];
+        shuffled[j] = tmp;
+      }
+
+      // Ưu tiên ảnh đầu chưa bị trùng với khung trước đó để 8 khung phong phú nhất
+      if (result.length === 0 && avoidFirstSet && shuffled.length > 1) {
+        const nonUsedPos = shuffled.findIndex((idx) => !avoidFirstSet.has(idx));
+        if (nonUsedPos > 0) {
+          const picked = shuffled[nonUsedPos];
+          shuffled.splice(nonUsedPos, 1);
+          shuffled.unshift(picked);
+        }
+      }
+
+      for (const idx of shuffled) {
+        if (result.length >= countNeeded) break;
+        result.push(idx);
+      }
+
+      while (result.length < countNeeded) {
+        result.push(pool[result.length % pool.length]);
+      }
+
+      return result;
+    },
+    [activePoolPhotoIndices, uploadedPhotos.length]
+  );
+
+  // Tự động sinh 8 Bộ Tổ Hợp Ảnh Ngẫu Nhiên (Combo #1 -> #8) mỗi khi Kho Tự Ghép thay đổi
+  const generateFreshRandomComboPacks = useCallback(
+    (keepHeroFirst = false, autoApplyTo8Frames = false) => {
+      const pool = activePoolPhotoIndices;
+      if (pool.length === 0) {
+        setRandomComboPacks([]);
+        return;
+      }
+      const usedFirstSet = new Set<number>();
+      const packs: number[][] = [];
+      for (let i = 0; i < 8; i++) {
+        if (usedFirstSet.size >= pool.length) usedFirstSet.clear();
+        const combo = pickRandomDistinctIndices(
+          Math.min(4, Math.max(2, pool.length)),
+          keepHeroFirst ? pool[0] : undefined,
+          usedFirstSet
+        );
+        usedFirstSet.add(combo[0]);
+        packs.push(combo);
+      }
+      setRandomComboPacks(packs);
+      setActiveSelectedComboIdx(null);
+
+      if (autoApplyTo8Frames) {
+        const nextCustom: Record<string, number[]> = {};
+        multiFrameVariations.forEach((v, idx) => {
+          const key = `post-${idx}-${v.preset.id}`;
+          nextCustom[key] = packs[idx % packs.length];
+        });
+        storyFrameVariations.forEach((v, idx) => {
+          const key = `story-${idx}-${v.preset.id}`;
+          nextCustom[key] = pickRandomDistinctIndices(
+            Math.max(2, v.preset.slots.length),
+            keepHeroFirst ? pool[0] : undefined
+          );
+        });
+        setMultiFrameCustomIndices(nextCustom);
+        setMultiFrameOffsets({});
+      }
+    },
+    [activePoolPhotoIndices, multiFrameVariations, storyFrameVariations, pickRandomDistinctIndices]
+  );
+
+  // Khi số lượng ảnh trong Kho Tự Ghép thay đổi, tự động tạo mới 8 Bộ Tổ Hợp Ngẫu Nhiên
+  useEffect(() => {
+    setExcludedPoolIndices((prev) => prev.filter((i) => i < uploadedPhotos.length));
+    if (uploadedPhotos.length > 0) {
+      generateFreshRandomComboPacks(
+        poolDistributionMode === 'hero_lock_random',
+        poolDistributionMode !== 'same_set' && uploadedPhotos.length >= 3
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uploadedPhotos.length]);
+
+  // Đảo ngẫu nhiên phong phú toàn bộ 8 khung bài viết & 4 khung Story (mỗi khung 1 bộ ảnh khác nhau từ kho)
+  const handleRandomizeAll8FramesRichly = useCallback(
+    (modeOverride?: 'diverse_8_frames' | 'hero_lock_random' | 'same_set') => {
+      const targetMode = modeOverride || poolDistributionMode;
+      if (modeOverride) setPoolDistributionMode(modeOverride);
+
+      if (targetMode === 'same_set') {
+        // Đảo chọn 1 bộ ngẫu nhiên rồi áp đồng loạt cho cả 8 khung để so sánh mẫu
+        const sharedCombo = pickRandomDistinctIndices(4);
+        const nextCustom: Record<string, number[]> = {};
+        multiFrameVariations.forEach((v, idx) => {
+          nextCustom[`post-${idx}-${v.preset.id}`] = sharedCombo;
+        });
+        storyFrameVariations.forEach((v, idx) => {
+          nextCustom[`story-${idx}-${v.preset.id}`] = sharedCombo;
+        });
+        setMultiFrameCustomIndices(nextCustom);
+        setMultiFrameOffsets({});
+        setExportNotice(
+          `Đã đảo bộ ảnh chung (${sharedCombo.map((i) => `#${i + 1}`).join(', ')}) cho toàn bộ 8 khung để so sánh bố cục!`
+        );
+        setTimeout(() => setExportNotice(null), 3000);
+        return;
+      }
+
+      const keepHero = targetMode === 'hero_lock_random';
+      generateFreshRandomComboPacks(keepHero, true);
+      setExportNotice(
+        keepHero
+          ? `📌 Đã giữ ảnh #${(activePoolPhotoIndices[0] ?? 0) + 1} làm ảnh chính và đảo ngẫu nhiên các ảnh phụ khác nhau cho 8 khung!`
+          : `🎲 Đã đảo & tự ghép ngẫu nhiên 8 tổ hợp ảnh phong phú từ Kho (${activePoolPhotoIndices.length} ảnh) vào 8 khung bài viết & 4 khung Story!`
+      );
+      setTimeout(() => setExportNotice(null), 3500);
+    },
+    [
+      poolDistributionMode,
+      pickRandomDistinctIndices,
+      multiFrameVariations,
+      storyFrameVariations,
+      generateFreshRandomComboPacks,
+      activePoolPhotoIndices,
+    ]
+  );
+
+  // Đảo ngẫu nhiên riêng 1 khung bất kỳ (lấy tổ hợp ảnh mới từ toàn bộ Kho Tự Ghép)
+  const handleRandomizeSingleFrame = useCallback(
+    (offsetKey: string, slotCount: number) => {
+      const keepHero = poolDistributionMode === 'hero_lock_random';
+      const currentCombo = multiFrameCustomIndices[offsetKey] || [];
+      const avoidFirst = new Set<number>(currentCombo.length > 0 ? [currentCombo[0]] : []);
+      const freshCombo = pickRandomDistinctIndices(
+        Math.max(4, slotCount),
+        keepHero ? activePoolPhotoIndices[0] : undefined,
+        avoidFirst
+      );
+      setMultiFrameCustomIndices((prev) => ({
+        ...prev,
+        [offsetKey]: freshCombo,
+      }));
+    },
+    [poolDistributionMode, multiFrameCustomIndices, pickRandomDistinctIndices, activePoolPhotoIndices]
+  );
+
+  // Áp dụng 1 Bộ Tổ Hợp Ngẫu Nhiên người dùng chọn vào toàn bộ 8 khung VÀ Bàn Chỉnh Sửa Lớn
+  const handleApplySelectedComboPack = useCallback(
+    (comboIndices: number[], packIdx: number, mode: 'all_8_frames' | 'single_frame' = 'all_8_frames') => {
+      setActiveSelectedComboIdx(packIdx);
+      if (mode === 'all_8_frames') {
+        const nextCustom: Record<string, number[]> = {};
+        multiFrameVariations.forEach((v, idx) => {
+          nextCustom[`post-${idx}-${v.preset.id}`] = comboIndices;
+        });
+        storyFrameVariations.forEach((v, idx) => {
+          nextCustom[`story-${idx}-${v.preset.id}`] = comboIndices;
+        });
+        setMultiFrameCustomIndices(nextCustom);
+        setMultiFrameOffsets({});
+      } else {
+        setMultiFrameCustomIndices((prev) => {
+          const targetIdx = packIdx % Math.max(1, multiFrameVariations.length);
+          const v = multiFrameVariations[targetIdx];
+          if (!v) return prev;
+          return {
+            ...prev,
+            [`post-${targetIdx}-${v.preset.id}`]: comboIndices,
+          };
+        });
+      }
+
+      // Cập nhật luôn xuống Bàn Chỉnh Sửa Lớn
+      const nextMainSlots: Record<number, string> = {};
+      activePreset.slots.forEach((slot, sIdx) => {
+        const pIdx = comboIndices[sIdx % comboIndices.length] ?? 0;
+        nextMainSlots[slot.id] = uploadedPhotos[pIdx] || uploadedPhotos[0] || '';
+      });
+      setSlotAssignments(nextMainSlots);
+      setSlotTransforms({});
+
+      setExportNotice(
+        mode === 'all_8_frames'
+          ? `✅ Đã chọn Tổ hợp #${packIdx + 1} (${comboIndices.map((i) => `Ảnh #${i + 1}`).join(' + ')}) tự ghép đồng loạt vào 8 khung & Bàn sửa!`
+          : `✅ Đã gán Tổ hợp #${packIdx + 1} (${comboIndices.map((i) => `Ảnh #${i + 1}`).join(' + ')}) vào Khung #${(packIdx % 8) + 1}!`
+      );
+      setTimeout(() => setExportNotice(null), 3200);
+    },
+    [multiFrameVariations, storyFrameVariations, activePreset, uploadedPhotos]
+  );
+
+  // Đảo ngẫu nhiên vị trí toàn bộ ảnh trong Kho Tự Ghép
+  const handleShufflePoolPhotosOrder = useCallback(() => {
+    if (uploadedPhotos.length <= 1) return;
+    setUploadedPhotos((prev) => {
+      const copy = [...prev];
+      for (let i = copy.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        const tmp = copy[i];
+        copy[i] = copy[j];
+        copy[j] = tmp;
+      }
+      setSlotAssignments((oldSlots) => {
+        const updated = { ...oldSlots };
+        activePreset.slots.forEach((slot, sIdx) => {
+          updated[slot.id] = copy[sIdx % copy.length] || '';
+        });
+        return updated;
+      });
+      return copy;
+    });
+    setExcludedPoolIndices([]);
+    setTimeout(() => {
+      generateFreshRandomComboPacks(poolDistributionMode === 'hero_lock_random', true);
+    }, 30);
+    setExportNotice('🔀 Đã đảo ngẫu nhiên thứ tự ảnh trong Kho Tự Ghép & làm mới toàn bộ 8 khung!');
+    setTimeout(() => setExportNotice(null), 3000);
+  }, [uploadedPhotos.length, activePreset.slots, generateFreshRandomComboPacks, poolDistributionMode]);
+
+  // Tính toán danh sách ảnh cho từng ô của 1 khung (đảm bảo khi kho nhiều ảnh thì 8 khung luôn phong phú, đa dạng)
+  const getFrameVariationSlotsAndIndices = useCallback(
+    (
+      offsetKey: string,
+      preset: CollagePreset,
+      frameIdx: number
+    ): { variationSlots: Record<number, string>; usedPhotoIndices: number[] } => {
+      const total = uploadedPhotos.length;
+      if (total === 0) {
+        return { variationSlots: {}, usedPhotoIndices: [] };
+      }
+      const pool = activePoolPhotoIndices.length > 0 ? activePoolPhotoIndices : [0];
+      const offset = multiFrameOffsets[offsetKey] || 0;
+      const customList = multiFrameCustomIndices[offsetKey];
+
+      const variationSlots: Record<number, string> = {};
+      const usedPhotoIndices: number[] = [];
+
+      preset.slots.forEach((s, sIdx) => {
+        let chosenPoolIdx = 0;
+        if (customList && customList.length > 0) {
+          const baseIdx = customList[(sIdx + offset) % customList.length];
+          chosenPoolIdx = baseIdx < total ? baseIdx : pool[(sIdx + offset) % pool.length];
+        } else if (poolDistributionMode === 'same_set') {
+          chosenPoolIdx = pool[(sIdx + offset) % pool.length];
+        } else if (poolDistributionMode === 'hero_lock_random') {
+          if (sIdx === 0 && offset === 0) {
+            chosenPoolIdx = pool[0];
+          } else {
+            const subPool = pool.length > 1 ? pool.slice(1) : pool;
+            chosenPoolIdx = subPool[(frameIdx + sIdx - 1 + offset + subPool.length) % subPool.length];
+          }
+        } else {
+          // 'diverse_8_frames': Phân bổ bước nhảy thông minh khắp kho ảnh để 8 khung không bị trùng lặp
+          const step = pool.length >= 6 ? 2 : 1;
+          let pos = (frameIdx * step + sIdx + offset) % pool.length;
+          // Tránh trùng ảnh trong cùng 1 khung nếu kho đủ ảnh
+          if (usedPhotoIndices.includes(pool[pos]) && pool.length > sIdx) {
+            pos = (pos + 1) % pool.length;
+          }
+          chosenPoolIdx = pool[pos];
+        }
+
+        usedPhotoIndices.push(chosenPoolIdx);
+        variationSlots[s.id] = uploadedPhotos[chosenPoolIdx] || uploadedPhotos[0] || '';
+      });
+
+      return { variationSlots, usedPhotoIndices };
+    },
+    [
+      uploadedPhotos,
+      activePoolPhotoIndices,
+      multiFrameOffsets,
+      multiFrameCustomIndices,
+      poolDistributionMode,
+    ]
+  );
+
   // Hàm vẽ Canvas dùng chung cho cả Khung Chính và từng Khung trong Bộ Sưu Tập Đa Khung
   const generateCanvasForConfig = async (options: {
     preset: CollagePreset;
@@ -2453,22 +2770,46 @@ export function ImageStudioTab({
             {/* KHU VỰC KHO ẢNH TỰ GHÉP (TẢI TỪ MÁY LÊN KHO) & HÀNG CHỜ ẢNH TƯƠNG TỰ (CHỌN VÔ KHO) */}
             {/* ================================================================================= */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 pt-1">
-              {/* CỘT 1 (6 COL): KHO ẢNH ĐANG DÙNG ĐỂ TỰ GHÉP + NÚT UPDATE ẢNH TỪ MÁY LÊN KHO */}
-              <div className="lg:col-span-6 bg-white/95 rounded-xl border border-emerald-200 p-3 space-y-2 shadow-2xs">
+              {/* CỘT 1 (6 COL): KHO ẢNH ĐANG DÙNG ĐỂ TỰ GHÉP + MỤC ĐẢO ẢNH GHÉP NGẪU NHIÊN ĐỂ CHỌN */}
+              <div className="lg:col-span-6 bg-white/95 rounded-xl border border-emerald-200 p-3 space-y-2.5 shadow-2xs">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5">
                     <span className="px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase">
-                      Kho Tự Ghép ({uploadedPhotos.length} ảnh)
+                      Kho Tự Ghép ({activePoolPhotoIndices.length}/{uploadedPhotos.length} ảnh)
                     </span>
                     <span className="text-[11px] font-bold text-slate-700">
-                      Ảnh đang dùng để ghép tự động
+                      Bấm ảnh để Chọn/Bỏ hoặc Đặt #1
                     </span>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5">
+                    {uploadedPhotos.length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={() => handleRandomizeAll8FramesRichly()}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-700 hover:to-orange-600 text-white text-[11px] font-extrabold cursor-pointer shadow-2xs transition-all"
+                        title="Đảo & tự ghép ngẫu nhiên toàn bộ ảnh trong kho thành 8 khung khác nhau thật phong phú"
+                      >
+                        <Shuffle className="w-3 h-3" />
+                        <span>🎲 Đảo Ghép Phong Phú 8 Khung</span>
+                      </button>
+                    )}
+
+                    {uploadedPhotos.length >= 2 && (
+                      <button
+                        type="button"
+                        onClick={handleShufflePoolPhotosOrder}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-bold cursor-pointer transition-colors"
+                        title="Xáo trộn ngẫu nhiên thứ tự toàn bộ ảnh trong Kho Tự Ghép"
+                      >
+                        <RefreshCw className="w-3 h-3 text-emerald-700" />
+                        <span>Đảo thứ tự kho</span>
+                      </button>
+                    )}
+
                     <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold cursor-pointer shadow-2xs transition-colors">
                       <Upload className="w-3 h-3" />
-                      <span>+ Tải Ảnh Từ Máy Vào Kho</span>
+                      <span>+ Tải Ảnh Máy</span>
                       <input
                         type="file"
                         multiple
@@ -2483,7 +2824,7 @@ export function ImageStudioTab({
                       className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold cursor-pointer transition-colors"
                     >
                       <Plus className="w-3 h-3" />
-                      <span>Thay Kho Bằng Ảnh Máy</span>
+                      <span>Thay Kho</span>
                       <input
                         type="file"
                         multiple
@@ -2499,6 +2840,8 @@ export function ImageStudioTab({
                         onClick={() => {
                           setUploadedPhotos([]);
                           setSlotAssignments({});
+                          setMultiFrameCustomIndices({});
+                          setExcludedPoolIndices([]);
                         }}
                         className="px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[10px] font-bold cursor-pointer"
                         title="Xóa trống kho ảnh"
@@ -2509,77 +2852,260 @@ export function ImageStudioTab({
                   </div>
                 </div>
 
-                {/* Danh sách ảnh trong Kho Tự Ghép */}
+                {/* Danh sách ảnh trong Kho Tự Ghép (hỗ trợ tích chọn/bỏ chọn để tham gia tự ghép ngẫu nhiên) */}
                 {uploadedPhotos.length > 0 ? (
-                  <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
-                    {uploadedPhotos.map((photo, idx) => (
-                      <div
-                        key={`pool-${idx}`}
-                        className="relative group shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 border-emerald-200 hover:border-emerald-600 bg-slate-100 shadow-2xs transition-all"
-                      >
-                        <img
-                          src={photo}
-                          alt={`Kho #${idx + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                        <span className="absolute top-1 left-1 bg-emerald-700/90 text-white text-[9px] font-black px-1.5 py-0.2 rounded">
-                          #{idx + 1}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setUploadedPhotos((prev) => prev.filter((_, i) => i !== idx))
-                          }
-                          title="Xóa ảnh này khỏi kho"
-                          className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
-                        >
-                          ×
-                        </button>
-                        <div className="absolute inset-x-0 bottom-0 bg-black/75 p-1 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {idx !== 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                      {uploadedPhotos.map((photo, idx) => {
+                        const isExcluded = excludedPoolIndices.includes(idx);
+                        return (
+                          <div
+                            key={`pool-${idx}`}
+                            className={`relative group shrink-0 w-20 h-20 rounded-xl overflow-hidden border-2 transition-all shadow-2xs ${
+                              isExcluded
+                                ? 'border-slate-300 opacity-45 grayscale bg-slate-100'
+                                : idx === 0
+                                ? 'border-amber-500 ring-2 ring-amber-400/30 bg-slate-100'
+                                : 'border-emerald-300 hover:border-emerald-600 bg-slate-100'
+                            }`}
+                          >
+                            <img
+                              src={photo}
+                              alt={`Kho #${idx + 1}`}
+                              onClick={() => {
+                                setExcludedPoolIndices((prev) =>
+                                  prev.includes(idx)
+                                    ? prev.filter((i) => i !== idx)
+                                    : [...prev, idx]
+                                );
+                              }}
+                              className="w-full h-full object-cover cursor-pointer"
+                              title={
+                                isExcluded
+                                  ? 'Ảnh này đang tạm tắt khỏi tự ghép. Bấm để bật lại!'
+                                  : 'Bấm vào ảnh để bật/tắt tham gia đảo ngẫu nhiên 8 khung'
+                              }
+                            />
                             <button
                               type="button"
                               onClick={() => {
-                                setUploadedPhotos((prev) => {
-                                  const next = [
-                                    prev[idx],
-                                    ...prev.filter((_, i) => i !== idx),
-                                  ];
-                                  setSlotAssignments((oldSlots) => {
-                                    const updated = { ...oldSlots };
-                                    activePreset.slots.forEach((slot, sIdx) => {
-                                      updated[slot.id] =
-                                        next[sIdx % Math.max(1, next.length)] || '';
-                                    });
-                                    return updated;
-                                  });
-                                  return next;
-                                });
+                                setExcludedPoolIndices((prev) =>
+                                  prev.includes(idx)
+                                    ? prev.filter((i) => i !== idx)
+                                    : [...prev, idx]
+                                );
                               }}
-                              className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[9px] font-black cursor-pointer"
-                              title="Đưa ảnh này lên vị trí #1 để làm ảnh chính cho toàn bộ mẫu ghép"
+                              className={`absolute top-1 left-1 text-[9px] font-black px-1.5 py-0.2 rounded cursor-pointer flex items-center gap-0.5 ${
+                                isExcluded
+                                  ? 'bg-slate-700 text-slate-200'
+                                  : idx === 0
+                                  ? 'bg-amber-500 text-slate-950'
+                                  : 'bg-emerald-700/90 text-white'
+                              }`}
+                              title="Bấm để tích chọn / bỏ chọn ảnh này khi tự ghép ngẫu nhiên"
                             >
-                              Đặt #1
+                              <span>{isExcluded ? '☐' : '☑'}</span>
+                              <span>#{idx + 1}</span>
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const targetSlot = activeSlotId !== null ? activeSlotId : 0;
-                              setSlotAssignments((prev) => ({ ...prev, [targetSlot]: photo }));
-                            }}
-                            className="px-1.5 py-0.5 rounded bg-white text-slate-900 text-[9px] font-black cursor-pointer"
-                            title="Gán vào ô đang chọn ở bàn chỉnh sửa"
-                          >
-                            Gán ô
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setUploadedPhotos((prev) => prev.filter((_, i) => i !== idx))
+                              }
+                              title="Xóa ảnh này khỏi kho"
+                              className="absolute top-1 right-1 w-4 h-4 rounded-full bg-red-600 text-white flex items-center justify-center text-[10px] font-black opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                            >
+                              ×
+                            </button>
+                            <div className="absolute inset-x-0 bottom-0 bg-black/75 p-1 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              {idx !== 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setUploadedPhotos((prev) => {
+                                      const next = [
+                                        prev[idx],
+                                        ...prev.filter((_, i) => i !== idx),
+                                      ];
+                                      setSlotAssignments((oldSlots) => {
+                                        const updated = { ...oldSlots };
+                                        activePreset.slots.forEach((slot, sIdx) => {
+                                          updated[slot.id] =
+                                            next[sIdx % Math.max(1, next.length)] || '';
+                                        });
+                                        return updated;
+                                      });
+                                      return next;
+                                    });
+                                    setExcludedPoolIndices((prev) => prev.filter((i) => i !== idx));
+                                  }}
+                                  className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 text-[9px] font-black cursor-pointer"
+                                  title="Đưa ảnh này lên vị trí #1 để làm ảnh chính cho toàn bộ mẫu ghép"
+                                >
+                                  Đặt #1
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const targetSlot = activeSlotId !== null ? activeSlotId : 0;
+                                  setSlotAssignments((prev) => ({ ...prev, [targetSlot]: photo }));
+                                }}
+                                className="px-1.5 py-0.5 rounded bg-white text-slate-900 text-[9px] font-black cursor-pointer"
+                                title="Gán vào ô đang chọn ở bàn chỉnh sửa"
+                              >
+                                Gán ô
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* MỤC ĐẢO ẢNH GHÉP NGẪU NHIÊN ĐỂ CHỌN & TỰ GHÉP CHO PHONG PHÚ 8 KHUNG */}
+                    {uploadedPhotos.length >= 2 && (
+                      <div className="rounded-xl bg-gradient-to-r from-emerald-50/90 via-teal-50/80 to-amber-50/80 border border-emerald-200/90 p-2.5 space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-1.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white text-[10px] font-black">
+                              🎲 ĐẢO ẢNH NGẪU NHIÊN ({randomComboPacks.length} BỘ ĐỀ XUẤT)
+                            </span>
+                            <span className="text-[11px] font-bold text-slate-700">
+                              Chọn bộ ảnh bất kỳ hoặc bấm Tự Ghép Phong Phú 8 Khung
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => handleRandomizeAll8FramesRichly('diverse_8_frames')}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold cursor-pointer border transition-all ${
+                                poolDistributionMode === 'diverse_8_frames'
+                                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                                  : 'bg-white hover:bg-emerald-50 text-emerald-900 border-emerald-300'
+                              }`}
+                              title="Mỗi khung trong 8 khung sẽ tự động lấy 1 tổ hợp ảnh ngẫu nhiên khác nhau từ kho để phong phú nhất"
+                            >
+                              ✨ Tự Ghép 8 Khung Khác Nhau
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleRandomizeAll8FramesRichly('hero_lock_random')}
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold cursor-pointer border transition-all ${
+                                poolDistributionMode === 'hero_lock_random'
+                                  ? 'bg-amber-500 text-white border-amber-600 shadow-2xs'
+                                  : 'bg-white hover:bg-amber-50 text-amber-900 border-amber-300'
+                              }`}
+                              title="Giữ cố định Ảnh #1 làm ảnh chính và đảo ngẫu nhiên các ảnh phụ khác nhau cho 8 khung"
+                            >
+                              📌 Giữ Ảnh #1 + Đảo Ảnh Phụ
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                generateFreshRandomComboPacks(
+                                  poolDistributionMode === 'hero_lock_random',
+                                  true
+                                )
+                              }
+                              className="px-2 py-0.5 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[10px] font-extrabold cursor-pointer shadow-2xs flex items-center gap-1"
+                              title="Quay ngẫu nhiên 8 tổ hợp ảnh mới từ Kho Tự Ghép và cập nhật ngay xuống 8 khung"
+                            >
+                              <Shuffle className="w-2.5 h-2.5" />
+                              <span>Đảo Loạt Mới</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setShowRandomComboPicker((prev) => !prev)}
+                              className="px-1.5 py-0.5 rounded-md bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold cursor-pointer"
+                            >
+                              {showRandomComboPicker ? 'Thu gọn' : 'Hiện 8 bộ'}
+                            </button>
+                          </div>
                         </div>
+
+                        {showRandomComboPicker && randomComboPacks.length > 0 && (
+                          <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-thin">
+                            {randomComboPacks.map((combo, packIdx) => {
+                              const isSelectedPack = activeSelectedComboIdx === packIdx;
+                              return (
+                                <div
+                                  key={`combo-pack-${packIdx}-${combo.join('-')}`}
+                                  className={`shrink-0 rounded-xl border p-1.5 bg-white shadow-2xs transition-all flex flex-col gap-1 ${
+                                    isSelectedPack
+                                      ? 'border-rose-600 ring-2 ring-rose-500/25 bg-rose-50/30'
+                                      : 'border-emerald-200 hover:border-rose-400'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-1.5">
+                                    <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-900 text-[9px] font-black">
+                                      Bộ #{packIdx + 1}
+                                    </span>
+                                    <span className="text-[9px] font-mono font-bold text-slate-500">
+                                      {combo.slice(0, 3).map((i) => `#${i + 1}`).join('•')}
+                                    </span>
+                                  </div>
+
+                                  {/* 3 ảnh thu nhỏ trong Tổ hợp ngẫu nhiên */}
+                                  <div
+                                    onClick={() =>
+                                      handleApplySelectedComboPack(combo, packIdx, 'all_8_frames')
+                                    }
+                                    className="flex items-center gap-1 cursor-pointer"
+                                    title="Bấm để áp bộ ảnh ngẫu nhiên này vào toàn bộ 8 khung & Bàn sửa"
+                                  >
+                                    {combo.slice(0, 3).map((photoIndex, subIdx) => (
+                                      <div
+                                        key={`sub-${subIdx}`}
+                                        className="relative w-10 h-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0"
+                                      >
+                                        {uploadedPhotos[photoIndex] && (
+                                          <img
+                                            src={uploadedPhotos[photoIndex]}
+                                            alt=""
+                                            className="w-full h-full object-cover"
+                                          />
+                                        )}
+                                        <span className="absolute bottom-0.5 right-0.5 px-1 rounded bg-black/75 text-white text-[8px] font-black leading-tight">
+                                          #{photoIndex + 1}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleApplySelectedComboPack(combo, packIdx, 'all_8_frames')
+                                      }
+                                      className="flex-1 py-0.5 px-1.5 rounded bg-rose-600 hover:bg-rose-700 text-white text-[9px] font-black cursor-pointer text-center"
+                                      title="Dùng bộ ảnh này tự ghép cho cả 8 khung để chọn kiểu khung ưng ý"
+                                    >
+                                      Ghép 8 khung
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleApplySelectedComboPack(combo, packIdx, 'single_frame')
+                                      }
+                                      className="py-0.5 px-1.5 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-900 text-[9px] font-black cursor-pointer"
+                                      title={`Gán riêng bộ ảnh này vào Khung #${packIdx + 1}`}
+                                    >
+                                      Khung #{packIdx + 1}
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-                    ))}
+                    )}
                   </div>
                 ) : (
                   <div className="py-4 px-3 text-center text-xs text-slate-500 border border-dashed border-emerald-300 rounded-lg bg-emerald-50/30">
-                    Kho đang trống. Hãy dán Link bài viết hoặc bấm <b>&quot;+ Tải Ảnh Từ Máy Vào Kho&quot;</b> (hoặc nhấn Ctrl+V dán ảnh) để đưa ảnh vào kho tự ghép!
+                    Kho đang trống. Hãy dán Link bài viết hoặc bấm <b>&quot;+ Tải Ảnh Máy&quot;</b> (hoặc nhấn Ctrl+V dán ảnh) để đưa ảnh vào kho tự ghép!
                   </div>
                 )}
               </div>
@@ -2753,7 +3279,46 @@ export function ImageStudioTab({
                       Bước 2: Ghép Ảnh Tự Động 2 Hàng — Hàng 1 (8 Mẫu Bài Viết • Mặc định 3:4) & Hàng 2 (4 Mẫu Story • Mặc định 9:16)
                     </span>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => handleRandomizeAll8FramesRichly('diverse_8_frames')}
+                        className={`px-2 py-1 rounded-md text-[10px] font-extrabold cursor-pointer transition-all ${
+                          poolDistributionMode === 'diverse_8_frames'
+                            ? 'bg-emerald-600 text-white shadow-2xs'
+                            : 'text-slate-700 hover:text-slate-900'
+                        }`}
+                        title="Tự động chia các bộ ảnh khác nhau từ Kho Tự Ghép vào 8 khung để 8 khung phong phú nhất"
+                      >
+                        🎲 8 Khung Khác Nhau (Phong Phú)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRandomizeAll8FramesRichly('hero_lock_random')}
+                        className={`px-2 py-1 rounded-md text-[10px] font-extrabold cursor-pointer transition-all ${
+                          poolDistributionMode === 'hero_lock_random'
+                            ? 'bg-amber-500 text-white shadow-2xs'
+                            : 'text-slate-700 hover:text-slate-900'
+                        }`}
+                        title="Giữ Ảnh #1 làm ảnh chính ở mọi khung, chỉ đảo ngẫu nhiên các ảnh phụ / ảnh tròn"
+                      >
+                        📌 Giữ #1 + Đảo Ảnh Phụ
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRandomizeAll8FramesRichly('same_set')}
+                        className={`px-2 py-1 rounded-md text-[10px] font-extrabold cursor-pointer transition-all ${
+                          poolDistributionMode === 'same_set'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-700 hover:text-slate-900'
+                        }`}
+                        title="Dùng chung 1 bộ ảnh cho cả 8 khung để dễ so sánh bố cục"
+                      >
+                        🔢 Cùng Bộ Ảnh
+                      </button>
+                    </div>
+
                     <button
                       type="button"
                       onClick={() => setShowFavoriteManager((prev) => !prev)}
@@ -2764,28 +3329,17 @@ export function ImageStudioTab({
                       }`}
                     >
                       <Settings2 className="w-3 h-3" />
-                      <span>{showFavoriteManager ? 'Đóng bảng chọn mẫu' : '⭐ Chọn 8 Mẫu Bài & 4 Mẫu Story'}</span>
+                      <span>{showFavoriteManager ? 'Đóng chọn mẫu' : '⭐ Chọn 8 Mẫu Bài & 4 Mẫu Story'}</span>
                     </button>
+
                     <button
                       type="button"
-                      onClick={() => {
-                        setMultiFrameOffsets((prev) => {
-                          const next: Record<string, number> = { ...prev };
-                          multiFrameVariations.forEach((v, idx) => {
-                            const key = `post-${idx}-${v.preset.id}`;
-                            next[key] = ((prev[key] || 0) + 1) % Math.max(1, uploadedPhotos.length);
-                          });
-                          storyFrameVariations.forEach((v, idx) => {
-                            const key = `story-${idx}-${v.preset.id}`;
-                            next[key] = ((prev[key] || 0) + 1) % Math.max(1, uploadedPhotos.length);
-                          });
-                          return next;
-                        });
-                      }}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-bold cursor-pointer shadow-2xs"
+                      onClick={() => handleRandomizeAll8FramesRichly()}
+                      className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-700 hover:to-orange-600 text-white text-[11px] font-extrabold cursor-pointer shadow-xs transition-all"
+                      title="Đảo ngẫu nhiên tổ hợp ảnh mới từ Kho Tự Ghép cho toàn bộ 8 khung Bài Viết & 4 khung Story"
                     >
-                      <Shuffle className="w-3 h-3 text-rose-600" />
-                      <span>Đảo Ảnh Tất Cả Khung</span>
+                      <Shuffle className="w-3 h-3" />
+                      <span>🎲 Đảo Ngẫu Nhiên 8 Khung</span>
                     </button>
                   </div>
                 </div>
@@ -2963,12 +3517,11 @@ export function ImageStudioTab({
                   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
                     {multiFrameVariations.map((item, idx) => {
                       const offsetKey = `post-${idx}-${item.preset.id}`;
-                      const offset = multiFrameOffsets[offsetKey] || 0;
-                      const variationSlots: Record<number, string> = {};
-                      item.preset.slots.forEach((s, sIdx) => {
-                        variationSlots[s.id] =
-                          uploadedPhotos[(sIdx + offset) % Math.max(1, uploadedPhotos.length)] || '';
-                      });
+                      const { variationSlots, usedPhotoIndices } = getFrameVariationSlotsAndIndices(
+                        offsetKey,
+                        item.preset,
+                        idx
+                      );
                       const circleSlot = item.preset.slots.find((s) => s.shape === 'circle');
                       const cardCircleOverride = multiFrameCircleOverrides[offsetKey];
                       const cardCircleMap: Record<number, CircleSlotOverride> =
@@ -3296,22 +3849,18 @@ export function ImageStudioTab({
                             )}
                           </div>
 
-                          {/* Nút Đảo ảnh, Copy & Tải nhanh từng khung */}
-                          <div className="flex items-center justify-between gap-1 mt-2 pt-1.5 border-t border-slate-100">
+                          {/* Nút Đảo ngẫu nhiên ảnh từ kho, Copy & Tải nhanh từng khung */}
+                          <div className="flex items-center justify-between gap-1 mt-1.5 pt-1 border-t border-slate-100">
                             <button
                               type="button"
                               onClick={() =>
-                                setMultiFrameOffsets((prev) => ({
-                                  ...prev,
-                                  [offsetKey]:
-                                    ((prev[offsetKey] || 0) + 1) %
-                                    Math.max(1, uploadedPhotos.length),
-                                }))
+                                handleRandomizeSingleFrame(offsetKey, item.preset.slots.length)
                               }
-                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
-                              title="Đảo vị trí ảnh trong khung này"
+                              className="px-1.5 py-1 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9px] font-extrabold cursor-pointer flex items-center gap-0.5 shrink-0"
+                              title={`Đảo bộ ảnh ngẫu nhiên khác từ Kho Tự Ghép cho khung #${idx + 1} (Đang ghép ảnh: ${usedPhotoIndices.map((i) => `#${i + 1}`).join(', ')})`}
                             >
-                              <Shuffle className="w-3 h-3" />
+                              <Shuffle className="w-2.5 h-2.5 text-emerald-700" />
+                              <span>{usedPhotoIndices.map((i) => `#${i + 1}`).join('•')}</span>
                             </button>
 
                             <button
@@ -3379,12 +3928,11 @@ export function ImageStudioTab({
                   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
                     {storyFrameVariations.map((item, idx) => {
                       const offsetKey = `story-${idx}-${item.preset.id}`;
-                      const offset = multiFrameOffsets[offsetKey] || 0;
-                      const variationSlots: Record<number, string> = {};
-                      item.preset.slots.forEach((s, sIdx) => {
-                        variationSlots[s.id] =
-                          uploadedPhotos[(sIdx + offset) % Math.max(1, uploadedPhotos.length)] || '';
-                      });
+                      const { variationSlots, usedPhotoIndices } = getFrameVariationSlotsAndIndices(
+                        offsetKey,
+                        item.preset,
+                        idx + 8
+                      );
                       const circleSlot = item.preset.slots.find((s) => s.shape === 'circle');
                       const cardCircleOverride = multiFrameCircleOverrides[offsetKey];
                       const cardCircleMap: Record<number, CircleSlotOverride> =
@@ -3703,22 +4251,18 @@ export function ImageStudioTab({
                             )}
                           </div>
 
-                          {/* Nút Đảo ảnh, Copy & Tải nhanh từng khung Story */}
-                          <div className="flex items-center justify-between gap-1 mt-2 pt-1.5 border-t border-slate-100">
+                          {/* Nút Đảo ảnh ngẫu nhiên từ kho, Copy & Tải nhanh từng khung Story */}
+                          <div className="flex items-center justify-between gap-1 mt-1.5 pt-1 border-t border-slate-100">
                             <button
                               type="button"
                               onClick={() =>
-                                setMultiFrameOffsets((prev) => ({
-                                  ...prev,
-                                  [offsetKey]:
-                                    ((prev[offsetKey] || 0) + 1) %
-                                    Math.max(1, uploadedPhotos.length),
-                                }))
+                                handleRandomizeSingleFrame(offsetKey, item.preset.slots.length)
                               }
-                              className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold cursor-pointer"
-                              title="Đảo vị trí ảnh trong khung Story này"
+                              className="px-1.5 py-1 rounded-md bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[9px] font-extrabold cursor-pointer flex items-center gap-0.5 shrink-0"
+                              title={`Đảo bộ ảnh ngẫu nhiên khác từ Kho Tự Ghép cho Story #${idx + 1} (Đang ghép ảnh: ${usedPhotoIndices.map((i) => `#${i + 1}`).join(', ')})`}
                             >
-                              <Shuffle className="w-3 h-3" />
+                              <Shuffle className="w-2.5 h-2.5 text-indigo-700" />
+                              <span>{usedPhotoIndices.map((i) => `#${i + 1}`).join('•')}</span>
                             </button>
 
                             <button
