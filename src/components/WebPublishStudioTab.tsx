@@ -2639,28 +2639,28 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider mr-1">
-                Menu Quy Trình:
+                Quy trình:
               </span>
               {[
                 {
                   id: 'all' as const,
-                  label: '⚡ Hiện Đầy Đủ Cả 3 Bước',
+                  label: '⚡ Tất Cả (3 Bước)',
                   badge: 'Full',
                 },
                 {
                   id: 'step1_ai' as const,
-                  label: 'Bước 1: Nguồn Bài & Viết Tự Động (40–50 Từ/Đoạn)',
-                  badge: aiMode === 'from_url' ? 'Từ Link' : 'Từ Đoạn Văn',
+                  label: '1. Nguồn Bài & Mở Rộng AI',
+                  badge: aiMode === 'from_url' ? 'Từ Link' : 'Từ Văn Bản',
                 },
                 {
                   id: 'step2_content' as const,
-                  label: 'Bước 2: Soạn Thảo, Gắn Ảnh & 2 Video YouTube',
+                  label: '2. Soạn Thảo, Ảnh & Video',
                   badge: `${extractedWebImages.length} ảnh · ${attachedYoutubeVideos.length} YT`,
                 },
                 {
                   id: 'step3_seo' as const,
-                  label: 'Bước 3: Từ Khóa & Chấm Điểm Chuẩn SEO',
-                  badge: `${seoAnalysis.score}/100 điểm`,
+                  label: '3. Từ Khóa & Điểm SEO',
+                  badge: `${seoAnalysis.score}/100đ`,
                 },
               ].map((step) => {
                 const isActive = editorSectionFilter === step.id;
@@ -2677,7 +2677,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   >
                     <span>{step.label}</span>
                     <span
-                      className={`px-1.5 py-0.2 rounded-md text-[10px] font-black ${
+                      className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${
                         isActive
                           ? 'bg-emerald-500 text-white'
                           : 'bg-white text-slate-600 border border-slate-200'
@@ -2692,7 +2692,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
             <div className="flex items-center gap-1.5 text-[11px]">
               <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
-                Số từ: <b>{seoAnalysis.words}</b> từ · Ảnh gắn: <b>{seoAnalysis.imageCount}</b>
+                Số từ: <b>{seoAnalysis.words}</b> · Ảnh gắn: <b>{seoAnalysis.imageCount}</b>
               </span>
             </div>
           </div>
@@ -2875,117 +2875,104 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* CỘT TRÁI (2/3): SOẠN THẢO BÀI VIẾT & TRỢ LÝ AI SEO */}
           <div className="lg:col-span-2 space-y-5">
-            {/* BƯỚC 1: KHUNG 2 CHỨC NĂNG CHÍNH: VIẾT BÀI TỪ NỘI DUNG HOẶC TỪ LINK WEB BẤT KỲ + LẤY HẾT ẢNH + 2 VIDEO YOUTUBE */}
+            {/* BƯỚC 1: KHUNG NGUỒN BÀI VIẾT & MỞ RỘNG CHUẨN SEO KHOA HỌC */}
             {(editorSectionFilter === 'all' || editorSectionFilter === 'step1_ai') && (
-            <div className="bg-gradient-to-r from-emerald-50/95 via-teal-50/90 to-sky-50/90 border-2 border-emerald-300/80 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="bg-gradient-to-r from-emerald-50/95 via-teal-50/90 to-sky-50/90 border-2 border-emerald-300/80 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs overflow-hidden">
+              {/* HÀNG 1: TIÊU ĐỀ BƯỚC 1 + THANH CHỌN CHẾ ĐỘ & NGÔN NGỮ GỌN GÀNG */}
+              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-2.5 pb-2.5 border-b border-emerald-200/70">
                 <div className="flex items-center space-x-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0 shadow-2xs">
                     B1
                   </div>
                   <div>
                     <span className="text-xs sm:text-sm font-black text-slate-900 block">
-                      Bước 1: Trợ Lý Viết Bài Chuẩn SEO Tự Động + Minh Họa Ảnh & 2 Video YouTube Cuối Bài
+                      Bước 1: Nguồn Bài Viết &amp; Mở Rộng Chuẩn SEO (40–50 Từ/Đoạn)
                     </span>
                     <span className="text-[11px] text-slate-600">
-                      Chọn 1 trong 2 chế độ bên dưới để tự động viết bài, chèn ảnh minh họa và gắn 2 video YouTube liên quan
+                      Tự động kiểm tra trùng trên <b>celeb24h.com</b> · Bổ sung mở rộng &amp; gắn ảnh + 2 Video YouTube
                     </span>
                   </div>
                 </div>
 
-                {/* Chọn ngôn ngữ bài viết */}
-                <div className="flex items-center space-x-1.5 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setAiLanguage('en')}
-                    className={`px-2.5 py-1.5 rounded-lg font-bold cursor-pointer ${
-                      aiLanguage === 'en'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'bg-white text-slate-700 border border-slate-200'
-                    }`}
-                  >
-                    🇺🇸 English (US Showbiz)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAiLanguage('vi')}
-                    className={`px-2.5 py-1.5 rounded-lg font-bold cursor-pointer ${
-                      aiLanguage === 'vi'
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'bg-white text-slate-700 border border-slate-200'
-                    }`}
-                  >
-                    🇻🇳 Tiếng Việt
-                  </button>
+                {/* Thanh gộp Chế độ đầu vào + Ngôn ngữ trên 1 hàng khoa học */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="inline-flex items-center bg-white/90 p-1 rounded-xl border border-emerald-200 shadow-2xs">
+                    <button
+                      type="button"
+                      onClick={() => setAiMode('from_url')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                        aiMode === 'from_url'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-slate-700 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <Link2 className="w-3.5 h-3.5" />
+                      <span>1. Dán Link Bài Báo</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiMode('from_text')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                        aiMode === 'from_text'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-slate-700 hover:bg-emerald-50'
+                      }`}
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>2. Nhập Đoạn Văn / Chặn Copy</span>
+                    </button>
+                  </div>
+
+                  <div className="inline-flex items-center bg-white/90 p-1 rounded-xl border border-slate-200 shadow-2xs text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setAiLanguage('en')}
+                      className={`px-2.5 py-1.5 rounded-lg font-bold cursor-pointer transition-all ${
+                        aiLanguage === 'en'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      🇺🇸 EN
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiLanguage('vi')}
+                      className={`px-2.5 py-1.5 rounded-lg font-bold cursor-pointer transition-all ${
+                        aiLanguage === 'vi'
+                          ? 'bg-slate-900 text-white'
+                          : 'text-slate-700 hover:bg-slate-100'
+                      }`}
+                    >
+                      🇻🇳 VI
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {/* 2 NÚT CHUYỂN CHỨC NĂNG CHÍNH */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setAiMode('from_url')}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start space-x-2.5 ${
-                    aiMode === 'from_url'
-                      ? 'bg-white border-emerald-600 ring-2 ring-emerald-500/20 shadow-xs'
-                      : 'bg-white/60 border-slate-200 hover:bg-white'
-                  }`}
-                >
-                  <div
-                    className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs shrink-0 ${
-                      aiMode === 'from_url'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    1
-                  </div>
-                  <div>
-                    <div className="text-xs font-black text-slate-900">
-                      Ném 1 Link Web Bất Kỳ → Giữ Tiêu Đề Gốc &amp; Mở Rộng Sát Nội Dung Bài Gốc (40–50 Từ/Đoạn)
-                    </div>
-                    <div className="text-[11px] text-slate-600 mt-0.5">
-                      Phá chặn copy lấy hết ảnh &amp; văn bản bài gốc + mở rộng bám sát 100% nội dung gốc (không sáng tác ngoài lề) + chia đoạn 40–50 từ xuống dòng + 2 Video YouTube
-                    </div>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setAiMode('from_text')}
-                  className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start space-x-2.5 ${
-                    aiMode === 'from_text'
-                      ? 'bg-white border-emerald-600 ring-2 ring-emerald-500/20 shadow-xs'
-                      : 'bg-white/60 border-slate-200 hover:bg-white'
-                  }`}
-                >
-                  <div
-                    className={`w-7 h-7 rounded-lg flex items-center justify-center font-black text-xs shrink-0 ${
-                      aiMode === 'from_text'
-                        ? 'bg-emerald-600 text-white'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    2
-                  </div>
-                  <div>
-                    <div className="text-xs font-black text-slate-900">
-                      Nhập Đoạn Nội Dung / Hút Link Chặn Copy → Mở Rộng Sát Nội Dung (40–50 Từ/Đoạn)
-                    </div>
-                    <div className="text-[11px] text-slate-600 mt-0.5">
-                      Mở rộng trực tiếp từ nội dung bài gốc thành bài dài chuẩn SEO (mỗi đoạn 40–50 từ xuống dòng, không sáng tác thêm) + gắn đủ 5–7 ảnh + 2 Video YouTube cuối bài
-                    </div>
-                  </div>
-                </button>
-              </div>
-
-              {/* GIAO DIỆN CHỨC NĂNG 1: NHẬP LINK WEB BẤT KỲ */}
+              {/* HÀNG 2: Ô NHẬP DỮ LIỆU RỘNG 100% + THANH 3 NÚT THAO TÁC CHIA CỘT KHOA HỌC (KHÔNG TRÀN KHUNG) */}
               {aiMode === 'from_url' ? (
-                <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
-                  <label className="text-xs font-black text-slate-800 block">
-                    🔗 Dán đường dẫn (URL) bài viết từ bất kỳ trang báo / website nào (Tự vượt chặn copy lấy hết ảnh &amp; nội dung bài gốc; mở rộng bám sát bài gốc với từng đoạn 40–50 từ xuống dòng):
-                  </label>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                <div className="space-y-3 bg-white/95 p-3.5 sm:p-4 rounded-xl border border-emerald-200 shadow-2xs">
+                  {/* Dòng 1: Ô nhập Link chiếm trọn 100% chiều ngang */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-xs">
+                      <label className="font-black text-slate-800 flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Đường dẫn (URL) bài viết nguồn hoặc link trên celeb24h.com:</span>
+                      </label>
+                      {aiSourceUrl.trim() && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAiSourceUrl('');
+                            setDuplicateCheckStatus(null);
+                          }}
+                          className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
+                        >
+                          Xóa link
+                        </button>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={aiSourceUrl}
@@ -2996,57 +2983,69 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                           void handleGenerateSeoArticle('from_url');
                         }
                       }}
-                      placeholder="VD: https://tvus.info/... hoặc https://beaware.fun/... hoặc https://celeb24h.com/1159"
-                      className="flex-1 px-3.5 py-2.5 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="Dán link bài báo vào đây (VD: https://tvus.info/... hoặc https://beaware.fun/... hoặc https://celeb24h.com/1159)..."
+                      className="w-full px-3.5 py-2.5 bg-slate-50/70 focus:bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
+                  </div>
+
+                  {/* Dòng 2: Menu 3 nút chức năng chia 3 cột đều nhau, gọn đẹp, không bao giờ tràn khung */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <button
                       type="button"
                       disabled={aiLoading || searchingExtImages}
                       onClick={() => void handleGenerateSeoArticle('from_url')}
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
+                      className="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                      title="Hút bài gốc, mở rộng 40–50 từ/đoạn + tự động kiểm tra trùng trên celeb24h.com (nếu trùng sẽ bổ sung & update ngay bài cũ)"
                     >
                       {aiLoading ? (
                         <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang kiểm tra trùng celeb24h.com, mở rộng 40–50 từ/đoạn &amp; cập nhật...</span>
+                          <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                          <span className="truncate">Đang mở rộng &amp; cập nhật...</span>
                         </>
                       ) : (
                         <>
-                          <Sparkles className="w-4 h-4" />
-                          <span>Mở Rộng Sát Bài Gốc (40–50 Từ/Đoạn) · Nếu Trùng Tự Bổ Sung &amp; Update Bài Cũ</span>
+                          <Sparkles className="w-4 h-4 shrink-0" />
+                          <span className="truncate">1. Mở Rộng Bài Gốc (40–50 Từ/Đoạn)</span>
                         </>
                       )}
                     </button>
+
                     <button
                       type="button"
                       disabled={checkingDuplicate || aiLoading}
                       onClick={() => void handleCheckDuplicateOnCeleb24h(true)}
-                      className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
+                      className="px-3 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
                       title="Kiểm tra xem bài này đã có trên celeb24h.com chưa; nếu đã có sẽ tự động bổ sung theo văn phong mở rộng và update ngay bài cũ + báo link cho NV"
                     >
-                      <Search className="w-3.5 h-3.5" />
-                      <span>
-                        {checkingDuplicate
-                          ? 'Đang kiểm tra celeb24h.com...'
-                          : '🔍 Kiểm Tra Trùng & Bổ Sung Bài Cũ'}
-                      </span>
+                      {checkingDuplicate ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          <span className="truncate">Đang kiểm tra celeb24h...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">2. Kiểm Tra Trùng &amp; Update Bài Cũ</span>
+                        </>
+                      )}
                     </button>
+
                     <button
                       type="button"
                       disabled={searchingExtImages || aiLoading}
                       onClick={() => void handleExtractAndAttachArticleImages()}
-                      className="px-3.5 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-sm"
-                      title="Lấy toàn bộ ảnh trong bài viết từ Link (cộng thêm ảnh ngoài nếu < 5 ảnh) và gắn xen kẽ vào bài viết ngay"
+                      className="px-3 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                      title="Chỉ lấy toàn bộ ảnh trong bài viết từ Link và gắn xen kẽ vào bài viết"
                     >
                       {searchingExtImages ? (
                         <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Đang lấy &amp; gắn ảnh...</span>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          <span className="truncate">Đang lấy &amp; gắn ảnh...</span>
                         </>
                       ) : (
                         <>
-                          <ImageIcon className="w-3.5 h-3.5" />
-                          <span>Chỉ Lấy Ảnh Trong Bài &amp; Gắn Vào Bài</span>
+                          <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">3. Chỉ Lấy Ảnh Gốc &amp; Gắn Vào Bài</span>
                         </>
                       )}
                     </button>
@@ -3054,77 +3053,88 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 </div>
               ) : (
                 /* GIAO DIỆN CHỨC NĂNG 2: NHẬP ĐOẠN NỘI DUNG THÔ HOẶC HÚT TỪ WEB CHẶN COPY */
-                <div className="space-y-2.5 bg-white/90 p-3.5 rounded-xl border border-emerald-200">
-                  <div className="flex flex-col sm:flex-row gap-2 pb-1">
+                <div className="space-y-3 bg-white/95 p-3.5 sm:p-4 rounded-xl border border-emerald-200 shadow-2xs">
+                  <div className="flex flex-col sm:flex-row gap-2">
                     <input
                       type="text"
                       value={aiSourceUrl}
                       onChange={(e) => setAiSourceUrl(e.target.value)}
                       onPaste={handlePasteRichArticleContent}
-                      placeholder="🔓 Web gốc chặn Copy? Dán Link bài viết (VD: https://beaware.fun/...) vào đây để tự hút Đoạn Văn & Ảnh Gốc..."
-                      className="flex-1 px-3 py-2 bg-emerald-50/60 border border-emerald-300 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      placeholder="🔓 Nếu web chặn Copy: Dán Link bài viết (VD: https://beaware.fun/...) vào đây..."
+                      className="flex-1 px-3.5 py-2 bg-emerald-50/60 border border-emerald-300 rounded-xl text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                     <button
                       type="button"
                       disabled={searchingExtImages || aiLoading}
                       onClick={() => void handleExtractAndAttachArticleImages()}
-                      className="px-3 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shrink-0 shadow-xs"
+                      className="px-3.5 py-2 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shrink-0 shadow-xs"
                     >
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      <span>🔓 Phá Chặn Copy: Hút Ảnh &amp; Đoạn Văn Từ Link</span>
+                      <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span>🔓 Hút Đoạn Văn &amp; Ảnh Gốc</span>
                     </button>
                   </div>
-                  <label className="text-xs font-black text-slate-800 block">
-                    📝 Đoạn nội dung bài gốc (tự động điền khi dán Link ở trên, hoặc tự nhập / sửa):
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={aiTopic}
-                    onChange={(e) => setAiTopic(e.target.value)}
-                    onPaste={handlePasteRichArticleContent}
-                    placeholder="Dán đoạn nội dung hoặc dán trực tiếp Link bài viết (kể cả web chặn copy như beaware.fun) vào đây..."
-                    className="w-full px-3.5 py-2 bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                  <div className="flex flex-wrap justify-end gap-2">
-                    <button
-                      type="button"
-                      disabled={checkingDuplicate || aiLoading}
-                      onClick={() => void handleCheckDuplicateOnCeleb24h(true)}
-                      className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
-                    >
-                      <Search className="w-3.5 h-3.5" />
-                      <span>
-                        {checkingDuplicate
-                          ? 'Đang kiểm tra celeb24h.com...'
-                          : '🔍 Kiểm Tra Trùng & Bổ Sung Bài Cũ'}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={searchingExtImages || aiLoading}
-                      onClick={() => void handleExtractAndAttachArticleImages()}
-                      className="px-3.5 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
-                    >
-                      <ImageIcon className="w-3.5 h-3.5" />
-                      <span>Lấy 5–7 Ảnh Theo Nội Dung &amp; Gắn Vào Bài</span>
-                    </button>
+
+                  <div>
+                    <label className="text-xs font-black text-slate-800 block mb-1">
+                      📝 Đoạn nội dung bài gốc (tự động điền khi hút Link ở trên, hoặc dán văn bản trực tiếp):
+                    </label>
+                    <textarea
+                      rows={3}
+                      value={aiTopic}
+                      onChange={(e) => setAiTopic(e.target.value)}
+                      onPaste={handlePasteRichArticleContent}
+                      placeholder="Dán đoạn nội dung hoặc dán trực tiếp Link bài viết vào đây..."
+                      className="w-full px-3.5 py-2 bg-slate-50/70 focus:bg-white border border-emerald-300 rounded-xl text-xs sm:text-sm font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <button
                       type="button"
                       disabled={aiLoading}
                       onClick={() => void handleGenerateSeoArticle('from_text')}
-                      className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm"
+                      className="px-3 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
                     >
                       {aiLoading ? (
                         <>
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                          <span>Đang kiểm tra trùng celeb24h.com, mở rộng 40–50 từ/đoạn &amp; cập nhật...</span>
+                          <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                          <span className="truncate">Đang mở rộng &amp; cập nhật...</span>
                         </>
                       ) : (
                         <>
-                          <Sparkles className="w-4 h-4" />
-                          <span>Mở Rộng Sát Bài Gốc (40–50 Từ/Đoạn) · Nếu Trùng Tự Bổ Sung &amp; Update Bài Cũ</span>
+                          <Sparkles className="w-4 h-4 shrink-0" />
+                          <span className="truncate">1. Mở Rộng Bài Gốc (40–50 Từ/Đoạn)</span>
                         </>
                       )}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={checkingDuplicate || aiLoading}
+                      onClick={() => void handleCheckDuplicateOnCeleb24h(true)}
+                      className="px-3 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      {checkingDuplicate ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                          <span className="truncate">Đang kiểm tra celeb24h...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-3.5 h-3.5 shrink-0" />
+                          <span className="truncate">2. Kiểm Tra Trùng &amp; Update Bài Cũ</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={searchingExtImages || aiLoading}
+                      onClick={() => void handleExtractAndAttachArticleImages()}
+                      className="px-3 py-2.5 bg-teal-700 hover:bg-teal-800 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">3. Lấy 5–7 Ảnh &amp; Gắn Vào Bài</span>
                     </button>
                   </div>
                 </div>
@@ -3591,7 +3601,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       <span>
                         {searchingExtImages
                           ? 'Đang lấy & gắn ảnh...'
-                          : 'Lấy Ảnh Trong Bài & Gắn Tự Động Vào Bài (5–7 Ảnh)'}
+                          : '📥 Lấy & Gắn Ảnh Bài Gốc'}
                       </span>
                     </button>
                     {extractedWebImages.length > 0 && (
@@ -3608,7 +3618,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                         }}
                         className="px-2.5 py-1 rounded-lg bg-teal-700 hover:bg-teal-800 text-white text-[11px] font-bold cursor-pointer"
                       >
-                        Gắn đều {extractedWebImages.length} ảnh vào giữa các đoạn
+                        📐 Chia đều {extractedWebImages.length} ảnh vào các đoạn
                       </button>
                     )}
                     <button
@@ -3619,7 +3629,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     >
                       {searchingExtImages && <RefreshCw className="w-3 h-3 animate-spin text-emerald-700" />}
                       <span>
-                        {searchingExtImages ? 'Đang tìm ảnh ngoài...' : '+ Tìm thêm ảnh ngoài tương tự'}
+                        {searchingExtImages ? 'Đang tìm ảnh ngoài...' : '+ Tìm thêm ảnh ngoài'}
                       </span>
                     </button>
                     {(extractedWebImages.some((x) => x.isExternal) || pendingExternalImages.length > 0) && (
@@ -3630,7 +3640,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                         className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-[11px] font-bold cursor-pointer"
                         title="Xóa các ảnh ngoài cũ và tìm lại bộ ảnh ngoài mới khớp đúng nhân vật, trang phục & bối cảnh trong bài"
                       >
-                        🔄 Tìm lại bộ ảnh ngoài chuẩn
+                        🔄 Đổi bộ ảnh ngoài
                       </button>
                     )}
                   </div>
