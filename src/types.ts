@@ -36,7 +36,8 @@ export type ViaTransferStatus =
   | 'invited'       // 🔵 Đã gửi lời mời
   | 'waiting'       // 🟣 Chờ duyệt quyền
   | 'completed'     // 🟢 Đã đổi xong
-  | 'failed';       // ⚠️ Lỗi không add được
+  | 'failed'        // ⚠️ Lỗi không add được
+  | 'via_deleted';  // 🗑️ Đã xóa Via khỏi bảng Full Via
 
 export type ViaTransferColor =
   | 'yellow'  // Vàng
@@ -128,6 +129,16 @@ export const VIA_TRANSFER_PRESETS: Record<ViaTransferStatus, ViaTransferPreset> 
     badgeBorder: 'border-red-400',
     dotColor: 'bg-red-600',
     description: 'Không thêm được via (bị chặn hoặc lỗi BM)',
+  },
+  via_deleted: {
+    key: 'via_deleted',
+    label: 'Đã xóa Via cũ',
+    shortLabel: 'Đã xóa Via',
+    badgeBg: 'bg-slate-100',
+    badgeText: 'text-slate-600',
+    badgeBorder: 'border-slate-300',
+    dotColor: 'bg-slate-400',
+    description: 'Nick Via cũ đã được Admin xóa khỏi bảng Full Via',
   },
 };
 

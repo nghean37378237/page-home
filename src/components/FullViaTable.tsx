@@ -40,6 +40,11 @@ import { generateTOTPCode } from '../utils/totp';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
 import { batchDeleteCloudVias } from '../services/firebase';
 
+function normalizeUidKey(raw?: string): string {
+  if (!raw) return '';
+  return String(raw).split('|')[0].trim().toLowerCase();
+}
+
 interface FullViaTableProps {
   viaList: FullViaItem[];
   allRecords: PageRecord[];
@@ -3762,8 +3767,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         const targetVias = pendingDeleteVia ? [pendingDeleteVia] : getSelectedViasForDelete();
         const targetUidSet = new Set(targetVias.map((v) => normalizeUidKey(v.uid)).filter(Boolean));
         const linkedPages = allRecords.filter((r) => {
-          const rUid = normalizeUidKey(r.viaUid) || normalizeUidKey(r.viaName);
-          return rUid && targetUidSet.has(rUid);
+          const rUid = normalizeUidKey(r.viaUid) || normalizeUidKey(r.fullVia);
+          return Boolean(rUid && targetUidSet.has(rUid));
         });
 
         return (

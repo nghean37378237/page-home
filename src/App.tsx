@@ -2856,7 +2856,7 @@ export default function App() {
 
   const executeDeleteViasInternal = async (
     viaIds: string[],
-    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean }
+    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean; deleteLinkedPages?: boolean }
   ) => {
     if (!viaIds || viaIds.length === 0) return;
     const idSet = new Set(viaIds);
@@ -2889,6 +2889,9 @@ export default function App() {
       return Boolean(uLower && targetUidLowers.has(uLower));
     });
 
+    const isSafeDocId = (id: string) =>
+      Boolean(id && id.length <= 128 && /^[a-zA-Z0-9_-]+$/.test(id));
+
     const allDocIdsToDelete = Array.from(
       new Set([
         ...viaIds,
@@ -2896,7 +2899,7 @@ export default function App() {
         ...Array.from(rawCleanUids).map((u) => `via-sync-${u}`),
         ...Array.from(targetUidLowers).map((u) => `via-sync-${u}`),
       ])
-    ).filter(Boolean);
+    ).filter(isSafeDocId);
 
     // 2. Đưa ngay các UID bị xóa vào danh sách chặn tự động tạo lại (deletedViaUidsRef + localStorage + Cloud Settings)
     if (targetUidLowers.size > 0) {
@@ -2915,7 +2918,7 @@ export default function App() {
     const deleteDocIdSet = new Set(allDocIdsToDelete);
     setViaList((prev) =>
       prev.filter((v) => {
-        if (deleteDocIdSet.has(v.id)) return false;
+        if (deleteDocIdSet.has(v.id) || idSet.has(v.id)) return false;
         const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
         if (uLower && targetUidLowers.has(uLower)) return false;
         return true;
@@ -2928,7 +2931,7 @@ export default function App() {
         targetUidLowers.has(normalizeViaUidKey(r.viaUid))
       );
       if (matchingPages.length > 0) {
-        if (options?.deleteHeldPages) {
+        if (options?.deleteHeldPages || options?.deleteLinkedPages) {
           const pageIdsToRemove = matchingPages.map((p) => p.id);
           const removePageSet = new Set(pageIdsToRemove);
           setRecords((prev) => prev.filter((r) => !removePageSet.has(r.id)));
@@ -2960,19 +2963,29 @@ export default function App() {
     }
 
     // 5. Xóa vĩnh viễn trên Cloud Firestore
-    await batchDeleteCloudVias(allDocIdsToDelete);
+    if (allDocIdsToDelete.length > 0) {
+      try {
+        await batchDeleteCloudVias(allDocIdsToDelete);
+      } catch (err) {
+        for (const docId of allDocIdsToDelete) {
+          try {
+            await deleteCloudVia(docId);
+          } catch {}
+        }
+      }
+    }
   };
 
   const handleDeleteVia = async (
     viaId: string,
-    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean }
+    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean; deleteLinkedPages?: boolean }
   ) => {
     await executeDeleteViasInternal([viaId], options);
   };
 
   const handleDeleteBatchVias = async (
     viaIds: string[],
-    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean }
+    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean; deleteLinkedPages?: boolean }
   ) => {
     await executeDeleteViasInternal(viaIds, options);
   };
@@ -4359,7 +4372,7 @@ export default function App() {
             onEditProxy={handleOpenEditProxy}
           />
         ) : activeTab === 'fullvia' ? (
-          <FullViaErrorBoundary onReset={() => setActiveTab('fanpage')}>
+          <FullViaErrorBoundary onReset={() => {}} onGoBack={() => setActiveTab('fanpage')}>
             <FullViaTable
               viaList={viaList}
               allRecords={records}
