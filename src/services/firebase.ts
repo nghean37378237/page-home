@@ -280,6 +280,7 @@ export interface CloudSettingsData {
   adminPin: string;
   requireApproval: boolean;
   customStaffList: string[];
+  deletedViaUids?: string[];
   adminName?: string;
   adminEmail?: string;
   requireGoogleLoginOnly?: boolean;

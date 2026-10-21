@@ -133,6 +133,33 @@ function normalizeViaUidKey(raw?: string): string {
   return raw.split('|')[0].trim().toLowerCase();
 }
 
+const DELETED_VIA_UIDS_STORAGE_KEY = 'mmo_deleted_via_uids_v1';
+
+function loadLocalDeletedViaUids(): string[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = window.localStorage.getItem(DELETED_VIA_UIDS_STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return Array.from(new Set(parsed.map((u) => normalizeViaUidKey(String(u))).filter(Boolean)));
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+function saveLocalDeletedViaUids(uids: string[]): void {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(DELETED_VIA_UIDS_STORAGE_KEY, JSON.stringify(uids));
+  } catch {
+    // ignore
+  }
+}
+
 export default function App() {
   // Application data stored purely in Cloud Firestore
   const [records, setRecords] = useState<PageRecord[]>([]);
@@ -144,6 +171,8 @@ export default function App() {
   const [finances, setFinances] = useState<MonthlyFinanceRecord[]>(() => getLocalFinanceBackup());
   const [imageTasks, setImageTasks] = useState<ImageTaskItem[]>(() => getLocalImageTasksBackup());
   const [customStaffList, setCustomStaffList] = useState<string[]>([]);
+  const [deletedViaUids, setDeletedViaUids] = useState<string[]>(() => loadLocalDeletedViaUids());
+  const deletedViaUidsRef = useRef<Set<string>>(new Set(loadLocalDeletedViaUids()));
   const [adminSettings, setAdminSettings] = useState<AdminSecuritySettings>(DEFAULT_ADMIN_SETTINGS);
   
   // Current active session in browser tab (sessionStorage, not local persistent storage)
@@ -352,6 +381,17 @@ export default function App() {
             if (Array.isArray(cloudSettings.customStaffList)) {
               setCustomStaffList(cloudSettings.customStaffList);
             }
+            if (Array.isArray(cloudSettings.deletedViaUids)) {
+              const mergedDeleted = Array.from(
+                new Set([
+                  ...Array.from(deletedViaUidsRef.current),
+                  ...cloudSettings.deletedViaUids.map((u) => normalizeViaUidKey(String(u))).filter(Boolean),
+                ])
+              );
+              deletedViaUidsRef.current = new Set(mergedDeleted);
+              setDeletedViaUids(mergedDeleted);
+              saveLocalDeletedViaUids(mergedDeleted);
+            }
           }
         });
 
@@ -424,6 +464,23 @@ export default function App() {
 
         // 2. Listen to live full vias (passwords, 2FA, raw strings)
         unsubVias = subscribeToVias((cloudVias) => {
+          const deletedSet = deletedViaUidsRef.current;
+          if (deletedSet.size > 0) {
+            const staleToPurge = cloudVias.filter((v) => {
+              const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+              return Boolean(uLower && deletedSet.has(uLower));
+            });
+            if (staleToPurge.length > 0) {
+              batchDeleteCloudVias(staleToPurge.map((v) => v.id)).catch(() => {});
+            }
+            setViaList(
+              cloudVias.filter((v) => {
+                const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+                return !uLower || !deletedSet.has(uLower);
+              })
+            );
+            return;
+          }
           setViaList(cloudVias);
         });
 
@@ -2615,13 +2672,22 @@ export default function App() {
 
   // Full Via CRUD in Cloud Firestore
   const handleAddVia = async (newVia: FullViaItem) => {
+    const addedUidLower = normalizeViaUidKey(newVia.uid) || normalizeViaUidKey(newVia.rawFullVia);
+    if (addedUidLower && deletedViaUidsRef.current.has(addedUidLower)) {
+      deletedViaUidsRef.current.delete(addedUidLower);
+      const nextDeleted = Array.from(deletedViaUidsRef.current);
+      setDeletedViaUids(nextDeleted);
+      saveLocalDeletedViaUids(nextDeleted);
+      saveCloudSettings({ deletedViaUids: nextDeleted }).catch(() => {});
+    }
+
     setViaList((prev) => [...prev.filter((v) => v.id !== newVia.id), newVia]);
     await setCloudVia(newVia);
 
     const fullStr = newVia.rawFullVia || `${newVia.uid}|${newVia.pass}|${newVia.twoFa}`;
     const matching = records
       .filter((r) => r.viaUid.trim() === newVia.uid.trim())
-      .map((r) => ({ ...r, fullVia: fullStr }));
+      .map((r) => ({ ...r, fullVia: fullStr, viaTransferStatus: 'completed' as const }));
 
     if (matching.length > 0) {
       await batchSaveCloudPageRecords(matching);
@@ -2788,15 +2854,127 @@ export default function App() {
     }
   };
 
-  const handleDeleteVia = async (viaId: string) => {
-    setViaList((prev) => prev.filter((v) => v.id !== viaId));
-    await deleteCloudVia(viaId);
+  const executeDeleteViasInternal = async (
+    viaIds: string[],
+    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean }
+  ) => {
+    if (!viaIds || viaIds.length === 0) return;
+    const idSet = new Set(viaIds);
+
+    // 1. Tìm tất cả các đối tượng Via khớp ID và các bản ghi trùng cùng UID (bao gồm cả via-sync-...)
+    const targetVias = viaList.filter((v) => idSet.has(v.id));
+    const targetUidLowers = new Set<string>();
+    const rawCleanUids = new Set<string>();
+
+    targetVias.forEach((v) => {
+      const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+      if (uLower) targetUidLowers.add(uLower);
+      const cleanRaw = (v.uid || '').split('|')[0].trim();
+      if (cleanRaw) rawCleanUids.add(cleanRaw);
+    });
+
+    // Hỗ trợ trường hợp truyền vào ID có dạng via-sync-<uid>
+    viaIds.forEach((rawId) => {
+      if (rawId.startsWith('via-sync-')) {
+        const extractedUid = rawId.replace(/^via-sync-/, '').trim();
+        const uLower = normalizeViaUidKey(extractedUid);
+        if (uLower) targetUidLowers.add(uLower);
+        if (extractedUid) rawCleanUids.add(extractedUid);
+      }
+    });
+
+    const allMatchingViasInList = viaList.filter((v) => {
+      if (idSet.has(v.id)) return true;
+      const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+      return Boolean(uLower && targetUidLowers.has(uLower));
+    });
+
+    const allDocIdsToDelete = Array.from(
+      new Set([
+        ...viaIds,
+        ...allMatchingViasInList.map((v) => v.id),
+        ...Array.from(rawCleanUids).map((u) => `via-sync-${u}`),
+        ...Array.from(targetUidLowers).map((u) => `via-sync-${u}`),
+      ])
+    ).filter(Boolean);
+
+    // 2. Đưa ngay các UID bị xóa vào danh sách chặn tự động tạo lại (deletedViaUidsRef + localStorage + Cloud Settings)
+    if (targetUidLowers.size > 0) {
+      const nextDeletedList = Array.from(
+        new Set([...Array.from(deletedViaUidsRef.current), ...Array.from(targetUidLowers)])
+      );
+      deletedViaUidsRef.current = new Set(nextDeletedList);
+      setDeletedViaUids(nextDeletedList);
+      saveLocalDeletedViaUids(nextDeletedList);
+      saveCloudSettings({ deletedViaUids: nextDeletedList }).catch((err) =>
+        console.warn('[App] Save deletedViaUids warning:', err)
+      );
+    }
+
+    // 3. Xóa ngay khỏi state viaList
+    const deleteDocIdSet = new Set(allDocIdsToDelete);
+    setViaList((prev) =>
+      prev.filter((v) => {
+        if (deleteDocIdSet.has(v.id)) return false;
+        const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+        if (uLower && targetUidLowers.has(uLower)) return false;
+        return true;
+      })
+    );
+
+    // 4. Xử lý các Fanpage đang liên kết với UID vừa xóa
+    if (targetUidLowers.size > 0) {
+      const matchingPages = records.filter((r) =>
+        targetUidLowers.has(normalizeViaUidKey(r.viaUid))
+      );
+      if (matchingPages.length > 0) {
+        if (options?.deleteHeldPages) {
+          const pageIdsToRemove = matchingPages.map((p) => p.id);
+          const removePageSet = new Set(pageIdsToRemove);
+          setRecords((prev) => prev.filter((r) => !removePageSet.has(r.id)));
+          await batchDeleteCloudPageRecords(pageIdsToRemove);
+        } else if (options?.clearPageViaUid) {
+          const clearedPages: PageRecord[] = matchingPages.map((r) => ({
+            ...r,
+            viaUid: '',
+            fullVia: '',
+            viaErrorNote: '',
+            isViaError: false,
+            viaTransferStatus: 'via_deleted',
+          }));
+          const updatedMap = new Map(clearedPages.map((p) => [p.id, p]));
+          setRecords((prev) => prev.map((r) => updatedMap.get(r.id) || r));
+          await batchSaveCloudPageRecords(clearedPages);
+        } else {
+          // Mặc định: giữ nguyên các Fanpage bên Bảng Page nhưng đánh dấu viaTransferStatus = 'via_deleted'
+          // để ngăn chặn useEffect tự động hồi sinh lại Via chết trong Bảng Full Via
+          const markedPages: PageRecord[] = matchingPages.map((r) => ({
+            ...r,
+            viaTransferStatus: 'via_deleted',
+          }));
+          const updatedMap = new Map(markedPages.map((p) => [p.id, p]));
+          setRecords((prev) => prev.map((r) => updatedMap.get(r.id) || r));
+          batchSaveCloudPageRecords(markedPages).catch(() => {});
+        }
+      }
+    }
+
+    // 5. Xóa vĩnh viễn trên Cloud Firestore
+    await batchDeleteCloudVias(allDocIdsToDelete);
   };
 
-  const handleDeleteBatchVias = async (viaIds: string[]) => {
-    const idSet = new Set(viaIds);
-    setViaList((prev) => prev.filter((v) => !idSet.has(v.id)));
-    await batchDeleteCloudVias(viaIds);
+  const handleDeleteVia = async (
+    viaId: string,
+    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean }
+  ) => {
+    await executeDeleteViasInternal([viaId], options);
+  };
+
+  const handleDeleteBatchVias = async (
+    viaIds: string[],
+    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean }
+  ) => {
+    await executeDeleteViasInternal(viaIds, options);
   };
 
   // Shared Accounts handlers (Add, Update, Delete)
@@ -2973,8 +3151,11 @@ export default function App() {
           await batchSaveCloudPageRecords(matchingPages);
         }
       }
-    } else if (isVhh || isCheckpoint || isHanChe || isLive) {
-      // Nếu UID ở bảng Page hoặc Group chưa có trong Quản Trị Full Via thì tự động thêm vào để Admin nắm
+    } else if (
+      (isVhh || isCheckpoint || isHanChe || isLive) &&
+      !deletedViaUidsRef.current.has(cleanUidLower)
+    ) {
+      // Nếu UID ở bảng Page hoặc Group chưa có trong Quản Trị Full Via (và chưa bị Admin xóa) thì tự động thêm vào để Admin nắm
       const parts = (rawFullViaHint || '').split('|');
       const newVia: FullViaItem = {
         id: `via-sync-${cleanUid}`,
@@ -3092,9 +3273,11 @@ export default function App() {
 
     groupRecords.forEach((g) => {
       const uid = (g.uid || '').trim();
+      const uidLower = normalizeViaUidKey(uid);
+      if (!uidLower || deletedViaUidsRef.current.has(uidLower)) return;
       const status = parseNoteToStatus(g.note || '');
       if (uid && status) {
-        reportedByUid.set(uid.toLowerCase(), {
+        reportedByUid.set(uidLower, {
           uid,
           staffName: g.staffName || currentUser.name || 'Chưa gán',
           label: g.viaName || 'Group',
@@ -3106,9 +3289,13 @@ export default function App() {
 
     records.forEach((r) => {
       const uid = (r.viaUid || '').trim();
+      const uidLower = normalizeViaUidKey(uid);
+      if (!uidLower || deletedViaUidsRef.current.has(uidLower) || r.viaTransferStatus === 'via_deleted') {
+        return;
+      }
       const status = parseNoteToStatus(r.viaErrorNote || r.viaSharedNote || '');
       if (uid && status) {
-        reportedByUid.set(uid.toLowerCase(), {
+        reportedByUid.set(uidLower, {
           uid,
           staffName: r.staffName || currentUser.name || 'Chưa gán',
           label: r.pageName || 'Page',
@@ -3119,15 +3306,17 @@ export default function App() {
       }
     });
 
-    // Ngoài các dòng báo lỗi (VHH, 282, 956, Hạn Chế), tự động đồng bộ các Nick Via đang cầm Page bên Bảng Quản Lý Page vào Quản Trị Full Via nếu chưa có mặt
+    // Ngoài các dòng báo lỗi (VHH, 282, 956, Hạn Chế), tự động đồng bộ các Nick Via đang cầm Page bên Bảng Quản Lý Page vào Quản Trị Full Via nếu chưa có mặt (và chưa bị Admin xóa)
     const pageHoldingViasByUid = new Map<
       string,
       { uid: string; staffName: string; pageCount: number; rawFullVia?: string; sharedNote?: string }
     >();
     records.forEach((r) => {
       const uid = (r.viaUid || '').trim();
-      if (!uid) return;
-      const lower = uid.toLowerCase();
+      const lower = normalizeViaUidKey(uid);
+      if (!lower || deletedViaUidsRef.current.has(lower) || r.viaTransferStatus === 'via_deleted') {
+        return;
+      }
       if (!pageHoldingViasByUid.has(lower)) {
         pageHoldingViasByUid.set(lower, {
           uid,
@@ -3151,6 +3340,7 @@ export default function App() {
     });
 
     reportedByUid.forEach((info, uidLower) => {
+      if (deletedViaUidsRef.current.has(uidLower)) return;
       const existing = existingViaMap.get(uidLower);
       const isVhh = info.reportStatus === 'VHH';
       const isCp = info.reportStatus === '282' || info.reportStatus === '956';
@@ -3200,6 +3390,7 @@ export default function App() {
 
     // Tự động thêm hoặc đồng bộ nhân viên cho các Via đang cầm Page (1, 2, 3, 4... Page) vào Quản Trị Full Via
     pageHoldingViasByUid.forEach((holdInfo, uidLower) => {
+      if (deletedViaUidsRef.current.has(uidLower)) return;
       if (viasToUpsert.some((v) => normalizeViaUidKey(v.uid) === uidLower)) {
         return;
       }
@@ -3263,7 +3454,7 @@ export default function App() {
         console.warn('[App] Auto-sync Vias from Page/Group to FullVia warning:', err)
       );
     }
-  }, [groupRecords, records, viaList, currentUser.isAuthenticated, currentUser.name]);
+  }, [groupRecords, records, viaList, deletedViaUids, currentUser.isAuthenticated, currentUser.name]);
 
   // Group Records handlers (Add, Update, Delete, Batch)
   const handleAddGroupRecord = async (record: GroupRecord) => {
@@ -3476,6 +3667,22 @@ export default function App() {
         ...v,
         staffName: currentUser.name,
       }));
+    }
+
+    // Nếu Admin chủ động nhập lại các UID đã từng xóa trước đó thì gỡ khỏi danh sách chặn
+    let deletedModified = false;
+    secureVias.forEach((v) => {
+      const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+      if (uLower && deletedViaUidsRef.current.has(uLower)) {
+        deletedViaUidsRef.current.delete(uLower);
+        deletedModified = true;
+      }
+    });
+    if (deletedModified) {
+      const nextDeleted = Array.from(deletedViaUidsRef.current);
+      setDeletedViaUids(nextDeleted);
+      saveLocalDeletedViaUids(nextDeleted);
+      saveCloudSettings({ deletedViaUids: nextDeleted }).catch(() => {});
     }
 
     // Merge logic

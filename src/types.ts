@@ -365,6 +365,23 @@ export interface CollageSlot {
   zIndex?: number;
   borderWidth?: number;
   borderColor?: string;
+  badge?: {
+    text: string;
+    bg?: string;
+    textColor?: string;
+    style?: 'rect' | 'pill';
+    position?: string;
+  };
+}
+
+export interface StoryHeaderConfig {
+  enabled?: boolean;
+  heightPercent: number;
+  title?: string;
+  subtitle?: string;
+  bgColor?: string;
+  titleColor?: string;
+  subtitleColor?: string;
 }
 
 export interface CollagePreset {
@@ -374,6 +391,18 @@ export interface CollagePreset {
   category: string;
   recommendedRatio?: string;
   hasCircleAccent?: boolean;
+  storyHeader?: StoryHeaderConfig;
+  dividerBadge?: {
+    enabled?: boolean;
+    text?: string;
+    positionYPercent?: number;
+    textColor?: string;
+    strokeColor?: string;
+    strokeWidth?: number;
+    showDividerLine?: boolean;
+    dividerLineColor?: string;
+    dividerLineWidth?: number;
+  };
   slots: CollageSlot[];
 }
 

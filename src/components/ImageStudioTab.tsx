@@ -409,6 +409,22 @@ export function ImageStudioTab({
   >('bottom_right');
   const [cornerCtaFontSize, setCornerCtaFontSize] = useState<number>(28);
 
+  // --- PHẦN VIẾT CHỮ TIÊU ĐỀ Ở KHOẢNG TRẮNG PHÍA TRÊN CỦA MẪU STORY (S#2, S#3 & STORY HEADER) ---
+  const [storyTopText, setStoryTopText] = useState<string>(
+    'A Familiar TV Star Spotted In Throwback Photos — Can You Recognize Her Now?'
+  );
+  // Cho phép sửa riêng chữ từng khung Story nếu muốn (mặc định đồng bộ với storyTopText)
+  const [perStoryCustomTopText, setPerStoryCustomTopText] = useState<Record<string, string>>({});
+  // Màu nền & màu chữ phần tiêu đề phía trên Story
+  const [storyTopTheme, setStoryTopTheme] = useState<
+    'white_black' | 'white_red' | 'black_white' | 'black_yellow'
+  >('white_black');
+  const [storyTopFontScale, setStoryTopFontScale] = useState<number>(1);
+  // Cho phép bật/tắt phần viết chữ phía trên trên từng khung Story ('on' | 'off')
+  const [storyHeaderToggleMap, setStoryHeaderToggleMap] = useState<Record<string, 'on' | 'off'>>(
+    {}
+  );
+
   // Per-slot photo assignments and transform states
   const [slotAssignments, setSlotAssignments] = useState<Record<number, string>>({
     0: SAMPLE_STUDIO_IMAGES[0],
@@ -911,6 +927,10 @@ export function ImageStudioTab({
         siteName: data.siteName || 'Website',
         imageCount: extractedPhotos.length,
       });
+      if (data.title && String(data.title).trim()) {
+        setStoryTopText(String(data.title).trim());
+        setPerStoryCustomTopText({});
+      }
       setShowMultiFrameGallery(true);
       setMultiFrameOffsets({});
 
@@ -1759,6 +1779,68 @@ export function ImageStudioTab({
     ]
   );
 
+  // Helper xác định cấu hình Phần Viết Chữ Phía Trên (Story Header) và các ô ảnh đã chuẩn hóa cho từng khung
+  const resolveStoryHeaderAndSlots = useCallback(
+    (preset: CollagePreset, cardKey?: string) => {
+      const defaultHasHeader = Boolean(
+        preset.storyHeader?.enabled && (preset.storyHeader?.heightPercent || 0) > 0
+      );
+      const overrideState = cardKey ? storyHeaderToggleMap[cardKey] : undefined;
+      const isHeaderActive =
+        overrideState === 'on' ? true : overrideState === 'off' ? false : defaultHasHeader;
+
+      const headerHeightPercent = isHeaderActive
+        ? preset.storyHeader?.heightPercent || 18
+        : 0;
+
+      // Điều chỉnh tọa độ các ô ảnh:
+      // - Nếu mẫu vốn có phần trắng trên đầu (y > 0) nhưng người dùng tắt phần chữ -> kéo ô trên cùng tràn lên y = 0
+      // - Nếu mẫu vốn không có phần trắng trên đầu (y === 0) nhưng người dùng bật phần chữ -> đẩy ô trên xuống dưới phần chữ
+      const minTopY = Math.min(...preset.slots.map((s) => s.y));
+      const adjustedSlots: CollageSlot[] = preset.slots.map((s) => {
+        if (s.shape === 'circle') return s;
+        if (!isHeaderActive && minTopY > 0 && Math.abs(s.y - minTopY) < 1.5) {
+          return {
+            ...s,
+            y: 0,
+            height: s.height + minTopY,
+          };
+        }
+        if (isHeaderActive && minTopY === 0 && s.y === 0) {
+          return {
+            ...s,
+            y: headerHeightPercent,
+            height: Math.max(15, s.height - headerHeightPercent),
+          };
+        }
+        return s;
+      });
+
+      const resolvedText =
+        (cardKey && perStoryCustomTopText[cardKey] !== undefined
+          ? perStoryCustomTopText[cardKey]
+          : storyTopText) || '';
+
+      const themeColors =
+        storyTopTheme === 'white_red'
+          ? { bg: '#FFFFFF', text: '#be123c', border: '#fecdd3' }
+          : storyTopTheme === 'black_white'
+          ? { bg: '#111827', text: '#FFFFFF', border: '#374151' }
+          : storyTopTheme === 'black_yellow'
+          ? { bg: '#09090b', text: '#facc15', border: '#27272a' }
+          : { bg: '#FFFFFF', text: '#0f172a', border: '#e2e8f0' };
+
+      return {
+        isHeaderActive,
+        headerHeightPercent,
+        adjustedSlots,
+        resolvedText,
+        themeColors,
+      };
+    },
+    [storyHeaderToggleMap, perStoryCustomTopText, storyTopText, storyTopTheme]
+  );
+
   // Hàm vẽ Canvas dùng chung cho cả Khung Chính và từng Khung trong Bộ Sưu Tập Đa Khung
   const generateCanvasForConfig = async (options: {
     preset: CollagePreset;
@@ -1766,6 +1848,7 @@ export function ImageStudioTab({
     slotPhotos: Record<number, string>;
     transforms?: Record<number, SlotTransform>;
     circleOverrides?: Record<number, CircleSlotOverride>;
+    storyCardKey?: string;
     exportRatioScale?: number;
   }): Promise<HTMLCanvasElement> => {
     const {
@@ -1774,6 +1857,7 @@ export function ImageStudioTab({
       slotPhotos,
       transforms = {},
       circleOverrides = {},
+      storyCardKey,
       exportRatioScale = 2,
     } = options;
 
@@ -1823,9 +1907,17 @@ export function ImageStudioTab({
     const innerH = targetH - padPx * 2;
     const ratioAspect = targetW / targetH;
 
+    const {
+      isHeaderActive,
+      headerHeightPercent,
+      adjustedSlots,
+      resolvedText,
+      themeColors,
+    } = resolveStoryHeaderAndSlots(preset, storyCardKey);
+
     const loadedImgs: Record<number, HTMLImageElement> = {};
     await Promise.all(
-      preset.slots.map(
+      adjustedSlots.map(
         (slot) =>
           new Promise<void>((resolve) => {
             const src = slotPhotos[slot.id];
@@ -1858,7 +1950,65 @@ export function ImageStudioTab({
       )
     );
 
-    const sortedSlots = [...preset.slots].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+    // 2A. Vẽ Phần Trắng Viết Chữ Phía Trên Cho Mẫu Story (nếu mẫu có bật phần viết chữ đầu)
+    if (isHeaderActive && headerHeightPercent > 0) {
+      ctx.save();
+      const headerX = padPx + gapPx / 2;
+      const headerY = padPx + gapPx / 2;
+      const headerW = Math.max(1, innerW - gapPx);
+      const headerH = Math.max(1, (headerHeightPercent / 100) * innerH - gapPx);
+      const r = Math.min(cornerPx, headerW / 2, headerH / 2);
+
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(headerX, headerY, headerW, headerH, r);
+      } else {
+        ctx.rect(headerX, headerY, headerW, headerH);
+      }
+      ctx.fillStyle = themeColors.bg;
+      ctx.fill();
+
+      const cleanHeadline = resolvedText.trim();
+      if (cleanHeadline) {
+        const baseFontPx = Math.round(
+          Math.max(24, Math.min(54, (targetW / 1080) * 38 * storyTopFontScale))
+        );
+        ctx.font = `900 ${baseFontPx}px "Inter", "Segoe UI", Arial, sans-serif`;
+        ctx.fillStyle = themeColors.text;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const maxTextW = headerW * 0.9;
+        const words = cleanHeadline.split(/\s+/);
+        const lines: string[] = [];
+        let currentLine = '';
+
+        for (const word of words) {
+          const testLine = currentLine ? `${currentLine} ${word}` : word;
+          if (ctx.measureText(testLine).width > maxTextW && currentLine) {
+            lines.push(currentLine);
+            currentLine = word;
+          } else {
+            currentLine = testLine;
+          }
+        }
+        if (currentLine) lines.push(currentLine);
+
+        const maxLines = 4;
+        const displayLines = lines.slice(0, maxLines);
+        const lineHeight = baseFontPx * 1.24;
+        const totalTextH = displayLines.length * lineHeight;
+        let startY = headerY + headerH / 2 - totalTextH / 2 + lineHeight / 2;
+
+        for (const line of displayLines) {
+          ctx.fillText(line, headerX + headerW / 2, startY);
+          startY += lineHeight;
+        }
+      }
+      ctx.restore();
+    }
+
+    const sortedSlots = [...adjustedSlots].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
     for (const slot of sortedSlots) {
       const eff = getEffectiveSlotBounds(slot, ratioAspect, circleOverrides[slot.id]);
@@ -2131,6 +2281,7 @@ export function ImageStudioTab({
       slotPhotos: slotAssignments,
       transforms: slotTransforms,
       circleOverrides: mainCircleOverrides,
+      storyCardKey: `main-${activePreset.id}`,
       exportRatioScale,
     });
   };
@@ -2141,7 +2292,8 @@ export function ImageStudioTab({
     ratio: RatioOption,
     slotPhotos: Record<number, string>,
     mode: 'download' | 'copy',
-    circleOverrides?: Record<number, CircleSlotOverride>
+    circleOverrides?: Record<number, CircleSlotOverride>,
+    storyCardKey?: string
   ) => {
     try {
       setExportingPresetId(preset.id);
@@ -2150,6 +2302,7 @@ export function ImageStudioTab({
         ratio,
         slotPhotos,
         circleOverrides,
+        storyCardKey,
         exportRatioScale: 2,
       });
 
@@ -3910,8 +4063,8 @@ export function ImageStudioTab({
                 {/* ========================================================= */}
                 {/* HÀNG 2: 4 MẪU ẢNH STORY (KÍCH THƯỚC MẶC ĐỊNH 9:16)        */}
                 {/* ========================================================= */}
-                <div className="space-y-2 pt-2 border-t border-rose-200/50">
-                  <div className="flex items-center justify-between gap-2">
+                <div className="space-y-2.5 pt-2 border-t border-rose-200/50">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
                       <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wide">
                         Hàng 2
@@ -3923,6 +4076,82 @@ export function ImageStudioTab({
                         Kích thước mặc định: 9:16 (1080×1920)
                       </span>
                     </div>
+
+                    {/* Thanh nhập & tùy chỉnh nhanh Chữ Tiêu Đề Phần Trắng Phía Trên cho các mẫu Story (S#2, S#3...) */}
+                    <div className="flex flex-wrap items-center gap-1.5 bg-indigo-50/90 border border-indigo-200 px-2.5 py-1.5 rounded-xl flex-1 max-w-3xl">
+                      <span className="text-[11px] font-black text-indigo-950 flex items-center gap-1 shrink-0">
+                        <Type className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>Chữ phần trắng trên đầu Story:</span>
+                      </span>
+                      <input
+                        type="text"
+                        value={storyTopText}
+                        onChange={(e) => {
+                          setStoryTopText(e.target.value);
+                          setPerStoryCustomTopText({});
+                        }}
+                        placeholder="Nhập tiêu đề chữ cho phần trắng phía trên của mẫu Story (S#2, S#3)..."
+                        className="flex-1 min-w-[180px] px-2.5 py-1 rounded-lg bg-white border border-indigo-300 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-600"
+                      />
+                      {extractedArticleInfo?.title && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStoryTopText(extractedArticleInfo.title);
+                            setPerStoryCustomTopText({});
+                          }}
+                          className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold cursor-pointer shrink-0"
+                          title="Lấy tiêu đề bài viết web điền vào phần trắng trên đầu Story"
+                        >
+                          📋 Lấy tiêu đề bài
+                        </button>
+                      )}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {(
+                          [
+                            { id: 'white_black', label: 'Nền Trắng•Chữ Đen', cls: 'bg-white text-slate-900 border-slate-300' },
+                            { id: 'white_red', label: 'Nền Trắng•Chữ Đỏ', cls: 'bg-white text-rose-700 border-rose-300' },
+                            { id: 'black_white', label: 'Nền Đen•Chữ Trắng', cls: 'bg-slate-900 text-white border-slate-800' },
+                            { id: 'black_yellow', label: 'Nền Đen•Chữ Vàng', cls: 'bg-slate-950 text-amber-300 border-slate-800' },
+                          ] as const
+                        ).map((t) => (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setStoryTopTheme(t.id)}
+                            className={`px-1.5 py-0.5 rounded text-[9px] font-black border cursor-pointer ${t.cls} ${
+                              storyTopTheme === t.id ? 'ring-2 ring-indigo-500' : 'opacity-75 hover:opacity-100'
+                            }`}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setStoryTopFontScale((prev) =>
+                              Math.max(0.65, Number((prev - 0.1).toFixed(2)))
+                            )
+                          }
+                          className="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-slate-700 text-[10px] font-black cursor-pointer hover:bg-slate-100"
+                          title="Thu nhỏ cỡ chữ tiêu đề trên Story"
+                        >
+                          A-
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setStoryTopFontScale((prev) =>
+                              Math.min(1.5, Number((prev + 0.1).toFixed(2)))
+                            )
+                          }
+                          className="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-slate-700 text-[10px] font-black cursor-pointer hover:bg-slate-100"
+                          title="Phóng to cỡ chữ tiêu đề trên Story"
+                        >
+                          A+
+                        </button>
+                      </div>
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
@@ -3933,7 +4162,15 @@ export function ImageStudioTab({
                         item.preset,
                         idx + 8
                       );
-                      const circleSlot = item.preset.slots.find((s) => s.shape === 'circle');
+                      const {
+                        isHeaderActive,
+                        headerHeightPercent,
+                        adjustedSlots,
+                        resolvedText,
+                        themeColors,
+                      } = resolveStoryHeaderAndSlots(item.preset, offsetKey);
+
+                      const circleSlot = adjustedSlots.find((s) => s.shape === 'circle');
                       const cardCircleOverride = multiFrameCircleOverrides[offsetKey];
                       const cardCircleMap: Record<number, CircleSlotOverride> =
                         circleSlot && cardCircleOverride
@@ -3975,9 +4212,27 @@ export function ImageStudioTab({
                                   </option>
                                 ))}
                               </select>
-                              <span className="text-[9px] font-mono font-bold px-1 py-0.2 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
-                                9:16
-                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setStoryHeaderToggleMap((prev) => ({
+                                    ...prev,
+                                    [offsetKey]: isHeaderActive ? 'off' : 'on',
+                                  }))
+                                }
+                                title={
+                                  isHeaderActive
+                                    ? 'Đang bật ô viết chữ phía trên • Bấm để bỏ ô chữ và kéo ảnh tràn lên kín khung'
+                                    : 'Bấm để mở ô viết chữ tiêu đề ở phía trên khung Story này'
+                                }
+                                className={`text-[9px] font-extrabold px-1.5 py-0.2 rounded border cursor-pointer shrink-0 transition-colors ${
+                                  isHeaderActive
+                                    ? 'bg-amber-100 text-amber-900 border-amber-300 hover:bg-amber-200'
+                                    : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                                }`}
+                              >
+                                {isHeaderActive ? '✍️ Có chữ' : '+ Chữ đầu'}
+                              </button>
                             </div>
 
                             {/* Bản xem trước trực tiếp (Live Mini Story - Chuẩn 9:16) */}
@@ -4001,7 +4256,59 @@ export function ImageStudioTab({
                                   : 'Bấm để mở khung Story 9:16 này xuống bàn chỉnh sửa lớn'
                               }
                             >
-                              {item.preset.slots.map((slot) => {
+                              {/* Ô VIẾT CHỮ TRỰC TIẾP Ở PHẦN TRẮNG PHÍA TRÊN CỦA MẪU STORY (S#2, S#3...) */}
+                              {isHeaderActive && headerHeightPercent > 0 && (
+                                <div
+                                  onClick={(e) => e.stopPropagation()}
+                                  onMouseDown={(e) => e.stopPropagation()}
+                                  style={{
+                                    left: '1.5px',
+                                    top: '1.5px',
+                                    width: 'calc(100% - 3px)',
+                                    height: `calc(${headerHeightPercent}% - 3px)`,
+                                    backgroundColor: themeColors.bg,
+                                    borderBottom: `1px solid ${themeColors.border}`,
+                                    zIndex: 30,
+                                  }}
+                                  className="absolute rounded-t-md overflow-hidden flex flex-col justify-center px-1.5 py-1 group/header"
+                                >
+                                  <textarea
+                                    value={resolvedText}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setPerStoryCustomTopText((prev) => ({
+                                        ...prev,
+                                        [offsetKey]: val,
+                                      }));
+                                    }}
+                                    placeholder="✍️ Nhập chữ tiêu đề vào đây..."
+                                    rows={3}
+                                    style={{
+                                      color: themeColors.text,
+                                      fontSize: `${Math.max(8, Math.min(14, Math.round(10 * storyTopFontScale)))}px`,
+                                      lineHeight: '1.2',
+                                    }}
+                                    className="w-full h-full bg-transparent resize-none border-0 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded font-black text-center flex items-center justify-center overflow-hidden p-0.5 cursor-text select-text"
+                                    title="Bấm trực tiếp vào đây để gõ hoặc sửa chữ tiêu đề phần trắng phía trên của mẫu Story này!"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setStoryHeaderToggleMap((prev) => ({
+                                        ...prev,
+                                        [offsetKey]: 'off',
+                                      }));
+                                    }}
+                                    title="Ẩn phần viết chữ phía trên để ảnh tràn kín khung"
+                                    className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-black/50 hover:bg-red-600 text-white text-[8px] font-black flex items-center justify-center opacity-0 group-hover/header:opacity-100 transition-opacity cursor-pointer"
+                                  >
+                                    ×
+                                  </button>
+                                </div>
+                              )}
+
+                              {adjustedSlots.map((slot) => {
                                 const photoSrc = variationSlots[slot.id];
                                 const isCircle = slot.shape === 'circle';
                                 const eff = getEffectiveSlotBounds(
@@ -4143,12 +4450,6 @@ export function ImageStudioTab({
                                   </span>
                                 </div>
                               )}
-
-                              <div className="absolute top-1.5 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-30">
-                                <span className="px-2 py-0.5 rounded-md bg-black/75 text-white font-bold text-[9px] shadow whitespace-nowrap">
-                                  {circleSlot ? 'Kéo ảnh tròn hoặc bấm chọn' : 'Chọn Story 9:16'}
-                                </span>
-                              </div>
                             </div>
 
                             {/* Thanh chỉnh nhanh vị trí & cỡ vòng tròn ngay dưới khung Story có ảnh tròn */}
@@ -4274,7 +4575,8 @@ export function ImageStudioTab({
                                   item.ratio,
                                   variationSlots,
                                   'copy',
-                                  cardCircleMap
+                                  cardCircleMap,
+                                  offsetKey
                                 )
                               }
                               className="flex-1 py-1 px-1.5 rounded-md bg-slate-100 hover:bg-slate-200 text-slate-800 text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
@@ -4293,7 +4595,8 @@ export function ImageStudioTab({
                                   item.ratio,
                                   variationSlots,
                                   'download',
-                                  cardCircleMap
+                                  cardCircleMap,
+                                  offsetKey
                                 )
                               }
                               className="flex-1 py-1 px-1.5 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold flex items-center justify-center gap-0.5 cursor-pointer"
@@ -4765,8 +5068,53 @@ export function ImageStudioTab({
                   }}
                   className="w-full max-w-[480px] max-h-[620px] rounded-2xl relative shadow-2xl overflow-hidden transition-all select-none"
                 >
+                  {(() => {
+                    const mainStoryInfo = resolveStoryHeaderAndSlots(
+                      activePreset,
+                      `main-${activePreset.id}`
+                    );
+                    if (!mainStoryInfo.isHeaderActive || mainStoryInfo.headerHeightPercent <= 0) {
+                      return null;
+                    }
+                    return (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        style={{
+                          left: `calc(0% + ${gap / 2}px)`,
+                          top: `calc(0% + ${gap / 2}px)`,
+                          width: `calc(100% - ${gap}px)`,
+                          height: `calc(${mainStoryInfo.headerHeightPercent}% - ${gap}px)`,
+                          backgroundColor: mainStoryInfo.themeColors.bg,
+                          borderBottom: `1px solid ${mainStoryInfo.themeColors.border}`,
+                          borderRadius: `${borderRadius}px`,
+                          zIndex: 30,
+                        }}
+                        className="absolute overflow-hidden flex flex-col justify-center px-3 py-2"
+                      >
+                        <textarea
+                          value={mainStoryInfo.resolvedText}
+                          onChange={(e) => {
+                            setStoryTopText(e.target.value);
+                          }}
+                          placeholder="✍️ Nhập chữ tiêu đề phần trắng phía trên của Story..."
+                          rows={3}
+                          style={{
+                            color: mainStoryInfo.themeColors.text,
+                            fontSize: `${Math.max(12, Math.min(24, Math.round(16 * storyTopFontScale)))}px`,
+                            lineHeight: '1.25',
+                          }}
+                          className="w-full h-full bg-transparent resize-none border-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded font-black text-center flex items-center justify-center overflow-hidden p-1 cursor-text select-text"
+                        />
+                      </div>
+                    );
+                  })()}
+
                   {/* RENDER CÁC Ô ẢNH THEO TỶ LỆ PHẦN TRĂM */}
-                  {activePreset.slots.map((slot) => {
+                  {resolveStoryHeaderAndSlots(
+                    activePreset,
+                    `main-${activePreset.id}`
+                  ).adjustedSlots.map((slot) => {
                     const assignedPhoto = slotAssignments[slot.id];
                     const transform = getSlotTransform(slot.id);
                     const isSelected = activeSlotId === slot.id;
