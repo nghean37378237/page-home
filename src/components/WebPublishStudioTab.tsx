@@ -147,6 +147,25 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
   // Sub-tab: 'editor' | 'posts' | 'settings'
   const [activeSubTab, setActiveSubTab] = useState<'editor' | 'posts' | 'settings'>('editor');
+  // Bộ lọc menu quy trình khoa học trong trình soạn thảo
+  const [editorSectionFilter, setEditorSectionFilter] = useState<
+    'all' | 'step1_ai' | 'step2_content' | 'step3_seo'
+  >('all');
+
+  const handleSendLinkToImageStudio = useCallback(
+    (articleUrl: string) => {
+      const clean = (articleUrl || '').trim();
+      if (clean) {
+        try {
+          localStorage.setItem('celeb24h_pending_collage_url', clean);
+        } catch {}
+      }
+      if (onNavigateToTab) {
+        onNavigateToTab('image_studio');
+      }
+    },
+    [onNavigateToTab]
+  );
 
   // Dữ liệu từ WordPress celeb24h.com
   const [siteUrl, setSiteUrl] = useState('https://celeb24h.com');
@@ -2374,82 +2393,162 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
   return (
     <div className="max-w-[1700px] mx-auto px-3 sm:px-6 py-5 space-y-5">
-      {/* HEADER BANNER: WEBPUBLISH STUDIO */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-xs">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+      {/* HEADER BANNER & THANH MENU ĐIỀU HƯỚNG KHOA HỌC: WEBPUBLISH STUDIO */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3.5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
           <div className="flex items-start space-x-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-2xl shadow-sm shrink-0">
+            <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-black text-xl shadow-sm shrink-0">
               W
             </div>
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight">
-                  WebPublish Studio - Soạn Thảo & Đẩy Bài Lên Website
+                <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+                  Bảng 11: WebPublish Studio — Soạn Thảo & Đẩy Bài Lên Website
                 </h1>
-                <span className="text-xs font-bold text-emerald-700">
-                  · Kết nối trực tiếp {siteUrl.replace(/^https?:\/\//, '')}
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
+                  Kết nối: {siteUrl.replace(/^https?:\/\//, '')} · Mã NV: ?{selectedEmployeeCode}
                 </span>
               </div>
-              <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-                Nền tảng soạn thảo nội dung chuẩn SEO và tự động đẩy bài viết lên website WordPress, tự động gắn Mã Nhân Viên ({selectedEmployeeCode}) để tính View ở Bảng 10.
+              <p className="text-xs text-slate-600 mt-0.5">
+                Quy trình 3 bước khoa học: <b>(1)</b> Hút bài từ Link Web / Đoạn văn → <b>(2)</b> Soạn thảo, gắn 5–7 ảnh & 2 Video YouTube → <b>(3)</b> Chấm điểm SEO & Đẩy lên Web.
               </p>
             </div>
           </div>
 
-          {/* THANH CHUYỂN CHẾ ĐỘ (3 SUB-TABS) */}
-          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+          {/* THANH CHUYỂN CHẾ ĐỘ CHÍNH & LIÊN KẾT SANG TAB LÀM ẢNH / THỐNG KÊ VIEW */}
+          <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200 self-start lg:self-auto shrink-0">
             <button
               type="button"
               onClick={() => setActiveSubTab('editor')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
                 activeSubTab === 'editor'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-700 hover:bg-white'
               }`}
             >
               <Edit3 className="w-3.5 h-3.5" />
-              <span>Soạn Thảo & Đẩy Bài</span>
+              <span>1. Soạn Thảo & Đẩy Bài</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveSubTab('posts')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
                 activeSubTab === 'posts'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-700 hover:bg-white'
               }`}
             >
               <Globe className="w-3.5 h-3.5" />
-              <span>Bài Viết Trên Web ({remotePosts.length})</span>
+              <span>2. Bài Trên Web ({remotePosts.length})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setActiveSubTab('settings')}
-              className={`px-3.5 py-2 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
                 activeSubTab === 'settings'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'text-slate-700 hover:bg-white'
               }`}
             >
               <Settings className="w-3.5 h-3.5" />
-              <span>Cấu Hình Đích & Webhook</span>
+              <span>3. Cấu Hình Web</span>
             </button>
 
             {onNavigateToTab && (
-              <button
-                type="button"
-                onClick={() => onNavigateToTab('view_stats')}
-                className="px-3 py-2 rounded-lg text-xs font-bold text-cyan-800 hover:bg-white transition-all cursor-pointer flex items-center space-x-1"
-                title="Chuyển sang Bảng 10: Thống Kê View"
-              >
-                <BarChart3 className="w-3.5 h-3.5 text-cyan-600" />
-                <span>Xem Thống Kê View →</span>
-              </button>
+              <>
+                <span className="text-slate-300 hidden sm:inline">|</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSendLinkToImageStudio(
+                      publishResult?.link || aiSourceUrl.trim() || ''
+                    )
+                  }
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-all cursor-pointer flex items-center space-x-1"
+                  title="Chuyển sang Tab Làm Ảnh (tự động mang theo link bài viết hiện tại nếu có)"
+                >
+                  <ImageIcon className="w-3.5 h-3.5 text-rose-600" />
+                  <span>🎨 Làm Ảnh →</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateToTab('view_stats')}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-cyan-800 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200 transition-all cursor-pointer flex items-center space-x-1"
+                  title="Chuyển sang Bảng 10: Thống Kê View"
+                >
+                  <BarChart3 className="w-3.5 h-3.5 text-cyan-600" />
+                  <span>📊 Thống Kê View →</span>
+                </button>
+              </>
             )}
           </div>
         </div>
+
+        {/* THANH MENU QUY TRÌNH 3 BƯỚC KHOA HỌC (HIỂN THỊ KHI ĐANG Ở TRÌNH SOẠN THẢO) */}
+        {activeSubTab === 'editor' && (
+          <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider mr-1">
+                Menu Quy Trình:
+              </span>
+              {[
+                {
+                  id: 'all' as const,
+                  label: '⚡ Hiện Đầy Đủ Cả 3 Bước',
+                  badge: 'Full',
+                },
+                {
+                  id: 'step1_ai' as const,
+                  label: 'Bước 1: Nguồn Bài & Viết Tự Động (40–50 Từ/Đoạn)',
+                  badge: aiMode === 'from_url' ? 'Từ Link' : 'Từ Đoạn Văn',
+                },
+                {
+                  id: 'step2_content' as const,
+                  label: 'Bước 2: Soạn Thảo, Gắn Ảnh & 2 Video YouTube',
+                  badge: `${extractedWebImages.length} ảnh · ${attachedYoutubeVideos.length} YT`,
+                },
+                {
+                  id: 'step3_seo' as const,
+                  label: 'Bước 3: Từ Khóa & Chấm Điểm Chuẩn SEO',
+                  badge: `${seoAnalysis.score}/100 điểm`,
+                },
+              ].map((step) => {
+                const isActive = editorSectionFilter === step.id;
+                return (
+                  <button
+                    key={step.id}
+                    type="button"
+                    onClick={() => setEditorSectionFilter(step.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                      isActive
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
+                        : 'bg-slate-50 hover:bg-emerald-50 text-slate-700 border-slate-200/90'
+                    }`}
+                  >
+                    <span>{step.label}</span>
+                    <span
+                      className={`px-1.5 py-0.2 rounded-md text-[10px] font-black ${
+                        isActive
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-white text-slate-600 border border-slate-200'
+                      }`}
+                    >
+                      {step.badge}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                Số từ: <b>{seoAnalysis.words}</b> từ · Ảnh gắn: <b>{seoAnalysis.imageCount}</b>
+              </span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* KẾT QUẢ ĐẨY BÀI THÀNH CÔNG (HIỂN THỊ NỔI BẬT LINK GỐC & LINK GẮN MÃ NHÂN VIÊN) */}
@@ -2472,7 +2571,18 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center space-x-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {onNavigateToTab && (
+                <button
+                  type="button"
+                  onClick={() => handleSendLinkToImageStudio(publishResult.link)}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-xs cursor-pointer"
+                  title="Đưa link bài vừa đăng sang Tab Làm Ảnh để tự động bóc ảnh & ghép 8 mẫu bài 3:4 + 4 mẫu Story 9:16"
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  <span>🎨 Ghép Ảnh Từ Bài Này Ngay</span>
+                </button>
+              )}
               <a
                 href={publishResult.trackingLink}
                 target="_blank"
@@ -2579,14 +2689,17 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* CỘT TRÁI (2/3): SOẠN THẢO BÀI VIẾT & TRỢ LÝ AI SEO */}
           <div className="lg:col-span-2 space-y-5">
-            {/* KHUNG 2 CHỨC NĂNG CHÍNH: VIẾT BÀI TỪ NỘI DUNG HOẶC TỪ LINK WEB BẤT KỲ + LẤY HẾT ẢNH + 2 VIDEO YOUTUBE */}
+            {/* BƯỚC 1: KHUNG 2 CHỨC NĂNG CHÍNH: VIẾT BÀI TỪ NỘI DUNG HOẶC TỪ LINK WEB BẤT KỲ + LẤY HẾT ẢNH + 2 VIDEO YOUTUBE */}
+            {(editorSectionFilter === 'all' || editorSectionFilter === 'step1_ai') && (
             <div className="bg-gradient-to-r from-emerald-50/95 via-teal-50/90 to-sky-50/90 border-2 border-emerald-300/80 rounded-2xl p-4 sm:p-5 space-y-3.5 shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center space-x-2">
-                  <Sparkles className="w-5 h-5 text-emerald-600" />
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0">
+                    B1
+                  </div>
                   <div>
                     <span className="text-xs sm:text-sm font-black text-slate-900 block">
-                      Trợ Lý Viết Bài Chuẩn SEO Tự Động + Minh Họa Ảnh & 2 Video YouTube Cuối Bài
+                      Bước 1: Trợ Lý Viết Bài Chuẩn SEO Tự Động + Minh Họa Ảnh & 2 Video YouTube Cuối Bài
                     </span>
                     <span className="text-[11px] text-slate-600">
                       Chọn 1 trong 2 chế độ bên dưới để tự động viết bài, chèn ảnh minh họa và gắn 2 video YouTube liên quan
@@ -3080,9 +3193,26 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 </div>
               )}
             </div>
+            )}
 
-            {/* KHUNG SOẠN THẢO CHÍNH */}
+            {/* BƯỚC 2: KHUNG SOẠN THẢO CHÍNH, QUẢN LÝ ẢNH & VIDEO TRONG BÀI */}
+            {(editorSectionFilter === 'all' ||
+              editorSectionFilter === 'step2_content' ||
+              editorSectionFilter === 'step3_seo') && (
             <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <span className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs">
+                    B2
+                  </span>
+                  <span className="text-xs sm:text-sm font-black text-slate-900">
+                    Bước 2: Soạn Thảo Bài Viết, Quản Lý Ảnh Minh Họa & Xem Trước Trực Quan
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-slate-500">
+                  {seoAnalysis.words} từ · {seoAnalysis.imageCount} ảnh trong bài
+                </span>
+              </div>
               {editingPostId && (
                 <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-xl flex items-center justify-between text-xs text-blue-900 font-bold">
                   <span>
@@ -3705,17 +3835,24 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 />
               </div>
             </div>
+            )}
 
-            {/* BẢNG KIỂM TRA ĐIỂM CHUẨN SEO */}
+            {/* BƯỚC 3: BẢNG KIỂM TRA ĐIỂM CHUẨN SEO */}
+            {(editorSectionFilter === 'all' || editorSectionFilter === 'step3_seo') && (
             <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
               <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <div>
-                  <h3 className="text-sm font-black text-slate-900">
-                    Bảng Chấm Điểm Tối Ưu Chuẩn SEO (Real-time SEO Score)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Tự động đánh giá cấu trúc bài viết trước khi đẩy lên website
-                  </p>
+                <div className="flex items-center gap-2.5">
+                  <span className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-black text-xs shrink-0">
+                    B3
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">
+                      Bước 3: Bảng Chấm Điểm Tối Ưu Chuẩn SEO (Real-time SEO Score)
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Tự động đánh giá cấu trúc bài viết trước khi đẩy lên website
+                    </p>
+                  </div>
                 </div>
                 <div
                   className={`px-3.5 py-1.5 rounded-xl font-mono font-black text-sm ${
@@ -3753,6 +3890,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 ))}
               </div>
             </div>
+            )}
           </div>
 
           {/* CỘT PHẢI (1/3): CẤU HÌNH ĐẨY BÀI, MÃ NHÂN VIÊN, CHUYÊN MỤC & ẢNH ĐẠI DIỆN */}
@@ -4156,6 +4294,16 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                         </td>
                         <td className="py-3 px-3 text-right">
                           <div className="inline-flex items-center space-x-1.5">
+                            {onNavigateToTab && (
+                              <button
+                                type="button"
+                                onClick={() => handleSendLinkToImageStudio(post.link)}
+                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold cursor-pointer"
+                                title="Đưa bài này sang Tab Làm Ảnh để tự động bóc ảnh & ghép 8 mẫu bài 3:4 + 4 mẫu Story 9:16"
+                              >
+                                🎨 Làm ảnh
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => handleLoadRemotePostToEdit(post)}

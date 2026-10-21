@@ -4324,6 +4324,7 @@ export default function App() {
             onUpdateTask={handleUpdateImageTask}
             onDeleteTask={handleDeleteImageTask}
             allPageNames={Array.from(new Set(records.map((r) => r.pageName).filter(Boolean)))}
+            onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
           />
         ) : activeTab === 'view_stats' ? (
           <WordPressStatsTab
