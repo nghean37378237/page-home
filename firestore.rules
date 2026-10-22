@@ -173,6 +173,8 @@ service cloud.firestore {
              (!('month' in data) || data.month is number) &&
              (!('year' in data) || data.year is number) &&
              (!('totalRevenue' in data) || data.totalRevenue is number) &&
+             (!('usdToVndRate' in data) || data.usdToVndRate is number) &&
+             (!('mgidReport' in data) || data.mgidReport is map) &&
              (!('officeCost' in data) || data.officeCost is number) &&
              (!('electricityCost' in data) || data.electricityCost is number) &&
              (!('waterCost' in data) || data.waterCost is number) &&

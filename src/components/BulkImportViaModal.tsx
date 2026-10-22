@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { FullViaItem, AppUser, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
+import { parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
 
 interface BulkImportViaModalProps {
   isOpen: boolean;
@@ -37,6 +38,8 @@ interface ParsedRow {
   uid: string;
   pass: string;
   twoFa: string;
+  email: string;
+  emailPass: string;
   detectedStaff?: string;
   extra?: string;
   isValid: boolean;
@@ -64,7 +67,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
   );
   const [batchNote, setBatchNote] = useState('');
   const [pageStatusOption, setPageStatusOption] = useState<'none' | 'has_page' | 'admin_added_page' | 'pending_page'>('none');
-  const [overwriteDuplicates, setOverwriteDuplicates] = useState(false); // Default to skip duplicates safely
+  const [overwriteDuplicates, setOverwriteDuplicates] = useState(true); // Default to supplement/update existing UIDs with 2FA|Mail|Pass
   const [assignmentMode, setAssignmentMode] = useState<'single' | 'round_robin' | 'auto_detect'>('auto_detect');
   const [previewFilter, setPreviewFilter] = useState<'all' | 'new' | 'duplicate' | 'invalid'>('all');
   const [copiedDuplicates, setCopiedDuplicates] = useState(false);
@@ -118,45 +121,46 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
     const seenUidsInBatch = new Map<string, number>(); // uid -> first line index seen
 
     return lines.map((line, idx) => {
-      // Split by common delimiters: '|', '\t', ':', or '----'
-      let parts: string[] = [];
+      // Strip out known staff names first if any token matches availableStaffNames
+      let rawTokens: string[] = [];
       if (line.includes('|')) {
-        parts = line.split('|');
+        rawTokens = line.split('|');
       } else if (line.includes('\t')) {
-        parts = line.split('\t');
+        rawTokens = line.split('\t');
       } else if (line.includes('----')) {
-        parts = line.split('----');
+        rawTokens = line.split('----');
       } else if (line.includes(';')) {
-        parts = line.split(';');
+        rawTokens = line.split(';');
       } else if (line.includes(':') && !line.startsWith('http')) {
-        parts = line.split(':');
+        rawTokens = line.split(':');
       } else {
-        parts = line.split(/\s+/);
+        rawTokens = line.split(/\s+/);
       }
 
-      const uid = parts[0]?.trim() || '';
-      const pass = parts[1]?.trim() || '';
-      const twoFa = parts[2]?.trim() || '';
-
-      // Check if any extra parts match a known staff name
       let detectedStaff: string | undefined;
-      const extraParts: string[] = [];
-
-      parts.slice(3).forEach((p) => {
-        const trimmedPart = p.trim();
-        if (!trimmedPart) return;
-        const matched = availableStaffNames.find(
-          (s) => s.trim().toLowerCase() === trimmedPart.toLowerCase()
-        );
-        if (matched && !detectedStaff) {
-          detectedStaff = matched;
-        } else {
-          extraParts.push(trimmedPart);
+      const nonStaffTokens: string[] = [];
+      rawTokens.forEach((tok, tIdx) => {
+        const trimmedTok = tok.trim();
+        if (tIdx >= 1 && trimmedTok) {
+          const matchedStaff = availableStaffNames.find(
+            (s) => s.trim().toLowerCase() === trimmedTok.toLowerCase()
+          );
+          if (matchedStaff && !detectedStaff) {
+            detectedStaff = matchedStaff;
+            return;
+          }
         }
+        nonStaffTokens.push(trimmedTok);
       });
 
-      const extra = extraParts.join(' | ');
-      const isValid = uid.length >= 4 && Boolean(pass);
+      const parsed = parseSupplementalViaInput(nonStaffTokens.join('|'));
+      const uid = parsed.uid || nonStaffTokens[0]?.trim() || '';
+      const pass = parsed.pass || '';
+      const twoFa = parsed.twoFa || '';
+      const email = parsed.email || '';
+      const emailPass = parsed.emailPass || '';
+      const extra = parsed.extraInfo || '';
+      const isValid = uid.length >= 4 && Boolean(pass || twoFa || email);
 
       // Check duplicate against existing database
       const duplicateInDb = existingViaMap.get(uid);
@@ -176,7 +180,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
 
       let duplicateMessage = '';
       if (isDuplicateInDb) {
-        duplicateMessage = `Đã có trong hệ thống (Thuộc: ${duplicateInDb?.staffName || 'Chưa rõ'})`;
+        duplicateMessage = `Đã có UID (Thuộc: ${duplicateInDb?.staffName || 'Chưa rõ'}) — Sẽ bổ sung 2FA/Mail/Pass`;
       } else if (isDuplicateInBatch) {
         duplicateMessage = `Trùng lặp với dòng #${duplicateBatchIndex} trong danh sách này`;
       }
@@ -187,6 +191,8 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
         uid,
         pass,
         twoFa,
+        email,
+        emailPass,
         detectedStaff,
         extra,
         isValid,
@@ -339,12 +345,15 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
         uid: row.uid,
         pass: row.pass,
         twoFa: row.twoFa,
+        ...(row.email ? { email: row.email } : {}),
+        ...(row.emailPass ? { emailPass: row.emailPass } : {}),
+        ...(row.extra ? { extraInfo: row.extra } : {}),
         staffName: assignedStaff,
         note: finalNote,
         status: 'active',
         adminReportStatus: 'None',
         createdAt: new Date().toLocaleDateString('vi-VN'),
-        rawFullVia: `${row.uid}|${row.pass}|${row.twoFa}${row.extra ? `|${row.extra}` : ''}`,
+        rawFullVia: buildFullViaString(row.uid, row.pass, row.twoFa, row.email, row.emailPass, row.extra),
         pageUpdateStatus: isAdminAddedPage ? 'pending' : isMarkedHasPage ? 'updated' : 'none',
         hasAdminAssignedPage: isAdminAddedPage,
         pageAssignedAt: isAdminAddedPage ? new Date().toLocaleDateString('vi-VN') : undefined,
@@ -975,32 +984,8 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
               <div className="space-y-1.5">
                 <label
                   className={`flex items-start space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${
-                    !overwriteDuplicates
-                      ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-semibold shadow-2xs'
-                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="duplicatePolicy"
-                    checked={!overwriteDuplicates}
-                    onChange={() => setOverwriteDuplicates(false)}
-                    className="text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 mt-0.5"
-                  />
-                  <div>
-                    <span className="block text-xs font-bold">
-                      Bỏ qua UID trùng (Khuyên dùng)
-                    </span>
-                    <span className="block text-[10px] text-slate-500 font-normal">
-                      Chỉ thêm các nick mới chưa có, giữ nguyên các nick cũ trong hệ thống.
-                    </span>
-                  </div>
-                </label>
-
-                <label
-                  className={`flex items-start space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${
                     overwriteDuplicates
-                      ? 'bg-amber-50 border-amber-400 text-amber-950 font-semibold shadow-2xs'
+                      ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-semibold shadow-2xs'
                       : 'border-slate-200 hover:bg-slate-50 text-slate-700'
                   }`}
                 >
@@ -1009,14 +994,38 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                     name="duplicatePolicy"
                     checked={overwriteDuplicates}
                     onChange={() => setOverwriteDuplicates(true)}
+                    className="text-emerald-600 focus:ring-emerald-500 w-3.5 h-3.5 mt-0.5"
+                  />
+                  <div>
+                    <span className="block text-xs font-bold">
+                      Bổ sung / Cập nhật thêm 2FA | Mail | Pass cho UID đã có (Khuyên dùng)
+                    </span>
+                    <span className="block text-[10px] text-slate-500 font-normal">
+                      Tự động ghép thêm 2FA, Mail, Pass mới vào các UID đã tồn tại trong bảng mà không làm mất thông tin cũ.
+                    </span>
+                  </div>
+                </label>
+
+                <label
+                  className={`flex items-start space-x-2 p-2 rounded-lg border cursor-pointer transition-all ${
+                    !overwriteDuplicates
+                      ? 'bg-amber-50 border-amber-400 text-amber-950 font-semibold shadow-2xs'
+                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="duplicatePolicy"
+                    checked={!overwriteDuplicates}
+                    onChange={() => setOverwriteDuplicates(false)}
                     className="text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 mt-0.5"
                   />
                   <div>
                     <span className="block text-xs font-bold">
-                      Ghi đè / Cập nhật UID đã có
+                      Bỏ qua UID đã có
                     </span>
                     <span className="block text-[10px] text-slate-500 font-normal">
-                      Thay thế Mật khẩu, 2FA mới cho các UID đã tồn tại trong bảng.
+                      Chỉ thêm các nick hoàn toàn mới chưa có UID trong hệ thống.
                     </span>
                   </div>
                 </label>

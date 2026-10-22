@@ -30,15 +30,18 @@ import {
   X,
   Clock,
   XCircle,
+  KeyRound,
 } from 'lucide-react';
 import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, GroupInteractionStatus, GROUP_INTERACTION_STATUS_OPTIONS, FullViaItem } from '../types';
 import { exportGroupToXLSX } from '../utils/excelTemplates';
+import { parseFullVia, parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
 
 interface GroupManagementTableProps {
   records: GroupRecord[];
   currentUser: AppUser;
   availableStaffNames: string[];
   existingVias?: FullViaItem[];
+  onSupplementVia?: (viaUid: string, newFullVia: string, staffName?: string) => Promise<void> | void;
   onAddRecord: (record: GroupRecord) => Promise<void>;
   onAddBatchRecords?: (records: GroupRecord[]) => Promise<void>;
   onUpdateRecord: (id: string, updates: Partial<GroupRecord>) => Promise<void>;
@@ -62,6 +65,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   currentUser,
   availableStaffNames,
   existingVias,
+  onSupplementVia,
   onAddRecord,
   onAddBatchRecords,
   onUpdateRecord,
@@ -136,6 +140,24 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   const [newViaStaffInput, setNewViaStaffInput] = useState<string>('keep');
   const [applyToWholeGroupInViaModal, setApplyToWholeGroupInViaModal] = useState(false);
   const [viaSearchQuery, setViaSearchQuery] = useState('');
+
+  // Các trường bổ sung 2FA | Mail | Pass khi Update Via trong bảng Group
+  const [suppPass, setSuppPass] = useState('');
+  const [suppTwoFa, setSuppTwoFa] = useState('');
+  const [suppEmail, setSuppEmail] = useState('');
+  const [suppEmailPass, setSuppEmailPass] = useState('');
+  const [quickPasteSupp, setQuickPasteSupp] = useState('');
+
+  const loadExistingViaCredsForUpdate = (targetUid: string) => {
+    const clean = (targetUid || '').split('|')[0].trim().toLowerCase();
+    const matched = (existingVias || []).find((v) => v.uid.trim().toLowerCase() === clean);
+    const parsed = parseFullVia(matched?.rawFullVia);
+    setSuppPass(matched?.pass || parsed?.pass || '');
+    setSuppTwoFa(matched?.twoFa || parsed?.twoFa || '');
+    setSuppEmail(matched?.email || parsed?.email || '');
+    setSuppEmailPass(matched?.emailPass || parsed?.emailPass || '');
+    setQuickPasteSupp('');
+  };
 
   // Delete confirm modal state (in-app modal replacing blocked window.confirm)
   const [deleteConfirmTarget, setDeleteConfirmTarget] = useState<{
@@ -981,8 +1003,26 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   const handleApplyViaUpdate = async () => {
     if (!viaUpdateTarget || !newViaUidInput.trim()) return;
 
-    const trimmedUid = newViaUidInput.trim();
+    const trimmedUid = newViaUidInput.split('|')[0].trim();
     const trimmedViaName = newViaNameInput.trim();
+
+    if (
+      onSupplementVia &&
+      (suppPass.trim() || suppTwoFa.trim() || suppEmail.trim() || suppEmailPass.trim())
+    ) {
+      const builtVia = buildFullViaString({
+        uid: trimmedUid,
+        pass: suppPass,
+        twoFa: suppTwoFa,
+        email: suppEmail,
+        emailPass: suppEmailPass,
+      });
+      await onSupplementVia(
+        trimmedUid,
+        builtVia,
+        newViaStaffInput !== 'keep' && newViaStaffInput ? newViaStaffInput : currentUser.name
+      );
+    }
 
     let idsToUpdate = [...viaUpdateTarget.recordIds];
 
@@ -2524,6 +2564,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                         currentViaName: row.viaName || '',
                                       });
                                       setNewViaUidInput(row.uid || '');
+                                      loadExistingViaCredsForUpdate(row.uid || '');
                                       setNewViaNameInput(row.viaName || '');
                                       setNewViaJoinStatusInput(row.joinStatus || 'Đã Jon');
                                       setNewViaStaffInput(row.staffName || 'keep');
@@ -3386,6 +3427,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                           type="button"
                           onClick={() => {
                             setNewViaUidInput(v.uid);
+                            loadExistingViaCredsForUpdate(v.uid);
                             setNewViaNameInput(v.note || v.uid);
                             if (v.staffName && isAdmin) {
                               setNewViaStaffInput(v.staffName);
@@ -3428,15 +3470,26 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                   <input
                     type="text"
                     list="group-modal-update-via-list"
-                    placeholder="VD: 100060665184656"
+                    placeholder="Nhập UID hoặc dán UID|Pass|2FA|Mail..."
                     value={newViaUidInput}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setNewViaUidInput(val);
-                      if (existingVias) {
-                        const matched = existingVias.find((v) => v.uid === val.trim());
-                        if (matched && matched.note && !newViaNameInput) {
-                          setNewViaNameInput(matched.note);
+                      if (val.includes('|')) {
+                        const parsed = parseSupplementalViaInput(val);
+                        const nextUid = parsed.uid || val.split('|')[0].trim();
+                        setNewViaUidInput(nextUid);
+                        if (parsed.pass) setSuppPass(parsed.pass);
+                        if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
+                        if (parsed.email) setSuppEmail(parsed.email);
+                        if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
+                      } else {
+                        setNewViaUidInput(val);
+                        loadExistingViaCredsForUpdate(val);
+                        if (existingVias) {
+                          const matched = existingVias.find((v) => v.uid === val.trim());
+                          if (matched && matched.note && !newViaNameInput) {
+                            setNewViaNameInput(matched.note);
+                          }
                         }
                       }
                     }}
@@ -3450,6 +3503,78 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                     </datalist>
                   )}
                 </div>
+
+                {/* BỔ SUNG THÊM THÔNG TIN VIA (2FA | MAIL | PASS...) KHI CHỌN VIA HOẶC ĐÃ CÓ UID */}
+                {newViaUidInput.trim() && (
+                  <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 space-y-2 text-xs">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <div className="flex items-center space-x-1.5 font-extrabold text-amber-950">
+                        <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                        <span>
+                          Bổ sung thêm thông tin Via ({newViaUidInput.split('|')[0].trim()}): 2FA | Mail | Pass...
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-1 text-[10px] font-bold">
+                        <span className={`px-1.5 py-0.5 rounded border ${suppPass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                          {suppPass ? '✓ Có Pass' : 'Thiếu Pass'}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded border ${suppTwoFa ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                          {suppTwoFa ? '✓ Có 2FA' : 'Thiếu 2FA'}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded border ${suppEmail ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'}`}>
+                          {suppEmail ? '✓ Có Mail' : '+ Mail'}
+                        </span>
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={quickPasteSupp}
+                      onChange={(e) => {
+                        const rawVal = e.target.value;
+                        setQuickPasteSupp(rawVal);
+                        if (!rawVal.trim()) return;
+                        const parsed = parseSupplementalViaInput(rawVal, newViaUidInput.trim());
+                        if (parsed.uid && parsed.uid !== newViaUidInput.trim()) setNewViaUidInput(parsed.uid);
+                        if (parsed.pass) setSuppPass(parsed.pass);
+                        if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
+                        if (parsed.email) setSuppEmail(parsed.email);
+                        if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
+                      }}
+                      placeholder="⚡ Dán nhanh: 2FA|Mail|Pass hoặc Pass|2FA|Mail|PassMail..."
+                      className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-[11px] font-mono text-slate-900 focus:outline-hidden focus:border-amber-600"
+                    />
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <input
+                        type="text"
+                        value={suppPass}
+                        onChange={(e) => setSuppPass(e.target.value)}
+                        placeholder="Pass Via..."
+                        className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={suppTwoFa}
+                        onChange={(e) => setSuppTwoFa(e.target.value)}
+                        placeholder="Mã 2FA..."
+                        className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={suppEmail}
+                        onChange={(e) => setSuppEmail(e.target.value)}
+                        placeholder="Mail khôi phục..."
+                        className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={suppEmailPass}
+                        onChange={(e) => setSuppEmailPass(e.target.value)}
+                        placeholder="Pass Mail..."
+                        className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                      />
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">

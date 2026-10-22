@@ -120,11 +120,12 @@ import { ProxyAppView } from './components/ProxyAppView';
 import { AddEditProxyModal } from './components/AddEditProxyModal';
 import { BulkImportProxyModal } from './components/BulkImportProxyModal';
 import { RevenueManagementTable } from './components/RevenueManagementTable';
+import { clearAdminMgidVaultForNonAdmin } from './components/MgidDashboardPanel';
 import { StaffInfoTable } from './components/StaffInfoTable';
 import { ImageStudioTab } from './components/ImageStudioTab';
 import { WordPressStatsTab } from './components/WordPressStatsTab';
 import { WebPublishStudioTab } from './components/WebPublishStudioTab';
-import { getCleanBmName } from './utils/helpers';
+import { getCleanBmName, parseFullVia, parseSupplementalViaInput, buildFullViaString } from './utils/helpers';
 import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon, BarChart3, PenTool } from 'lucide-react';
 
 // Helper chuẩn hóa UID để so khớp chính xác giữa Quản Lý Page và Quản Lý Full Via
@@ -168,7 +169,10 @@ export default function App() {
   const [sharedAccounts, setSharedAccounts] = useState<SharedAccount[]>([]);
   const [groupRecords, setGroupRecords] = useState<GroupRecord[]>([]);
   const [proxies, setProxies] = useState<ProxyItem[]>(INITIAL_PROXIES);
-  const [finances, setFinances] = useState<MonthlyFinanceRecord[]>(() => getLocalFinanceBackup());
+  const [finances, setFinances] = useState<MonthlyFinanceRecord[]>(() => {
+    const sess = loadCurrentUserSession();
+    return sess.role === 'admin' ? getLocalFinanceBackup() : [];
+  });
   const [imageTasks, setImageTasks] = useState<ImageTaskItem[]>(() => getLocalImageTasksBackup());
   const [customStaffList, setCustomStaffList] = useState<string[]>([]);
   const [deletedViaUids, setDeletedViaUids] = useState<string[]>(() => loadLocalDeletedViaUids());
@@ -524,10 +528,14 @@ export default function App() {
 
         const sanitizeFinanceForRole = (list: MonthlyFinanceRecord[]): MonthlyFinanceRecord[] => {
           if (currentUser.role === 'admin') return list;
+          clearLocalFinanceBackup();
+          clearAdminMgidVaultForNonAdmin(currentUser.role);
           return list.map((rec) => ({
             ...rec,
             revenueItems: [],
             totalRevenue: 0,
+            mgidReport: undefined,
+            usdToVndRate: undefined,
             officeCost: 0,
             electricityCost: 0,
             waterCost: 0,
@@ -1612,7 +1620,11 @@ export default function App() {
     const primaryExisting = sortedVias[0];
     const duplicateViaIds = sortedVias.slice(1).map((v) => v.id);
 
-    // Trích xuất pass, 2fa, rawFullVia tốt nhất từ mọi nguồn (FullViaItem, hint, hoặc PageRecord.fullVia)
+    // Trích xuất pass, 2fa, email, emailPass, rawFullVia tốt nhất từ mọi nguồn (ưu tiên hint mới bổ sung từ người dùng)
+    const hintParsed = options?.rawFullViaHint
+      ? parseSupplementalViaInput(options.rawFullViaHint, uidPure)
+      : null;
+
     const samplePageFullVia =
       options?.rawFullViaHint ||
       heldPages.find((p) => p.fullVia && p.fullVia.includes('|'))?.fullVia ||
@@ -1624,24 +1636,52 @@ export default function App() {
       primaryExisting?.rawFullVia ||
       '';
 
+    const parsedSamplePage = parseFullVia(samplePageFullVia);
+    const parsedBestVia = parseFullVia(bestRawFromVias);
+
     const bestPass =
+      hintParsed?.pass?.trim() ||
       sortedVias.find((v) => v.pass?.trim())?.pass?.trim() ||
-      samplePageFullVia.split('|')[1]?.trim() ||
-      bestRawFromVias.split('|')[1]?.trim() ||
+      parsedSamplePage?.pass?.trim() ||
+      parsedBestVia?.pass?.trim() ||
       '';
 
     const bestTwoFa =
+      hintParsed?.twoFa?.trim() ||
       sortedVias.find((v) => v.twoFa?.trim())?.twoFa?.trim() ||
-      samplePageFullVia.split('|')[2]?.trim() ||
-      bestRawFromVias.split('|')[2]?.trim() ||
+      parsedSamplePage?.twoFa?.trim() ||
+      parsedBestVia?.twoFa?.trim() ||
       '';
 
-    const resolvedFullViaStr =
-      bestRawFromVias && bestRawFromVias.split('|').filter(Boolean).length >= 2
-        ? bestRawFromVias.trim()
-        : samplePageFullVia && samplePageFullVia.includes('|')
-        ? samplePageFullVia.trim()
-        : `${uidPure}|${bestPass}|${bestTwoFa}`;
+    const bestEmail =
+      hintParsed?.email?.trim() ||
+      sortedVias.find((v) => v.email?.trim())?.email?.trim() ||
+      parsedSamplePage?.email?.trim() ||
+      parsedBestVia?.email?.trim() ||
+      '';
+
+    const bestEmailPass =
+      hintParsed?.emailPass?.trim() ||
+      sortedVias.find((v) => v.emailPass?.trim())?.emailPass?.trim() ||
+      parsedSamplePage?.emailPass?.trim() ||
+      parsedBestVia?.emailPass?.trim() ||
+      '';
+
+    const bestExtra =
+      (hintParsed?.extra && hintParsed.extra.length > 0 ? hintParsed.extra.join('|') : '') ||
+      sortedVias.find((v) => v.extraInfo?.trim())?.extraInfo?.trim() ||
+      (parsedSamplePage?.extra && parsedSamplePage.extra.length > 0 ? parsedSamplePage.extra.join('|') : '') ||
+      (parsedBestVia?.extra && parsedBestVia.extra.length > 0 ? parsedBestVia.extra.join('|') : '') ||
+      '';
+
+    const resolvedFullViaStr = buildFullViaString({
+      uid: uidPure,
+      pass: bestPass,
+      twoFa: bestTwoFa,
+      email: bestEmail,
+      emailPass: bestEmailPass,
+      extra: bestExtra,
+    });
 
     if (primaryExisting) {
       const primaryVia: FullViaItem = {
@@ -1649,6 +1689,9 @@ export default function App() {
         uid: uidPure,
         pass: bestPass || primaryExisting.pass || '',
         twoFa: bestTwoFa || primaryExisting.twoFa || '',
+        ...(bestEmail || primaryExisting.email ? { email: bestEmail || primaryExisting.email } : {}),
+        ...(bestEmailPass || primaryExisting.emailPass ? { emailPass: bestEmailPass || primaryExisting.emailPass } : {}),
+        ...(bestExtra || primaryExisting.extraInfo ? { extraInfo: bestExtra || primaryExisting.extraInfo } : {}),
         rawFullVia: resolvedFullViaStr,
         staffName: targetCleanStaff,
         pageUpdateStatus: shouldMarkRedNew
@@ -1686,6 +1729,9 @@ export default function App() {
       uid: uidPure,
       pass: bestPass,
       twoFa: bestTwoFa,
+      ...(bestEmail ? { email: bestEmail } : {}),
+      ...(bestEmailPass ? { emailPass: bestEmailPass } : {}),
+      ...(bestExtra ? { extraInfo: bestExtra } : {}),
       staffName: targetCleanStaff,
       status: 'active',
       pageUpdateStatus: shouldMarkRedNew ? 'pending' : pageCount > 0 ? 'updated' : 'none',
@@ -2636,37 +2682,100 @@ export default function App() {
     await saveCloudSettings({ customStaffList: updatedStaff });
   };
 
-  const handleUpdateFullViaForAll = async (viaUid: string, newFullVia: string) => {
-    const trimmedUid = viaUid.trim();
+  const handleUpdateFullViaForAll = async (
+    viaUid: string,
+    newFullVia: string,
+    targetStaffHint?: string
+  ) => {
+    const trimmedUid = (viaUid || '').split('|')[0].trim();
     if (!trimmedUid) return;
+    const lowerUid = normalizeViaUidKey(trimmedUid);
 
-    const matching = records
-      .filter(
-        (r) =>
-          r.viaUid.trim() === trimmedUid &&
-          (currentUser.role === 'admin' ||
-            r.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
-      )
-      .map((r) => ({ ...r, fullVia: newFullVia.trim() || undefined }));
-
-    if (matching.length > 0) {
-      await batchSaveCloudPageRecords(matching);
-    }
-
-    const parts = newFullVia.trim().split('|');
     const matchingVia = viaList.find(
       (v) =>
-        v.uid.trim() === trimmedUid &&
+        (normalizeViaUidKey(v.uid) === lowerUid || normalizeViaUidKey(v.rawFullVia) === lowerUid) &&
         (currentUser.role === 'admin' ||
           v.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
     );
 
+    const parsedOld = parseFullVia(matchingVia?.rawFullVia);
+    const parsedNew = parseSupplementalViaInput(newFullVia, trimmedUid);
+
+    const nextPass = parsedNew.pass || matchingVia?.pass || parsedOld?.pass || '';
+    const nextTwoFa = parsedNew.twoFa || matchingVia?.twoFa || parsedOld?.twoFa || '';
+    const nextEmail = parsedNew.email || matchingVia?.email || parsedOld?.email || '';
+    const nextEmailPass = parsedNew.emailPass || matchingVia?.emailPass || parsedOld?.emailPass || '';
+    const nextExtra =
+      (parsedNew.extra && parsedNew.extra.length > 0 ? parsedNew.extra.join('|') : '') ||
+      matchingVia?.extraInfo ||
+      (parsedOld?.extra && parsedOld.extra.length > 0 ? parsedOld.extra.join('|') : '') ||
+      '';
+
+    const resolvedRawFullVia = newFullVia.trim()
+      ? buildFullViaString({
+          uid: trimmedUid,
+          pass: nextPass,
+          twoFa: nextTwoFa,
+          email: nextEmail,
+          emailPass: nextEmailPass,
+          extra: nextExtra,
+        })
+      : '';
+
+    const matching = records
+      .filter(
+        (r) =>
+          normalizeViaUidKey(r.viaUid) === lowerUid &&
+          (currentUser.role === 'admin' ||
+            r.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+      )
+      .map((r) => ({ ...r, fullVia: resolvedRawFullVia || undefined }));
+
+    if (matching.length > 0) {
+      const updatedMap = new Map(matching.map((m) => [m.id, m]));
+      setRecords((prev) => prev.map((r) => updatedMap.get(r.id) || r));
+      await batchSaveCloudPageRecords(matching);
+    }
+
     if (matchingVia) {
-      await updateCloudVia(matchingVia.id, {
-        pass: parts[1]?.trim() || matchingVia.pass,
-        twoFa: parts[2]?.trim() || matchingVia.twoFa,
-        rawFullVia: newFullVia.trim(),
-      });
+      const updatedVia: FullViaItem = {
+        ...matchingVia,
+        pass: nextPass,
+        twoFa: nextTwoFa,
+        ...(nextEmail ? { email: nextEmail } : {}),
+        ...(nextEmailPass ? { emailPass: nextEmailPass } : {}),
+        ...(nextExtra ? { extraInfo: nextExtra } : {}),
+        rawFullVia: resolvedRawFullVia || `${trimmedUid}||`,
+      };
+      setViaList((prev) => prev.map((v) => (v.id === matchingVia.id ? updatedVia : v)));
+      await setCloudVia(updatedVia);
+    } else if (resolvedRawFullVia) {
+      const inferredStaff =
+        targetStaffHint ||
+        matching[0]?.staffName ||
+        groupRecords.find((g) => normalizeViaUidKey(g.uid) === lowerUid)?.staffName ||
+        currentUser.name ||
+        'Chưa gán';
+      const newViaItem: FullViaItem = {
+        id: `via-sync-${trimmedUid}`,
+        uid: trimmedUid,
+        pass: nextPass,
+        twoFa: nextTwoFa,
+        ...(nextEmail ? { email: nextEmail } : {}),
+        ...(nextEmailPass ? { emailPass: nextEmailPass } : {}),
+        ...(nextExtra ? { extraInfo: nextExtra } : {}),
+        staffName: inferredStaff,
+        status: 'active',
+        rawFullVia: resolvedRawFullVia,
+        pageUpdateStatus: matching.length > 0 ? 'updated' : 'none',
+        hasAdminAssignedPage: matching.length > 0,
+        createdAt: new Date().toLocaleDateString('vi-VN'),
+      };
+      setViaList((prev) => [
+        ...prev.filter((v) => normalizeViaUidKey(v.uid) !== lowerUid),
+        newViaItem,
+      ]);
+      await setCloudVia(newViaItem);
     }
   };
 
@@ -3716,13 +3825,36 @@ export default function App() {
         }
 
         if (overwriteExisting) {
+          const parsedOld = parseFullVia(old.rawFullVia);
+          const parsedInc = parseFullVia(incoming.rawFullVia);
+          const mergedPass = incoming.pass?.trim() || old.pass || parsedOld?.pass || '';
+          const mergedTwoFa = incoming.twoFa?.trim() || old.twoFa || parsedOld?.twoFa || '';
+          const mergedEmail = incoming.email?.trim() || parsedInc?.email || old.email || parsedOld?.email || '';
+          const mergedEmailPass = incoming.emailPass?.trim() || parsedInc?.emailPass || old.emailPass || parsedOld?.emailPass || '';
+          const mergedExtra =
+            incoming.extraInfo?.trim() ||
+            (parsedInc?.extra && parsedInc.extra.length > 0 ? parsedInc.extra.join('|') : '') ||
+            old.extraInfo ||
+            (parsedOld?.extra && parsedOld.extra.length > 0 ? parsedOld.extra.join('|') : '') ||
+            '';
+          const mergedRaw = buildFullViaString({
+            uid: old.uid,
+            pass: mergedPass,
+            twoFa: mergedTwoFa,
+            email: mergedEmail,
+            emailPass: mergedEmailPass,
+            extra: mergedExtra,
+          });
           const merged: FullViaItem = {
             ...old,
-            pass: incoming.pass,
-            twoFa: incoming.twoFa,
+            pass: mergedPass,
+            twoFa: mergedTwoFa,
+            ...(mergedEmail ? { email: mergedEmail } : {}),
+            ...(mergedEmailPass ? { emailPass: mergedEmailPass } : {}),
+            ...(mergedExtra ? { extraInfo: mergedExtra } : {}),
             staffName: currentUser.role === 'staff' ? currentUser.name : (incoming.staffName || old.staffName),
             note: incoming.note || old.note,
-            rawFullVia: incoming.rawFullVia,
+            rawFullVia: mergedRaw,
             pageUpdateStatus:
               incoming.pageUpdateStatus && incoming.pageUpdateStatus !== 'none'
                 ? incoming.pageUpdateStatus
@@ -4331,6 +4463,7 @@ export default function App() {
             currentUser={currentUser}
             availableStaffNames={allStaffNames}
             existingVias={viaList}
+            onSupplementVia={handleUpdateFullViaForAll}
             onAddRecord={handleAddGroupRecord}
             onAddBatchRecords={handleBatchSaveGroupRecords}
             onUpdateRecord={handleUpdateGroupRecord}
@@ -4444,7 +4577,7 @@ export default function App() {
               setIsAdminApprovalModalOpen(true);
             }}
           />
-        ) : activeTab === 'revenue' ? (
+        ) : activeTab === 'revenue' && currentUser.role === 'admin' ? (
           <RevenueManagementTable
             finances={finances}
             currentUser={currentUser}
@@ -4585,6 +4718,8 @@ export default function App() {
         onSaveBatch={handleSaveBatch}
         initialRecord={editingRecord}
         allRecords={records}
+        existingVias={viaList}
+        onSupplementVia={handleUpdateFullViaForAll}
         currentUser={currentUser}
         availableStaffNames={allStaffNames}
         presetViaData={presetViaData}
@@ -4628,6 +4763,7 @@ export default function App() {
         currentUser={currentUser}
         availableStaffNames={allStaffNames}
         existingVias={viaList}
+        onSupplementVia={handleUpdateFullViaForAll}
         presetGroup={presetGroupData}
         initialMode={presetGroupData?.initialMode || 'single'}
       />

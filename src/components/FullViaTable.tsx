@@ -39,6 +39,7 @@ import { FullViaItem, AppUser, PageRecord, ViaPageUpdateStatus, ViaAdminReportSt
 import { generateTOTPCode } from '../utils/totp';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
 import { batchDeleteCloudVias } from '../services/firebase';
+import { parseFullVia, parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
 
 function normalizeUidKey(raw?: string): string {
   if (!raw) return '';
@@ -173,6 +174,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     uid: string;
     pass: string;
     twoFa: string;
+    email: string;
+    emailPass: string;
+    quickPaste: string;
     staffName: string;
     note: string;
     status: 'active' | 'checkpoint' | 'dead' | 'error' | 'fixed';
@@ -184,6 +188,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     uid: '',
     pass: '',
     twoFa: '',
+    email: '',
+    emailPass: '',
+    quickPaste: '',
     staffName: availableStaffNames[0] || 'Anh Quỳnh',
     note: '',
     status: 'active',
@@ -598,6 +605,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           v.uid.toLowerCase().includes(q) ||
           v.pass.toLowerCase().includes(q) ||
           v.twoFa.toLowerCase().includes(q) ||
+          (v.email && v.email.toLowerCase().includes(q)) ||
+          (v.rawFullVia && v.rawFullVia.toLowerCase().includes(q)) ||
           v.staffName.toLowerCase().includes(q) ||
           (v.adminReportStatus && v.adminReportStatus.toLowerCase().includes(q)) ||
           (v.note && v.note.toLowerCase().includes(q))
@@ -1049,6 +1058,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       uid: '',
       pass: '',
       twoFa: '',
+      email: '',
+      emailPass: '',
+      quickPaste: '',
       staffName: defaultStaff,
       note: '',
       status: 'active',
@@ -1068,6 +1080,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       uid: '',
       pass: '',
       twoFa: '',
+      email: '',
+      emailPass: '',
+      quickPaste: '',
       staffName: staffName,
       note: '',
       status: 'active',
@@ -1094,10 +1109,15 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       via.pageUpdateStatus ||
       (via.hasAdminAssignedPage ? 'pending' : (assignedPages.length > 0 ? 'updated' : 'none'));
 
+    const parsedRaw = parseFullVia(via.rawFullVia);
+
     setModalForm({
       uid: via.uid,
-      pass: via.pass,
-      twoFa: via.twoFa,
+      pass: via.pass || parsedRaw?.pass || '',
+      twoFa: via.twoFa || parsedRaw?.twoFa || '',
+      email: via.email || parsedRaw?.email || '',
+      emailPass: via.emailPass || parsedRaw?.emailPass || '',
+      quickPaste: '',
       staffName: via.staffName,
       note: via.note || '',
       status: isErr ? 'error' : isFix ? 'fixed' : (via.status || 'active'),
@@ -1120,56 +1140,70 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   // Save modal form
   const handleSaveModalForm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!modalForm.uid.trim() || !modalForm.pass.trim()) {
-      alert('Vui lòng nhập UID và Mật khẩu (PASS)!');
+    const targetExistingVia = editingVia || duplicateViaInModal;
+    const trimmedUid = modalForm.uid.trim();
+    if (!trimmedUid) {
+      setCopyToastMessage('⚠️ Vui lòng nhập UID Facebook!');
+      setTimeout(() => setCopyToastMessage(null), 2500);
       return;
     }
 
-    const trimmedUid = modalForm.uid.trim();
-    const trimmedPass = modalForm.pass.trim();
-    const trimmed2Fa = modalForm.twoFa.trim();
-    const rawFull = `${trimmedUid}|${trimmedPass}|${trimmed2Fa}`;
+    const parsedExistingRaw = parseFullVia(targetExistingVia?.rawFullVia);
+    const trimmedPass = modalForm.pass.trim() || targetExistingVia?.pass || parsedExistingRaw?.pass || '';
+    const trimmed2Fa = modalForm.twoFa.trim() || targetExistingVia?.twoFa || parsedExistingRaw?.twoFa || '';
+    const trimmedEmail = modalForm.email.trim() || targetExistingVia?.email || parsedExistingRaw?.email || '';
+    const trimmedEmailPass = modalForm.emailPass.trim() || targetExistingVia?.emailPass || parsedExistingRaw?.emailPass || '';
+
+    if (!trimmedPass && !trimmed2Fa && !trimmedEmail && !targetExistingVia) {
+      setCopyToastMessage('⚠️ Vui lòng nhập ít nhất Mật khẩu (Pass), 2FA hoặc Mail cho Via!');
+      setTimeout(() => setCopyToastMessage(null), 2500);
+      return;
+    }
+
+    const rawFull = buildFullViaString(
+      trimmedUid,
+      trimmedPass,
+      trimmed2Fa,
+      trimmedEmail,
+      trimmedEmailPass
+    );
     const isErr = modalForm.status === 'error' || modalForm.status === 'dead' || Boolean(modalForm.isError);
     const isFix = modalForm.status === 'fixed' || Boolean(modalForm.isFixed);
     const finalStatus = isFix ? 'fixed' : isErr ? (modalForm.status === 'dead' ? 'dead' : 'error') : modalForm.status;
 
-    if (!editingVia && duplicateViaInModal) {
-      if (
-        !window.confirm(
-          `Cảnh báo: UID "${trimmedUid}" đã tồn tại trong hệ thống (thuộc nhân viên "${duplicateViaInModal.staffName}"). Bạn có chắc chắn muốn thêm tiếp nick này không?`
-        )
-      ) {
-        return;
-      }
-    }
-
     const isPending = modalForm.pageUpdateStatus === 'pending';
     const isUpdated = modalForm.pageUpdateStatus === 'updated';
 
-    if (editingVia) {
+    if (targetExistingVia) {
       onUpdateVia({
-        ...editingVia,
+        ...targetExistingVia,
         uid: trimmedUid,
         pass: trimmedPass,
         twoFa: trimmed2Fa,
-        staffName: modalForm.staffName,
-        note: modalForm.note.trim(),
+        ...(trimmedEmail ? { email: trimmedEmail } : { email: '' }),
+        ...(trimmedEmailPass ? { emailPass: trimmedEmailPass } : { emailPass: '' }),
+        staffName: modalForm.staffName || targetExistingVia.staffName,
+        note: modalForm.note.trim() || targetExistingVia.note || '',
         status: finalStatus,
         isError: isFix ? false : isErr,
         isFixed: isFix,
         rawFullVia: rawFull,
         pageUpdateStatus: modalForm.pageUpdateStatus,
-        adminReportStatus: modalForm.adminReportStatus || 'None',
-        hasAdminAssignedPage: isPending || isUpdated ? true : false,
-        ...(isPending ? { pageAssignedAt: editingVia.pageAssignedAt || new Date().toLocaleDateString('vi-VN') } : {}),
+        adminReportStatus: modalForm.adminReportStatus || targetExistingVia.adminReportStatus || 'None',
+        hasAdminAssignedPage: isPending || isUpdated ? true : Boolean(targetExistingVia.hasAdminAssignedPage),
+        ...(isPending ? { pageAssignedAt: targetExistingVia.pageAssignedAt || new Date().toLocaleDateString('vi-VN') } : {}),
         ...(isUpdated ? { pageUpdatedAt: new Date().toLocaleDateString('vi-VN') } : {}),
       });
+      setCopyToastMessage(`✅ Đã cập nhật / bổ sung thông tin (2FA | Mail | Pass) cho Via UID ${trimmedUid}!`);
+      setTimeout(() => setCopyToastMessage(null), 3000);
     } else {
       const newItem: FullViaItem = {
         id: `via-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
         uid: trimmedUid,
         pass: trimmedPass,
         twoFa: trimmed2Fa,
+        ...(trimmedEmail ? { email: trimmedEmail } : {}),
+        ...(trimmedEmailPass ? { emailPass: trimmedEmailPass } : {}),
         staffName: modalForm.staffName,
         note: modalForm.note.trim(),
         status: finalStatus,
@@ -1184,6 +1218,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         ...(isUpdated ? { pageUpdatedAt: new Date().toLocaleDateString('vi-VN') } : {}),
       };
       onAddVia(newItem);
+      setCopyToastMessage(`✅ Đã thêm nick Full Via mới UID ${trimmedUid}!`);
+      setTimeout(() => setCopyToastMessage(null), 3000);
     }
 
     setIsEditModalOpen(false);
@@ -1442,73 +1478,85 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
         {/* 3. CỘT MẬT KHẨU PASS */}
         <td className={`py-2 px-2.5 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
-          <div className="flex items-center justify-between gap-1">
-            <div className="flex items-center space-x-1 min-w-0 flex-1">
-              <span
-                className={`font-mono text-xs font-semibold truncate ${
-                  isPasswordVisible
-                    ? isRowError
-                      ? 'text-red-950 font-bold select-all'
-                      : 'text-slate-800 select-all'
-                    : 'text-slate-400 tracking-widest'
-                }`}
-              >
-                {isPasswordVisible ? via.pass : '••••••••••'}
-              </span>
-              <button
-                type="button"
-                onClick={() => toggleRowPassword(via.id)}
-                className="text-slate-400 hover:text-slate-700 p-0.5 shrink-0 cursor-pointer"
-                title={isPasswordVisible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-              >
-                {isPasswordVisible ? <EyeOff className="w-3 h-3 text-amber-600" /> : <Eye className="w-3 h-3" />}
-              </button>
-            </div>
-            <button
-              type="button"
-              onClick={() => handleCopyText(via.pass, `pass-${via.id}`, 'Mật khẩu')}
-              className={`inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-bold rounded border transition-all cursor-pointer shrink-0 ${
-                isPassCopied
-                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                  : isRowError
-                  ? 'bg-red-100 text-red-900 border-red-300 hover:bg-red-200'
-                  : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
-              }`}
-              title="Sao chép Mật khẩu (PASS)"
-            >
-              {isPassCopied ? (
-                <>
-                  <Check className="w-2.5 h-2.5 text-white" />
-                  <span>Đã copy</span>
-                </>
-              ) : (
-                <>
-                  <Copy className={`w-2.5 h-2.5 ${isRowError ? 'text-red-700' : 'text-amber-700'}`} />
-                  <span>Pass</span>
-                </>
-              )}
-            </button>
-          </div>
-        </td>
-
-        {/* 4. CỘT MÃ 2FA */}
-        <td className={`py-2 px-2.5 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
-          <div className="flex flex-col space-y-1">
+          {via.pass?.trim() ? (
             <div className="flex items-center justify-between gap-1">
-              <div className="flex items-center space-x-1 min-w-0 flex-1 font-mono text-xs">
+              <div className="flex items-center space-x-1 min-w-0 flex-1">
                 <span
-                  className={`truncate ${
-                    is2FaVisible
+                  className={`font-mono text-xs font-semibold truncate ${
+                    isPasswordVisible
                       ? isRowError
                         ? 'text-red-950 font-bold select-all'
-                        : 'text-slate-800 font-semibold select-all'
+                        : 'text-slate-800 select-all'
                       : 'text-slate-400 tracking-widest'
                   }`}
-                  title={via.twoFa}
                 >
-                  {is2FaVisible ? via.twoFa : '••••••••••••••••'}
+                  {isPasswordVisible ? via.pass : '••••••••••'}
                 </span>
-                {via.twoFa && (
+                <button
+                  type="button"
+                  onClick={() => toggleRowPassword(via.id)}
+                  className="text-slate-400 hover:text-slate-700 p-0.5 shrink-0 cursor-pointer"
+                  title={isPasswordVisible ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
+                >
+                  {isPasswordVisible ? <EyeOff className="w-3 h-3 text-amber-600" /> : <Eye className="w-3 h-3" />}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleCopyText(via.pass, `pass-${via.id}`, 'Mật khẩu')}
+                className={`inline-flex items-center space-x-0.5 px-1.5 py-0.5 text-[10px] font-bold rounded border transition-all cursor-pointer shrink-0 ${
+                  isPassCopied
+                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                    : isRowError
+                    ? 'bg-red-100 text-red-900 border-red-300 hover:bg-red-200'
+                    : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
+                }`}
+                title="Sao chép Mật khẩu (PASS)"
+              >
+                {isPassCopied ? (
+                  <>
+                    <Check className="w-2.5 h-2.5 text-white" />
+                    <span>Đã copy</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className={`w-2.5 h-2.5 ${isRowError ? 'text-red-700' : 'text-amber-700'}`} />
+                    <span>Pass</span>
+                  </>
+                )}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => handleOpenEditModal(via)}
+              className="w-full py-1 px-2 rounded border border-dashed border-amber-300 bg-amber-50/70 hover:bg-amber-100 text-amber-800 font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
+              title="Nick đã có UID nhưng chưa có Pass — Bấm để bổ sung 2FA | Mail | Pass"
+            >
+              <Plus className="w-3 h-3 text-amber-600" />
+              <span>Bổ sung Pass/Mail</span>
+            </button>
+          )}
+        </td>
+
+        {/* 4. CỘT MÃ 2FA & MAIL BỔ SUNG */}
+        <td className={`py-2 px-2.5 border-r ${isRowError ? 'border-red-200' : 'border-slate-200'}`}>
+          <div className="flex flex-col space-y-1">
+            {via.twoFa?.trim() ? (
+              <div className="flex items-center justify-between gap-1">
+                <div className="flex items-center space-x-1 min-w-0 flex-1 font-mono text-xs">
+                  <span
+                    className={`truncate ${
+                      is2FaVisible
+                        ? isRowError
+                          ? 'text-red-950 font-bold select-all'
+                          : 'text-slate-800 font-semibold select-all'
+                        : 'text-slate-400 tracking-widest'
+                    }`}
+                    title={via.twoFa}
+                  >
+                    {is2FaVisible ? via.twoFa : '••••••••••••••••'}
+                  </span>
                   <button
                     type="button"
                     onClick={() => toggleRow2Fa(via.id)}
@@ -1517,11 +1565,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   >
                     {is2FaVisible ? <EyeOff className="w-3 h-3 text-emerald-600" /> : <Eye className="w-3 h-3" />}
                   </button>
-                )}
-              </div>
+                </div>
 
-              <div className="flex items-center space-x-0.5 shrink-0">
-                {via.twoFa && (
+                <div className="flex items-center space-x-0.5 shrink-0">
                   <button
                     type="button"
                     onClick={() => handleCopyText(via.twoFa, `2fa-${via.id}`, 'Mã 2FA Key')}
@@ -1546,9 +1592,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       </>
                     )}
                   </button>
-                )}
 
-                {via.twoFa && (
                   <button
                     type="button"
                     onClick={() => handleGetLiveOtp(via)}
@@ -1558,9 +1602,56 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     <Sparkles className="w-2.5 h-2.5 text-purple-700" />
                     <span>OTP</span>
                   </button>
-                )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => handleOpenEditModal(via)}
+                className="w-full py-1 px-2 rounded border border-dashed border-emerald-300 bg-emerald-50/60 hover:bg-emerald-100 text-emerald-800 font-bold text-[10px] flex items-center justify-center gap-1 cursor-pointer transition-colors"
+                title="Bấm để bổ sung 2FA | Mail | Pass cho UID này"
+              >
+                <Plus className="w-3 h-3 text-emerald-600" />
+                <span>+ Bổ sung 2FA | Mail | Pass</span>
+              </button>
+            )}
+
+            {/* Hiển thị Mail & Pass Mail bổ sung nếu có */}
+            {(() => {
+              const pRaw = parseFullVia(via.rawFullVia);
+              const mailVal = via.email || pRaw?.email || '';
+              const mailPassVal = via.emailPass || pRaw?.emailPass || '';
+              if (!mailVal && !mailPassVal) return null;
+              return (
+                <div className="flex items-center justify-between gap-1 px-1.5 py-0.5 bg-sky-50 border border-sky-200 rounded text-[10px]">
+                  <span className="font-mono text-sky-900 truncate font-semibold" title={`Mail: ${mailVal}${mailPassVal ? ` | PassMail: ${mailPassVal}` : ''}`}>
+                    ✉️ {mailVal || 'Có PassMail'}
+                  </span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {mailVal && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(mailVal, `mail-${via.id}`, 'Email Via')}
+                        className="px-1 py-0.2 bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 rounded font-bold text-[9px] cursor-pointer"
+                        title={`Copy Mail: ${mailVal}`}
+                      >
+                        {copiedKey === `mail-${via.id}` ? '✓ Mail' : 'Mail'}
+                      </button>
+                    )}
+                    {mailPassVal && (
+                      <button
+                        type="button"
+                        onClick={() => handleCopyText(mailPassVal, `mailpass-${via.id}`, 'Pass Mail')}
+                        className="px-1 py-0.2 bg-white hover:bg-sky-100 text-sky-800 border border-sky-300 rounded font-bold text-[9px] cursor-pointer"
+                        title="Copy Pass Mail"
+                      >
+                        {copiedKey === `mailpass-${via.id}` ? '✓ PassM' : 'PassM'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {liveOtp && (
               <div className="flex items-center justify-between px-1.5 py-0.5 bg-purple-50 border border-purple-200 rounded text-xs">
@@ -3269,27 +3360,81 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
       {/* Single Via Add / Edit Modal */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden my-auto max-h-[92vh] flex flex-col">
             {/* Modal Header */}
-            <div className="px-5 py-4 bg-slate-900 text-white flex items-center justify-between">
+            <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center space-x-2">
                 <Key className="w-5 h-5 text-indigo-400" />
                 <h3 className="font-bold text-sm">
-                  {editingVia ? 'Chỉnh Sửa Thông Tin Full Via' : 'Thêm 1 Nick Full Via Mới'}
+                  {editingVia
+                    ? `Bổ Sung / Sửa Full Via (UID: ${editingVia.uid})`
+                    : duplicateViaInModal
+                    ? `Bổ Sung Thêm 2FA | Mail | Pass Cho UID Đã Có`
+                    : 'Thêm Nick Mới Hoặc Bổ Sung Thông Tin Via (2FA | Mail | Pass)'}
                 </h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(false)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white"
+                className="p-1 rounded-lg text-slate-400 hover:text-white cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveModalForm} className="p-5 space-y-3.5 text-xs">
+            <form onSubmit={handleSaveModalForm} className="p-5 space-y-3.5 text-xs overflow-y-auto">
+              {/* Chọn nhanh UID đã có nhưng còn thiếu 2FA/Pass/Mail để bổ sung */}
+              {!editingVia && strictlyGuardedVias.length > 0 && (
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700">
+                      📌 Chọn nhanh Via đã có UID để bổ sung thêm 2FA | Mail | Pass:
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {strictlyGuardedVias.filter((v) => !v.pass?.trim() || !v.twoFa?.trim()).length} nick thiếu thông tin
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                    {strictlyGuardedVias
+                      .slice()
+                      .sort((a, b) => {
+                        const aMissing = (!a.pass?.trim() ? 2 : 0) + (!a.twoFa?.trim() ? 1 : 0);
+                        const bMissing = (!b.pass?.trim() ? 2 : 0) + (!b.twoFa?.trim() ? 1 : 0);
+                        return bMissing - aMissing;
+                      })
+                      .slice(0, 15)
+                      .map((v) => {
+                        const isSelected = modalForm.uid.trim() === v.uid.trim();
+                        const missingInfo = !v.pass?.trim() || !v.twoFa?.trim();
+                        return (
+                          <button
+                            key={v.id}
+                            type="button"
+                            onClick={() => handleOpenEditModal(v)}
+                            className={`px-2 py-1 rounded-lg font-mono text-[10px] font-bold border shrink-0 transition-all cursor-pointer flex items-center gap-1 ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white border-indigo-600'
+                                : missingInfo
+                                ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+                                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                            }`}
+                            title={`UID: ${v.uid} (${v.staffName}) - Bấm để nạp và bổ sung 2FA | Mail | Pass`}
+                          >
+                            <span>{v.uid}</span>
+                            {missingInfo && (
+                              <span className="text-[9px] px-1 rounded bg-amber-200/80 text-amber-950">
+                                +Bổ sung
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                  </div>
+                </div>
+              )}
+
               <div>
                 <label className="font-bold text-slate-700 block mb-1">
                   UID Facebook <span className="text-red-500">*</span>:
@@ -3297,33 +3442,95 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 <input
                   type="text"
                   required
-                  placeholder="Ví dụ: 100084392019485"
+                  placeholder="Nhập UID hoặc dán thẳng UID|Pass|2FA|Mail|PassMail..."
                   value={modalForm.uid}
-                  onChange={(e) => setModalForm({ ...modalForm, uid: e.target.value })}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.includes('|') || val.includes('\t')) {
+                      const parsed = parseSupplementalViaInput(val, modalForm.uid);
+                      setModalForm((prev) => ({
+                        ...prev,
+                        uid: parsed.uid || prev.uid,
+                        pass: parsed.pass || prev.pass,
+                        twoFa: parsed.twoFa || prev.twoFa,
+                        email: parsed.email || prev.email,
+                        emailPass: parsed.emailPass || prev.emailPass,
+                      }));
+                    } else {
+                      setModalForm({ ...modalForm, uid: val });
+                    }
+                  }}
                   className={`w-full px-3 py-2 border rounded-lg font-mono focus:ring-2 focus:outline-hidden ${
                     duplicateViaInModal
-                      ? 'border-amber-500 bg-amber-50/50 focus:ring-amber-500'
+                      ? 'border-emerald-500 bg-emerald-50/40 focus:ring-emerald-500'
                       : 'border-slate-300 focus:ring-indigo-500'
                   }`}
                 />
                 {duplicateViaInModal && (
-                  <div className="mt-1.5 p-2.5 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 text-xs flex items-start space-x-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
-                    <div>
-                      <span className="font-bold block">⚠️ Cảnh báo: UID đã tồn tại trong hệ thống!</span>
-                      <span className="text-[11px] text-amber-800 block mt-0.5">
-                        Nick này đang được quản lý bởi: <strong>{duplicateViaInModal.staffName}</strong> (Trạng thái: {duplicateViaInModal.status || 'Live'}). Hãy kiểm tra kỹ tránh tạo trùng.
-                      </span>
+                  <div className="mt-1.5 p-2.5 bg-emerald-50 border border-emerald-300 rounded-lg text-emerald-950 text-xs flex items-start justify-between gap-2">
+                    <div className="flex items-start space-x-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block">
+                          ✓ UID đã có trong hệ thống ({duplicateViaInModal.staffName}) — Chế độ Bổ Sung Thông Tin!
+                        </span>
+                        <span className="text-[11px] text-emerald-800 block mt-0.5">
+                          Hiện có: {duplicateViaInModal.pass ? '✓ Pass' : '⚪ Chưa Pass'} •{' '}
+                          {duplicateViaInModal.twoFa ? '✓ 2FA' : '⚪ Chưa 2FA'} •{' '}
+                          {duplicateViaInModal.email || parseFullVia(duplicateViaInModal.rawFullVia)?.email
+                            ? '✓ Mail'
+                            : '⚪ Chưa Mail'}. Khi lưu sẽ tự động gộp bổ sung vào UID này.
+                        </span>
+                      </div>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenEditModal(duplicateViaInModal)}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] shrink-0 cursor-pointer shadow-2xs"
+                    >
+                      Nạp dữ liệu cũ
+                    </button>
                   </div>
                 )}
+              </div>
+
+              {/* Ô Dán Nhanh Bổ Sung: 2FA | Mail | Pass */}
+              <div className="p-3 rounded-xl bg-emerald-50/80 border border-emerald-300 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>⚡ Dán nhanh bổ sung: 2FA | Mail | Pass (Tự tách thông minh)</span>
+                  </label>
+                </div>
+                <input
+                  type="text"
+                  value={modalForm.quickPaste}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    const parsed = parseSupplementalViaInput(raw, modalForm.uid);
+                    setModalForm((prev) => ({
+                      ...prev,
+                      quickPaste: raw,
+                      uid: parsed.uid || prev.uid,
+                      pass: parsed.pass || prev.pass,
+                      twoFa: parsed.twoFa || prev.twoFa,
+                      email: parsed.email || prev.email,
+                      emailPass: parsed.emailPass || prev.emailPass,
+                    }));
+                  }}
+                  placeholder="Dán: 2FA|Mail|Pass hoặc Pass|2FA|Mail|PassMail hoặc UID|Pass|2FA|Mail..."
+                  className="w-full px-3 py-1.5 bg-white border border-emerald-300 rounded-lg font-mono text-xs text-slate-800 focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                />
+                <p className="text-[10px] text-emerald-800">
+                  💡 Hỗ trợ mọi định dạng: <code>2FA|Mail|Pass</code>, <code>Pass|2FA|Mail|PassMail</code>, hoặc <code>UID|Pass|2FA|Mail|PassMail</code>.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="font-bold text-slate-700">
-                      Mật Khẩu (PASS) <span className="text-red-500">*</span>:
+                      Mật Khẩu (PASS):
                     </label>
                     <button
                       type="button"
@@ -3336,7 +3543,6 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   </div>
                   <input
                     type={isModalPassVisible ? 'text' : 'password'}
-                    required
                     placeholder="Nhập mật khẩu..."
                     value={modalForm.pass}
                     onChange={(e) => setModalForm({ ...modalForm, pass: e.target.value })}
@@ -3363,6 +3569,32 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     placeholder="VD: JBSWY3DPEHPK3PXP"
                     value={modalForm.twoFa}
                     onChange={(e) => setModalForm({ ...modalForm, twoFa: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Mail khôi phục (Email):
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="VD: example@hotmail.com"
+                    value={modalForm.email}
+                    onChange={(e) => setModalForm({ ...modalForm, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">
+                    Pass Mail / Thông tin thêm:
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Mật khẩu mail..."
+                    value={modalForm.emailPass}
+                    onChange={(e) => setModalForm({ ...modalForm, emailPass: e.target.value })}
                     className="w-full px-3 py-2 border border-slate-300 rounded-lg font-mono focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>

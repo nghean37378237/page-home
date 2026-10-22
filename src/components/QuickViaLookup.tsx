@@ -18,7 +18,7 @@ import {
   X,
 } from 'lucide-react';
 import { PageRecord, AppUser } from '../types';
-import { parseFullVia } from '../utils/helpers';
+import { parseFullVia, parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
 
 interface QuickViaLookupProps {
   allRecords: PageRecord[];
@@ -38,6 +38,10 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
   const [showPassword, setShowPassword] = useState<boolean>(false);
   const [isEditingAdmin, setIsEditingAdmin] = useState<boolean>(false);
   const [adminFullViaDraft, setAdminFullViaDraft] = useState<string>('');
+  const [suppPass, setSuppPass] = useState<string>('');
+  const [suppTwoFa, setSuppTwoFa] = useState<string>('');
+  const [suppEmail, setSuppEmail] = useState<string>('');
+  const [suppEmailPass, setSuppEmailPass] = useState<string>('');
   const [isExpanded, setIsExpanded] = useState<boolean>(false);
 
   // Group all records by viaUid to find all unique Vias in company
@@ -121,9 +125,27 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
     }
   };
 
+  const handleOpenSupplementEditor = () => {
+    if (!foundVia) return;
+    const p = parseFullVia(foundVia.fullVia);
+    setSuppPass(p?.pass || '');
+    setSuppTwoFa(p?.twoFa || '');
+    setSuppEmail(p?.email || '');
+    setSuppEmailPass(p?.emailPass || '');
+    setAdminFullViaDraft('');
+    setIsEditingAdmin(true);
+  };
+
   const handleSaveAdminFullVia = () => {
     if (!foundVia || !onUpdateFullViaForAll) return;
-    onUpdateFullViaForAll(foundVia.viaUid, adminFullViaDraft.trim());
+    const built = buildFullViaString(
+      foundVia.viaUid,
+      suppPass,
+      suppTwoFa,
+      suppEmail,
+      suppEmailPass
+    );
+    onUpdateFullViaForAll(foundVia.viaUid, built);
     setIsEditingAdmin(false);
   };
 
@@ -272,31 +294,84 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
               </div>
 
               {/* Full Via credentials display / edit */}
-              {currentUser.role === 'admin' && isEditingAdmin ? (
-                <div className="space-y-2 bg-emerald-900/40 p-2.5 rounded-lg border border-emerald-500/40">
-                  <label className="block text-[11px] font-bold text-emerald-200">
-                    Chỉnh sửa chuỗi Full Via (Định dạng UID|PASS|2FA):
-                  </label>
+              {isEditingAdmin ? (
+                <div className="space-y-2.5 bg-emerald-900/50 p-3 rounded-xl border border-emerald-400/60">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-emerald-200 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-emerald-300" />
+                      <span>🔑 Bổ sung thêm thông tin Via: 2FA | Mail | Pass (UID: {foundVia.viaUid})</span>
+                    </label>
+                  </div>
                   <input
                     type="text"
                     value={adminFullViaDraft}
-                    onChange={(e) => setAdminFullViaDraft(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-black/50 border border-emerald-400 rounded font-mono text-xs text-white"
-                    placeholder="Ví dụ: 100058675316160|MatKhau123@|JBSWY3DPEHPK3PXP"
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      setAdminFullViaDraft(raw);
+                      const p = parseSupplementalViaInput(raw, foundVia.viaUid);
+                      if (p.pass) setSuppPass(p.pass);
+                      if (p.twoFa) setSuppTwoFa(p.twoFa);
+                      if (p.email) setSuppEmail(p.email);
+                      if (p.emailPass) setSuppEmailPass(p.emailPass);
+                    }}
+                    className="w-full px-2.5 py-1.5 bg-black/50 border border-emerald-400 rounded-lg font-mono text-xs text-white placeholder-emerald-300/50"
+                    placeholder="⚡ Dán nhanh: 2FA|Mail|Pass hoặc Pass|2FA|Mail|PassMail..."
                   />
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <div>
+                      <span className="text-[10px] text-emerald-300 font-bold block mb-0.5">Mật khẩu (Pass)</span>
+                      <input
+                        type="text"
+                        value={suppPass}
+                        onChange={(e) => setSuppPass(e.target.value)}
+                        placeholder="Pass Via..."
+                        className="w-full px-2 py-1 bg-black/40 border border-emerald-600 rounded font-mono text-xs text-white"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-emerald-300 font-bold block mb-0.5">Mã 2FA (Key)</span>
+                      <input
+                        type="text"
+                        value={suppTwoFa}
+                        onChange={(e) => setSuppTwoFa(e.target.value)}
+                        placeholder="2FA Key..."
+                        className="w-full px-2 py-1 bg-black/40 border border-emerald-600 rounded font-mono text-xs text-amber-300"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-emerald-300 font-bold block mb-0.5">Mail khôi phục</span>
+                      <input
+                        type="text"
+                        value={suppEmail}
+                        onChange={(e) => setSuppEmail(e.target.value)}
+                        placeholder="example@mail.com"
+                        className="w-full px-2 py-1 bg-black/40 border border-emerald-600 rounded font-mono text-xs text-sky-200"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[10px] text-emerald-300 font-bold block mb-0.5">Pass Mail / Thêm</span>
+                      <input
+                        type="text"
+                        value={suppEmailPass}
+                        onChange={(e) => setSuppEmailPass(e.target.value)}
+                        placeholder="Pass Mail..."
+                        className="w-full px-2 py-1 bg-black/40 border border-emerald-600 rounded font-mono text-xs text-sky-200"
+                      />
+                    </div>
+                  </div>
                   <div className="flex items-center space-x-2 pt-1">
                     <button
                       type="button"
                       onClick={handleSaveAdminFullVia}
-                      className="px-3 py-1 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-bold rounded text-xs flex items-center space-x-1"
+                      className="px-3 py-1.5 bg-emerald-400 hover:bg-emerald-300 text-emerald-950 font-black rounded-lg text-xs flex items-center space-x-1 cursor-pointer"
                     >
                       <Save className="w-3.5 h-3.5" />
-                      <span>Lưu Full Via</span>
+                      <span>Lưu Bổ Sung Via</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setIsEditingAdmin(false)}
-                      className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-white rounded text-xs"
+                      className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs cursor-pointer"
                     >
                       Hủy
                     </button>
@@ -304,17 +379,17 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
                 </div>
               ) : foundVia.fullVia ? (
                 <div className="space-y-2.5">
-                  {/* Entire raw UID|PASS|2FA string with 1-click copy */}
+                  {/* Entire raw UID|PASS|2FA|MAIL string with 1-click copy */}
                   <div className="bg-black/50 border border-emerald-500/40 rounded-lg p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="flex-1 overflow-hidden font-mono text-xs">
                       <span className="text-emerald-400 font-bold block text-[10px] uppercase tracking-wider mb-0.5">
-                        Chuỗi Full Via Đăng Nhập (UID|PASS|2FA):
+                        Chuỗi Full Via Đăng Nhập (UID|PASS|2FA|MAIL...):
                       </span>
                       <span className="text-white select-all break-all font-semibold">
                         {showPassword
                           ? foundVia.fullVia
                           : parsed
-                          ? `${parsed.uid}|••••••••••••|${parsed.twoFa || '••••'}`
+                          ? `${parsed.uid}|••••••••••••|${parsed.twoFa || '••••'}${parsed.email ? `|${parsed.email}` : ''}`
                           : foundVia.fullVia}
                       </span>
                     </div>
@@ -352,24 +427,22 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
                         )}
                       </button>
 
-                      {currentUser.role === 'admin' && (
+                      {onUpdateFullViaForAll && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setAdminFullViaDraft(foundVia.fullVia);
-                            setIsEditingAdmin(true);
-                          }}
-                          className="p-1.5 bg-emerald-800/60 hover:bg-emerald-700 text-emerald-200 rounded border border-emerald-600/40"
-                          title="Sửa thông tin Full Via"
+                          onClick={handleOpenSupplementEditor}
+                          className="px-2.5 py-1.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold rounded text-xs flex items-center space-x-1 cursor-pointer"
+                          title="Bổ sung thêm 2FA | Mail | Pass cho UID này"
                         >
                           <Edit2 className="w-3.5 h-3.5" />
+                          <span>+ Bổ sung 2FA/Mail/Pass</span>
                         </button>
                       )}
                     </div>
                   </div>
 
-                  {/* Split elements: Password & 2FA pills */}
-                  {parsed && (parsed.pass || parsed.twoFa) && (
+                  {/* Split elements: Password, 2FA, Mail & PassMail pills */}
+                  {parsed && (parsed.pass || parsed.twoFa || parsed.email) && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
                       {/* Password pill */}
                       <div className="bg-emerald-900/40 border border-emerald-600/40 rounded-lg px-2.5 py-1.5 flex items-center justify-between">
@@ -378,21 +451,23 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
                             MẬT KHẨU (PASS):
                           </span>
                           <span className="font-mono text-xs text-white font-semibold">
-                            {showPassword ? parsed.pass : '••••••••••••'}
+                            {parsed.pass ? (showPassword ? parsed.pass : '••••••••••••') : '(Chưa có)'}
                           </span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleCopy(parsed.pass, 'pass')}
-                          className={`px-2 py-1 rounded text-[11px] font-medium border flex items-center space-x-1 ${
-                            copiedKey === 'pass'
-                              ? 'bg-emerald-400 text-emerald-950 border-white font-bold'
-                              : 'bg-emerald-800 hover:bg-emerald-700 text-white border-emerald-600'
-                          }`}
-                        >
-                          {copiedKey === 'pass' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                          <span>{copiedKey === 'pass' ? 'Đã chép' : 'Chép Pass'}</span>
-                        </button>
+                        {parsed.pass && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(parsed.pass, 'pass')}
+                            className={`px-2 py-1 rounded text-[11px] font-medium border flex items-center space-x-1 ${
+                              copiedKey === 'pass'
+                                ? 'bg-emerald-400 text-emerald-950 border-white font-bold'
+                                : 'bg-emerald-800 hover:bg-emerald-700 text-white border-emerald-600'
+                            }`}
+                          >
+                            {copiedKey === 'pass' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                            <span>{copiedKey === 'pass' ? 'Đã chép' : 'Chép Pass'}</span>
+                          </button>
+                        )}
                       </div>
 
                       {/* 2FA Key pill */}
@@ -402,7 +477,7 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
                             MÃ BẢO MẬT 2FA (KEY):
                           </span>
                           <span className="font-mono text-xs text-amber-300 font-bold tracking-wider">
-                            {parsed.twoFa || '(Không có)'}
+                            {parsed.twoFa || '(Chưa có)'}
                           </span>
                         </div>
                         {parsed.twoFa && (
@@ -420,6 +495,43 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
                           </button>
                         )}
                       </div>
+
+                      {/* Email & EmailPass pill if present */}
+                      {(parsed.email || parsed.emailPass) && (
+                        <div className="sm:col-span-2 bg-emerald-900/40 border border-emerald-600/40 rounded-lg px-2.5 py-1.5 flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-[10px] text-emerald-300 font-bold block">
+                              MAIL KHÔI PHỤC / PASS MAIL:
+                            </span>
+                            <span className="font-mono text-xs text-sky-200 font-semibold break-all">
+                              {parsed.email || '(Chưa rõ mail)'}
+                              {parsed.emailPass ? ` | PassMail: ${showPassword ? parsed.emailPass : '••••••'}` : ''}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {parsed.email && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(parsed.email!, 'mail')}
+                                className="px-2 py-1 rounded text-[11px] font-medium border bg-emerald-800 hover:bg-emerald-700 text-white border-emerald-600 flex items-center gap-1"
+                              >
+                                {copiedKey === 'mail' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                <span>{copiedKey === 'mail' ? 'Đã chép' : 'Chép Mail'}</span>
+                              </button>
+                            )}
+                            {parsed.emailPass && (
+                              <button
+                                type="button"
+                                onClick={() => handleCopy(parsed.emailPass!, 'mailpass')}
+                                className="px-2 py-1 rounded text-[11px] font-medium border bg-emerald-800 hover:bg-emerald-700 text-white border-emerald-600 flex items-center gap-1"
+                              >
+                                {copiedKey === 'mailpass' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                                <span>{copiedKey === 'mailpass' ? 'Đã chép' : 'Pass Mail'}</span>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -440,18 +552,15 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
                 /* Full via not set yet */
                 <div className="bg-emerald-900/30 p-2.5 rounded-lg border border-emerald-600/30 flex items-center justify-between">
                   <span className="text-xs text-emerald-200">
-                    Nick Via này chưa được nhập thông tin Full Via (UID|PASS|2FA).
+                    Nick Via này đã có UID nhưng chưa có thông tin bổ sung (2FA | Mail | Pass).
                   </span>
-                  {currentUser.role === 'admin' && (
+                  {onUpdateFullViaForAll && (
                     <button
                       type="button"
-                      onClick={() => {
-                        setAdminFullViaDraft(`${foundVia.viaUid}|`);
-                        setIsEditingAdmin(true);
-                      }}
-                      className="px-2.5 py-1 bg-emerald-500 text-emerald-950 font-bold rounded text-xs hover:bg-emerald-400"
+                      onClick={handleOpenSupplementEditor}
+                      className="px-3 py-1.5 bg-amber-400 text-slate-950 font-extrabold rounded-lg text-xs hover:bg-amber-300 cursor-pointer"
                     >
-                      + Nhập Full Via cho Nick này
+                      + Bổ sung 2FA | Mail | Pass cho UID này
                     </button>
                   )}
                 </div>

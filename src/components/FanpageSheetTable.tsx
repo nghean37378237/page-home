@@ -71,6 +71,9 @@ import {
   getPostingMethodBadgeStyle,
   getInteractionBadgeStyle,
   getCleanBmName,
+  parseFullVia,
+  parseSupplementalViaInput,
+  buildFullViaString,
 } from '../utils/helpers';
 
 export interface ViaTheme {
@@ -428,6 +431,14 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   // State chỉnh sửa BM thủ công cho từng dòng Page
   const [editingBmRecordId, setEditingBmRecordId] = useState<string | null>(null);
   const [editingBmValue, setEditingBmValue] = useState<string>('');
+
+  // State bổ sung thông tin Via (2FA | Mail | Pass) trực tiếp tại cột Via
+  const [supplementingViaRecordId, setSupplementingViaRecordId] = useState<string | null>(null);
+  const [suppQuickPaste, setSuppQuickPaste] = useState('');
+  const [suppPass, setSuppPass] = useState('');
+  const [suppTwoFa, setSuppTwoFa] = useState('');
+  const [suppEmail, setSuppEmail] = useState('');
+  const [suppEmailPass, setSuppEmailPass] = useState('');
 
   // 1. Thu thập danh sách tất cả BM hiện tại để làm list lựa chọn (loại bỏ phần sau dấu |)
   const existingBmList = useMemo(() => {
@@ -2015,7 +2026,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                   </div>
                                 )}
 
-                                {/* UID input & Copy button */}
+                                {/* UID input & Copy / Bổ sung 2FA|Mail|Pass button */}
                                 <div className="flex items-center space-x-1">
                                   <input
                                     type="text"
@@ -2028,7 +2039,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                         mergeViaCells && isGroupedVia
                                       )
                                     }
-                                    className={`w-full min-w-[90px] bg-white/95 hover:bg-white focus:bg-white border rounded px-1.5 py-0.5 font-mono focus:outline-hidden text-xs font-bold ${
+                                    className={`w-full min-w-[85px] bg-white/95 hover:bg-white focus:bg-white border rounded px-1.5 py-0.5 font-mono focus:outline-hidden text-xs font-bold ${
                                       isThisViaError
                                         ? 'border-rose-400 focus:border-rose-600 text-rose-950 ring-1 ring-rose-300'
                                         : isThisViaNewTransfer
@@ -2060,7 +2071,120 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                       <Copy className="w-3 h-3 text-slate-500" />
                                     )}
                                   </button>
+                                  {record.viaUid?.trim() && onUpdateFullViaForAll && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (supplementingViaRecordId === record.id) {
+                                          setSupplementingViaRecordId(null);
+                                          return;
+                                        }
+                                        const cleanU = record.viaUid.trim();
+                                        const matchedVia = (existingVias || []).find(
+                                          (v) => v.uid?.trim().toLowerCase() === cleanU.toLowerCase()
+                                        );
+                                        const p = parseFullVia(matchedVia?.rawFullVia || record.fullVia);
+                                        setSuppPass(matchedVia?.pass || p?.pass || '');
+                                        setSuppTwoFa(matchedVia?.twoFa || p?.twoFa || '');
+                                        setSuppEmail(matchedVia?.email || p?.email || '');
+                                        setSuppEmailPass(matchedVia?.emailPass || p?.emailPass || '');
+                                        setSuppQuickPaste('');
+                                        setSupplementingViaRecordId(record.id);
+                                      }}
+                                      className={`px-1.5 py-0.5 rounded shrink-0 border transition-all text-[9.5px] font-sans font-extrabold cursor-pointer ${
+                                        supplementingViaRecordId === record.id
+                                          ? 'bg-emerald-700 text-white border-emerald-800'
+                                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300'
+                                      }`}
+                                      title="Bổ sung thêm thông tin Via: 2FA | Mail | Pass cho UID này"
+                                    >
+                                      +2FA/Mail
+                                    </button>
+                                  )}
                                 </div>
+
+                                {/* Khung bổ sung nhanh 2FA | Mail | Pass khi bấm +2FA/Mail */}
+                                {supplementingViaRecordId === record.id && record.viaUid?.trim() && (
+                                  <div className="p-2 rounded-lg bg-emerald-50/95 border border-emerald-400 space-y-1.5 font-sans shadow-sm">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] font-black text-emerald-950">
+                                        🔑 Bổ sung: 2FA | Mail | Pass
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => setSupplementingViaRecordId(null)}
+                                        className="text-slate-400 hover:text-slate-700"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                    <input
+                                      type="text"
+                                      value={suppQuickPaste}
+                                      onChange={(e) => {
+                                        const raw = e.target.value;
+                                        setSuppQuickPaste(raw);
+                                        const p = parseSupplementalViaInput(raw, record.viaUid);
+                                        if (p.pass) setSuppPass(p.pass);
+                                        if (p.twoFa) setSuppTwoFa(p.twoFa);
+                                        if (p.email) setSuppEmail(p.email);
+                                        if (p.emailPass) setSuppEmailPass(p.emailPass);
+                                      }}
+                                      placeholder="⚡ Dán: 2FA|Mail|Pass..."
+                                      className="w-full px-1.5 py-1 bg-white border border-emerald-300 rounded font-mono text-[10px] text-slate-800"
+                                    />
+                                    <div className="grid grid-cols-2 gap-1">
+                                      <input
+                                        type="text"
+                                        value={suppPass}
+                                        onChange={(e) => setSuppPass(e.target.value)}
+                                        placeholder="Pass Via"
+                                        className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={suppTwoFa}
+                                        onChange={(e) => setSuppTwoFa(e.target.value)}
+                                        placeholder="Mã 2FA"
+                                        className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={suppEmail}
+                                        onChange={(e) => setSuppEmail(e.target.value)}
+                                        placeholder="Mail"
+                                        className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]"
+                                      />
+                                      <input
+                                        type="text"
+                                        value={suppEmailPass}
+                                        onChange={(e) => setSuppEmailPass(e.target.value)}
+                                        placeholder="Pass Mail"
+                                        className="px-1.5 py-0.5 bg-white border border-slate-300 rounded font-mono text-[10px]"
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (!onUpdateFullViaForAll) return;
+                                        const built = buildFullViaString(
+                                          record.viaUid.trim(),
+                                          suppPass,
+                                          suppTwoFa,
+                                          suppEmail,
+                                          suppEmailPass
+                                        );
+                                        onUpdateFullViaForAll(record.viaUid.trim(), built);
+                                        setSupplementingViaRecordId(null);
+                                        setCopyToast(`✅ Đã lưu bổ sung 2FA | Mail | Pass cho Via ${record.viaUid}!`);
+                                        setTimeout(() => setCopyToast(null), 2500);
+                                      }}
+                                      className="w-full py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded text-[10px] cursor-pointer shadow-2xs"
+                                    >
+                                      ✓ Lưu bổ sung Via
+                                    </button>
+                                  </div>
+                                )}
 
                                 {/* Badges and Controls for this Via */}
                                 <div className="flex items-center justify-between flex-wrap gap-1">

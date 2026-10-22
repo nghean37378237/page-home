@@ -57,7 +57,9 @@ import {
   EyeOff,
   RotateCcw,
   CheckSquare,
+  Globe,
 } from 'lucide-react';
+import { MgidDashboardPanel } from './MgidDashboardPanel';
 
 interface RevenueManagementTableProps {
   finances: MonthlyFinanceRecord[];
@@ -145,8 +147,11 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     return currentMonthKey;
   });
 
-  // Active section tab: 'overview' | 'revenue' | 'expenses' | 'salaries' | 'all_months'
-  const [activeSection, setActiveSection] = useState<'overview' | 'revenue' | 'expenses' | 'salaries' | 'all_months'>('overview');
+  // Active section tab: 'overview' | 'mgid_dashboard' | 'revenue' | 'expenses' | 'salaries' | 'all_months'
+  const [activeSection, setActiveSection] = useState<'overview' | 'mgid_dashboard' | 'revenue' | 'expenses' | 'salaries' | 'all_months'>('overview');
+
+  // Chế độ ẩn/làm mờ số tiền bảo mật khi Admin ngồi cạnh người khác
+  const [isPrivacyMasked, setIsPrivacyMasked] = useState<boolean>(false);
 
   // Đang lưu dữ liệu
   const [isSaving, setIsSaving] = useState(false);
@@ -2101,6 +2106,40 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               </button>
             )}
 
+            {/* Nút Báo Cáo Doanh Thu MGID Publisher Dashboard (https://pub.mgid.com/dashboard) - Chỉ Admin */}
+            <button
+              type="button"
+              id="btn-goto-mgid-dashboard"
+              onClick={() => setActiveSection('mgid_dashboard')}
+              className={`inline-flex items-center space-x-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition-all shadow-2xs cursor-pointer ${
+                activeSection === 'mgid_dashboard'
+                  ? 'bg-gradient-to-r from-rose-600 to-orange-600 text-white shadow-md ring-2 ring-rose-300'
+                  : 'bg-slate-900 hover:bg-slate-800 text-white border border-slate-700'
+              }`}
+              title="Mở Báo Cáo Doanh Thu MGID Publisher Dashboard (pub.mgid.com/dashboard) - Chỉ Admin Xem Duy Nhất"
+            >
+              <Globe className="w-4 h-4 text-rose-400" />
+              <span>🌐 Báo Cáo Doanh Thu MGID</span>
+              <span className="px-1.5 py-0.2 bg-rose-500 text-white rounded-full text-[10px] font-mono font-bold">
+                PUB
+              </span>
+            </button>
+
+            {/* Nút Ẩn/Hiện Số Tiền (Privacy Shield) */}
+            <button
+              type="button"
+              onClick={() => setIsPrivacyMasked((prev) => !prev)}
+              className={`inline-flex items-center space-x-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-2xs cursor-pointer border ${
+                isPrivacyMasked
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-black'
+                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-300'
+              }`}
+              title="Ẩn hoặc hiện số tiền nhạy cảm trên màn hình"
+            >
+              {isPrivacyMasked ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+              <span>{isPrivacyMasked ? 'Hiện Số Tiền' : 'Ẩn Số Tiền'}</span>
+            </button>
+
             {/* Nút Thống Kê & So Sánh Tăng Giảm Doanh Thu Các Tháng */}
             <button
               type="button"
@@ -2404,6 +2443,22 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
 
         <button
           type="button"
+          onClick={() => setActiveSection('mgid_dashboard')}
+          className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
+            activeSection === 'mgid_dashboard'
+              ? 'bg-gradient-to-r from-rose-600 to-orange-600 text-white shadow-xs font-black'
+              : 'text-rose-900 bg-rose-50/80 hover:bg-rose-100 border border-rose-200/80 font-extrabold'
+          }`}
+        >
+          <Globe className="w-4 h-4 text-rose-500" />
+          <span>🌐 Báo Cáo Doanh Thu MGID (pub.mgid.com)</span>
+          <span className="px-1.5 py-0.2 bg-rose-600/20 rounded-full text-[10px]">
+            {activeMonthRecord.mgidReport?.dailyStats?.length || 0} ngày
+          </span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveSection('all_months')}
           className={`px-3.5 py-2 rounded-xl transition-all cursor-pointer flex items-center space-x-1.5 ${
             activeSection === 'all_months'
@@ -2420,6 +2475,18 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       </div>
 
       {/* 4. NỘI DUNG CHI TIẾT TỪNG TAB */}
+
+      {/* TAB MỚI: BÁO CÁO DOANH THU MGID PUBLISHER DASHBOARD (CHỈ ADMIN XEM DUY NHẤT) */}
+      {activeSection === 'mgid_dashboard' && (
+        <MgidDashboardPanel
+          currentUser={currentUser}
+          activeMonthRecord={activeMonthRecord}
+          selectedMonthKey={selectedMonthKey}
+          isPrivacyMasked={isPrivacyMasked}
+          onTogglePrivacyMask={() => setIsPrivacyMasked((prev) => !prev)}
+          onSaveMonthlyFinance={onSaveMonthlyFinance}
+        />
+      )}
 
       {/* TAB 1: TỔNG KẾT THÁNG (OVERVIEW) */}
       {activeSection === 'overview' && (

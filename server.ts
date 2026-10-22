@@ -15,12 +15,52 @@ import {
   findExistingDuplicatePostOnWp,
 } from './src/server/wpPublishService';
 import { extractImagesFromWebUrl } from './src/server/webImageExtractor';
+import { fetchMgidPublisherDashboard } from './src/server/mgidService';
 
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json({ limit: '25mb' }));
+
+  // API Route: Báo cáo Doanh Thu MGID Publisher Dashboard (https://pub.mgid.com/dashboard) - KHÓA ĐỘC QUYỀN CHỈ ADMIN XEM DUY NHẤT
+  const handleMgidStatsRequest = async (req: express.Request, res: express.Response) => {
+    try {
+      const adminRoleHeader = String(req.headers['x-admin-role'] || req.query.role || '').toLowerCase();
+      if (adminRoleHeader !== 'admin') {
+        res.status(403).json({
+          ok: false,
+          error: 'Khu vực bảo mật: Chỉ Quản Trị Viên (Admin) duy nhất mới có quyền truy cập Báo Cáo Doanh Thu MGID.',
+        });
+        return;
+      }
+
+      const source = req.method === 'POST' ? req.body || {} : req.query || {};
+      const payload = await fetchMgidPublisherDashboard({
+        apiToken: source.apiToken ? String(source.apiToken) : undefined,
+        clientId: source.clientId ? String(source.clientId) : undefined,
+        email: source.email ? String(source.email) : undefined,
+        password: source.password ? String(source.password) : undefined,
+        domain: source.domain ? String(source.domain) : undefined,
+        dateInterval: source.dateInterval ? (String(source.dateInterval) as any) : 'thisMonth',
+        dateFrom: source.dateFrom ? String(source.dateFrom) : undefined,
+        dateTo: source.dateTo ? String(source.dateTo) : undefined,
+        usdToVndRate: source.usdToVndRate ? Number(source.usdToVndRate) : undefined,
+      });
+
+      res.json(payload);
+    } catch (error: any) {
+      console.error('[/api/mgid-stats] Error:', error);
+      res.status(500).json({
+        ok: false,
+        error: error?.message || 'Lỗi khi kết nối tới MGID Publisher API',
+      });
+    }
+  };
+
+  app.get('/api/mgid-stats', handleMgidStatsRequest);
+  app.post('/api/mgid-stats', handleMgidStatsRequest);
+
 
   // API Route: Tự động lấy ảnh & tiêu đề từ bất kỳ link bài viết web nào để ghép ảnh trong Bảng 9
   app.post('/api/extract-web-images', async (req, res) => {

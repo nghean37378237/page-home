@@ -13,9 +13,10 @@ import {
   Check,
   Users,
   Archive,
+  KeyRound,
 } from 'lucide-react';
 import { PageRecord, FullViaItem, AppUser, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
-import { getCleanBmName } from '../utils/helpers';
+import { getCleanBmName, parseFullVia, parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
 
 export interface TransferPageViaParams {
   pageIds: string[];
@@ -86,6 +87,13 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
   const [selectedTargetViaUid, setSelectedTargetViaUid] = useState<string>('');
   const [customTargetViaUid, setCustomTargetViaUid] = useState<string>('');
   const [targetViaSearchQuery, setTargetViaSearchQuery] = useState<string>('');
+
+  // Các trường bổ sung thêm thông tin cho Via đích (2FA | Mail | Pass | PassMail)
+  const [suppPass, setSuppPass] = useState<string>('');
+  const [suppTwoFa, setSuppTwoFa] = useState<string>('');
+  const [suppEmail, setSuppEmail] = useState<string>('');
+  const [suppEmailPass, setSuppEmailPass] = useState<string>('');
+  const [quickPasteSupp, setQuickPasteSupp] = useState<string>('');
 
   // Target Staff option
   const [staffAssignmentMode, setStaffAssignmentMode] = useState<'target_via_owner' | 'keep_current' | 'custom'>('target_via_owner');
@@ -455,18 +463,63 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
     resolvedTargetViaInfo,
   ]);
 
-  // Target Full Via if available
+  // Khi đổi Via đích được chọn, tự động nạp thông tin hiện có của Via đó vào các ô bổ sung
+  useEffect(() => {
+    if (!resolvedTargetViaUid) {
+      setSuppPass('');
+      setSuppTwoFa('');
+      setSuppEmail('');
+      setSuppEmailPass('');
+      setQuickPasteSupp('');
+      return;
+    }
+    const vItem = resolvedTargetViaInfo?.fullViaItem;
+    const parsed = parseFullVia(vItem?.rawFullVia);
+    setSuppPass(vItem?.pass || parsed?.pass || '');
+    setSuppTwoFa(vItem?.twoFa || parsed?.twoFa || '');
+    setSuppEmail(vItem?.email || parsed?.email || '');
+    setSuppEmailPass(vItem?.emailPass || parsed?.emailPass || '');
+    setQuickPasteSupp('');
+  }, [resolvedTargetViaUid, resolvedTargetViaInfo]);
+
+  const handleQuickPasteSuppChange = (rawVal: string) => {
+    setQuickPasteSupp(rawVal);
+    if (!rawVal.trim()) return;
+    const parsed = parseSupplementalViaInput(rawVal, resolvedTargetViaUid);
+    if (targetViaMode === 'new' && parsed.uid && parsed.uid !== customTargetViaUid.trim()) {
+      setCustomTargetViaUid(parsed.uid);
+    }
+    if (parsed.pass) setSuppPass(parsed.pass);
+    if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
+    if (parsed.email) setSuppEmail(parsed.email);
+    if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
+  };
+
+  // Target Full Via if available (including newly supplemented Pass / 2FA / Mail / PassMail)
   const resolvedTargetFullVia = useMemo(() => {
+    const cleanUid = (resolvedTargetViaUid || '').split('|')[0].trim();
+    if (!cleanUid) return undefined;
+    if (suppPass.trim() || suppTwoFa.trim() || suppEmail.trim() || suppEmailPass.trim()) {
+      return buildFullViaString({
+        uid: cleanUid,
+        pass: suppPass,
+        twoFa: suppTwoFa,
+        email: suppEmail,
+        emailPass: suppEmailPass,
+      });
+    }
     if (!resolvedTargetViaInfo) return undefined;
     if (resolvedTargetViaInfo.fullViaItem?.rawFullVia) {
       return resolvedTargetViaInfo.fullViaItem.rawFullVia;
     }
     if (resolvedTargetViaInfo.fullViaItem) {
-      const { uid, pass, twoFa } = resolvedTargetViaInfo.fullViaItem;
-      if (pass || twoFa) return `${uid}|${pass || ''}|${twoFa || ''}`;
+      const { uid, pass, twoFa, email, emailPass } = resolvedTargetViaInfo.fullViaItem;
+      if (pass || twoFa || email || emailPass) {
+        return buildFullViaString({ uid, pass, twoFa, email, emailPass });
+      }
     }
     return undefined;
-  }, [resolvedTargetViaInfo]);
+  }, [resolvedTargetViaUid, resolvedTargetViaInfo, suppPass, suppTwoFa, suppEmail, suppEmailPass]);
 
   // Filtered page list for selection dropdown / search
   const selectablePages = useMemo(() => {
@@ -533,6 +586,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
           pageIds: pagesOfSelectedViasForStaffTransfer.map((p) => p.id),
           targetViaUid: selectedViaUidsForStaffTransfer[0],
           targetStaffName: targetStaffForViaTransfer.trim(),
+          targetFullVia: selectedViaUidsForStaffTransfer.length === 1 ? resolvedTargetFullVia : undefined,
           appendHistoryNote,
           historyNoteText: historyNoteText.trim(),
           transferViaUidsToStaff: selectedViaUidsForStaffTransfer,
@@ -941,6 +995,68 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* PHẦN BỔ SUNG THÊM THÔNG TIN VIA (2FA | MAIL | PASS...) NẾU CHỌN 1 VIA TRONG MODE 1 */}
+              {selectedViaUidsForStaffTransfer.length === 1 && resolvedTargetViaUid && (
+                <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 space-y-2 text-xs">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <div className="flex items-center space-x-1.5 font-extrabold text-amber-950">
+                      <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                      <span>
+                        Bổ sung thêm thông tin cho Via ({resolvedTargetViaUid}): 2FA | Mail | Pass...
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1 text-[10px] font-bold">
+                      <span className={`px-1.5 py-0.5 rounded border ${suppPass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                        {suppPass ? '✓ Có Pass' : 'Thiếu Pass'}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded border ${suppTwoFa ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                        {suppTwoFa ? '✓ Có 2FA' : 'Thiếu 2FA'}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded border ${suppEmail ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'}`}>
+                        {suppEmail ? '✓ Có Mail' : '+ Mail'}
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={quickPasteSupp}
+                    onChange={(e) => handleQuickPasteSuppChange(e.target.value)}
+                    placeholder="⚡ Dán nhanh: 2FA|Mail|Pass hoặc Pass|2FA|Mail|PassMail (tự động tách vào các ô dưới)..."
+                    className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-[11px] font-mono text-slate-900 focus:outline-hidden focus:border-amber-600"
+                  />
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <input
+                      type="text"
+                      value={suppPass}
+                      onChange={(e) => setSuppPass(e.target.value)}
+                      placeholder="Pass Via..."
+                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={suppTwoFa}
+                      onChange={(e) => setSuppTwoFa(e.target.value)}
+                      placeholder="Mã 2FA..."
+                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={suppEmail}
+                      onChange={(e) => setSuppEmail(e.target.value)}
+                      placeholder="Mail khôi phục..."
+                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={suppEmailPass}
+                      onChange={(e) => setSuppEmailPass(e.target.value)}
+                      placeholder="Pass Mail..."
+                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                    />
+                  </div>
+                </div>
+              )}
 
               {/* STEP 3: GHI CHÚ LỊCH SỬ BÀN GIAO */}
               <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200 text-xs space-y-2">
@@ -1413,13 +1529,87 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                     <input
                       type="text"
                       value={customTargetViaUid}
-                      onChange={(e) => setCustomTargetViaUid(e.target.value)}
-                      placeholder="Nhập UID Nick Via mới (VD: 100089283748291)..."
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val.includes('|')) {
+                          const parsed = parseSupplementalViaInput(val);
+                          setCustomTargetViaUid(parsed.uid || val.split('|')[0].trim());
+                          if (parsed.pass) setSuppPass(parsed.pass);
+                          if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
+                          if (parsed.email) setSuppEmail(parsed.email);
+                          if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
+                        } else {
+                          setCustomTargetViaUid(val);
+                        }
+                      }}
+                      placeholder="Nhập UID Nick Via mới hoặc dán UID|Pass|2FA|Mail|PassMail..."
                       className="w-full px-3 py-2 bg-slate-50 focus:bg-white border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600"
                     />
                     <p className="text-[11px] text-slate-500">
                       Nick Via mới sẽ được tạo trong hệ thống và nhận quyền quản lý Fanpage này.
                     </p>
+                  </div>
+                )}
+
+                {/* BỔ SUNG THÊM THÔNG TIN VIA (2FA | MAIL | PASS...) KHI CHỌN VIA HOẶC ĐÃ CÓ UID ĐÍCH */}
+                {resolvedTargetViaUid && (
+                  <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 space-y-2 text-xs">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <div className="flex items-center space-x-1.5 font-extrabold text-amber-950">
+                        <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                        <span>
+                          Bổ sung thêm thông tin Via đích ({resolvedTargetViaUid.split('|')[0].trim()}): 2FA | Mail | Pass...
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-1 text-[10px] font-bold">
+                        <span className={`px-1.5 py-0.5 rounded border ${suppPass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                          {suppPass ? '✓ Có Pass' : 'Thiếu Pass'}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded border ${suppTwoFa ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                          {suppTwoFa ? '✓ Có 2FA' : 'Thiếu 2FA'}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded border ${suppEmail ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'}`}>
+                          {suppEmail ? '✓ Có Mail' : '+ Mail'}
+                        </span>
+                      </div>
+                    </div>
+                    <input
+                      type="text"
+                      value={quickPasteSupp}
+                      onChange={(e) => handleQuickPasteSuppChange(e.target.value)}
+                      placeholder="⚡ Dán nhanh: 2FA|Mail|Pass hoặc Pass|2FA|Mail|PassMail (tự động tách vào các ô dưới)..."
+                      className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-[11px] font-mono text-slate-900 focus:outline-hidden focus:border-amber-600"
+                    />
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <input
+                        type="text"
+                        value={suppPass}
+                        onChange={(e) => setSuppPass(e.target.value)}
+                        placeholder="Pass Via..."
+                        className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={suppTwoFa}
+                        onChange={(e) => setSuppTwoFa(e.target.value)}
+                        placeholder="Mã 2FA..."
+                        className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={suppEmail}
+                        onChange={(e) => setSuppEmail(e.target.value)}
+                        placeholder="Mail khôi phục..."
+                        className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                      />
+                      <input
+                        type="text"
+                        value={suppEmailPass}
+                        onChange={(e) => setSuppEmailPass(e.target.value)}
+                        placeholder="Pass Mail..."
+                        className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                      />
+                    </div>
                   </div>
                 )}
               </div>

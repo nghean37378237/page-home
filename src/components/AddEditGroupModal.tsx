@@ -12,8 +12,10 @@ import {
   Sparkles,
   Clock,
   XCircle,
+  KeyRound,
 } from 'lucide-react';
 import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, GroupInteractionStatus, GROUP_INTERACTION_STATUS_OPTIONS, FullViaItem } from '../types';
+import { parseFullVia, parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
 
 export const GROUP_NOTE_CHOICES = [
   {
@@ -60,6 +62,7 @@ interface AddEditGroupModalProps {
   currentUser: AppUser;
   availableStaffNames: string[];
   existingVias?: FullViaItem[];
+  onSupplementVia?: (viaUid: string, newFullVia: string, staffName?: string) => Promise<void> | void;
   presetGroup?: {
     groupId?: string;
     groupName?: string;
@@ -80,6 +83,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   currentUser,
   availableStaffNames,
   existingVias,
+  onSupplementVia,
   presetGroup,
   initialMode,
 }) => {
@@ -115,6 +119,26 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+  // Các trường bổ sung thêm thông tin Via (2FA | Mail | Pass | PassMail)
+  const [suppPass, setSuppPass] = useState('');
+  const [suppTwoFa, setSuppTwoFa] = useState('');
+  const [suppEmail, setSuppEmail] = useState('');
+  const [suppEmailPass, setSuppEmailPass] = useState('');
+  const [quickPasteSupp, setQuickPasteSupp] = useState('');
+  const [suppToast, setSuppToast] = useState<string | null>(null);
+
+  const loadExistingViaCreds = (targetUid: string) => {
+    const clean = (targetUid || '').split('|')[0].trim().toLowerCase();
+    const matched = (existingVias || []).find((v) => v.uid.trim().toLowerCase() === clean);
+    const parsed = parseFullVia(matched?.rawFullVia);
+    setSuppPass(matched?.pass || parsed?.pass || '');
+    setSuppTwoFa(matched?.twoFa || parsed?.twoFa || '');
+    setSuppEmail(matched?.email || parsed?.email || '');
+    setSuppEmailPass(matched?.emailPass || parsed?.emailPass || '');
+    setQuickPasteSupp('');
+    setSuppToast(null);
+  };
+
   // Collect unique existing groups for quick selection
   const existingGroups = useMemo(() => {
     const map = new Map<string, { groupName: string; groupLink: string; groupId: string }>();
@@ -146,6 +170,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setGroupName(initialRecord.groupName || '');
       setGroupLink(initialRecord.groupLink || '');
       setUid(initialRecord.uid || '');
+      loadExistingViaCreds(initialRecord.uid || '');
       setViaName(initialRecord.viaName || '');
       setJoinStatus(initialRecord.joinStatus || 'Đã Jon');
       setInteractionStatus(initialRecord.interactionStatus || '');
@@ -158,6 +183,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setGroupName(presetGroup.groupName || '');
       setGroupLink(presetGroup.groupLink || '');
       setUid('');
+      loadExistingViaCreds('');
       setViaName('');
       setJoinStatus('Đã Jon');
       setInteractionStatus((presetGroup as any).interactionStatus || '');
@@ -170,6 +196,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       setGroupName('');
       setGroupLink('');
       setUid('');
+      loadExistingViaCreds('');
       setViaName('');
       setJoinStatus('Đã Jon');
       setInteractionStatus('');
@@ -294,6 +321,20 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
           createdAt: initialRecord?.createdAt || new Date().toLocaleDateString('vi-VN'),
           updatedAt: new Date().toLocaleDateString('vi-VN'),
         };
+
+        if (
+          onSupplementVia &&
+          (suppPass.trim() || suppTwoFa.trim() || suppEmail.trim() || suppEmailPass.trim())
+        ) {
+          const builtVia = buildFullViaString({
+            uid: cleanUid,
+            pass: suppPass,
+            twoFa: suppTwoFa,
+            email: suppEmail,
+            emailPass: suppEmailPass,
+          });
+          await onSupplementVia(cleanUid, builtVia, effectiveStaff);
+        }
 
         await onSave(recordToSave);
         onClose();
@@ -486,15 +527,26 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                     type="text"
                     required
                     list="group-modal-via-datalist"
-                    placeholder="VD: 100060665184656"
+                    placeholder="Nhập UID hoặc dán UID|Pass|2FA|Mail..."
                     value={uid}
                     onChange={(e) => {
                       const val = e.target.value;
-                      setUid(val);
-                      if (existingVias) {
-                        const matched = existingVias.find((v) => v.uid === val.trim());
-                        if (matched && matched.note && !viaName) {
-                          setViaName(matched.note);
+                      if (val.includes('|')) {
+                        const parsed = parseSupplementalViaInput(val);
+                        const nextUid = parsed.uid || val.split('|')[0].trim();
+                        setUid(nextUid);
+                        if (parsed.pass) setSuppPass(parsed.pass);
+                        if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
+                        if (parsed.email) setSuppEmail(parsed.email);
+                        if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
+                      } else {
+                        setUid(val);
+                        loadExistingViaCreds(val);
+                        if (existingVias) {
+                          const matched = existingVias.find((v) => v.uid === val.trim());
+                          if (matched && matched.note && !viaName) {
+                            setViaName(matched.note);
+                          }
                         }
                       }
                     }}
@@ -541,6 +593,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                           type="button"
                           onClick={() => {
                             setUid(v.uid);
+                            loadExistingViaCreds(v.uid);
                             if (v.note) setViaName(v.note);
                             if (v.staffName && isAdmin) setStaffName(v.staffName);
                           }}
@@ -557,6 +610,111 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* BỔ SUNG THÊM THÔNG TIN VIA (2FA | MAIL | PASS...) KHI CHỌN VIA HOẶC ĐÃ CÓ UID */}
+              {uid.trim() && (
+                <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 space-y-2 text-xs">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <div className="flex items-center space-x-1.5 font-extrabold text-amber-950">
+                      <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                      <span>
+                        Bổ sung thêm thông tin Via ({uid.split('|')[0].trim()}): 2FA | Mail | Pass...
+                      </span>
+                    </div>
+                    <div className="flex items-center space-x-1 text-[10px] font-bold">
+                      <span className={`px-1.5 py-0.5 rounded border ${suppPass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                        {suppPass ? '✓ Có Pass' : 'Thiếu Pass'}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded border ${suppTwoFa ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                        {suppTwoFa ? '✓ Có 2FA' : 'Thiếu 2FA'}
+                      </span>
+                      <span className={`px-1.5 py-0.5 rounded border ${suppEmail ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'}`}>
+                        {suppEmail ? '✓ Có Mail' : '+ Mail'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="text"
+                      value={quickPasteSupp}
+                      onChange={(e) => {
+                        const rawVal = e.target.value;
+                        setQuickPasteSupp(rawVal);
+                        setSuppToast(null);
+                        if (!rawVal.trim()) return;
+                        const parsed = parseSupplementalViaInput(rawVal, uid.trim());
+                        if (parsed.uid && parsed.uid !== uid.trim()) setUid(parsed.uid);
+                        if (parsed.pass) setSuppPass(parsed.pass);
+                        if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
+                        if (parsed.email) setSuppEmail(parsed.email);
+                        if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
+                      }}
+                      placeholder="⚡ Dán nhanh: 2FA|Mail|Pass hoặc Pass|2FA|Mail|PassMail..."
+                      className="flex-1 px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-[11px] font-mono text-slate-900 focus:outline-hidden focus:border-amber-600"
+                    />
+                    {onSupplementVia && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const cleanU = uid.split('|')[0].trim();
+                          if (!cleanU) return;
+                          const built = buildFullViaString({
+                            uid: cleanU,
+                            pass: suppPass,
+                            twoFa: suppTwoFa,
+                            email: suppEmail,
+                            emailPass: suppEmailPass,
+                          });
+                          await onSupplementVia(
+                            cleanU,
+                            built,
+                            isAdmin ? staffName.trim() || 'Anh Quỳnh' : currentUser.name
+                          );
+                          setSuppToast(`Đã lưu bổ sung thông tin (Pass/2FA/Mail) cho UID ${cleanU}!`);
+                        }}
+                        className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] shrink-0 cursor-pointer"
+                      >
+                        Lưu bổ sung Via
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <input
+                      type="text"
+                      value={suppPass}
+                      onChange={(e) => setSuppPass(e.target.value)}
+                      placeholder="Pass Via..."
+                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={suppTwoFa}
+                      onChange={(e) => setSuppTwoFa(e.target.value)}
+                      placeholder="Mã 2FA..."
+                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={suppEmail}
+                      onChange={(e) => setSuppEmail(e.target.value)}
+                      placeholder="Mail khôi phục..."
+                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                    />
+                    <input
+                      type="text"
+                      value={suppEmailPass}
+                      onChange={(e) => setSuppEmailPass(e.target.value)}
+                      placeholder="Pass Mail..."
+                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                    />
+                  </div>
+                  {suppToast && (
+                    <div className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1">
+                      ✅ {suppToast}
+                    </div>
+                  )}
                 </div>
               )}
 

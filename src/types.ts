@@ -598,6 +598,9 @@ export interface FullViaItem {
   uid: string;
   pass: string;
   twoFa: string;
+  email?: string; // Email / Mail khôi phục đi kèm Via
+  emailPass?: string; // Mật khẩu Mail / Thông tin bổ sung
+  extraInfo?: string; // Các trường bổ sung khác sau Mail/PassMail
   staffName: string; // Tên nhân viên được giao phụ trách
   note?: string; // Ghi chú loại nick, BM, thông tin thêm (dùng chung cho các page của via)
   status?: 'active' | 'checkpoint' | 'dead' | 'error' | 'fixed'; // Trạng thái nick
@@ -606,10 +609,10 @@ export interface FullViaItem {
   isFixed?: boolean; // Ô chọn: Admin đã sửa lỗi và thay via mới -> bôi màu xanh để dễ phân biệt
   sharedNote?: string; // Ghi chú chung cho các page
   createdAt?: string;
-  rawFullVia?: string; // UID|PASS|2FA gốc
+  rawFullVia?: string; // UID|PASS|2FA|MAIL|PASS_MAIL... gốc
 
   // Admin cập nhật "Admin đã thêm Page" (Màu đỏ để NV biết) | "Có page từ đầu" (Màu xanh) | "Chưa có page" (Trắng)
-  pageUpdateStatus?: ViaPageUpdateStatus; // 'pending' (Đỏ - Admin đã thêm page / mới bàn giao để NV biết), 'updated' (Xanh - Có page từ đầu / Đã update page), 'none' (Trắng - Chưa có page)
+  pageUpdateStatus?: ViaPageUpdateStatus; // 'pending' (Đỏ - Admin đã thêm page / mới bàn giao để NV biết), 'updated' (Xanh - Có page từ đầu / Đã update page), 'updated' / 'none'
   hasAdminAssignedPage?: boolean; // Cờ đánh dấu Admin đã thêm page
   pageAssignedAt?: string; // Thời điểm Admin thêm page / bàn giao
   pageUpdatedAt?: string; // Thời điểm hoàn tất update page
@@ -935,6 +938,73 @@ export interface CustomExpenseItem {
   createdAt?: string;
 }
 
+export interface MgidDailyStatItem {
+  id: string;
+  date: string; // YYYY-MM-DD hoặc DD/MM/YYYY
+  domain?: string; // VD: 'celeb24h.com'
+  pageViews: number; // Lượt xem trang
+  impressions: number; // Lượt hiển thị quảng cáo (Ad Views / Widgets Views)
+  visibilityRate: number; // Tỷ lệ hiển thị thực (%)
+  clicks: number; // Lượt click quảng cáo
+  ctr: number; // Tỷ lệ click (%) = (clicks / impressions) * 100
+  cpc: number; // Giá mỗi click ($ USD) = revenueUsd / clicks (hoặc cents)
+  ecpm: number; // Doanh thu trên 1000 hiển thị ($ USD) = (revenueUsd / impressions) * 1000
+  rpm?: number; // Page RPM ($ USD) = (revenueUsd / pageViews) * 1000
+  revenueUsd: number; // Doanh thu ($ USD)
+  revenueVnd?: number; // Doanh thu quy đổi (VNĐ)
+  note?: string;
+}
+
+export interface MgidWidgetStatItem {
+  id: string;
+  widgetId: string; // Mã Widget MGID (VD: '1584920', '1584921')
+  widgetName: string; // Tên Widget (VD: 'celeb24h.com - Under Article', 'In-Article Smart Widget')
+  domain: string; // 'celeb24h.com'
+  placement: 'under_article' | 'in_article' | 'sidebar' | 'smart_widget' | 'header' | 'mobile_sticky' | 'other';
+  status: 'active' | 'paused' | 'moderation';
+  impressions: number;
+  visibilityRate: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  ecpm: number;
+  revenueUsd: number;
+}
+
+export interface MgidCountryStatItem {
+  countryCode: string; // 'US', 'VN', 'GB', 'CA', 'AU', 'TW'...
+  countryName: string;
+  tier: 'Tier 1' | 'Tier 2' | 'Tier 3';
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  cpc: number;
+  ecpm: number;
+  revenueUsd: number;
+  sharePercent: number;
+}
+
+export interface MgidDeviceStatItem {
+  device: 'Mobile' | 'Desktop' | 'Tablet';
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  ecpm: number;
+  revenueUsd: number;
+  sharePercent: number;
+}
+
+export interface MgidSavedReportData {
+  domain: string;
+  usdToVndRate: number;
+  lastSyncedAt?: string;
+  apiConnected?: boolean;
+  dailyStats: MgidDailyStatItem[];
+  widgetStats?: MgidWidgetStatItem[];
+  countryStats?: MgidCountryStatItem[];
+  deviceStats?: MgidDeviceStatItem[];
+}
+
 export interface MonthlyFinanceRecord {
   id: string; // ID tháng (VD: '2026-10', '2026-09')
   monthKey: string; // '2026-10'
@@ -946,6 +1016,10 @@ export interface MonthlyFinanceRecord {
   manualTotalRevenue?: number; // Cho phép Admin nhập trực tiếp nếu không muốn chia nhỏ
   revenueItems: RevenueItem[]; // Danh sách các khoản tiền về chi tiết
   totalRevenue: number; // Tổng tiền về = sum(revenueItems) hoặc manualTotalRevenue
+
+  // 1b. BÁO CÁO DOANH THU MGID PUBLISHER DASHBOARD (CHỈ ADMIN XEM DUY NHẤT)
+  usdToVndRate?: number; // Tỷ giá quy đổi USD -> VNĐ
+  mgidReport?: MgidSavedReportData; // Dữ liệu báo cáo MGID của tháng
 
   // 2. CHI PHÍ VĂN PHÒNG, ĐIỆN, NƯỚC (Admin nhập)
   officeCost: number; // Chi phí văn phòng (tiền thuê mặt bằng, bảo vệ, văn phòng phẩm...)

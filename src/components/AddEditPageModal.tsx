@@ -26,6 +26,7 @@ import {
   VIA_TRANSFER_PRESETS,
   VIA_TRANSFER_COLORS,
   ADMIN_WAITING_POOL,
+  FullViaItem,
 } from '../types';
 import {
   PAGE_STATUS_OPTIONS,
@@ -34,6 +35,9 @@ import {
   POSTING_METHOD_OPTIONS,
   INTERACTION_OPTIONS,
   getCleanBmName,
+  parseFullVia,
+  parseSupplementalViaInput,
+  buildFullViaString,
 } from '../utils/helpers';
 
 interface AddEditPageModalProps {
@@ -41,6 +45,8 @@ interface AddEditPageModalProps {
   currentUser: AppUser;
   availableStaffNames: string[];
   allRecords: PageRecord[];
+  existingVias?: FullViaItem[];
+  onSupplementVia?: (viaUid: string, newFullVia: string, staffName?: string) => Promise<void> | void;
   presetViaData?: { viaUid: string; staffName: string } | null;
   onClose: () => void;
   onSave: (record: Omit<PageRecord, 'id'> & { id?: string }) => void;
@@ -53,6 +59,8 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
   currentUser,
   availableStaffNames,
   allRecords,
+  existingVias: allFullVias = [],
+  onSupplementVia,
   presetViaData,
   onClose,
   onSave,
@@ -84,6 +92,15 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
   const [batchPageNamesText, setBatchPageNamesText] = useState<string>('');
   const [fullVia, setFullVia] = useState<string>('');
 
+  // Các trường bổ sung chi tiết cho Via (Pass | 2FA | Mail | Pass Mail)
+  const [suppPass, setSuppPass] = useState<string>('');
+  const [suppTwoFa, setSuppTwoFa] = useState<string>('');
+  const [suppEmail, setSuppEmail] = useState<string>('');
+  const [suppEmailPass, setSuppEmailPass] = useState<string>('');
+  const [quickPasteSupp, setQuickPasteSupp] = useState<string>('');
+  const [isSavingSuppNow, setIsSavingSuppNow] = useState<boolean>(false);
+  const [suppSavedToast, setSuppSavedToast] = useState<string | null>(null);
+
   // Compute existing Vias in the system (filtered by current user if staff)
   const existingVias = useMemo(() => {
     const relevantRecords =
@@ -95,25 +112,104 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
           )
         : allRecords;
 
-    const map = new Map<string, { viaUid: string; staffName: string; pages: string[] }>();
+    const relevantFullVias =
+      currentUser.role === 'staff'
+        ? allFullVias.filter(
+            (v) =>
+              v.staffName.trim().toLowerCase() ===
+              currentUser.name.trim().toLowerCase()
+          )
+        : allFullVias;
+
+    const map = new Map<
+      string,
+      {
+        viaUid: string;
+        staffName: string;
+        pages: string[];
+        pass?: string;
+        twoFa?: string;
+        email?: string;
+        emailPass?: string;
+        rawFullVia?: string;
+      }
+    >();
+
+    relevantFullVias.forEach((v) => {
+      const uid = (v.uid || '').split('|')[0].trim();
+      if (!uid) return;
+      const parsed = parseFullVia(v.rawFullVia);
+      map.set(uid, {
+        viaUid: uid,
+        staffName: v.staffName,
+        pages: [],
+        pass: v.pass || parsed?.pass || '',
+        twoFa: v.twoFa || parsed?.twoFa || '',
+        email: v.email || parsed?.email || '',
+        emailPass: v.emailPass || parsed?.emailPass || '',
+        rawFullVia: v.rawFullVia || '',
+      });
+    });
+
     relevantRecords.forEach((r) => {
       const uid = r.viaUid.trim();
       if (!uid) return;
+      const parsed = parseFullVia(r.fullVia);
       if (!map.has(uid)) {
-        map.set(uid, { viaUid: uid, staffName: r.staffName, pages: [] });
+        map.set(uid, {
+          viaUid: uid,
+          staffName: r.staffName,
+          pages: [],
+          pass: parsed?.pass || '',
+          twoFa: parsed?.twoFa || '',
+          email: parsed?.email || '',
+          emailPass: parsed?.emailPass || '',
+          rawFullVia: r.fullVia || '',
+        });
+      } else {
+        const entry = map.get(uid)!;
+        if (!entry.pass && parsed?.pass) entry.pass = parsed.pass;
+        if (!entry.twoFa && parsed?.twoFa) entry.twoFa = parsed.twoFa;
+        if (!entry.email && parsed?.email) entry.email = parsed.email;
+        if (!entry.emailPass && parsed?.emailPass) entry.emailPass = parsed.emailPass;
+        if (!entry.rawFullVia && r.fullVia) entry.rawFullVia = r.fullVia;
       }
       map.get(uid)!.pages.push(r.pageName);
     });
 
     return Array.from(map.values()).sort((a, b) => b.pages.length - a.pages.length);
-  }, [allRecords, currentUser]);
+  }, [allRecords, allFullVias, currentUser]);
 
   // Current via's existing pages info
   const selectedViaInfo = useMemo(() => {
     const trimmed = viaUid.trim();
     if (!trimmed) return null;
-    return existingVias.find((v) => v.viaUid === trimmed) || null;
+    return existingVias.find((v) => v.viaUid.toLowerCase() === trimmed.toLowerCase()) || null;
   }, [viaUid, existingVias]);
+
+  const loadViaCredentialsIntoFields = (targetUid: string, rawFallback?: string) => {
+    const clean = (targetUid || '').split('|')[0].trim();
+    const matched = existingVias.find((v) => v.viaUid.toLowerCase() === clean.toLowerCase());
+    const parsedFallback = parseFullVia(rawFallback || matched?.rawFullVia);
+    const nextPass = matched?.pass || parsedFallback?.pass || '';
+    const nextTwoFa = matched?.twoFa || parsedFallback?.twoFa || '';
+    const nextEmail = matched?.email || parsedFallback?.email || '';
+    const nextEmailPass = matched?.emailPass || parsedFallback?.emailPass || '';
+    setSuppPass(nextPass);
+    setSuppTwoFa(nextTwoFa);
+    setSuppEmail(nextEmail);
+    setSuppEmailPass(nextEmailPass);
+    setQuickPasteSupp('');
+    setSuppSavedToast(null);
+    const built = buildFullViaString({
+      uid: clean,
+      pass: nextPass,
+      twoFa: nextTwoFa,
+      email: nextEmail,
+      emailPass: nextEmailPass,
+    });
+    setFullVia(built);
+  };
 
   // Danh sách tất cả tên BM hiện tại trong hệ thống để làm list lựa chọn (luôn bỏ phần sau dấu |)
   const existingBmList = useMemo(() => {
@@ -148,7 +244,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
           (currentUser.role === 'staff' ? currentUser.name : '')
       );
       setViaUid(initialRecord.viaUid || '');
-      setFullVia(initialRecord.fullVia || '');
+      loadViaCredentialsIntoFields(initialRecord.viaUid || '', initialRecord.fullVia || '');
       setPageName(initialRecord.pageName || '');
       setPageLink(initialRecord.pageLink || '');
       setStatus(initialRecord.status || 'Đề Xuất');
@@ -185,7 +281,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       const existingViaRec = allRecords.find(
         (r) => r.viaUid.trim() === presetViaData.viaUid.trim() && r.fullVia
       );
-      setFullVia(existingViaRec?.fullVia || '');
+      loadViaCredentialsIntoFields(presetViaData.viaUid, existingViaRec?.fullVia || '');
       setPageName('');
       setPageLink('');
       setStatus('Đề Xuất');
@@ -215,6 +311,12 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       );
       setViaUid('');
       setFullVia('');
+      setSuppPass('');
+      setSuppTwoFa('');
+      setSuppEmail('');
+      setSuppEmailPass('');
+      setQuickPasteSupp('');
+      setSuppSavedToast(null);
       setPageName('');
       setPageLink('');
       setStatus('Đề Xuất');
@@ -236,19 +338,107 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
     }
   }, [initialRecord, presetViaData, isOpen, currentUser, availableStaffNames, allRecords]);
 
+  // Đồng bộ các trường suppPass, suppTwoFa, suppEmail, suppEmailPass vào fullVia
+  const syncCredsToFullViaState = (
+    u: string,
+    p: string,
+    t: string,
+    m: string,
+    mp: string
+  ) => {
+    const cleanU = (u || '').split('|')[0].trim();
+    if (!cleanU) {
+      setFullVia('');
+      return '';
+    }
+    const built = buildFullViaString({
+      uid: cleanU,
+      pass: p,
+      twoFa: t,
+      email: m,
+      emailPass: mp,
+    });
+    setFullVia(built);
+    return built;
+  };
+
   const handleViaUidChange = (value: string) => {
-    // If user pastes full via: UID|PASS|2FA into this input
+    setSuppSavedToast(null);
+    // Nếu người dùng dán chuỗi có dấu | vào ô UID (VD: UID|PASS|2FA|MAIL|PASS_MAIL)
     if (value.includes('|')) {
-      const parts = value.split('|');
-      setViaUid(parts[0].trim());
-      setFullVia(value.trim());
+      const parsed = parseSupplementalViaInput(value);
+      const nextUid = parsed.uid || value.split('|')[0].trim();
+      setViaUid(nextUid);
+      const nextPass = parsed.pass || suppPass;
+      const nextTwoFa = parsed.twoFa || suppTwoFa;
+      const nextMail = parsed.email || suppEmail;
+      const nextMailPass = parsed.emailPass || suppEmailPass;
+      setSuppPass(nextPass);
+      setSuppTwoFa(nextTwoFa);
+      setSuppEmail(nextMail);
+      setSuppEmailPass(nextMailPass);
+      syncCredsToFullViaState(nextUid, nextPass, nextTwoFa, nextMail, nextMailPass);
     } else {
       setViaUid(value);
-      // If matches existing via, load its fullVia
-      const match = allRecords.find((r) => r.viaUid.trim() === value.trim() && r.fullVia);
-      if (match && !fullVia) {
-        setFullVia(match.fullVia);
+      const clean = value.trim();
+      const matched = existingVias.find((v) => v.viaUid.toLowerCase() === clean.toLowerCase());
+      if (matched) {
+        const nextPass = matched.pass || '';
+        const nextTwoFa = matched.twoFa || '';
+        const nextMail = matched.email || '';
+        const nextMailPass = matched.emailPass || '';
+        setSuppPass(nextPass);
+        setSuppTwoFa(nextTwoFa);
+        setSuppEmail(nextMail);
+        setSuppEmailPass(nextMailPass);
+        syncCredsToFullViaState(clean, nextPass, nextTwoFa, nextMail, nextMailPass);
+      } else {
+        syncCredsToFullViaState(clean, suppPass, suppTwoFa, suppEmail, suppEmailPass);
       }
+    }
+  };
+
+  const handleQuickPasteSuppChange = (rawVal: string) => {
+    setQuickPasteSupp(rawVal);
+    setSuppSavedToast(null);
+    if (!rawVal.trim()) return;
+    const parsed = parseSupplementalViaInput(rawVal, viaUid.trim());
+    const nextUid = parsed.uid || viaUid.trim();
+    if (parsed.uid && parsed.uid !== viaUid.trim()) {
+      setViaUid(parsed.uid);
+    }
+    const nextPass = parsed.pass || suppPass;
+    const nextTwoFa = parsed.twoFa || suppTwoFa;
+    const nextMail = parsed.email || suppEmail;
+    const nextMailPass = parsed.emailPass || suppEmailPass;
+    setSuppPass(nextPass);
+    setSuppTwoFa(nextTwoFa);
+    setSuppEmail(nextMail);
+    setSuppEmailPass(nextMailPass);
+    syncCredsToFullViaState(nextUid, nextPass, nextTwoFa, nextMail, nextMailPass);
+  };
+
+  const handleSaveSupplementImmediately = async () => {
+    const cleanUid = viaUid.split('|')[0].trim();
+    if (!cleanUid) return;
+    const built = syncCredsToFullViaState(
+      cleanUid,
+      suppPass,
+      suppTwoFa,
+      suppEmail,
+      suppEmailPass
+    );
+    if (!onSupplementVia) return;
+    setIsSavingSuppNow(true);
+    try {
+      await onSupplementVia(
+        cleanUid,
+        built,
+        currentUser.role === 'staff' ? currentUser.name : staffName.trim()
+      );
+      setSuppSavedToast(`Đã lưu bổ sung thông tin (Pass/2FA/Mail) cho UID ${cleanUid}!`);
+    } finally {
+      setIsSavingSuppNow(false);
     }
   };
 
@@ -257,7 +447,21 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
 
     const resolvedStaff =
       currentUser.role === 'staff' ? currentUser.name : staffName.trim() || 'Nhân Viên';
-    const resolvedVia = viaUid.trim() || '1000...';
+    const resolvedVia = viaUid.split('|')[0].trim() || '1000...';
+    const builtFullVia =
+      suppPass.trim() || suppTwoFa.trim() || suppEmail.trim() || suppEmailPass.trim()
+        ? buildFullViaString({
+            uid: resolvedVia,
+            pass: suppPass,
+            twoFa: suppTwoFa,
+            email: suppEmail,
+            emailPass: suppEmailPass,
+          })
+        : fullVia.trim();
+
+    if (builtFullVia && onSupplementVia) {
+      void onSupplementVia(resolvedVia, builtFullVia, resolvedStaff);
+    }
 
     // Batch mode: add multiple pages to this 1 Via
     if (!initialRecord && isMultiPageMode && batchPageNamesText.trim()) {
@@ -271,7 +475,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       const newRecords: Omit<PageRecord, 'id'>[] = pageNames.map((pName) => ({
         staffName: resolvedStaff,
         viaUid: resolvedVia,
-        fullVia: fullVia.trim() || undefined,
+        fullVia: builtFullVia || undefined,
         pageName: pName,
         pageLink: `https://www.facebook.com/search/top?q=${encodeURIComponent(pName)}`,
         status,
@@ -312,7 +516,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
       id: initialRecord?.id,
       staffName: resolvedStaff,
       viaUid: resolvedVia,
-      fullVia: fullVia.trim() || undefined,
+      fullVia: builtFullVia || undefined,
       pageName: pageName.trim(),
       pageLink:
         pageLink.trim() ||
@@ -432,7 +636,7 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
                   type="text"
                   required
                   list="existing-via-options"
-                  placeholder="VD: 100058675316160..."
+                  placeholder="Nhập UID hoặc dán UID|Pass|2FA|Mail..."
                   value={viaUid}
                   onChange={(e) => handleViaUidChange(e.target.value)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 font-mono text-xs"
@@ -455,22 +659,24 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
             <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
               <span className="text-[11px] font-bold text-slate-600 block mb-1.5 flex items-center space-x-1">
                 <Layers className="w-3 h-3 text-indigo-600" />
-                <span>Chọn nhanh Nick Via đang có (để gán thêm page vào Via):</span>
+                <span>Chọn nhanh Nick Via đang có (để gán thêm page hoặc bổ sung 2FA/Mail/Pass):</span>
               </span>
               <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                 {existingVias.map((v) => {
-                  const isSelected = viaUid.trim() === v.viaUid;
+                  const isSelected = viaUid.trim().toLowerCase() === v.viaUid.toLowerCase();
+                  const hasFullCred = Boolean(v.pass && v.twoFa);
                   return (
                     <button
                       key={v.viaUid}
                       type="button"
                       onClick={() => {
                         setViaUid(v.viaUid);
+                        loadViaCredentialsIntoFields(v.viaUid, v.rawFullVia);
                         if (currentUser.role === 'admin' && v.staffName) {
                           setStaffName(v.staffName);
                         }
                       }}
-                      className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-all flex items-center space-x-1 ${
+                      className={`px-2 py-1 rounded-md text-[11px] font-mono border transition-all flex items-center space-x-1 cursor-pointer ${
                         isSelected
                           ? 'bg-indigo-600 text-white border-indigo-700 font-bold shadow-2xs'
                           : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
@@ -486,6 +692,15 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
                       >
                         {v.pages.length} page
                       </span>
+                      {!hasFullCred && (
+                        <span
+                          className={`text-[9px] px-1 rounded-sm font-sans font-bold ${
+                            isSelected ? 'bg-amber-400 text-slate-900' : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          Thiếu 2FA/Pass
+                        </span>
+                      )}
                     </button>
                   );
                 })}
@@ -493,8 +708,162 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
             </div>
           )}
 
+          {/* BỔ SUNG THÊM THÔNG TIN VIA (2FA | MAIL | PASS | PASS MAIL...) KHI CHỌN VIA HOẶC ĐÃ CÓ UID */}
+          {viaUid.trim() && (
+            <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 space-y-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-1.5">
+                <div className="flex items-center space-x-1.5">
+                  <Key className="w-3.5 h-3.5 text-amber-700" />
+                  <span className="text-[11px] font-extrabold text-amber-950">
+                    Bổ sung thêm thông tin Via ({viaUid.split('|')[0].trim()}): 2FA | Mail | Pass...
+                  </span>
+                </div>
+                <div className="flex items-center space-x-1">
+                  {selectedViaInfo ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
+                      UID đã có trên hệ thống
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      UID mới
+                    </span>
+                  )}
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                      suppPass
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                    }`}
+                  >
+                    {suppPass ? '✓ Có Pass' : 'Thiếu Pass'}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                      suppTwoFa
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                    }`}
+                  >
+                    {suppTwoFa ? '✓ Có 2FA' : 'Thiếu 2FA'}
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
+                      suppEmail
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {suppEmail ? '✓ Có Mail' : '+ Mail'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Ô dán nhanh chuỗi bổ sung: 2FA|Mail|Pass hoặc Pass|2FA|Mail|PassMail */}
+              <div>
+                <label className="block text-[10px] font-bold text-amber-900 mb-1">
+                  ⚡ Dán nhanh chuỗi bổ sung (Hỗ trợ: <span className="font-mono">2FA|Mail|Pass</span> hoặc{' '}
+                  <span className="font-mono">Pass|2FA|Mail|PassMail</span> hoặc{' '}
+                  <span className="font-mono">UID|Pass|2FA|Mail|PassMail</span>):
+                </label>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="text"
+                    placeholder="Dán chuỗi: 2FA | Mail | Pass | PassMail... (tự động tách vào các ô dưới)"
+                    value={quickPasteSupp}
+                    onChange={(e) => handleQuickPasteSuppChange(e.target.value)}
+                    className="flex-1 px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-[11px] font-mono text-slate-900 focus:ring-1 focus:ring-amber-600 focus:border-amber-600"
+                  />
+                  {onSupplementVia && (
+                    <button
+                      type="button"
+                      disabled={isSavingSuppNow}
+                      onClick={handleSaveSupplementImmediately}
+                      className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] transition-colors shrink-0 cursor-pointer disabled:opacity-50"
+                    >
+                      {isSavingSuppNow ? 'Đang lưu...' : 'Lưu bổ sung Via'}
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 4 ô chi tiết: Pass | 2FA | Mail | Pass Mail */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    Mật khẩu Via (Pass)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nhập Pass..."
+                    value={suppPass}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSuppPass(val);
+                      syncCredsToFullViaState(viaUid, val, suppTwoFa, suppEmail, suppEmailPass);
+                    }}
+                    className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono text-slate-900 focus:border-amber-600 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    Mã 2FA (Secret)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nhập mã 2FA..."
+                    value={suppTwoFa}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSuppTwoFa(val);
+                      syncCredsToFullViaState(viaUid, suppPass, val, suppEmail, suppEmailPass);
+                    }}
+                    className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono text-slate-900 focus:border-amber-600 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    Mail khôi phục / Email
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="abc@gmail.com..."
+                    value={suppEmail}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSuppEmail(val);
+                      syncCredsToFullViaState(viaUid, suppPass, suppTwoFa, val, suppEmailPass);
+                    }}
+                    className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono text-slate-900 focus:border-amber-600 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 mb-0.5">
+                    Pass Mail / Khác
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Pass mail..."
+                    value={suppEmailPass}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSuppEmailPass(val);
+                      syncCredsToFullViaState(viaUid, suppPass, suppTwoFa, suppEmail, val);
+                    }}
+                    className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono text-slate-900 focus:border-amber-600 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              {suppSavedToast && (
+                <div className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                  ✅ {suppSavedToast}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Multi-page banner info if 1 via holds multiple pages */}
-          {selectedViaInfo && (
+          {selectedViaInfo && selectedViaInfo.pages.length > 0 && (
             <div className="bg-indigo-50/80 border border-indigo-200 rounded-lg p-2.5 flex items-start space-x-2 text-indigo-950 text-[11px]">
               <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
               <div>
