@@ -4424,6 +4424,7 @@ export default function App() {
               allRecords={records}
               existingVias={viaList}
               currentUser={currentUser}
+              activeStaffFilter={filter.staffName}
               errorViaUids={errorViaUids}
               fixedViaUids={fixedViaUids}
               onUpdateRecord={handleUpdateRecord}

@@ -283,7 +283,7 @@ export function exportGroupToXLSX(groups: GroupRecord[]): void {
     'STT': idx + 1,
     'UID VIA': g.uid || '',
     'TÊN VIA': g.viaName || '',
-    'TRẠNG THÁI': g.joinStatus || 'Chưa',
+    'NHÂN VIÊN BÁO': g.joinStatus || 'Chưa',
     'ADMIN BÁO': g.adminJoinReport || '',
     'MỨC TƯƠNG TÁC': g.interactionStatus || 'Chưa đánh giá',
     'NGÀY TT': g.interactionDate || '',

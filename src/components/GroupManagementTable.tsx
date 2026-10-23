@@ -1754,14 +1754,14 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               )}
             </div>
 
-            {/* Trạng thái Jon Dropdown */}
+            {/* Nhân Viên báo Dropdown */}
             <select
               value={selectedJoinStatusFilter}
               onChange={(e) => setSelectedJoinStatusFilter(e.target.value as any)}
               className="px-2.5 py-1.5 text-xs bg-white border border-slate-300 rounded-lg font-semibold text-slate-700 cursor-pointer focus:ring-1 focus:ring-red-500"
-              title="Lọc trạng thái Jon nhóm"
+              title="Lọc theo cột Nhân Viên báo (Đã Jon / Jon chờ duyệt / Chưa)"
             >
-              <option value="ALL">Trạng thái: Tất Cả ({staffScopedRecords.length})</option>
+              <option value="ALL">Nhân Viên báo: Tất Cả ({staffScopedRecords.length})</option>
               <option value="Đã Jon">✅ Đã Jon ({joinStatusCounts.daJon})</option>
               <option value="Jon chờ duyệt">⏳ Jon chờ duyệt ({joinStatusCounts.choDuyet})</option>
               <option value="Chưa">✕ Chưa ({joinStatusCounts.chua})</option>
@@ -2410,7 +2410,9 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                           <th className="py-2 px-3 w-12 text-center">STT</th>
                           <th className="py-2 px-3 font-mono">UID FACEBOOK (Cột B)</th>
                           <th className="py-2 px-3">TÊN VIA (Cột C)</th>
-                          <th className="py-2 px-3 w-32">TRẠNG THÁI</th>
+                          <th className="py-2 px-3 w-32" title="Cột Nhân Viên báo trạng thái tham gia nhóm: Đã Jon / Jon chờ duyệt / Chưa">
+                            NHÂN VIÊN BÁO
+                          </th>
                           <th className="py-2 px-3 w-36" title="Cột Admin báo cho nhân viên biết: Đã Duyệt / Chưa Jont / Không tìm thấy">
                             ADMIN BÁO
                           </th>
@@ -2847,7 +2849,9 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                   <th className="py-3 px-3 w-12 text-center">STT</th>
                   <th className="py-3 px-3 font-mono">UID FACEBOOK (Cột B)</th>
                   <th className="py-3 px-3">TÊN VIA (Cột C)</th>
-                  <th className="py-3 px-3 w-32">TRẠNG THÁI</th>
+                  <th className="py-3 px-3 w-32" title="Cột Nhân Viên báo trạng thái tham gia nhóm: Đã Jon / Jon chờ duyệt / Chưa">
+                    NHÂN VIÊN BÁO
+                  </th>
                   <th className="py-3 px-3 w-36" title="Cột Admin báo cho nhân viên biết: Đã Duyệt / Chưa Jont / Không tìm thấy">
                     ADMIN BÁO
                   </th>
@@ -3362,7 +3366,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
           {/* Quick Batch Join Status Assignment */}
           <div className="flex items-center space-x-1 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800">
-            <span className="text-[11px] text-slate-400 font-semibold pr-1">Trạng Thái:</span>
+            <span className="text-[11px] text-slate-400 font-semibold pr-1">Nhân Viên Báo:</span>
             <button
               type="button"
               onClick={() => handleBatchUpdateJoinStatus('Đã Jon')}

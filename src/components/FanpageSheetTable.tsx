@@ -312,6 +312,7 @@ interface FanpageSheetTableProps {
   allRecords?: PageRecord[];
   existingVias?: FullViaItem[];
   currentUser: AppUser;
+  activeStaffFilter?: string;
   errorViaUids?: Set<string>;
   fixedViaUids?: Set<string>;
   onToggleViaError?: (viaUid: string, isError: boolean, recordId?: string) => void;
@@ -366,6 +367,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   allRecords,
   existingVias,
   currentUser,
+  activeStaffFilter,
   errorViaUids,
   fixedViaUids,
   onToggleViaError,
@@ -411,6 +413,14 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
   // Lọc nhanh theo nhân viên (Staff Scope Pill)
   const [selectedStaff, setSelectedStaff] = useState<string>('all');
+
+  // Ẩn cột TÊN NV đằng trước khi đã chọn tên nhân viên cụ thể ở thanh lọc phía trên
+  const hideStaffColumn = Boolean(
+    (activeStaffFilter &&
+      activeStaffFilter.trim() &&
+      activeStaffFilter.trim().toLowerCase() !== 'all') ||
+      (selectedStaff && selectedStaff !== 'all')
+  );
 
   // Danh sách nhân viên bị thu gọn (Collapsible Staff)
   const [collapsedStaffSet, setCollapsedStaffSet] = useState<Set<string>>(new Set());
@@ -1545,7 +1555,9 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             <thead className="sticky top-0 z-20 shadow-xs">
               <tr className="bg-[#f3f4f6] text-slate-500 text-[10px] font-mono border-b border-slate-300 h-5">
                 <th className="w-8 min-w-[32px] px-0.5 py-0.5 text-center border-r border-slate-300 font-normal">#</th>
-                <th className="w-18 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">B</th>
+                {!hideStaffColumn && (
+                  <th className="w-18 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">B</th>
+                )}
                 <th className="w-56 min-w-[200px] max-w-[240px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">C</th>
                 <th className="w-32 min-w-[115px] max-w-[140px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">D</th>
                 <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">E</th>
@@ -1566,14 +1578,16 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               {/* Green Headers from Google Sheet */}
               <tr className="bg-[#38761d] text-white text-[11px] uppercase tracking-wider font-bold select-none border-b-2 border-slate-400 h-7">
                 <th className="w-8 min-w-[32px] px-0.5 py-0.5 text-center border-r border-emerald-800/80">STT</th>
-                <th className="w-18 min-w-[70px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center">
-                  <div className="flex flex-col items-center leading-tight">
-                    <span>TÊN NV</span>
-                    <span className="text-[7.5px] font-normal opacity-85 lowercase">
-                      {mergeViaCells ? '(gộp ô)' : '(tách)'}
-                    </span>
-                  </div>
-                </th>
+                {!hideStaffColumn && (
+                  <th className="w-18 min-w-[70px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center">
+                    <div className="flex flex-col items-center leading-tight">
+                      <span>TÊN NV</span>
+                      <span className="text-[7.5px] font-normal opacity-85 lowercase">
+                        {mergeViaCells ? '(gộp ô)' : '(tách)'}
+                      </span>
+                    </div>
+                  </th>
+                )}
                 <th className="w-56 min-w-[200px] max-w-[240px] px-1 py-0.5 border-r border-emerald-800/80 text-left">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold tracking-tight text-[10px]">VIA & GHI CHÚ</span>
@@ -1649,7 +1663,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             <tbody className="divide-y divide-slate-300 text-slate-800">
               {paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={17} className="py-8 text-center text-slate-400 bg-white">
+                  <td colSpan={hideStaffColumn ? 16 : 17} className="py-8 text-center text-slate-400 bg-white">
                     Không tìm thấy dòng nào phù hợp. Hãy đặt lại bộ lọc hoặc tạo thêm Page mới.
                   </td>
                 </tr>
@@ -1664,7 +1678,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         <td className="px-1 py-1 text-center border-r border-emerald-300 font-mono text-emerald-800 text-[10px] bg-emerald-100/50 select-none">
                           {startIndex + index + 1}
                         </td>
-                        <td colSpan={16} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
+                        <td colSpan={hideStaffColumn ? 15 : 16} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center space-x-2">
                               <button
@@ -1818,8 +1832,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         {startIndex + index + 1}
                       </td>
 
-                      {/* Col B: TÊN NV - VIẾT 1 LẦN DUY NHẤT KHI BẬT GỘP Ô HOẶC TỪNG DÒNG KHI TÁCH */}
-                      {shouldRenderStaffCell && (
+                      {/* Col B: TÊN NV - VIẾT 1 LẦN DUY NHẤT KHI BẬT GỘP Ô HOẶC TỪNG DÒNG KHI TÁCH (Ẩn khi đã chọn lọc theo Tên NV ở trên) */}
+                      {!hideStaffColumn && shouldRenderStaffCell && (
                         <td
                           rowSpan={staffRowSpan}
                           className={`px-1 ${cellPyClass} border-r border-slate-300 font-bold text-slate-900 align-middle bg-slate-50/95 text-center select-none shadow-2xs`}

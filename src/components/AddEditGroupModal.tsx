@@ -723,11 +723,11 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                 </div>
               )}
 
-              {/* Trạng Thái: Đã Jon, Jon chờ duyệt, Chưa */}
+              {/* Nhân Viên báo: Đã Jon, Jon chờ duyệt, Chưa */}
               <div className="pt-1">
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Trạng Thái Tham Gia Nhóm</span>
-                  <span className="text-[10px] text-slate-500 font-normal">(Cột Trạng Thái)</span>
+                  <span>Nhân Viên Báo (Đã Jon / Jon chờ duyệt / Chưa)</span>
+                  <span className="text-[10px] text-slate-500 font-normal">(Cột Nhân Viên báo)</span>
                 </label>
                 <div className="grid grid-cols-3 gap-2">
                   <button
@@ -771,12 +771,12 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                 </div>
               </div>
 
-              {/* Cột Admin Báo (Ngay sau cột Trạng Thái): Đã Duyệt, Chưa Jont, Không tìm thấy */}
+              {/* Cột Admin Báo (Ngay sau cột Nhân Viên báo): Đã Duyệt, Chưa Jont, Không tìm thấy */}
               {isAdmin && (
                 <div className="pt-1">
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
                     <span>Admin Báo Cho Nhân Viên Biết</span>
-                    <span className="text-[10px] text-slate-500 font-normal">(Ngay sau cột Trạng Thái)</span>
+                    <span className="text-[10px] text-slate-500 font-normal">(Ngay sau cột Nhân Viên báo)</span>
                   </label>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     <button
