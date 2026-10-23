@@ -1729,6 +1729,165 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
       {/* Spreadsheet Container */}
       <div className="bg-white border-2 border-[#2e7d32] rounded-lg shadow-sm overflow-hidden">
+        {/* 🌟 HÀNG TRÊN CÙNG HIỂN THỊ TÊN NHÂN VIÊN TO RÕ ĐẸP MẮT */}
+        {(() => {
+          const activeBannerStaffName =
+            isStaffPaginationActive && currentStaffPage
+              ? currentStaffPage.staffName
+              : selectedStaff !== 'all'
+              ? selectedStaff
+              : activeStaffFilter && activeStaffFilter.trim().toLowerCase() !== 'all'
+              ? activeStaffFilter
+              : staffPages.length === 1
+              ? staffPages[0].staffName
+              : null;
+
+          if (!activeBannerStaffName) return null;
+
+          const sInfo = staffPostingMap.get(activeBannerStaffName.trim().toLowerCase());
+          const staffPageCount =
+            isStaffPaginationActive && currentStaffPage
+              ? currentStaffPage.count
+              : sInfo?.totalPages || paginatedItems.length;
+
+          return (
+            <div className="bg-gradient-to-r from-[#1b5e20] via-[#2e7d32] to-[#1b5e20] text-white px-4 py-2.5 border-b-2 border-emerald-900 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center flex-wrap gap-3">
+                <div className="w-9 h-9 rounded-xl bg-white text-[#1b5e20] font-black flex items-center justify-center text-sm shadow-sm border-2 border-emerald-200 shrink-0">
+                  {activeBannerStaffName.trim().slice(0, 2).toUpperCase() || 'NV'}
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase tracking-widest text-emerald-200 font-bold leading-none mb-0.5">
+                    Bảng Quản Lý Fanpage Của Nhân Viên
+                  </span>
+                  {currentUser.role === 'admin' && isEditingStaffNameMode === activeBannerStaffName ? (
+                    <div className="flex items-center space-x-1.5 mt-0.5">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={
+                          editingStaffName[activeBannerStaffName] !== undefined
+                            ? editingStaffName[activeBannerStaffName]
+                            : activeBannerStaffName
+                        }
+                        onChange={(e) =>
+                          setEditingStaffName({
+                            ...editingStaffName,
+                            [activeBannerStaffName]: e.target.value,
+                          })
+                        }
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveStaffRename(activeBannerStaffName);
+                          if (e.key === 'Escape') setIsEditingStaffNameMode(null);
+                        }}
+                        className="px-2 py-0.5 text-sm font-black text-slate-900 bg-white border-2 border-amber-300 rounded-md focus:outline-hidden"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveStaffRename(activeBannerStaffName)}
+                        className="px-2 py-0.5 bg-amber-400 text-slate-950 rounded text-xs font-black hover:bg-amber-300 cursor-pointer"
+                      >
+                        Lưu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsEditingStaffNameMode(null)}
+                        className="px-2 py-0.5 bg-emerald-800 text-white rounded text-xs font-bold hover:bg-emerald-700 cursor-pointer"
+                      >
+                        Hủy
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center space-x-2">
+                      <span className="text-lg sm:text-xl font-black tracking-wide text-white drop-shadow-2xs">
+                        {activeBannerStaffName}
+                      </span>
+                      {currentUser.role === 'admin' && onUpdateStaffNameForAll && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingStaffName({
+                              ...editingStaffName,
+                              [activeBannerStaffName]: activeBannerStaffName,
+                            });
+                            setIsEditingStaffNameMode(activeBannerStaffName);
+                          }}
+                          className="p-1 text-emerald-200 hover:text-white hover:bg-emerald-700/60 rounded transition-colors cursor-pointer"
+                          title="Đổi tên nhân viên này cho toàn bộ bảng"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {currentUser.role === 'admin' && onDeleteStaffAllData && (
+                        <button
+                          type="button"
+                          onClick={() => onDeleteStaffAllData(activeBannerStaffName)}
+                          className="p-1 text-emerald-200 hover:text-rose-200 hover:bg-rose-600/70 rounded transition-colors cursor-pointer"
+                          title={`Xóa toàn bộ dữ liệu (Fanpage, Via, Tài khoản) của NV "${activeBannerStaffName}"`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Thống kê nhanh của Nhân Viên đang xem */}
+              <div className="flex items-center flex-wrap gap-1.5">
+                <span className="px-2.5 py-1 rounded-lg bg-white text-[#1b5e20] font-black text-xs shadow-2xs border border-emerald-100">
+                  📄 {staffPageCount} Fanpage
+                </span>
+                {sInfo && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsPostingStatsModalOpen(true)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-950/80 text-emerald-100 font-bold text-xs border border-emerald-500/40 cursor-pointer transition-colors"
+                      title="Bấm xem chi tiết thống kê Tiến độ & Đăng bài"
+                    >
+                      🟢 {sInfo.doingPages} Đang làm • 🔴 {sInfo.notDoingPages} Không làm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsPostingStatsModalOpen(true)}
+                      className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-950/80 text-white font-bold text-xs border border-emerald-500/40 cursor-pointer transition-colors"
+                      title="Bấm xem chi tiết thống kê Đăng Tay vs Tool"
+                    >
+                      ✍️ {sInfo.manualPages} Tay • 🤖 {sInfo.toolPages} Tool
+                    </button>
+                  </>
+                )}
+                {isStaffPaginationActive && staffPages.length > 1 && (
+                  <div className="flex items-center space-x-1 ml-1 pl-2 border-l border-emerald-600">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="px-2 py-1 rounded-md bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs border border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      title="Chuyển sang nhân viên trước"
+                    >
+                      ‹ NV Trước
+                    </button>
+                    <span className="text-xs font-black text-amber-300 px-1.5">
+                      NV {currentPage}/{staffPages.length}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="px-2 py-1 rounded-md bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs border border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      title="Chuyển sang nhân viên tiếp theo"
+                    >
+                      NV Tiếp ›
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         <div
           ref={scrollContainerRef}
           className={`overflow-x-auto overflow-y-auto ${
@@ -1740,43 +1899,30 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
           }`}
         >
           <table className="w-full min-w-[1120px] border-collapse text-left text-xs font-sans">
-            {/* Sheet row labels (A..O + Thao Tác = 16 columns) */}
+            {/* Sheet row labels (16 columns, ĐÃ BỎ HẲN CỘT TÊN NV DỌC) */}
             <thead className="sticky top-0 z-20 shadow-xs">
               <tr className="bg-[#f3f4f6] text-slate-500 text-[10px] font-mono border-b border-slate-300 h-5">
                 <th className="w-8 min-w-[32px] px-0.5 py-0.5 text-center border-r border-slate-300 font-normal">#</th>
-                {!hideStaffColumn && (
-                  <th className="w-18 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">B</th>
-                )}
-                <th className="w-56 min-w-[200px] max-w-[240px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">C</th>
-                <th className="w-32 min-w-[115px] max-w-[140px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">D</th>
-                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">E</th>
-                <th className="w-24 min-w-[82px] max-w-[95px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">F</th>
-                <th className="w-11 min-w-[40px] max-w-[46px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">G</th>
+                <th className="w-56 min-w-[200px] max-w-[240px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">B - VIA</th>
+                <th className="w-32 min-w-[115px] max-w-[140px] px-1 py-0.5 text-center border-r border-slate-300 font-bold">C</th>
+                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">D</th>
+                <th className="w-24 min-w-[82px] max-w-[95px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">E</th>
+                <th className="w-11 min-w-[40px] max-w-[46px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">F</th>
+                <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">G</th>
                 <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">H</th>
-                <th className="w-20 min-w-[72px] max-w-[82px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">I</th>
-                <th className="w-14 min-w-[54px] max-w-[62px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-emerald-800">J</th>
-                <th className="w-18 min-w-[66px] max-w-[76px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-emerald-800">K</th>
-                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
-                <th className="w-11 min-w-[38px] max-w-[44px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">M</th>
-                <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-slate-700">N - BM</th>
-                <th className="w-28 min-w-[104px] max-w-[122px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-rose-800 bg-rose-50/70">O - VIA</th>
-                <th className="w-28 min-w-[100px] max-w-[118px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">P</th>
+                <th className="w-14 min-w-[54px] max-w-[62px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-emerald-800">I</th>
+                <th className="w-18 min-w-[66px] max-w-[76px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold text-emerald-800">J</th>
+                <th className="w-20 min-w-[72px] max-w-[85px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">K</th>
+                <th className="w-11 min-w-[38px] max-w-[44px] px-0.5 py-0.5 text-center border-r border-slate-300 font-bold">L</th>
+                <th className="w-36 min-w-[130px] max-w-[160px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-slate-700">M - BM</th>
+                <th className="w-28 min-w-[104px] max-w-[122px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-rose-800 bg-rose-50/70">N - VIA</th>
+                <th className="w-28 min-w-[100px] max-w-[118px] px-1 py-0.5 text-center border-r border-slate-300 font-bold text-amber-900 bg-amber-50/70">O</th>
                 <th className="w-20 min-w-[70px] max-w-[85px] px-0.5 py-0.5 text-center font-normal border-l border-slate-300">Thao Tác</th>
               </tr>
 
               {/* Green Headers from Google Sheet */}
               <tr className="bg-[#38761d] text-white text-[11px] uppercase tracking-wider font-bold select-none border-b-2 border-slate-400 h-7">
                 <th className="w-8 min-w-[32px] px-0.5 py-0.5 text-center border-r border-emerald-800/80">STT</th>
-                {!hideStaffColumn && (
-                  <th className="w-18 min-w-[70px] max-w-[85px] px-0.5 py-0.5 border-r border-emerald-800/80 text-center">
-                    <div className="flex flex-col items-center leading-tight">
-                      <span>TÊN NV</span>
-                      <span className="text-[7.5px] font-normal opacity-85 lowercase">
-                        {mergeViaCells ? '(gộp ô)' : '(tách)'}
-                      </span>
-                    </div>
-                  </th>
-                )}
                 <th className="w-56 min-w-[200px] max-w-[240px] px-1 py-0.5 border-r border-emerald-800/80 text-left">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold tracking-tight text-[10px]">VIA & GHI CHÚ</span>
@@ -1852,7 +1998,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             <tbody className="divide-y divide-slate-300 text-slate-800">
               {paginatedItems.length === 0 ? (
                 <tr>
-                  <td colSpan={hideStaffColumn ? 16 : 17} className="py-8 text-center text-slate-400 bg-white">
+                  <td colSpan={16} className="py-8 text-center text-slate-400 bg-white">
                     Không tìm thấy dòng nào phù hợp. Hãy đặt lại bộ lọc hoặc tạo thêm Page mới.
                   </td>
                 </tr>
@@ -1867,7 +2013,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         <td className="px-1 py-1 text-center border-r border-emerald-300 font-mono text-emerald-800 text-[10px] bg-emerald-100/50 select-none">
                           {startIndex + index + 1}
                         </td>
-                        <td colSpan={hideStaffColumn ? 15 : 16} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
+                        <td colSpan={15} className="px-2.5 py-1 text-xs text-emerald-950 font-bold">
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div className="flex items-center space-x-2">
                               <button
@@ -2004,164 +2150,150 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   const cellPyClass = isCompact ? 'py-0.5' : 'py-1';
 
                   return (
-                    <tr
-                      key={record.id}
-                      className={`transition-colors ${topDividerClass} ${bottomDividerClass} ${
-                        isRowViaError
-                          ? 'bg-rose-50/75 hover:bg-rose-100/75 border-l-4 border-l-rose-600'
-                          : isRowNewTransfer
-                          ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-600 ring-1 ring-inset ring-rose-300'
-                          : isRowViaFixed
-                          ? 'bg-emerald-50/80 hover:bg-emerald-100/80 border-l-4 border-l-emerald-600'
-                          : `${theme.rowBg} ${theme.rowHover} ${isGroupedVia ? theme.borderLeft : ''}`
-                      }`}
-                    >
-                      {/* Col A: Row index */}
-                      <td className={`px-1 ${cellPyClass} text-center border-r border-slate-300 font-mono text-slate-500 text-[10px] bg-slate-50/70 select-none`}>
-                        {startIndex + index + 1}
-                      </td>
-
-                      {/* Col B: TÊN NV - VIẾT 1 LẦN DUY NHẤT KHI BẬT GỘP Ô HOẶC TỪNG DÒNG KHI TÁCH (Ẩn khi đã chọn lọc theo Tên NV ở trên) */}
-                      {!hideStaffColumn && shouldRenderStaffCell && (
-                        <td
-                          rowSpan={staffRowSpan}
-                          className={`px-1 ${cellPyClass} border-r border-slate-300 font-bold text-slate-900 align-top bg-slate-50/95 text-center select-none shadow-2xs`}
-                        >
-                          <div className="sticky top-12 pt-1.5 flex flex-col items-center justify-start p-0.5 max-w-[88px] mx-auto">
-                            {/* Staff Avatar with Initials */}
-                            <div className="w-5 h-5 rounded-full bg-[#2e7d32] text-white font-bold flex items-center justify-center text-[10px] shadow-2xs mb-0.5 border border-emerald-700 shrink-0">
-                              {record.staffName.trim().slice(0, 2).toUpperCase() || 'NV'}
-                            </div>
-
-                            {/* Staff Name display / edit */}
-                            {currentUser.role === 'admin' && isEditingStaffNameMode === record.staffName ? (
-                              <div className="flex flex-col items-center space-y-0.5 w-full">
-                                <input
-                                  type="text"
-                                  autoFocus
-                                  value={
-                                    editingStaffName[record.staffName] !== undefined
-                                      ? editingStaffName[record.staffName]
-                                      : record.staffName
-                                  }
-                                  onChange={(e) =>
-                                    setEditingStaffName({
-                                      ...editingStaffName,
-                                      [record.staffName]: e.target.value,
-                                    })
-                                  }
-                                  onKeyDown={(e) => {
-                                    if (e.key === 'Enter') handleSaveStaffRename(record.staffName);
-                                    if (e.key === 'Escape') setIsEditingStaffNameMode(null);
-                                  }}
-                                  className="w-full text-center px-1 py-0.5 text-xs font-bold bg-white border border-emerald-600 rounded shadow-2xs focus:outline-hidden"
-                                />
-                                <div className="flex items-center space-x-1">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleSaveStaffRename(record.staffName)}
-                                    className="px-1.5 py-0.2 bg-emerald-600 text-white rounded text-[9px] font-bold hover:bg-emerald-700"
-                                  >
-                                    Lưu
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setIsEditingStaffNameMode(null)}
-                                    className="px-1.5 py-0.2 bg-slate-200 text-slate-700 rounded text-[9px] hover:bg-slate-300"
-                                  >
-                                    Hủy
-                                  </button>
+                    <React.Fragment key={record.id}>
+                      {/* 🌟 HÀNG TIÊU ĐỀ NHÂN VIÊN NẰM NGANG TRÊN CÙNG MỖI NHÓM NV (THAY CHO CỘT TÊN NV DỌC) */}
+                      {isFirstOfStaff && (
+                        <tr className="bg-gradient-to-r from-emerald-100 via-emerald-50 to-teal-50 border-y-2 border-[#2e7d32] select-none">
+                          <td colSpan={16} className="px-3 py-1.5">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex items-center flex-wrap gap-2">
+                                <div className="w-6 h-6 rounded-lg bg-[#2e7d32] text-white font-black flex items-center justify-center text-xs shadow-2xs border border-emerald-800 shrink-0">
+                                  {record.staffName.trim().slice(0, 2).toUpperCase() || 'NV'}
                                 </div>
-                              </div>
-                            ) : (
-                              <div className="group flex flex-col items-center">
-                                <div className="flex items-center justify-center space-x-0.5">
-                                  <span className="font-bold text-slate-900 text-xs tracking-tight leading-tight truncate max-w-[70px]" title={record.staffName}>
-                                    {record.staffName}
-                                  </span>
-                                  {/* Button to collapse this staff */}
-                                  <button
-                                    type="button"
-                                    onClick={() => toggleStaffCollapse(record.staffName)}
-                                    className="p-0.5 text-slate-400 hover:text-emerald-700 hover:bg-emerald-50 rounded transition-colors"
-                                    title={`Thu gọn toàn bộ hàng của nhân viên ${record.staffName}`}
-                                  >
-                                    <ChevronDown className="w-2.5 h-2.5 text-slate-500" />
-                                  </button>
-                                  {currentUser.role === 'admin' && onUpdateStaffNameForAll && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
+                                {currentUser.role === 'admin' && isEditingStaffNameMode === record.staffName ? (
+                                  <div className="flex items-center space-x-1">
+                                    <input
+                                      type="text"
+                                      autoFocus
+                                      value={
+                                        editingStaffName[record.staffName] !== undefined
+                                          ? editingStaffName[record.staffName]
+                                          : record.staffName
+                                      }
+                                      onChange={(e) =>
                                         setEditingStaffName({
                                           ...editingStaffName,
-                                          [record.staffName]: record.staffName,
-                                        });
-                                        setIsEditingStaffNameMode(record.staffName);
+                                          [record.staffName]: e.target.value,
+                                        })
+                                      }
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSaveStaffRename(record.staffName);
+                                        if (e.key === 'Escape') setIsEditingStaffNameMode(null);
                                       }}
-                                      className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-emerald-700 transition-opacity cursor-pointer"
-                                      title="Đổi tên nhân viên này cho toàn bộ bảng"
-                                    >
-                                      <Edit2 className="w-2.5 h-2.5" />
-                                    </button>
-                                  )}
-                                  {currentUser.role === 'admin' && onDeleteStaffAllData && (
+                                      className="px-2 py-0.5 text-xs font-black bg-white border border-emerald-600 rounded shadow-2xs focus:outline-hidden"
+                                    />
                                     <button
                                       type="button"
-                                      onClick={() => onDeleteStaffAllData(record.staffName)}
-                                      className="opacity-0 group-hover:opacity-100 p-0.5 text-slate-400 hover:text-rose-600 transition-opacity cursor-pointer"
-                                      title={`Chọn xóa toàn bộ dữ liệu (Fanpage, Via, Tài khoản) của NV "${record.staffName}"`}
+                                      onClick={() => handleSaveStaffRename(record.staffName)}
+                                      className="px-2 py-0.5 bg-emerald-600 text-white rounded text-[10px] font-bold hover:bg-emerald-700 cursor-pointer"
                                     >
-                                      <Trash2 className="w-2.5 h-2.5" />
+                                      Lưu
                                     </button>
-                                  )}
-                                </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setIsEditingStaffNameMode(null)}
+                                      className="px-2 py-0.5 bg-slate-200 text-slate-700 rounded text-[10px] hover:bg-slate-300 cursor-pointer"
+                                    >
+                                      Hủy
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center space-x-1.5">
+                                    <span className="text-sm font-black text-emerald-950 uppercase tracking-wide">
+                                      NHÂN VIÊN: {record.staffName}
+                                    </span>
+                                    {currentUser.role === 'admin' && onUpdateStaffNameForAll && (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingStaffName({
+                                            ...editingStaffName,
+                                            [record.staffName]: record.staffName,
+                                          });
+                                          setIsEditingStaffNameMode(record.staffName);
+                                        }}
+                                        className="p-0.5 text-emerald-700 hover:text-emerald-950 hover:bg-emerald-200/70 rounded transition-colors cursor-pointer"
+                                        title="Đổi tên nhân viên này cho toàn bộ bảng"
+                                      >
+                                        <Edit2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                    {currentUser.role === 'admin' && onDeleteStaffAllData && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onDeleteStaffAllData(record.staffName)}
+                                        className="p-0.5 text-slate-500 hover:text-rose-600 hover:bg-rose-100 rounded transition-colors cursor-pointer"
+                                        title={`Xóa toàn bộ dữ liệu của NV "${record.staffName}"`}
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+
+                                <span className="text-[11px] font-black text-white bg-[#2e7d32] px-2 py-0.5 rounded-full shadow-2xs">
+                                  📄 {staffSpan.totalInGroup} Fanpage
+                                </span>
+
                                 {(() => {
                                   const sInfo = staffPostingMap.get(record.staffName.trim().toLowerCase());
+                                  if (!sInfo) return null;
                                   return (
-                                    <div className="flex flex-col items-center mt-0.5 space-y-0.5">
-                                      {mergeViaCells && staffSpan.totalInGroup > 1 && (
-                                        <span className="text-[9px] text-slate-500 font-semibold bg-white px-1.5 py-0.2 rounded-full border border-slate-200 shadow-2xs">
-                                          {staffSpan.totalInGroup} Page
+                                    <div
+                                      onClick={() => setIsPostingStatsModalOpen(true)}
+                                      className="flex items-center flex-wrap gap-1 text-[10px] font-bold cursor-pointer hover:opacity-85"
+                                      title="Bấm để xem thống kê chi tiết"
+                                    >
+                                      <span className="text-emerald-900 bg-white px-2 py-0.5 rounded-full border border-emerald-300 shadow-2xs">
+                                        🟢 {sInfo.doingPages} Đang làm
+                                      </span>
+                                      <span className="text-rose-900 bg-white px-2 py-0.5 rounded-full border border-rose-300 shadow-2xs">
+                                        🔴 {sInfo.notDoingPages} Không làm
+                                      </span>
+                                      {sInfo.manualPages > 0 && (
+                                        <span className="text-emerald-900 bg-white px-2 py-0.5 rounded-full border border-emerald-300 shadow-2xs">
+                                          ✍️ {sInfo.manualPages} Đăng Tay
                                         </span>
                                       )}
-                                      {sInfo && (
-                                        <div
-                                          onClick={() => setIsPostingStatsModalOpen(true)}
-                                          className="flex flex-col items-center gap-0.5 text-[8.5px] font-bold cursor-pointer hover:opacity-85 transition-opacity"
-                                          title={`Bấm để xem thống kê của ${sInfo.staffName}: ${sInfo.doingPages} Page Đang làm, ${sInfo.notDoingPages} Page Không làm (${sInfo.manualPages} Tay, ${sInfo.toolPages} Tool)`}
-                                        >
-                                          <div className="flex items-center gap-0.5">
-                                            <span className="text-emerald-800 bg-emerald-100/90 px-1 py-0.1 rounded border border-emerald-300" title="Số Page Đang làm">
-                                              🟢{sInfo.doingPages}
-                                            </span>
-                                            <span className="text-rose-800 bg-rose-100/90 px-1 py-0.1 rounded border border-rose-300" title="Số Page Không làm">
-                                              🔴{sInfo.notDoingPages}
-                                            </span>
-                                          </div>
-                                          {(sInfo.manualPages > 0 || sInfo.toolPages > 0) && (
-                                            <div className="flex items-center gap-0.5">
-                                              {sInfo.manualPages > 0 && (
-                                                <span className="text-emerald-800 bg-white px-1 py-0.1 rounded border border-emerald-200">
-                                                  ✍️{sInfo.manualPages}
-                                                </span>
-                                              )}
-                                              {sInfo.toolPages > 0 && (
-                                                <span className="text-purple-800 bg-white px-1 py-0.1 rounded border border-purple-200">
-                                                  🤖{sInfo.toolPages}
-                                                </span>
-                                              )}
-                                            </div>
-                                          )}
-                                        </div>
+                                      {sInfo.toolPages > 0 && (
+                                        <span className="text-purple-900 bg-white px-2 py-0.5 rounded-full border border-purple-300 shadow-2xs">
+                                          🤖 {sInfo.toolPages} Tool
+                                        </span>
                                       )}
                                     </div>
                                   );
                                 })()}
                               </div>
-                            )}
-                          </div>
-                        </td>
+
+                              <button
+                                type="button"
+                                onClick={() => toggleStaffCollapse(record.staffName)}
+                                className="px-2 py-0.5 rounded bg-white hover:bg-emerald-200 text-emerald-900 border border-emerald-300 text-[10px] font-bold inline-flex items-center space-x-1 shadow-2xs cursor-pointer"
+                                title={`Thu gọn danh sách Fanpage của ${record.staffName}`}
+                              >
+                                <ChevronDown className="w-3 h-3 text-emerald-700" />
+                                <span>Thu gọn NV</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
                       )}
+
+                      <tr
+                        className={`transition-colors ${topDividerClass} ${bottomDividerClass} ${
+                          isRowViaError
+                            ? 'bg-rose-50/75 hover:bg-rose-100/75 border-l-4 border-l-rose-600'
+                            : isRowNewTransfer
+                            ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-600 ring-1 ring-inset ring-rose-300'
+                            : isRowViaFixed
+                            ? 'bg-emerald-50/80 hover:bg-emerald-100/80 border-l-4 border-l-emerald-600'
+                            : `${theme.rowBg} ${theme.rowHover} ${isGroupedVia ? theme.borderLeft : ''}`
+                        }`}
+                      >
+                        {/* Col A: Row index */}
+                        <td className={`px-1 ${cellPyClass} text-center border-r border-slate-300 font-mono text-slate-500 text-[10px] bg-slate-50/70 select-none`}>
+                          {startIndex + index + 1}
+                        </td>
 
                       {/* Col C: Via (UID) & GHI CHÚ CHUNG CHO CẢ VIA (CHO 2-3 PAGE CHUNG 1 VIA) */}
                       {shouldRenderViaCell && (
@@ -3269,6 +3401,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         </div>
                       </td>
                     </tr>
+                    </React.Fragment>
                   );
                 })
               )}
