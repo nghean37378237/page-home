@@ -425,8 +425,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   // Danh sách nhân viên bị thu gọn (Collapsible Staff)
   const [collapsedStaffSet, setCollapsedStaffSet] = useState<Set<string>>(new Set());
 
-  // Phân trang: Mặc định 'all' để bảng hiển thị dài đầy đủ như cũ
-  const [pageSize, setPageSize] = useState<number | 'all'>('all');
+  // Phân trang: Mặc định 'staff' (Phân trang theo tên nhân viên khi xem Tất Cả)
+  const [pageSize, setPageSize] = useState<number | 'all' | 'staff'>('staff');
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Chiều cao khung nhìn: Mặc định 'full' (không giới hạn, bảng dài như cũ)
@@ -631,8 +631,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
   // Group records so all rows of the same Staff stay contiguous,
   // and within each Staff, all rows of the same Via stay contiguous.
-  // Supports collapsible staff accordion.
-  const { displayItems, totalRecordCount } = useMemo(() => {
+  // Supports collapsible staff accordion and per-staff pagination.
+  const { displayItems, totalRecordCount, staffPages } = useMemo(() => {
     const baseRecs = selectedStaff === 'all'
       ? records
       : records.filter((r) => r.staffName.trim().toLowerCase() === selectedStaff.trim().toLowerCase());
@@ -645,6 +645,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     });
 
     const items: SheetRowItem[] = [];
+    const staffPagesList: { staffName: string; items: SheetRowItem[]; count: number }[] = [];
     let countTotal = 0;
 
     staffMap.forEach((staffRecs, staffName) => {
@@ -679,7 +680,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             .filter(Boolean)
         );
 
-        items.push({
+        const collapsedItem: SheetRowItem = {
           isCollapsedStaff: true,
           staffName,
           totalRecords: staffRecs.length,
@@ -694,6 +695,12 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
           toolActual,
           doingCount,
           notDoingCount,
+        };
+        items.push(collapsedItem);
+        staffPagesList.push({
+          staffName,
+          items: [collapsedItem],
+          count: staffRecs.length,
         });
       } else {
         const viaMap = new Map<string, PageRecord[]>();
@@ -760,23 +767,39 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
           return true;
         });
 
+        const staffRowItems: SheetRowItem[] = [];
         filteredStaffRecs.forEach((r) => {
-          items.push({ isCollapsedStaff: false, record: r });
+          const rowItem: SheetRowItem = { isCollapsedStaff: false, record: r };
+          items.push(rowItem);
+          staffRowItems.push(rowItem);
           countTotal++;
         });
+
+        if (staffRowItems.length > 0) {
+          staffPagesList.push({
+            staffName,
+            items: staffRowItems,
+            count: staffRowItems.length,
+          });
+        }
       }
     });
 
-    return { displayItems: items, totalRecordCount: countTotal };
+    return { displayItems: items, totalRecordCount: countTotal, staffPages: staffPagesList };
   }, [records, selectedStaff, collapsedStaffSet, sortMode, filterViaType, errorViaUids, existingVias]);
 
-  // Phân trang
+  // Phân trang (Hỗ trợ phân trang theo Tên Nhân Viên khi ở chế độ Xem Tất Cả)
+  const isStaffPaginationActive = !hideStaffColumn && pageSize === 'staff' && staffPages.length > 0;
   const totalItems = displayItems.length;
-  const totalPages = pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalItems / (pageSize as number)));
+  const totalPages = isStaffPaginationActive
+    ? Math.max(1, staffPages.length)
+    : pageSize === 'all' || pageSize === 'staff'
+    ? 1
+    : Math.max(1, Math.ceil(totalItems / (pageSize as number)));
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [filterViaType, sortMode, selectedStaff, pageSize]);
+  }, [filterViaType, sortMode, selectedStaff, activeStaffFilter, pageSize]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -784,12 +807,28 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
     }
   }, [totalPages, currentPage]);
 
-  const startIndex = pageSize === 'all' ? 0 : (currentPage - 1) * (pageSize as number);
-  const endIndex = pageSize === 'all' ? totalItems : Math.min(startIndex + (pageSize as number), totalItems);
+  const currentStaffPage = isStaffPaginationActive
+    ? staffPages[Math.min(Math.max(0, currentPage - 1), staffPages.length - 1)] || null
+    : null;
+
+  const startIndex = isStaffPaginationActive
+    ? 0
+    : pageSize === 'all' || pageSize === 'staff'
+    ? 0
+    : (currentPage - 1) * (pageSize as number);
+
+  const endIndex = isStaffPaginationActive
+    ? currentStaffPage?.items.length || 0
+    : pageSize === 'all' || pageSize === 'staff'
+    ? totalItems
+    : Math.min(startIndex + (pageSize as number), totalItems);
 
   const paginatedItems = useMemo(() => {
+    if (isStaffPaginationActive) {
+      return currentStaffPage ? currentStaffPage.items : [];
+    }
     return displayItems.slice(startIndex, endIndex);
-  }, [displayItems, startIndex, endIndex]);
+  }, [isStaffPaginationActive, currentStaffPage, displayItems, startIndex, endIndex]);
 
   // Map to synchronize shared note for all pages under the same Via
   const viaSharedNotesMap = useMemo(() => {
@@ -1341,9 +1380,26 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
         {/* Phải: Phân trang + Xem cột nhanh + Sắp xếp + Khung nhìn & Màu */}
         <div className="flex items-center flex-wrap gap-1 ml-auto">
-          {/* Phân trang ngắn gọn */}
+          {/* Phân trang ngắn gọn (Hỗ trợ Phân trang theo Nhân Viên khi xem Tất Cả) */}
           <div className="inline-flex items-center space-x-0.5 bg-white px-1.5 py-0.5 rounded-md border border-slate-300 shadow-2xs">
-            <span className="text-[10px] text-slate-500 font-bold mr-0.5">Hàng:</span>
+            <span className="text-[10px] text-slate-500 font-bold mr-0.5">Phân trang:</span>
+            {!hideStaffColumn && (
+              <button
+                type="button"
+                onClick={() => {
+                  setPageSize('staff');
+                  setCurrentPage(1);
+                }}
+                className={`px-1.5 py-0.1 rounded text-[11px] font-bold transition-all cursor-pointer inline-flex items-center space-x-0.5 ${
+                  pageSize === 'staff'
+                    ? 'bg-[#2e7d32] text-white shadow-2xs'
+                    : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100'
+                }`}
+                title="Phân trang theo từng Tên Nhân Viên (Mỗi trang 1 nhân viên)"
+              >
+                <span>👤 Theo NV</span>
+              </button>
+            )}
             {([10, 15, 25, 50, 'all'] as const).map((sz) => (
               <button
                 key={sz}
@@ -1353,7 +1409,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   setCurrentPage(1);
                 }}
                 className={`px-1 py-0.1 rounded text-[11px] font-bold transition-all cursor-pointer ${
-                  pageSize === sz
+                  pageSize === sz || (hideStaffColumn && pageSize === 'staff' && sz === 'all')
                     ? 'bg-[#2e7d32] text-white'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
@@ -1362,24 +1418,28 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               </button>
             ))}
 
-            {pageSize !== 'all' && totalPages > 1 && (
+            {(isStaffPaginationActive || pageSize !== 'all') && totalPages > 1 && (
               <div className="flex items-center space-x-0.5 pl-1 border-l border-slate-200">
                 <button
                   type="button"
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
                   className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                  title="Trang trước"
                 >
                   <ChevronLeft className="w-3 h-3" />
                 </button>
-                <span className="text-[10px] font-extrabold text-slate-800 px-1">
-                  {currentPage}/{totalPages}
+                <span className="text-[10px] font-extrabold text-slate-800 px-1 whitespace-nowrap">
+                  {isStaffPaginationActive && currentStaffPage
+                    ? `${currentPage}/${totalPages} • ${currentStaffPage.staffName}`
+                    : `${currentPage}/${totalPages}`}
                 </span>
                 <button
                   type="button"
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
                   className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                  title="Trang sau"
                 >
                   <ChevronRight className="w-3 h-3" />
                 </button>
@@ -1532,6 +1592,135 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               >
                 <Check className="w-3.5 h-3.5 stroke-[3]" />
                 <span>Đã nhận tất cả (Gỡ báo đỏ)</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 📑 THANH PHÂN TRANG THEO TÊN NHÂN VIÊN KHI XEM TẤT CẢ */}
+      {!hideStaffColumn && staffPages.length > 1 && (
+        <div className="mb-1.5 bg-gradient-to-r from-emerald-50 via-white to-teal-50 border border-emerald-300 rounded-lg px-2.5 py-1.5 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
+          <div className="flex items-center flex-wrap gap-1.5">
+            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-[#2e7d32] text-white font-black text-[11px] shadow-2xs">
+              <User className="w-3 h-3" />
+              <span>Phân Trang Theo NV:</span>
+            </span>
+
+            {isStaffPaginationActive && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  className="px-1.5 py-0.5 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  title="Trang nhân viên đầu tiên"
+                >
+                  « Đầu
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  className="px-1.5 py-0.5 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  title="Nhân viên trước"
+                >
+                  ‹ Trước
+                </button>
+              </>
+            )}
+
+            <div className="flex items-center flex-wrap gap-1">
+              {staffPages.map((sp, idx) => {
+                const pageNum = idx + 1;
+                const isActive = isStaffPaginationActive && currentPage === pageNum;
+                return (
+                  <button
+                    key={sp.staffName}
+                    type="button"
+                    onClick={() => {
+                      if (pageSize !== 'staff') {
+                        setPageSize('staff');
+                      }
+                      setCurrentPage(pageNum);
+                    }}
+                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center space-x-1 ${
+                      isActive
+                        ? 'bg-[#2e7d32] text-white border-[#1b5e20] shadow-xs ring-2 ring-emerald-200'
+                        : 'bg-white hover:bg-emerald-50 text-slate-700 border-slate-300 hover:border-emerald-400'
+                    }`}
+                    title={`Xem trang ${pageNum}/${staffPages.length}: Nhân viên ${sp.staffName} (${sp.count} Fanpage)`}
+                  >
+                    <span
+                      className={`w-4 h-4 rounded-full text-[9px] font-black inline-flex items-center justify-center ${
+                        isActive ? 'bg-white text-[#2e7d32]' : 'bg-slate-100 text-slate-600'
+                      }`}
+                    >
+                      {pageNum}
+                    </span>
+                    <span>{sp.staffName}</span>
+                    <span
+                      className={`text-[10px] font-mono px-1 rounded ${
+                        isActive ? 'bg-emerald-800/80 text-emerald-100' : 'bg-slate-100 text-slate-500'
+                      }`}
+                    >
+                      {sp.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {isStaffPaginationActive && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                  className="px-1.5 py-0.5 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  title="Nhân viên tiếp theo"
+                >
+                  Sau ›
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage === totalPages}
+                  className="px-1.5 py-0.5 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  title="Trang nhân viên cuối cùng"
+                >
+                  Cuối »
+                </button>
+              </>
+            )}
+          </div>
+
+          <div className="flex items-center space-x-2 ml-auto">
+            {isStaffPaginationActive && currentStaffPage ? (
+              <>
+                <span className="text-[11px] text-emerald-950 font-semibold">
+                  Trang <strong>{currentPage}/{staffPages.length}</strong>:{' '}
+                  <strong className="text-[#2e7d32] font-black">{currentStaffPage.staffName}</strong> ({currentStaffPage.count} Page)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPageSize('all')}
+                  className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
+                  title="Hiển thị nối dài toàn bộ nhân viên trên 1 trang"
+                >
+                  Xem gộp hết ({totalItems})
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setPageSize('staff');
+                  setCurrentPage(1);
+                }}
+                className="px-2.5 py-0.5 rounded border border-emerald-600 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold transition-colors cursor-pointer"
+              >
+                📑 Bật phân trang theo NV
               </button>
             )}
           </div>
@@ -1836,9 +2025,9 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                       {!hideStaffColumn && shouldRenderStaffCell && (
                         <td
                           rowSpan={staffRowSpan}
-                          className={`px-1 ${cellPyClass} border-r border-slate-300 font-bold text-slate-900 align-middle bg-slate-50/95 text-center select-none shadow-2xs`}
+                          className={`px-1 ${cellPyClass} border-r border-slate-300 font-bold text-slate-900 align-top bg-slate-50/95 text-center select-none shadow-2xs`}
                         >
-                          <div className="flex flex-col items-center justify-center p-0.5 max-w-[88px] mx-auto">
+                          <div className="sticky top-12 pt-1.5 flex flex-col items-center justify-start p-0.5 max-w-[88px] mx-auto">
                             {/* Staff Avatar with Initials */}
                             <div className="w-5 h-5 rounded-full bg-[#2e7d32] text-white font-bold flex items-center justify-center text-[10px] shadow-2xs mb-0.5 border border-emerald-700 shrink-0">
                               {record.staffName.trim().slice(0, 2).toUpperCase() || 'NV'}
@@ -3098,7 +3287,16 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
         <div className="bg-slate-50 border-t border-slate-300 px-4 py-2.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 text-xs text-slate-600 font-sans">
           <div className="flex items-center flex-wrap gap-2">
             <span className="font-bold text-slate-700 bg-white px-2 py-1 rounded border border-slate-200">
-              Hiển thị: <strong>{paginatedItems.length > 0 ? `${startIndex + 1} - ${endIndex}` : 0}</strong> / <strong>{totalItems}</strong> hàng
+              {isStaffPaginationActive && currentStaffPage ? (
+                <>
+                  Trang NV <strong>{currentPage}/{staffPages.length}</strong>:{' '}
+                  <strong className="text-[#2e7d32]">{currentStaffPage.staffName}</strong> (<strong>{paginatedItems.length}</strong> Page)
+                </>
+              ) : (
+                <>
+                  Hiển thị: <strong>{paginatedItems.length > 0 ? `${startIndex + 1} - ${endIndex}` : 0}</strong> / <strong>{totalItems}</strong> hàng
+                </>
+              )}
               <span className="text-slate-400 font-normal"> (Tổng {records.length} Fanpage • {viaStats.totalVias} Via)</span>
             </span>
             <span className="text-slate-300">|</span>
@@ -3120,8 +3318,8 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
           </div>
 
           {/* Bottom Pagination Controls */}
-          {pageSize !== 'all' && totalPages > 1 && (
-            <div className="flex items-center space-x-1 shrink-0">
+          {(isStaffPaginationActive || pageSize !== 'all') && totalPages > 1 && (
+            <div className="flex items-center flex-wrap gap-1 shrink-0">
               <button
                 type="button"
                 onClick={() => setCurrentPage(1)}
@@ -3140,28 +3338,47 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               >
                 ‹ Trước
               </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1)
-                .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
-                .map((p, idx, arr) => {
-                  const prev = arr[idx - 1];
-                  const hasGap = prev && p - prev > 1;
-                  return (
-                    <React.Fragment key={p}>
-                      {hasGap && <span className="px-1 text-slate-400">...</span>}
+              {isStaffPaginationActive
+                ? staffPages.map((sp, idx) => {
+                    const p = idx + 1;
+                    return (
                       <button
+                        key={sp.staffName}
                         type="button"
                         onClick={() => setCurrentPage(p)}
-                        className={`w-7 h-7 text-[11px] font-bold rounded border transition-colors cursor-pointer ${
+                        className={`px-2 py-1 text-[11px] font-bold rounded border transition-colors cursor-pointer ${
                           currentPage === p
                             ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
                             : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
                         }`}
+                        title={`Trang ${p}: ${sp.staffName} (${sp.count} Page)`}
                       >
-                        {p}
+                        {p}. {sp.staffName} ({sp.count})
                       </button>
-                    </React.Fragment>
-                  );
-                })}
+                    );
+                  })
+                : Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2)
+                    .map((p, idx, arr) => {
+                      const prev = arr[idx - 1];
+                      const hasGap = prev && p - prev > 1;
+                      return (
+                        <React.Fragment key={p}>
+                          {hasGap && <span className="px-1 text-slate-400">...</span>}
+                          <button
+                            type="button"
+                            onClick={() => setCurrentPage(p)}
+                            className={`w-7 h-7 text-[11px] font-bold rounded border transition-colors cursor-pointer ${
+                              currentPage === p
+                                ? 'bg-emerald-700 text-white border-emerald-800 shadow-2xs'
+                                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
+                            }`}
+                          >
+                            {p}
+                          </button>
+                        </React.Fragment>
+                      );
+                    })}
               <button
                 type="button"
                 onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
