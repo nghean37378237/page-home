@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Users,
   Search,
@@ -32,7 +32,19 @@ import {
   XCircle,
   KeyRound,
 } from 'lucide-react';
-import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, GroupAdminJoinReport, GROUP_ADMIN_JOIN_REPORT_OPTIONS, GroupInteractionStatus, GROUP_INTERACTION_STATUS_OPTIONS, FullViaItem } from '../types';
+import {
+  GroupRecord,
+  AppUser,
+  GroupJoinStatus,
+  GROUP_JOIN_STATUS_OPTIONS,
+  GroupAdminJoinReport,
+  GROUP_ADMIN_JOIN_REPORT_OPTIONS,
+  GroupInteractionStatus,
+  GROUP_INTERACTION_STATUS_OPTIONS,
+  FullViaItem,
+  areStaffNamesEquivalent,
+  isAdminWaitingPool,
+} from '../types';
 import { exportGroupToXLSX } from '../utils/excelTemplates';
 import { parseFullVia, parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
 
@@ -40,6 +52,8 @@ interface GroupManagementTableProps {
   records: GroupRecord[];
   currentUser: AppUser;
   availableStaffNames: string[];
+  activeStaffFilter?: string;
+  onSelectStaffFilter?: (staffName: string) => void;
   existingVias?: FullViaItem[];
   onSupplementVia?: (viaUid: string, newFullVia: string, staffName?: string) => Promise<void> | void;
   onAddRecord: (record: GroupRecord) => Promise<void>;
@@ -64,6 +78,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   records,
   currentUser,
   availableStaffNames,
+  activeStaffFilter,
+  onSelectStaffFilter,
   existingVias,
   onSupplementVia,
   onAddRecord,
@@ -84,13 +100,39 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   const scopedRecords = useMemo(() => {
     if (isAdmin) return records;
     return records.filter(
-      (r) => (r.staffName || '').trim().toLowerCase() === myStaffNameLower
+      (r) =>
+        (r.staffName || '').trim().toLowerCase() === myStaffNameLower ||
+        areStaffNamesEquivalent(r.staffName, currentUser.name)
     );
-  }, [records, isAdmin, myStaffNameLower]);
+  }, [records, isAdmin, myStaffNameLower, currentUser.name]);
 
   // Filters state
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStaffFilter, setSelectedStaffFilter] = useState('ALL');
+  const [selectedStaffFilter, setSelectedStaffFilter] = useState(() => {
+    if (
+      activeStaffFilter &&
+      activeStaffFilter.trim() &&
+      activeStaffFilter.trim().toLowerCase() !== 'all' &&
+      !isAdminWaitingPool(activeStaffFilter)
+    ) {
+      return activeStaffFilter.trim();
+    }
+    return 'ALL';
+  });
+
+  useEffect(() => {
+    if (
+      activeStaffFilter &&
+      activeStaffFilter.trim() &&
+      activeStaffFilter.trim().toLowerCase() !== 'all' &&
+      !isAdminWaitingPool(activeStaffFilter)
+    ) {
+      setSelectedStaffFilter(activeStaffFilter.trim());
+    } else if (activeStaffFilter === '' || activeStaffFilter === 'all') {
+      setSelectedStaffFilter('ALL');
+    }
+  }, [activeStaffFilter]);
+
   const [selectedNoteFilter, setSelectedNoteFilter] = useState<'ALL' | 'VHH' | '282' | '956' | 'Hạn Chế' | 'Đang lên tương tác' | 'Có tương tác' | 'NONE'>('ALL');
   const [selectedJoinStatusFilter, setSelectedJoinStatusFilter] = useState<'ALL' | 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa'>('ALL');
   const [selectedAdminReportFilter, setSelectedAdminReportFilter] = useState<'ALL' | 'Đã Duyệt' | 'Chưa Jont' | 'Không tìm thấy' | 'NONE'>('ALL');
@@ -185,7 +227,9 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     if (isAdmin && selectedStaffFilter && selectedStaffFilter !== 'ALL') {
       const target = selectedStaffFilter.trim().toLowerCase();
       return scopedRecords.filter(
-        (r) => (r.staffName || '').trim().toLowerCase() === target
+        (r) =>
+          (r.staffName || '').trim().toLowerCase() === target ||
+          areStaffNamesEquivalent(r.staffName, selectedStaffFilter)
       );
     }
     return scopedRecords;
@@ -403,7 +447,10 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
       // Staff filter for admin
       if (isAdmin && selectedStaffFilter !== 'ALL') {
-        if ((r.staffName || '').trim().toLowerCase() !== selectedStaffFilter.toLowerCase()) {
+        if (
+          (r.staffName || '').trim().toLowerCase() !== selectedStaffFilter.toLowerCase() &&
+          !areStaffNamesEquivalent(r.staffName, selectedStaffFilter)
+        ) {
           return false;
         }
       }
@@ -1156,6 +1203,45 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
         </div>
       )}
 
+      {/* 🌟 HÀNG TRÊN CÙNG HIỂN THỊ TÊN NHÂN VIÊN TO RÕ ĐẸP MẮT KHI CHỌN NHÂN VIÊN GROUP */}
+      {(selectedStaffFilter !== 'ALL' || !isAdmin) && (
+        <div className="bg-gradient-to-r from-red-900 via-rose-700 to-red-900 text-white px-4 py-3 rounded-2xl border-2 border-red-950/30 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+          <div className="flex items-center flex-wrap gap-3">
+            <div className="w-10 h-10 rounded-xl bg-white text-red-800 font-black flex items-center justify-center text-sm shadow-sm border-2 border-red-200 shrink-0">
+              {(isAdmin ? selectedStaffFilter : currentUser.name).trim().slice(0, 2).toUpperCase() || 'NV'}
+            </div>
+            <div className="flex flex-col">
+              <span className="text-[10px] uppercase tracking-widest text-rose-200 font-bold leading-none mb-0.5">
+                BẢNG QUẢN LÝ GROUP CỦA NHÂN VIÊN
+              </span>
+              <span className="text-lg sm:text-xl font-black text-white tracking-wide leading-tight">
+                {isAdmin ? selectedStaffFilter : currentUser.name}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-1.5 text-xs font-bold">
+            <span className="px-3 py-1 rounded-lg bg-white text-red-800 font-black shadow-2xs border border-red-200">
+              👥 {totalGroupsCount} Nhóm ({staffScopedRecords.length} Dòng • {uniqueUidsCount} Via)
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-emerald-600/90 text-white border border-emerald-400">
+              ✅ Đã Jon: {joinStatusCounts.daJon}
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-amber-600/90 text-white border border-amber-400">
+              ⏳ Chờ duyệt: {joinStatusCounts.choDuyet}
+            </span>
+            <span className="px-2.5 py-1 rounded-lg bg-indigo-700/90 text-white border border-indigo-400">
+              🛡️ Admin Đã Duyệt: {adminReportCounts.daDuyet}
+            </span>
+            {noteCounts.vhh > 0 && (
+              <span className="px-2.5 py-1 rounded-lg bg-rose-600 text-white border border-rose-300 animate-pulse">
+                🔴 VHH: {noteCounts.vhh}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Top Header Card */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-2xs space-y-3">
         {/* ROW 1: Title (Left) + Action Buttons (Right) */}
@@ -1685,7 +1771,10 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
             <button
               type="button"
-              onClick={() => setSelectedStaffFilter('ALL')}
+              onClick={() => {
+                setSelectedStaffFilter('ALL');
+                onSelectStaffFilter?.('ALL');
+              }}
               className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
                 selectedStaffFilter === 'ALL'
                   ? 'bg-slate-900 text-white border-slate-900 shadow-2xs'
@@ -1701,16 +1790,24 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
             </button>
 
             {allKnownStaff.map((staffName) => {
-              const isSelected = selectedStaffFilter.trim().toLowerCase() === staffName.trim().toLowerCase();
+              const isSelected =
+                selectedStaffFilter.trim().toLowerCase() === staffName.trim().toLowerCase() ||
+                (selectedStaffFilter !== 'ALL' && areStaffNamesEquivalent(selectedStaffFilter, staffName));
               const staffCount = records.filter(
-                (r) => (r.staffName || '').trim().toLowerCase() === staffName.trim().toLowerCase()
+                (r) =>
+                  (r.staffName || '').trim().toLowerCase() === staffName.trim().toLowerCase() ||
+                  areStaffNamesEquivalent(r.staffName, staffName)
               ).length;
 
               return (
                 <button
                   key={staffName}
                   type="button"
-                  onClick={() => setSelectedStaffFilter(isSelected ? 'ALL' : staffName)}
+                  onClick={() => {
+                    const nextStaff = isSelected ? 'ALL' : staffName;
+                    setSelectedStaffFilter(nextStaff);
+                    onSelectStaffFilter?.(nextStaff);
+                  }}
                   className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
                     isSelected
                       ? 'bg-red-600 text-white border-red-600 shadow-2xs'

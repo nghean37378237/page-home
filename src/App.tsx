@@ -1119,7 +1119,10 @@ export default function App() {
           if (!isAdminWaitingPool(r.staffName) && Boolean(r.staffName?.trim())) {
             return false;
           }
-        } else if (r.staffName.toLowerCase() !== filter.staffName.toLowerCase()) {
+        } else if (
+          r.staffName.toLowerCase() !== filter.staffName.toLowerCase() &&
+          !areStaffNamesEquivalent(r.staffName, filter.staffName)
+        ) {
           return false;
         }
       }
@@ -4401,6 +4404,8 @@ export default function App() {
               filter={filter}
               onChangeFilter={setFilter}
               records={userScopedRecords}
+              groupRecords={groupRecords}
+              accounts={accounts}
               currentUser={currentUser}
               errorViaUids={errorViaUids}
               errorViaCount={errorViaCountInScope}
@@ -4419,58 +4424,167 @@ export default function App() {
               onOpenFetchPagesModal={() => handleOpenFetchPagesModal()}
             />
 
-            <FanpageSheetTable
-              records={filteredRecords}
-              allRecords={records}
-              existingVias={viaList}
-              currentUser={currentUser}
-              activeStaffFilter={filter.staffName}
-              errorViaUids={errorViaUids}
-              fixedViaUids={fixedViaUids}
-              onUpdateRecord={handleUpdateRecord}
-              onDeleteRecord={handleDeleteRecord}
-              onDuplicateRecord={handleDuplicateRecord}
-              onDeleteStaffAllData={handleOpenDeleteStaffModal}
-              onTransferPageRecord={(record) => handleOpenTransferModal(record)}
-              onTransferViaPages={(viaUid) => handleOpenTransferModal(undefined, viaUid)}
-              availableStaffNames={allStaffNames}
-              onQuickTransferViaToStaff={(viaUid, targetStaffName) => {
-                const cleanUid = viaUid.split('|')[0].trim();
-                if (!cleanUid || !targetStaffName.trim()) return;
-                const lower = normalizeViaUidKey(cleanUid);
-                const heldPages = records.filter((r) => normalizeViaUidKey(r.viaUid) === lower);
-                const todayStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
-                void handleConfirmTransferPageVia({
-                  pageIds: heldPages.map((p) => p.id),
-                  targetViaUid: cleanUid,
-                  targetStaffName: targetStaffName.trim(),
-                  appendHistoryNote: true,
-                  historyNoteText: `Chuyển Via ${cleanUid}${heldPages.length > 0 ? ` + ${heldPages.length} Page` : ''} sang ${targetStaffName.trim()} (${todayStr})`,
-                  transferViaUidsToStaff: [cleanUid],
-                });
-              }}
-              onFetchPagesForVia={handleOpenFetchPagesModal}
-              onEditRecord={(record) => {
-                setEditingRecord(record);
-                setPresetViaData(null);
-                setIsModalOpen(true);
-              }}
-              onToggleViaError={handleToggleViaError}
-              onToggleViaFixed={handleToggleViaFixed}
-              onUpdateViaSharedNoteForAll={handleUpdateViaSharedNoteForAll}
-              onUpdateViaReportNote={handleUpdateViaReportNoteFromPage}
-              onUpdateViaUidForAll={handleUpdateViaUidForAll}
-              onUpdateStaffNameForAll={handleUpdateStaffNameForAll}
-              onUpdateFullViaForAll={handleUpdateFullViaForAll}
-              onAddPageToVia={handleAddPageToVia}
-              onAcknowledgeNewTransfer={handleAcknowledgeNewTransfer}
-            />
+            {(() => {
+              const selectedStaff =
+                filter.staffName &&
+                filter.staffName.trim() &&
+                filter.staffName.trim().toLowerCase() !== 'all' &&
+                !isAdminWaitingPool(filter.staffName)
+                  ? filter.staffName.trim()
+                  : '';
+
+              const selectedStaffLower = selectedStaff.toLowerCase();
+              const selectedStaffFanpageCount = selectedStaff
+                ? userScopedRecords.filter(
+                    (r) =>
+                      (r.staffName || '').trim().toLowerCase() === selectedStaffLower ||
+                      areStaffNamesEquivalent(r.staffName, selectedStaff)
+                  ).length
+                : userScopedRecords.length;
+
+              const selectedStaffGroupCount = selectedStaff
+                ? groupRecords.filter(
+                    (g) =>
+                      (g.staffName || '').trim().toLowerCase() === selectedStaffLower ||
+                      areStaffNamesEquivalent(g.staffName, selectedStaff)
+                  ).length
+                : 0;
+
+              const selectedStaffAcc = selectedStaff
+                ? accounts.find(
+                    (a) =>
+                      (a.username || '').trim().toLowerCase() === selectedStaffLower ||
+                      areStaffNamesEquivalent(a.username, selectedStaff) ||
+                      (Boolean(a.fullName) && areStaffNamesEquivalent(a.fullName, selectedStaff))
+                  )
+                : undefined;
+
+              const isSelectedStaffAssignedGroup = Boolean(
+                selectedStaff &&
+                  (selectedStaffAcc?.allowedTabs?.includes('group') || selectedStaffGroupCount > 0)
+              );
+
+              const showOnlyGroupForStaff =
+                isSelectedStaffAssignedGroup && selectedStaffFanpageCount === 0;
+
+              return (
+                <>
+                  {!showOnlyGroupForStaff && (
+                    <FanpageSheetTable
+                      records={filteredRecords}
+                      allRecords={records}
+                      groupRecords={groupRecords}
+                      accounts={accounts}
+                      existingVias={viaList}
+                      currentUser={currentUser}
+                      activeStaffFilter={filter.staffName}
+                      onSelectStaffFilter={(staffName) =>
+                        setFilter((prev) => ({
+                          ...prev,
+                          staffName: staffName === 'all' || staffName === 'ALL' ? '' : staffName,
+                        }))
+                      }
+                      errorViaUids={errorViaUids}
+                      fixedViaUids={fixedViaUids}
+                      onUpdateRecord={handleUpdateRecord}
+                      onDeleteRecord={handleDeleteRecord}
+                      onDuplicateRecord={handleDuplicateRecord}
+                      onDeleteStaffAllData={handleOpenDeleteStaffModal}
+                      onTransferPageRecord={(record) => handleOpenTransferModal(record)}
+                      onTransferViaPages={(viaUid) => handleOpenTransferModal(undefined, viaUid)}
+                      availableStaffNames={allStaffNames}
+                      onQuickTransferViaToStaff={(viaUid, targetStaffName) => {
+                        const cleanUid = viaUid.split('|')[0].trim();
+                        if (!cleanUid || !targetStaffName.trim()) return;
+                        const lower = normalizeViaUidKey(cleanUid);
+                        const heldPages = records.filter((r) => normalizeViaUidKey(r.viaUid) === lower);
+                        const todayStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
+                        void handleConfirmTransferPageVia({
+                          pageIds: heldPages.map((p) => p.id),
+                          targetViaUid: cleanUid,
+                          targetStaffName: targetStaffName.trim(),
+                          appendHistoryNote: true,
+                          historyNoteText: `Chuyển Via ${cleanUid}${heldPages.length > 0 ? ` + ${heldPages.length} Page` : ''} sang ${targetStaffName.trim()} (${todayStr})`,
+                          transferViaUidsToStaff: [cleanUid],
+                        });
+                      }}
+                      onFetchPagesForVia={handleOpenFetchPagesModal}
+                      onEditRecord={(record) => {
+                        setEditingRecord(record);
+                        setPresetViaData(null);
+                        setIsModalOpen(true);
+                      }}
+                      onToggleViaError={handleToggleViaError}
+                      onToggleViaFixed={handleToggleViaFixed}
+                      onUpdateViaSharedNoteForAll={handleUpdateViaSharedNoteForAll}
+                      onUpdateViaReportNote={handleUpdateViaReportNoteFromPage}
+                      onUpdateViaUidForAll={handleUpdateViaUidForAll}
+                      onUpdateStaffNameForAll={handleUpdateStaffNameForAll}
+                      onUpdateFullViaForAll={handleUpdateFullViaForAll}
+                      onAddPageToVia={handleAddPageToVia}
+                      onAcknowledgeNewTransfer={handleAcknowledgeNewTransfer}
+                    />
+                  )}
+
+                  {isSelectedStaffAssignedGroup && (
+                    <div className={showOnlyGroupForStaff ? '' : 'mt-4 pt-3 border-t-2 border-red-200'}>
+                      <GroupManagementTable
+                        records={groupRecords}
+                        currentUser={currentUser}
+                        availableStaffNames={allStaffNames}
+                        activeStaffFilter={selectedStaff}
+                        onSelectStaffFilter={(staffName) =>
+                          setFilter((prev) => ({
+                            ...prev,
+                            staffName: staffName === 'ALL' || staffName === 'all' ? '' : staffName,
+                          }))
+                        }
+                        existingVias={viaList}
+                        onSupplementVia={handleUpdateFullViaForAll}
+                        onAddRecord={handleAddGroupRecord}
+                        onAddBatchRecords={handleBatchSaveGroupRecords}
+                        onUpdateRecord={handleUpdateGroupRecord}
+                        onDeleteRecord={handleDeleteGroupRecord}
+                        onDeleteBatchRecords={handleBatchDeleteGroupRecords}
+                        onOpenAddModal={(preset) => {
+                          setEditingGroupRecord(null);
+                          setPresetGroupData({
+                            ...(preset || {}),
+                            staffName: preset?.staffName || selectedStaff,
+                          });
+                          setIsGroupModalOpen(true);
+                        }}
+                        onEditRecord={(record) => {
+                          setEditingGroupRecord(record);
+                          setPresetGroupData(null);
+                          setIsGroupModalOpen(true);
+                        }}
+                        onOpenBulkImportModal={() => setIsBulkImportGroupOpen(true)}
+                        onClearAllRecords={handleClearAllGroupRecords}
+                        onRefreshRecords={async () => {
+                          const list = await getCloudGroupRecords();
+                          setGroupRecords(list || []);
+                          saveLocalGroupBackup(list || []);
+                        }}
+                      />
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </>
         ) : activeTab === 'group' ? (
           <GroupManagementTable
             records={groupRecords}
             currentUser={currentUser}
             availableStaffNames={allStaffNames}
+            activeStaffFilter={filter.staffName}
+            onSelectStaffFilter={(staffName) =>
+              setFilter((prev) => ({
+                ...prev,
+                staffName: staffName === 'ALL' || staffName === 'all' ? '' : staffName,
+              }))
+            }
             existingVias={viaList}
             onSupplementVia={handleUpdateFullViaForAll}
             onAddRecord={handleAddGroupRecord}

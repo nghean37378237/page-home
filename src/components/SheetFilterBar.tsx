@@ -13,7 +13,16 @@ import {
   Download,
   FileSpreadsheet,
 } from 'lucide-react';
-import { SheetFilter, PageRecord, AppUser, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
+import {
+  SheetFilter,
+  PageRecord,
+  GroupRecord,
+  UserAccount,
+  AppUser,
+  ADMIN_WAITING_POOL,
+  isAdminWaitingPool,
+  areStaffNamesEquivalent,
+} from '../types';
 import { getCleanBmName } from '../utils/helpers';
 import { downloadFanpageExcelTemplate, exportFanpageToXLSX } from '../utils/excelTemplates';
 
@@ -21,6 +30,8 @@ interface SheetFilterBarProps {
   filter: SheetFilter;
   onChangeFilter: (newFilter: SheetFilter) => void;
   records: PageRecord[];
+  groupRecords?: GroupRecord[];
+  accounts?: UserAccount[];
   currentUser: AppUser;
   errorViaUids?: Set<string>;
   errorViaCount?: number;
@@ -39,6 +50,8 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
   filter,
   onChangeFilter,
   records,
+  groupRecords = [],
+  accounts = [],
   currentUser,
   errorViaUids,
   errorViaCount: propErrorViaCount,
@@ -60,8 +73,18 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
         list.push(name);
       }
     });
+    groupRecords.forEach((g) => {
+      const name = g.staffName?.trim();
+      if (
+        name &&
+        !isAdminWaitingPool(name) &&
+        !list.some((s) => s.toLowerCase() === name.toLowerCase() || areStaffNamesEquivalent(s, name))
+      ) {
+        list.push(name);
+      }
+    });
     return list.sort((a, b) => a.localeCompare(b, 'vi'));
-  }, [records, availableStaffNames]);
+  }, [records, groupRecords, availableStaffNames]);
 
   const waitingPoolRecordsCount = useMemo(() => {
     return records.filter((r) => isAdminWaitingPool(r.staffName) || !r.staffName?.trim()).length;
@@ -74,7 +97,10 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
       }
       const selectedStaffLower = filter.staffName.trim().toLowerCase();
       return records.filter(
-        (r) => r.staffName && r.staffName.trim().toLowerCase() === selectedStaffLower
+        (r) =>
+          r.staffName &&
+          (r.staffName.trim().toLowerCase() === selectedStaffLower ||
+            areStaffNamesEquivalent(r.staffName, filter.staffName))
       );
     }
     return records;
@@ -309,35 +335,98 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
 
               {staffList.map((name) => {
                 const nameLower = name.trim().toLowerCase();
-                const isSelected = filter.staffName?.trim().toLowerCase() === nameLower;
+                const isSelected =
+                  filter.staffName?.trim().toLowerCase() === nameLower ||
+                  (Boolean(filter.staffName) &&
+                    filter.staffName !== 'all' &&
+                    !isAdminWaitingPool(filter.staffName) &&
+                    areStaffNamesEquivalent(filter.staffName, name));
                 const staffRecords = records.filter(
-                  (r) => (r.staffName || '').trim().toLowerCase() === nameLower
+                  (r) =>
+                    (r.staffName || '').trim().toLowerCase() === nameLower ||
+                    areStaffNamesEquivalent(r.staffName, name)
                 );
                 const staffPagesCount = staffRecords.length;
                 const manualCount = staffRecords.filter((r) => r.postingMethod === 'Đăng Tay').length;
                 const toolCount = staffRecords.filter((r) => r.postingMethod === 'Tool').length;
+
+                const staffGroupRecords = groupRecords.filter(
+                  (g) =>
+                    (g.staffName || '').trim().toLowerCase() === nameLower ||
+                    areStaffNamesEquivalent(g.staffName, name)
+                );
+                const staffGroupsCount = staffGroupRecords.length;
+                const matchedAcc = accounts.find(
+                  (a) =>
+                    (a.username || '').trim().toLowerCase() === nameLower ||
+                    areStaffNamesEquivalent(a.username, name) ||
+                    (Boolean(a.fullName) && areStaffNamesEquivalent(a.fullName, name))
+                );
+                const isAssignedGroup = Boolean(
+                  matchedAcc?.allowedTabs?.includes('group') || staffGroupsCount > 0
+                );
+                const isGroupOnly = staffPagesCount === 0 && isAssignedGroup;
 
                 return (
                   <button
                     key={name}
                     type="button"
                     onClick={() => onChangeFilter({ ...filter, staffName: isSelected ? '' : name })}
-                    title={`${name}: ${staffPagesCount} Fanpage (✍️ ${manualCount} Đăng Tay • 🤖 ${toolCount} Đăng Tool)`}
+                    title={
+                      isGroupOnly
+                        ? `${name}: Nhân viên chuyên trách Group (${staffGroupsCount} dòng Group)`
+                        : isAssignedGroup
+                        ? `${name}: ${staffPagesCount} Fanpage (✍️ ${manualCount} Đăng Tay • 🤖 ${toolCount} Đăng Tool) • ${staffGroupsCount} dòng Group`
+                        : `${name}: ${staffPagesCount} Fanpage (✍️ ${manualCount} Đăng Tay • 🤖 ${toolCount} Đăng Tool)`
+                    }
                     className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer shrink-0 ${
                       isSelected
-                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                        ? isGroupOnly
+                          ? 'bg-red-600 text-white border-red-600 shadow-2xs'
+                          : 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                        : isGroupOnly
+                        ? 'bg-rose-50/70 text-rose-900 border-rose-300 hover:bg-rose-100'
                         : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
                     }`}
                   >
-                    <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-indigo-500'}`} />
-                    <span>{name}</span>
                     <span
-                      className={`px-1 rounded-full text-[10px] font-extrabold ${
-                        isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        isSelected ? 'bg-white' : isGroupOnly ? 'bg-red-500' : 'bg-indigo-500'
                       }`}
-                    >
-                      {staffPagesCount}
-                    </span>
+                    />
+                    <span>{name}</span>
+                    {isGroupOnly ? (
+                      <span
+                        className={`px-1.5 rounded-full text-[10px] font-extrabold ${
+                          isSelected
+                            ? 'bg-white/25 text-white'
+                            : 'bg-red-600 text-white'
+                        }`}
+                      >
+                        Group: {staffGroupsCount}
+                      </span>
+                    ) : (
+                      <>
+                        <span
+                          className={`px-1 rounded-full text-[10px] font-extrabold ${
+                            isSelected ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-700'
+                          }`}
+                        >
+                          {staffPagesCount}
+                        </span>
+                        {staffGroupsCount > 0 && (
+                          <span
+                            className={`px-1 rounded-full text-[10px] font-extrabold ${
+                              isSelected
+                                ? 'bg-amber-300 text-slate-900'
+                                : 'bg-rose-100 text-rose-800 border border-rose-200'
+                            }`}
+                          >
+                            G:{staffGroupsCount}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </button>
                 );
               })}

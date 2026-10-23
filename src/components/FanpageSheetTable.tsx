@@ -42,6 +42,8 @@ import {
 } from 'lucide-react';
 import {
   PageRecord,
+  GroupRecord,
+  UserAccount,
   PageStatus,
   BlockStatus,
   LikeCountStatus,
@@ -56,6 +58,7 @@ import {
   FullViaItem,
   ADMIN_WAITING_POOL,
   isAdminWaitingPool,
+  areStaffNamesEquivalent,
 } from '../types';
 import {
   PAGE_STATUS_OPTIONS,
@@ -310,9 +313,12 @@ export const getViaTransferCellStyle = (
 interface FanpageSheetTableProps {
   records: PageRecord[];
   allRecords?: PageRecord[];
+  groupRecords?: GroupRecord[];
+  accounts?: UserAccount[];
   existingVias?: FullViaItem[];
   currentUser: AppUser;
   activeStaffFilter?: string;
+  onSelectStaffFilter?: (staffName: string) => void;
   errorViaUids?: Set<string>;
   fixedViaUids?: Set<string>;
   onToggleViaError?: (viaUid: string, isError: boolean, recordId?: string) => void;
@@ -365,9 +371,12 @@ export type SheetRowItem =
 export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   records,
   allRecords,
+  groupRecords = [],
+  accounts = [],
   existingVias,
   currentUser,
   activeStaffFilter,
+  onSelectStaffFilter,
   errorViaUids,
   fixedViaUids,
   onToggleViaError,
@@ -1634,6 +1643,12 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               {staffPages.map((sp, idx) => {
                 const pageNum = idx + 1;
                 const isActive = isStaffPaginationActive && currentPage === pageNum;
+                const staffGroupCount = groupRecords.filter(
+                  (g) =>
+                    (g.staffName || '').trim().toLowerCase() === sp.staffName.trim().toLowerCase() ||
+                    areStaffNamesEquivalent(g.staffName, sp.staffName)
+                ).length;
+
                 return (
                   <button
                     key={sp.staffName}
@@ -1649,7 +1664,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                         ? 'bg-[#2e7d32] text-white border-[#1b5e20] shadow-xs ring-2 ring-emerald-200'
                         : 'bg-white hover:bg-emerald-50 text-slate-700 border-slate-300 hover:border-emerald-400'
                     }`}
-                    title={`Xem trang ${pageNum}/${staffPages.length}: Nhân viên ${sp.staffName} (${sp.count} Fanpage)`}
+                    title={`Xem trang ${pageNum}/${staffPages.length}: Nhân viên ${sp.staffName} (${sp.count} Fanpage${staffGroupCount > 0 ? ` • ${staffGroupCount} Group` : ''})`}
                   >
                     <span
                       className={`w-4 h-4 rounded-full text-[9px] font-black inline-flex items-center justify-center ${
@@ -1666,9 +1681,63 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                     >
                       {sp.count}
                     </span>
+                    {staffGroupCount > 0 && (
+                      <span
+                        className={`text-[10px] font-extrabold px-1 rounded ${
+                          isActive ? 'bg-amber-300 text-slate-900' : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        G:{staffGroupCount}
+                      </span>
+                    )}
                   </button>
                 );
               })}
+
+              {/* Hiển thị các nhân viên được phân công Group (0 Fanpage) ngay trên thanh Phân Trang Theo NV để Admin bấm xem Group luôn */}
+              {availableStaffNames
+                .filter((staffName) => {
+                  if (isAdminWaitingPool(staffName)) return false;
+                  const alreadyInFanpage = staffPages.some(
+                    (sp) =>
+                      sp.staffName.trim().toLowerCase() === staffName.trim().toLowerCase() ||
+                      areStaffNamesEquivalent(sp.staffName, staffName)
+                  );
+                  if (alreadyInFanpage) return false;
+                  const gCount = groupRecords.filter(
+                    (g) =>
+                      (g.staffName || '').trim().toLowerCase() === staffName.trim().toLowerCase() ||
+                      areStaffNamesEquivalent(g.staffName, staffName)
+                  ).length;
+                  const matchedAcc = accounts.find(
+                    (a) =>
+                      (a.username || '').trim().toLowerCase() === staffName.trim().toLowerCase() ||
+                      areStaffNamesEquivalent(a.username, staffName)
+                  );
+                  return Boolean(matchedAcc?.allowedTabs?.includes('group') || gCount > 0);
+                })
+                .map((groupStaffName) => {
+                  const gCount = groupRecords.filter(
+                    (g) =>
+                      (g.staffName || '').trim().toLowerCase() === groupStaffName.trim().toLowerCase() ||
+                      areStaffNamesEquivalent(g.staffName, groupStaffName)
+                  ).length;
+                  return (
+                    <button
+                      key={`group-staff-${groupStaffName}`}
+                      type="button"
+                      onClick={() => onSelectStaffFilter?.(groupStaffName)}
+                      className="px-2 py-0.5 rounded-md text-[11px] font-bold border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-900 transition-all cursor-pointer inline-flex items-center space-x-1 shadow-2xs"
+                      title={`Nhân viên ${groupStaffName} được phân công Group (${gCount} dòng Group) — Bấm để xem bảng Group của ${groupStaffName}`}
+                    >
+                      <Users className="w-3 h-3 text-red-600" />
+                      <span>{groupStaffName}</span>
+                      <span className="text-[10px] font-extrabold px-1.5 rounded-full bg-red-600 text-white">
+                        Group: {gCount}
+                      </span>
+                    </button>
+                  );
+                })}
             </div>
 
             {isStaffPaginationActive && (
