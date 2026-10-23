@@ -135,6 +135,7 @@ service cloud.firestore {
              (!('staffName' in data) || (data.staffName is string && data.staffName.size() <= 100)) &&
              (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
              (!('joinStatus' in data) || (data.joinStatus is string && data.joinStatus.size() <= 50)) &&
+             (!('adminJoinReport' in data) || (data.adminJoinReport is string && data.adminJoinReport.size() <= 50)) &&
              (!('interactionStatus' in data) || (data.interactionStatus is string && data.interactionStatus.size() <= 50)) &&
              (!('interactionDate' in data) || (data.interactionDate is string && data.interactionDate.size() <= 50)) &&
              (!('isHighlighted' in data) || data.isHighlighted is bool) &&

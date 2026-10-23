@@ -14,7 +14,7 @@ import {
   XCircle,
   KeyRound,
 } from 'lucide-react';
-import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, GroupInteractionStatus, GROUP_INTERACTION_STATUS_OPTIONS, FullViaItem } from '../types';
+import { GroupRecord, AppUser, GroupJoinStatus, GROUP_JOIN_STATUS_OPTIONS, GroupAdminJoinReport, GroupInteractionStatus, GROUP_INTERACTION_STATUS_OPTIONS, FullViaItem } from '../types';
 import { parseFullVia, parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
 
 export const GROUP_NOTE_CHOICES = [
@@ -97,6 +97,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   const [uid, setUid] = useState('');
   const [viaName, setViaName] = useState('');
   const [joinStatus, setJoinStatus] = useState<GroupJoinStatus>('Đã Jon');
+  const [adminJoinReport, setAdminJoinReport] = useState<GroupAdminJoinReport>('');
   const [interactionStatus, setInteractionStatus] = useState<GroupInteractionStatus | ''>('');
   const [interactionDate, setInteractionDate] = useState<string>('');
   const [note, setNote] = useState('');
@@ -173,6 +174,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       loadExistingViaCreds(initialRecord.uid || '');
       setViaName(initialRecord.viaName || '');
       setJoinStatus(initialRecord.joinStatus || 'Đã Jon');
+      setAdminJoinReport(initialRecord.adminJoinReport || '');
       setInteractionStatus(initialRecord.interactionStatus || '');
       setInteractionDate(initialRecord.interactionDate || '');
       setNote(initialRecord.note || '');
@@ -186,6 +188,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       loadExistingViaCreds('');
       setViaName('');
       setJoinStatus('Đã Jon');
+      setAdminJoinReport('');
       setInteractionStatus((presetGroup as any).interactionStatus || '');
       setInteractionDate((presetGroup as any).interactionDate || '');
       setNote('');
@@ -199,6 +202,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
       loadExistingViaCreds('');
       setViaName('');
       setJoinStatus('Đã Jon');
+      setAdminJoinReport('');
       setInteractionStatus('');
       setInteractionDate('');
       setNote('');
@@ -313,6 +317,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
           uid: cleanUid,
           viaName: cleanViaName || `Via ${cleanUid.slice(-4)}`,
           joinStatus,
+          ...(adminJoinReport ? { adminJoinReport } : { adminJoinReport: '' }),
           interactionStatus: (interactionStatus || undefined) as any,
           interactionDate: interactionDate.trim() || (interactionStatus ? getTodayShortStr() : undefined),
           note: note.trim(),
@@ -765,6 +770,68 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Cột Admin Báo (Ngay sau cột Trạng Thái): Đã Duyệt, Chưa Jont, Không tìm thấy */}
+              {isAdmin && (
+                <div className="pt-1">
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                    <span>Admin Báo Cho Nhân Viên Biết</span>
+                    <span className="text-[10px] text-slate-500 font-normal">(Ngay sau cột Trạng Thái)</span>
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAdminJoinReport(adminJoinReport === 'Đã Duyệt' ? '' : 'Đã Duyệt')}
+                      className={`px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                        adminJoinReport === 'Đã Duyệt'
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/25'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>Đã Duyệt</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminJoinReport(adminJoinReport === 'Chưa Jont' ? '' : 'Chưa Jont')}
+                      className={`px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                        adminJoinReport === 'Chưa Jont'
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/25'
+                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                      }`}
+                    >
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Chưa Jont</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminJoinReport(adminJoinReport === 'Không tìm thấy' ? '' : 'Không tìm thấy')}
+                      className={`px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                        adminJoinReport === 'Không tìm thấy'
+                          ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-500/25'
+                          : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                      }`}
+                    >
+                      <XCircle className="w-3.5 h-3.5" />
+                      <span>Không tìm thấy</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAdminJoinReport('')}
+                      className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center justify-center ${
+                        !adminJoinReport
+                          ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
+                          : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>- Chưa báo -</span>
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Màu & Ghi Chú Tương Tác Của Nhóm + Cột Nhảy Ngày Tương Tác */}
               <div className="pt-1 space-y-2">

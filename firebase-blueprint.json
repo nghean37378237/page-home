@@ -124,6 +124,7 @@
         "uid": { "type": "string", "maxLength": 100 },
         "viaName": { "type": "string", "maxLength": 100 },
         "joinStatus": { "type": "string", "enum": ["Đã Jon", "Jon chờ duyệt", "Chưa"] },
+        "adminJoinReport": { "type": "string", "maxLength": 50 },
         "interactionStatus": { "type": "string", "enum": ["Đang lên tương tác", "Có tương tác", "Tương tác ổn", "Tương tác vừa", "Không có tương tác"] },
         "interactionDate": { "type": "string", "maxLength": 50 },
         "note": { "type": "string", "maxLength": 500 },

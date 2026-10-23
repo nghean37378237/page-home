@@ -4293,7 +4293,15 @@ export default function App() {
     return (
       <LoginScreen
         accounts={accounts}
-        onVerifyAdminPin={(inputPin) => inputPin.trim() === adminSettings.adminPin.trim()}
+        onVerifyAdminPin={(inputPin) => {
+          const clean = inputPin.trim();
+          if (!clean) return false;
+          const adminAccPin = accounts.find((a) => a.role === 'admin')?.pin?.trim();
+          return (
+            clean === adminSettings.adminPin.trim() ||
+            (Boolean(adminAccPin) && clean === adminAccPin)
+          );
+        }}
         adminName={adminSettings.adminName}
         adminEmail={adminSettings.adminEmail}
         requireGoogleOnly={adminSettings.requireGoogleLoginOnly}

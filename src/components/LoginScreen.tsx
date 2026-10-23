@@ -24,8 +24,8 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { findMatchingAccount, normalizeVietnamese } from '../utils/helpers';
-import { getCloudAccounts, subscribeToAccounts, defaultFirebaseConfig, googlePopupAuth } from '../services/firebase';
-import { GoogleAuthProvider, signInWithPopup, signInWithCredential } from 'firebase/auth';
+import { getCloudAccounts, subscribeToAccounts, googlePopupAuth } from '../services/firebase';
+import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
 interface LoginScreenProps {
   accounts: UserAccount[];
@@ -447,17 +447,18 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
     const currentAdminEmail = (adminEmail || 'cualokhachsan@gmail.com').trim().toLowerCase();
 
-    // 1. Check Admin Google Account (cualokhachsan@gmail.com)
+    // 1. Check Admin Google Account (cualokhachsan@gmail.com / myphuong2295@gmail.com)
     if (
       email === currentAdminEmail ||
       email === 'cualokhachsan@gmail.com' ||
+      email === 'myphuong2295@gmail.com' ||
       freshAccounts.some((a) => a.role === 'admin' && a.email?.toLowerCase() === email)
     ) {
       setIsGoogleSigningIn(false);
       onLoginSuccess({
         id: 'admin',
         name: adminName || displayName || 'Quản Lý (Admin)',
-        email: email,
+        email: 'cualokhachsan@gmail.com',
         role: 'admin',
         status: 'approved',
         isAuthenticated: true,
@@ -487,10 +488,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     if (matched) {
       setIsGoogleSigningIn(false);
       if (matched.status === 'blocked') {
-        setGoogleError(`Tài khoản Gmail "${email}" (${matched.username}) đang bị Quản Lý (${currentAdminEmail}) tạm khóa.`);
+        const msg = `Tài khoản Gmail "${email}" (${matched.username}) đang bị Quản Lý (${currentAdminEmail}) tạm khóa.`;
+        setGoogleError(msg);
+        if (activeTab === 'admin') setAdminError(msg);
         return;
       }
       if (matched.status === 'pending') {
+        setActiveTab('google');
         setPendingApprovalState({
           email,
           username: matched.username,
@@ -522,8 +526,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     }
 
     // 3. Nếu Gmail vừa chọn qua Google OAuth chưa gắn vào tài khoản nhân viên nào trên hệ thống:
-    // Cho phép liên kết nhanh với tên nhân viên có sẵn hoặc xin cấp quyền ngay lập tức!
+    // Cho phép liên kết nhanh với tên nhân viên có sẵn hoặc mở khóa Admin / xin cấp quyền ngay lập tức!
     setIsGoogleSigningIn(false);
+    setActiveTab('google');
     setNewGoogleUserPrompt({
       email,
       displayName: displayName || email.split('@')[0],
@@ -555,82 +560,22 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
     });
   };
 
-  // 2b. Google Sign-In Popup: Ưu tiên Google Identity Services (direct postMessage, không bị lỗi đóng cửa sổ sớm trong iframe) + Fallback Firebase Popup
-  const handleFirebaseGoogleSignIn = async () => {
+  // 2b. Google Sign-In Popup: Sử dụng chuẩn Firebase Auth signInWithPopup (đi qua __/_auth/handler để tránh hoàn toàn lỗi 400: origin_mismatch của Google Identity Services)
+  const handleFirebaseGoogleSignIn = async (loginHintEmail?: string) => {
     setIsGoogleSigningIn(true);
     setGoogleError(null);
+    setAdminError(null);
     setShowLinkingBox(false);
     setPendingApprovalState(null);
     setNewGoogleUserPrompt(null);
 
-    const gsiOAuth = (window as any).google?.accounts?.oauth2;
-    const oauthClientId = defaultFirebaseConfig.oAuthClientId;
-
-    if (gsiOAuth && oauthClientId) {
-      try {
-        const tokenClient = gsiOAuth.initTokenClient({
-          client_id: oauthClientId,
-          scope: 'openid email profile',
-          prompt: 'select_account',
-          callback: async (tokenResponse: any) => {
-            if (tokenResponse?.error) {
-              console.warn('[LoginScreen] Google TokenClient error:', tokenResponse);
-              setIsGoogleSigningIn(false);
-              if (tokenResponse.error !== 'access_denied') {
-                setGoogleError(`Đăng nhập Google không thành công (${tokenResponse.error}). Bạn có thể thử lại hoặc chọn Gmail bên dưới.`);
-              }
-              return;
-            }
-
-            const accessToken = tokenResponse?.access_token;
-            if (!accessToken) {
-              setIsGoogleSigningIn(false);
-              setGoogleError('Không nhận được mã xác thực từ Google. Vui lòng thử lại.');
-              return;
-            }
-
-            try {
-              // Đăng nhập đồng thời vào Firebase Auth ở chế độ nền
-              const cred = GoogleAuthProvider.credential(null, accessToken);
-              signInWithCredential(googlePopupAuth, cred).catch(() => {});
-
-              // Lấy thông tin email & tên đã xác thực trực tiếp từ Google UserInfo API
-              const userInfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
-                headers: { Authorization: `Bearer ${accessToken}` },
-              });
-              if (!userInfoRes.ok) {
-                throw new Error('Không thể lấy thông tin tài khoản từ Google UserInfo API.');
-              }
-              const profile = await userInfoRes.json();
-              await handleAuthenticatedGoogleIdentity(profile.email || '', profile.name || '');
-            } catch (profileErr: any) {
-              console.error('[LoginScreen] Lỗi đọc thông tin Google:', profileErr);
-              setIsGoogleSigningIn(false);
-              setGoogleError(profileErr?.message || 'Lỗi xác thực thông tin tài khoản Google.');
-            }
-          },
-          error_callback: (err: any) => {
-            console.warn('[LoginScreen] GIS Popup error_callback:', err);
-            setIsGoogleSigningIn(false);
-            if (err?.type === 'popup_closed') {
-              setGoogleError('Cửa sổ chọn tài khoản Google đã đóng. Bạn có thể bấm lại hoặc chọn nhanh Gmail đã cấp quyền bên dưới.');
-            } else if (err?.type === 'popup_failed_to_open') {
-              setGoogleError('Trình duyệt đang chặn cửa sổ Pop-up. Vui lòng cho phép Pop-up hoặc chọn Gmail trực tiếp bên dưới.');
-              setIsGoogleChooserOpen(true);
-            }
-          },
-        });
-
-        tokenClient.requestAccessToken({ prompt: 'select_account' });
-        return;
-      } catch (gsiErr) {
-        console.warn('[LoginScreen] Fallback từ GIS sang signInWithPopup:', gsiErr);
-      }
-    }
-
     try {
       const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
+      const customParams: Record<string, string> = { prompt: 'select_account' };
+      if (loginHintEmail && typeof loginHintEmail === 'string' && loginHintEmail.includes('@')) {
+        customParams.login_hint = loginHintEmail.trim();
+      }
+      provider.setCustomParameters(customParams);
       const result = await signInWithPopup(googlePopupAuth, provider);
 
       if (!result.user || !result.user.email) {
@@ -640,20 +585,45 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
       await handleAuthenticatedGoogleIdentity(result.user.email, result.user.displayName || '');
     } catch (err: any) {
       console.warn('[LoginScreen] Lỗi Google OAuth popup:', err);
+      const focusAdminPasswordInput = () => {
+        setTimeout(() => {
+          const el = document.getElementById('input-admin-password') as HTMLInputElement | null;
+          el?.focus();
+        }, 100);
+      };
+
       if (err.code === 'auth/popup-closed-by-user' || err.code === 'auth/cancelled-popup-request') {
         setGoogleError('Cửa sổ đăng nhập Google đã đóng trước khi hoàn tất. Bạn có thể bấm thử lại hoặc chọn Gmail đã cấp quyền bên dưới.');
+        if (activeTab === 'admin') {
+          setAdminError('Cửa sổ chọn Gmail vừa đóng. Bạn có thể bấm thử lại hoặc nhập Mật Khẩu Admin ở ô bên dưới để vào ngay.');
+          focusAdminPasswordInput();
+        }
       } else if (err.code === 'auth/popup-blocked') {
         setGoogleError('Trình duyệt hoặc khung hiển thị (iFrame) đang chặn cửa sổ đăng nhập Google (Pop-up). Bạn có thể bấm chọn hoặc nhập Gmail bên dưới.');
         setIsGoogleChooserOpen(true);
+        if (activeTab === 'admin') {
+          setAdminError('Trình duyệt đang chặn cửa sổ Pop-up. Vui lòng nhập Mật Khẩu Admin ở ô bên dưới để vào thẳng hệ thống!');
+          focusAdminPasswordInput();
+        }
       } else if (err.code === 'auth/unauthorized-domain') {
         setIsUnauthorizedDomain(true);
         setGoogleError(
           `Tên miền (${window.location.hostname}) chưa được thêm vào mục Authorized Domains trong Firebase Console. Bạn có thể nhập Gmail bên dưới để vào hệ thống ngay!`
         );
         setIsGoogleChooserOpen(true);
+        if (activeTab === 'admin') {
+          setAdminError(
+            `Tên miền (${window.location.hostname}) chưa thêm vào Authorized Domains của Firebase. Vui lòng nhập Mật Khẩu Admin ở ô bên dưới để vào thẳng quyền Quản Trị!`
+          );
+          focusAdminPasswordInput();
+        }
       } else {
         setGoogleError(`Không thể mở cửa sổ Google (${err.message || err.code}). Bạn có thể chuyển sang nhập Gmail bên dưới để tiếp tục.`);
         setIsGoogleChooserOpen(true);
+        if (activeTab === 'admin') {
+          setAdminError(`Không thể xác thực qua Pop-up (${err.code || 'Lỗi uỷ quyền'}). Vui lòng nhập Mật Khẩu Admin ở ô bên dưới để mở khóa ngay!`);
+          focusAdminPasswordInput();
+        }
       }
       setIsGoogleSigningIn(false);
     }
@@ -1073,7 +1043,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 type="button"
                 id="btn-google-login-main"
                 disabled={isGoogleSigningIn}
-                onClick={handleFirebaseGoogleSignIn}
+                onClick={() => handleFirebaseGoogleSignIn()}
                 className="w-full bg-white hover:bg-slate-100 active:bg-slate-200 text-slate-800 font-extrabold py-3.5 px-4 rounded-xl shadow-lg transition-all flex items-center justify-center space-x-3 text-sm cursor-pointer group hover:scale-[1.01] disabled:opacity-75 disabled:cursor-not-allowed border border-slate-300"
               >
                 {isGoogleSigningIn ? (
@@ -1279,11 +1249,19 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 <button
                   type="button"
                   disabled={isGoogleSigningIn}
-                  onClick={handleFirebaseGoogleSignIn}
-                  className="w-full py-3 px-4 bg-white hover:bg-slate-100 text-slate-900 font-extrabold rounded-xl text-xs shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2.5 border border-slate-300"
+                  onClick={() => handleFirebaseGoogleSignIn(adminEmail || 'cualokhachsan@gmail.com')}
+                  className="w-full py-3 px-4 bg-white hover:bg-slate-100 text-slate-900 font-extrabold rounded-xl text-xs shadow-md transition-all cursor-pointer flex items-center justify-center space-x-2.5 border border-slate-300 disabled:opacity-70"
                 >
-                  <Mail className="w-4 h-4 text-amber-600 shrink-0" />
-                  <span>Đăng Nhập Nhanh Bằng Gmail Admin ({adminEmail || 'cualokhachsan@gmail.com'})</span>
+                  {isGoogleSigningIn ? (
+                    <div className="w-4 h-4 border-2 border-slate-700 border-t-transparent rounded-full animate-spin shrink-0" />
+                  ) : (
+                    <Mail className="w-4 h-4 text-amber-600 shrink-0" />
+                  )}
+                  <span>
+                    {isGoogleSigningIn
+                      ? 'Đang mở xác thực Google Admin...'
+                      : `Đăng Nhập Nhanh Bằng Gmail Admin (${adminEmail || 'cualokhachsan@gmail.com'})`}
+                  </span>
                 </button>
               </div>
 
