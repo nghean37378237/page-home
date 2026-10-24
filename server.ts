@@ -369,6 +369,14 @@ async function startServer() {
         return;
       }
 
+      if (action !== 'publish') {
+        res.status(400).json({
+          ok: false,
+          error: `Action không hợp lệ: "${action}"`,
+        });
+        return;
+      }
+
       const published = await publishArticleToTarget({
         postId: body.postId ? Number(body.postId) : undefined,
         title: String(body.title || ''),

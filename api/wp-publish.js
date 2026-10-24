@@ -3450,12 +3450,902 @@ export default async function handler(req, res) {
         });
       }
 
+      // 4.5. Kiểm tra trùng bài trên celeb24h.com
+      if (action === 'check_duplicate') {
+        const baseSite = DEFAULT_WP_SITE.replace(/\/+$/, '');
+        let checkTitle = String(body.title || '').trim();
+        let checkText = String(body.articleText || '').trim();
+        const checkUrl = String(body.sourceUrl || '').trim();
+        if (checkUrl && (!checkTitle || !checkText)) {
+          try {
+            const scraped = await scrapeWebArticleForSeoRewrite(checkUrl);
+            if (!checkTitle && scraped.originalTitle) checkTitle = scraped.originalTitle;
+            if (!checkText && scraped.articleText) checkText = scraped.articleText;
+          } catch {}
+        }
+        const slugCandidate = String(body.slug || '')
+          .trim()
+          .toLowerCase();
+        let foundPost = null;
+        if (slugCandidate) {
+          try {
+            const r = await fetchWithTimeout(
+              `${session.restRoot}wp/v2/posts?slug=${encodeURIComponent(slugCandidate)}&status=publish,draft,pending,future,private&_embed`,
+              { headers: { Cookie: session.cookieHeader, 'X-WP-Nonce': session.restNonce } },
+              5000
+            );
+            if (r.ok) {
+              const arr = await r.json();
+              if (Array.isArray(arr) && arr[0] && arr[0].id) foundPost = arr[0];
+            }
+          } catch {}
+        }
+        if (!foundPost && checkTitle) {
+          try {
+            const r = await fetchWithTimeout(
+              `${session.restRoot}wp/v2/posts?search=${encodeURIComponent(checkTitle.slice(0, 70))}&per_page=5&_embed`,
+              { headers: { Cookie: session.cookieHeader, 'X-WP-Nonce': session.restNonce } },
+              5000
+            );
+            if (r.ok) {
+              const arr = await r.json();
+              if (Array.isArray(arr) && arr.length > 0) {
+                const normTarget = checkTitle.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+                foundPost =
+                  arr.find((p) => {
+                    const pt = decodeHtmlEntities(
+                      typeof p.title === 'object' ? p.title.rendered || '' : p.title || ''
+                    )
+                      .toLowerCase()
+                      .replace(/[^a-z0-9]+/g, ' ')
+                      .trim();
+                    return pt === normTarget || (pt.length > 20 && normTarget.includes(pt.slice(0, 25)));
+                  }) || null;
+              }
+            }
+          } catch {}
+        }
+        if (foundPost && foundPost.id) {
+          const pTitle = decodeHtmlEntities(
+            typeof foundPost.title === 'object' ? foundPost.title.rendered || '' : foundPost.title || ''
+          );
+          const pHtml = String(
+            typeof foundPost.content === 'object' ? foundPost.content.rendered || '' : foundPost.content || ''
+          );
+          const oldWords = stripHtmlTags(pHtml).split(/\s+/).filter(Boolean).length;
+          return res.status(200).json({
+            ok: true,
+            duplicateFound: true,
+            duplicate: {
+              id: Number(foundPost.id),
+              title: pTitle,
+              slug: String(foundPost.slug || ''),
+              link: String(foundPost.link || `${baseSite}/${foundPost.id}`),
+              oldWordCount: oldWords,
+              matchReason: 'Trùng bài trên celeb24h.com',
+              employeeCode: resolveEmployeeByWpUserId(foundPost.author).code,
+            },
+          });
+        }
+        return res.status(200).json({
+          ok: true,
+          duplicateFound: false,
+          duplicate: null,
+        });
+      }
+
+      // 4.6. Quét kiểm tra & Bổ sung những phần còn thiếu cho Link cũ trên celeb24h.com
+      if (action === 'inspect_old_celeb24h' || action === 'update_old_celeb24h') {
+        const rawInputUrl = String(body.celeb24hUrl || body.sourceUrl || body.url || '').trim();
+        if (!rawInputUrl) {
+          return res.status(400).json({
+            ok: false,
+            error: 'Vui lòng nhập đường dẫn (URL) bài viết cũ trên domain celeb24h.com!',
+          });
+        }
+        const autoApplyUpdate =
+          action === 'update_old_celeb24h' ? true : Boolean(body.autoApplyUpdate);
+        const language = body.language === 'vi' ? 'vi' : 'en';
+        const baseSite = DEFAULT_WP_SITE.replace(/\/+$/, '');
+        const rawOpts = body.supplementOptions || {};
+        const opts = {
+          expandContent: rawOpts.expandContent !== false,
+          addHeadingsH2: rawOpts.addHeadingsH2 !== false,
+          setFeaturedImage: rawOpts.setFeaturedImage !== false,
+          addMissingImages: rawOpts.addMissingImages !== false,
+          addYoutubeVideos: rawOpts.addYoutubeVideos !== false,
+          addExcerptAndTags: rawOpts.addExcerptAndTags !== false,
+        };
+
+        const fetchWpJsonWithOptionalAuth = async (url) => {
+          try {
+            const headers = { 'User-Agent': SCRAPER_USER_AGENT };
+            if (session && session.cookieHeader) {
+              headers.Cookie = session.cookieHeader;
+              headers['X-WP-Nonce'] = session.restNonce;
+            }
+            const r = await fetchWithTimeout(url, { headers }, 6500);
+            if (r.ok) return await r.json();
+          } catch {}
+          return null;
+        };
+
+        let resolvedWpPost = null;
+        let directPostId = 0;
+        let candidateSlug = '';
+
+        if (/^\d+$/.test(rawInputUrl)) {
+          directPostId = Number(rawInputUrl);
+        } else {
+          try {
+            const withProto = /^https?:\/\//i.test(rawInputUrl)
+              ? rawInputUrl
+              : `https://${rawInputUrl}`;
+            const u = new URL(withProto);
+            const pParam =
+              u.searchParams.get('p') ||
+              u.searchParams.get('post') ||
+              u.searchParams.get('page_id');
+            if (pParam && /^\d+$/.test(pParam)) {
+              directPostId = Number(pParam);
+            } else {
+              const segs = u.pathname.split('/').filter(Boolean);
+              const numSeg = segs.find((s) => /^\d+$/.test(s));
+              if (numSeg && segs.length <= 2) {
+                directPostId = Number(numSeg);
+              }
+              if (segs.length > 0) {
+                const lastSeg = decodeURIComponent(segs[segs.length - 1]).replace(
+                  /\.(html|htm|php)$/i,
+                  ''
+                );
+                if (lastSeg && !/^\d+$/.test(lastSeg)) {
+                  candidateSlug = lastSeg;
+                }
+              }
+            }
+          } catch {
+            candidateSlug = rawInputUrl.replace(/^\/+|\/+$/g, '');
+          }
+        }
+
+        const restRoot = session ? session.restRoot : `${baseSite}/wp-json/`;
+
+        if (directPostId > 0) {
+          resolvedWpPost =
+            (await fetchWpJsonWithOptionalAuth(
+              `${restRoot}wp/v2/posts/${directPostId}?_embed&context=edit`
+            )) ||
+            (await fetchWpJsonWithOptionalAuth(
+              `${baseSite}/wp-json/wp/v2/posts/${directPostId}?_embed`
+            ));
+        }
+
+        if (!resolvedWpPost && (candidateSlug || directPostId > 0)) {
+          const slugToQuery = candidateSlug || String(directPostId);
+          const arr =
+            (await fetchWpJsonWithOptionalAuth(
+              `${restRoot}wp/v2/posts?slug=${encodeURIComponent(slugToQuery)}&status=publish,draft,pending,future,private&_embed&context=edit`
+            )) ||
+            (await fetchWpJsonWithOptionalAuth(
+              `${baseSite}/wp-json/wp/v2/posts?slug=${encodeURIComponent(slugToQuery)}&_embed`
+            ));
+          if (Array.isArray(arr) && arr[0] && arr[0].id) {
+            resolvedWpPost = arr[0];
+          }
+        }
+
+        if (!resolvedWpPost && /^https?:\/\//i.test(rawInputUrl)) {
+          try {
+            const htmlRes = await fetchWithTimeout(
+              rawInputUrl,
+              { headers: { 'User-Agent': SCRAPER_USER_AGENT } },
+              6000
+            );
+            if (htmlRes.ok) {
+              const pageHtml = await htmlRes.text();
+              const shortlinkMatch =
+                pageHtml.match(/rel=["']shortlink["'][^>]+href=["'][^"']*\?p=(\d+)/i) ||
+                pageHtml.match(/href=["'][^"']*\?p=(\d+)["'][^>]+rel=["']shortlink["']/i) ||
+                pageHtml.match(/\/wp-json\/wp\/v2\/posts\/(\d+)\b/i) ||
+                pageHtml.match(/\bpostid-(\d+)\b/i) ||
+                pageHtml.match(/\bid=["']post-(\d+)["']/i);
+              if (shortlinkMatch && shortlinkMatch[1]) {
+                const extractedId = Number(shortlinkMatch[1]);
+                if (extractedId > 0) {
+                  resolvedWpPost =
+                    (await fetchWpJsonWithOptionalAuth(
+                      `${restRoot}wp/v2/posts/${extractedId}?_embed&context=edit`
+                    )) ||
+                    (await fetchWpJsonWithOptionalAuth(
+                      `${baseSite}/wp-json/wp/v2/posts/${extractedId}?_embed`
+                    ));
+                }
+              }
+            }
+          } catch {}
+        }
+
+        if (!resolvedWpPost || !resolvedWpPost.id) {
+          return res.status(404).json({
+            ok: false,
+            error: `Không tìm thấy bài viết tương ứng trên celeb24h.com với đường dẫn: "${rawInputUrl}". Vui lòng kiểm tra lại link!`,
+          });
+        }
+
+        const postId = Number(resolvedWpPost.id);
+        const postTitle = decodeHtmlEntities(
+          typeof resolvedWpPost.title === 'object'
+            ? resolvedWpPost.title.raw || resolvedWpPost.title.rendered || ''
+            : String(resolvedWpPost.title || '')
+        ).trim();
+        const postSlug = String(resolvedWpPost.slug || '');
+        const postLink = String(resolvedWpPost.link || `${baseSite}/${postId}`).replace(/\/+$/, '');
+        const postStatus = String(resolvedWpPost.status || 'publish');
+        const rawContentHtml = String(
+          typeof resolvedWpPost.content === 'object'
+            ? resolvedWpPost.content.rendered || resolvedWpPost.content.raw || ''
+            : resolvedWpPost.content || ''
+        );
+        const rawExcerpt = stripHtmlTags(
+          typeof resolvedWpPost.excerpt === 'object'
+            ? resolvedWpPost.excerpt.raw || resolvedWpPost.excerpt.rendered || ''
+            : String(resolvedWpPost.excerpt || '')
+        ).trim();
+        const postCategories =
+          Array.isArray(resolvedWpPost.categories) && resolvedWpPost.categories.length > 0
+            ? resolvedWpPost.categories.map(Number)
+            : [2];
+        const existingTagIds = Array.isArray(resolvedWpPost.tags)
+          ? resolvedWpPost.tags.map(Number).filter((id) => id > 0)
+          : [];
+        const authorId = Number(resolvedWpPost.author || 6);
+        const existingAuthorEmp = resolveEmployeeByWpUserId(authorId);
+        const effectiveEmpCode = String(
+          body.employeeCode || existingAuthorEmp.code || 'A0006'
+        )
+          .trim()
+          .toUpperCase();
+
+        let featuredMediaId = Number(resolvedWpPost.featured_media || 0);
+        let featuredImageUrl = '';
+        const embeddedMedia =
+          resolvedWpPost._embedded &&
+          resolvedWpPost._embedded['wp:featuredmedia'] &&
+          resolvedWpPost._embedded['wp:featuredmedia'][0];
+        if (embeddedMedia && embeddedMedia.source_url) {
+          featuredImageUrl = String(embeddedMedia.source_url);
+        }
+
+        const plainTextWithoutTags = stripHtmlTags(rawContentHtml).replace(/\s+/g, ' ').trim();
+        const oldWordCount = plainTextWithoutTags
+          ? plainTextWithoutTags.split(/\s+/).filter(Boolean).length
+          : 0;
+        const oldParagraphCount = (rawContentHtml.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || []).length;
+        const oldH2Count = (rawContentHtml.match(/<h[23]\b[^>]*>[\s\S]*?<\/h[23]>/gi) || []).length;
+
+        const existingInlineImgs = collectImgsFromHtml(rawContentHtml, baseSite).map((im, idx) => ({
+          url: im.url,
+          alt: im.alt || postTitle,
+          isFeatured: idx === 0,
+          isExternal: false,
+        }));
+        const oldInlineImageCount = existingInlineImgs.length;
+
+        const existingYtVideos = [];
+        const seenYtIds = new Set();
+        const ytIframeRegex = /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/gi;
+        let ym;
+        while ((ym = ytIframeRegex.exec(rawContentHtml)) !== null) {
+          const vid = ym[1];
+          if (vid && !seenYtIds.has(vid)) {
+            seenYtIds.add(vid);
+            existingYtVideos.push({
+              videoId: vid,
+              title: `${postTitle} - Video #${existingYtVideos.length + 1}`,
+              watchUrl: `https://www.youtube.com/watch?v=${vid}`,
+              embedUrl: `https://www.youtube.com/embed/${vid}`,
+              thumbnailUrl: `https://i.ytimg.com/vi/${vid}/hqdefault.jpg`,
+            });
+          }
+        }
+        const oldYoutubeCount = existingYtVideos.length;
+
+        const isContentShort = oldWordCount < 1600 || oldParagraphCount < 20;
+        const isMissingH2 = oldH2Count < 3;
+        const isMissingFeatured = featuredMediaId <= 0 && !featuredImageUrl;
+        const isMissingInlineImages = oldInlineImageCount < 5;
+        const isMissingYoutube = oldYoutubeCount < 2;
+        const isMissingExcerpt = rawExcerpt.length < 45;
+        const isMissingTags = existingTagIds.length === 0;
+
+        const missingChecks = [
+          {
+            key: 'content_length',
+            label: 'Độ dài nội dung chuẩn SEO (2.000–3.500 từ, chia đoạn 40–50 từ)',
+            isMissing: isContentShort,
+            currentStatus: isContentShort
+              ? `Còn ngắn (${oldWordCount} từ · ${oldParagraphCount} đoạn)`
+              : `Đạt chuẩn (${oldWordCount} từ · ${oldParagraphCount} đoạn)`,
+            actionToTake: isContentShort
+              ? 'Mở rộng sâu sát nội dung gốc lên 2.000–3.500 từ, ngắt đoạn 40–50 từ'
+              : 'Giữ nguyên nội dung đã đạt chuẩn',
+          },
+          {
+            key: 'headings_h2',
+            label: 'Cấu trúc thẻ tiêu đề phụ H2 / H3 trong bài',
+            isMissing: isMissingH2,
+            currentStatus: isMissingH2
+              ? `Thiếu thẻ H2 (hiện có ${oldH2Count} thẻ)`
+              : `Đã có ${oldH2Count} thẻ H2/H3`,
+            actionToTake: isMissingH2
+              ? 'Tự động chèn 5–7 thẻ tiêu đề phụ H2 bám sát từng đoạn văn'
+              : 'Giữ nguyên cấu trúc tiêu đề phụ',
+          },
+          {
+            key: 'featured_image',
+            label: 'Ảnh đại diện bài viết (Featured Image / Thumbnail)',
+            isMissing: isMissingFeatured,
+            currentStatus: isMissingFeatured ? 'Chưa có ảnh đại diện' : 'Đã có ảnh đại diện',
+            actionToTake: isMissingFeatured
+              ? 'Tự động tải ảnh đầu bài lên Media Library làm Featured Image'
+              : 'Giữ nguyên ảnh đại diện hiện tại',
+          },
+          {
+            key: 'inline_images',
+            label: 'Bộ ảnh minh họa xen kẽ trong bài (Chuẩn 5–7 ảnh)',
+            isMissing: isMissingInlineImages,
+            currentStatus: isMissingInlineImages
+              ? `Thiếu ảnh trong bài (hiện có ${oldInlineImageCount}/5 ảnh)`
+              : `Đã đủ ảnh trong bài (${oldInlineImageCount} ảnh)`,
+            actionToTake: isMissingInlineImages
+              ? `Giữ ${oldInlineImageCount} ảnh cũ & tự động dò/bù thêm ${Math.max(1, 6 - oldInlineImageCount)} ảnh cùng nhân vật/bối cảnh`
+              : 'Giữ nguyên bộ ảnh đầy đủ trong bài',
+          },
+          {
+            key: 'youtube_videos',
+            label: '2 Video YouTube liên quan ở cuối bài viết',
+            isMissing: isMissingYoutube,
+            currentStatus: isMissingYoutube
+              ? `Thiếu Video YouTube (hiện có ${oldYoutubeCount}/2 video)`
+              : `Đã gắn đủ ${oldYoutubeCount} Video YouTube`,
+            actionToTake: isMissingYoutube
+              ? `Tự động tìm & nhúng thêm ${2 - oldYoutubeCount} Video YouTube đúng nhân vật/sự kiện`
+              : 'Giữ nguyên Video YouTube hiện có',
+          },
+          {
+            key: 'excerpt_meta',
+            label: 'Mô tả ngắn chuẩn SEO (Meta Description / Excerpt)',
+            isMissing: isMissingExcerpt,
+            currentStatus: isMissingExcerpt
+              ? `Chưa có hoặc quá ngắn (${rawExcerpt.length} ký tự)`
+              : `Đã có Excerpt (${rawExcerpt.length} ký tự)`,
+            actionToTake: isMissingExcerpt
+              ? 'Tự động trích xuất đoạn mô tả Meta Excerpt chuẩn SEO (140–160 ký tự)'
+              : 'Giữ nguyên Excerpt hiện tại',
+          },
+          {
+            key: 'seo_tags',
+            label: 'Thẻ từ khóa bài viết (WordPress SEO Tags)',
+            isMissing: isMissingTags,
+            currentStatus: isMissingTags
+              ? 'Chưa gắn thẻ Tags nào'
+              : `Đã có ${existingTagIds.length} thẻ Tags`,
+            actionToTake: isMissingTags
+              ? 'Tự động phân tích tên nghệ sĩ & chủ đề để gắn 4–6 thẻ Tags'
+              : 'Bổ sung/đồng bộ thẻ Tags nhân vật chính',
+          },
+        ];
+
+        const totalMissingCount = missingChecks.filter((c) => c.isMissing).length;
+
+        if (!autoApplyUpdate) {
+          const allCurrentImages = [...existingInlineImgs];
+          if (
+            featuredImageUrl &&
+            !allCurrentImages.some((im) => im.url.split('?')[0] === featuredImageUrl.split('?')[0])
+          ) {
+            allCurrentImages.unshift({
+              url: featuredImageUrl,
+              alt: postTitle,
+              isFeatured: true,
+              isExternal: false,
+            });
+          }
+          return res.status(200).json({
+            ok: true,
+            mode: 'inspect_only',
+            postId,
+            title: postTitle,
+            slug: postSlug,
+            link: postLink,
+            trackingLink: `${postLink}${postLink.includes('?') ? '&' : '?'}${effectiveEmpCode}`,
+            status: postStatus,
+            employeeCode: effectiveEmpCode,
+            categories: postCategories,
+            featuredMediaId,
+            featuredImageUrl: featuredImageUrl || (allCurrentImages[0] && allCurrentImages[0].url) || '',
+            oldWordCount,
+            oldParagraphCount,
+            oldH2Count,
+            oldInlineImageCount,
+            oldYoutubeCount,
+            hasFeaturedImage: !isMissingFeatured,
+            hasExcerpt: !isMissingExcerpt,
+            hasTags: !isMissingTags,
+            missingChecks,
+            totalMissingCount,
+            contentHtml: rawContentHtml,
+            excerpt: rawExcerpt,
+            extractedImages: allCurrentImages,
+            youtubeVideos: existingYtVideos,
+            supplementedItems: [],
+          });
+        }
+
+        // Tự động bổ sung những phần còn thiếu & cập nhật trực tiếp bài viết trên celeb24h.com
+        const supplementedItems = [];
+        const isGeneratedBoilerplate = (txt) =>
+          /Across the paragraphs and illustrative photographs of the report|Looking closely at the specific details documented in this passage and the accompanying photographs|🎬 Related Videos & Exclusive Moments|🎬 Video Liên Quan Đáng Chú Ý/i.test(
+            txt
+          );
+
+        const extractedExistingParas = [];
+        const pRegex = /<(p|blockquote|li)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+        let pm;
+        while ((pm = pRegex.exec(rawContentHtml)) !== null) {
+          const cleanP = stripHtmlTags(pm[2])
+            .replace(/\s*(?:What|Who|Which) is your (?:absolute )?favorite[\s\S]*$/i, '')
+            .replace(/\s*Let['’]s (?:swap|talk)[\s\S]*$/i, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          if (
+            cleanP.length >= 22 &&
+            !isGeneratedBoilerplate(cleanP) &&
+            !/^Video #\d+:/i.test(cleanP) &&
+            !/^👉\s*(Watch on YouTube|Xem trực tiếp trên YouTube)/i.test(cleanP) &&
+            !extractedExistingParas.includes(cleanP)
+          ) {
+            extractedExistingParas.push(cleanP);
+          }
+        }
+
+        let mergedArticleText =
+          extractedExistingParas.length > 0
+            ? extractedExistingParas.join('\n\n')
+            : plainTextWithoutTags;
+
+        const finalImages = [];
+        const seenImgKeys = new Set();
+        const pushUniqueImg = (url, alt, isExternal) => {
+          const cleanU = String(url || '').trim();
+          if (!cleanU || !/^https?:\/\//i.test(cleanU)) return;
+          const key = cleanU
+            .split('?')[0]
+            .replace(
+              /-(?:150x\d+|2\d\dx\d+|3\d\dx\d+|4\d\dx\d+|5\d\dx\d+|6\d\dx\d+|768x\d+)(?=\.(jpg|jpeg|png|webp|avif)$)/i,
+              ''
+            )
+            .toLowerCase();
+          if (seenImgKeys.has(key)) return;
+          seenImgKeys.add(key);
+          finalImages.push({
+            url: cleanU,
+            alt: alt || postTitle,
+            isFeatured: finalImages.length === 0,
+            isExternal: Boolean(isExternal),
+          });
+        };
+
+        for (const im of existingInlineImgs) {
+          pushUniqueImg(im.url, im.alt, false);
+        }
+        if (featuredImageUrl) {
+          pushUniqueImg(featuredImageUrl, postTitle, false);
+        }
+
+        if (body.referenceSourceUrl && String(body.referenceSourceUrl).trim()) {
+          try {
+            const refScraped = await scrapeWebArticleForSeoRewrite(
+              String(body.referenceSourceUrl).trim()
+            );
+            if (refScraped.articleText) {
+              const extraLines = refScraped.articleText
+                .split(/\n+/)
+                .map((l) => l.trim())
+                .filter((l) => l.length >= 25 && !mergedArticleText.includes(l.slice(0, 35)));
+              if (extraLines.length > 0) {
+                mergedArticleText = [mergedArticleText, ...extraLines].filter(Boolean).join('\n\n');
+              }
+            }
+            for (const im of refScraped.images || []) {
+              pushUniqueImg(im.url, im.alt || postTitle, false);
+            }
+          } catch {}
+        }
+
+        if ((finalImages.length < 5 || mergedArticleText.length < 250) && opts.addMissingImages) {
+          try {
+            const discovered = await tryDiscoverSourceArticleImagesFromText(
+              postTitle,
+              mergedArticleText
+            );
+            if (discovered) {
+              if (discovered.articleText && mergedArticleText.length < 350) {
+                const extraLines = discovered.articleText
+                  .split(/\n+/)
+                  .map((l) => l.trim())
+                  .filter((l) => l.length >= 25 && !mergedArticleText.includes(l.slice(0, 35)));
+                if (extraLines.length > 0) {
+                  mergedArticleText = [mergedArticleText, ...extraLines]
+                    .filter(Boolean)
+                    .join('\n\n');
+                }
+              }
+              for (const im of discovered.images || []) {
+                pushUniqueImg(im.url, im.alt || postTitle, false);
+              }
+            }
+          } catch {}
+        }
+
+        const contextProfile = analyzeArticleSubjectAndContext(
+          postTitle,
+          mergedArticleText || postTitle,
+          undefined,
+          finalImages
+        );
+
+        const imagesBeforeExternal = finalImages.length;
+        if (finalImages.length < 5 && opts.addMissingImages) {
+          try {
+            const neededExt = Math.max(1, 6 - finalImages.length);
+            const extImgs = await searchExternalRelatedImages(
+              contextProfile.combinedSearchQuery || contextProfile.primaryPerson || postTitle,
+              neededExt,
+              seenImgKeys,
+              contextProfile
+            );
+            for (const ext of extImgs) {
+              pushUniqueImg(
+                ext.url,
+                ext.alt || contextProfile.subjectDisplay || postTitle,
+                true
+              );
+            }
+          } catch {}
+        }
+
+        const addedImageCount = Math.max(0, finalImages.length - oldInlineImageCount);
+        if (addedImageCount > 0) {
+          supplementedItems.push(
+            `Bổ sung thêm ${addedImageCount} ảnh minh họa còn thiếu (từ ${oldInlineImageCount} ảnh → ${finalImages.length} ảnh trong bài)`
+          );
+        }
+
+        const finalYoutubeVideos = [...existingYtVideos];
+        if (finalYoutubeVideos.length < 2 && opts.addYoutubeVideos) {
+          try {
+            const neededVids = 2 - finalYoutubeVideos.length;
+            const searchedVids = await searchRelatedYouTubeVideos(
+              contextProfile.combinedSearchQuery || contextProfile.primaryPerson || postTitle,
+              neededVids,
+              contextProfile,
+              finalYoutubeVideos.map((v) => v.videoId)
+            );
+            for (const v of searchedVids) {
+              if (!finalYoutubeVideos.some((ev) => ev.videoId === v.videoId)) {
+                finalYoutubeVideos.push(v);
+              }
+            }
+            if (finalYoutubeVideos.length > oldYoutubeCount) {
+              supplementedItems.push(
+                `Gắn bổ sung ${finalYoutubeVideos.length - oldYoutubeCount} Video YouTube liên quan ở cuối bài (${oldYoutubeCount} → ${finalYoutubeVideos.length} video)`
+              );
+            }
+          } catch {}
+        }
+
+        let updatedContentHtml = rawContentHtml;
+        let newWordCount = oldWordCount;
+        let newParagraphCount = oldParagraphCount;
+
+        const shouldRebuildLongForm =
+          (isContentShort && opts.expandContent) || (isMissingH2 && opts.addHeadingsH2);
+
+        if (shouldRebuildLongForm) {
+          const longForm = buildLongFormSeoArticle2000To5000Words({
+            articleTitle: postTitle,
+            focusKeyword:
+              contextProfile.subjectDisplay || contextProfile.primaryPerson || postTitle,
+            sourceArticleText: mergedArticleText || postTitle,
+            images: finalImages,
+            youtubeVideos: finalYoutubeVideos,
+            language,
+            contextProfile,
+          });
+          updatedContentHtml = longForm.html;
+          newWordCount = longForm.wordCount;
+          newParagraphCount = longForm.paragraphCount;
+
+          if (isContentShort) {
+            supplementedItems.push(
+              `Mở rộng nội dung chuẩn SEO từ ${oldWordCount.toLocaleString('vi-VN')} từ → ${newWordCount.toLocaleString('vi-VN')} từ (${newParagraphCount} đoạn văn 40–50 từ)`
+            );
+          }
+          if (isMissingH2) {
+            const newH2Cnt = (updatedContentHtml.match(/<h2\b[^>]*>/gi) || []).length;
+            supplementedItems.push(
+              `Bổ sung cấu trúc thẻ tiêu đề phụ H2 chuẩn SEO (${oldH2Count} → ${newH2Cnt} thẻ H2)`
+            );
+          }
+        } else {
+          let workingHtml = rawContentHtml;
+          if (
+            isMissingInlineImages &&
+            finalImages.length > oldInlineImageCount &&
+            opts.addMissingImages
+          ) {
+            const newImgsOnly = finalImages.filter(
+              (im) =>
+                !existingInlineImgs.some((ex) => ex.url.split('?')[0] === im.url.split('?')[0])
+            );
+            if (newImgsOnly.length > 0) {
+              const figBlocks = newImgsOnly.map((img, i) => {
+                const altText = String(img.alt || postTitle).replace(/"/g, '&quot;');
+                return `<figure class="wp-block-image size-large article-image-block" style="margin: 24px 0; text-align: center;">
+  <img src="${img.url}" alt="${altText}" referrerpolicy="no-referrer" loading="lazy" style="width: 100%; max-width: 840px; height: auto; border-radius: 12px; margin: 0 auto; display: block;" />
+  <figcaption style="font-size: 13px; color: #64748b; margin-top: 8px; font-style: italic;">${altText} (Supplemental Photo #${oldInlineImageCount + i + 1})</figcaption>
+</figure>`;
+              });
+              workingHtml = `${workingHtml.trim()}\n\n${figBlocks.join('\n\n')}`;
+            }
+          }
+          if (
+            isMissingYoutube &&
+            finalYoutubeVideos.length > oldYoutubeCount &&
+            opts.addYoutubeVideos
+          ) {
+            const newVidsOnly = finalYoutubeVideos.filter((v) => !seenYtIds.has(v.videoId));
+            if (newVidsOnly.length > 0) {
+              const isVi = language === 'vi';
+              const headingText = isVi
+                ? '🎬 Video Liên Quan Đáng Chú Ý'
+                : '🎬 Related Videos & Exclusive Moments';
+              const vidBlocks = [];
+              if (oldYoutubeCount === 0) {
+                vidBlocks.push(
+                  `<h2 style="margin: 32px 0 16px 0; font-weight: 800;">${headingText}</h2>`
+                );
+              }
+              newVidsOnly.forEach((v, idx) => {
+                const safeTitle = String(v.title || '').replace(/"/g, '&quot;');
+                vidBlocks.push(
+                  `<div class="wp-youtube-embed-box" style="margin: 20px 0 28px 0;">
+  <p style="margin-bottom: 10px;"><strong>Video #${oldYoutubeCount + idx + 1}: ${v.title}</strong></p>
+  <figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio" style="margin: 12px 0;">
+    <div class="wp-block-embed__wrapper" style="position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000;">
+      <iframe src="https://www.youtube.com/embed/${v.videoId}" title="${safeTitle}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    </div>
+  </figure>
+  <p style="font-size: 13px; color: #475569;">👉 <a href="${v.watchUrl}" target="_blank" rel="noopener noreferrer">${
+                    isVi ? 'Xem trực tiếp trên YouTube' : 'Watch on YouTube'
+                  }: ${v.title}</a></p>
+</div>`
+                );
+              });
+              workingHtml = `${workingHtml.trim()}\n\n${vidBlocks.join('\n\n')}`;
+            }
+          }
+          updatedContentHtml = workingHtml;
+          newWordCount = stripHtmlTags(updatedContentHtml).split(/\s+/).filter(Boolean).length;
+          newParagraphCount = (
+            updatedContentHtml.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || []
+          ).length;
+        }
+
+        const firstCleanSent = splitIntoSentences(mergedArticleText)[0] || '';
+        const finalExcerpt =
+          !isMissingExcerpt || !opts.addExcerptAndTags
+            ? rawExcerpt
+            : firstCleanSent
+            ? firstCleanSent.slice(0, 160)
+            : `Read the full story and see all exclusive photos featuring ${
+                contextProfile.subjectDisplay || postTitle
+              }.`;
+        if (isMissingExcerpt && opts.addExcerptAndTags && finalExcerpt) {
+          supplementedItems.push(
+            `Bổ sung Mô tả ngắn chuẩn SEO (Meta Excerpt: ${finalExcerpt.length} ký tự)`
+          );
+        }
+
+        const generatedTags = Array.from(
+          new Set(
+            [
+              contextProfile.primaryPerson,
+              contextProfile.secondaryPerson,
+              ...(contextProfile.supportingEntities || []).slice(0, 2),
+              'Showbiz',
+              'Celeb24h',
+            ].filter(Boolean)
+          )
+        );
+        if (isMissingTags && opts.addExcerptAndTags && generatedTags.length > 0) {
+          supplementedItems.push(
+            `Tự động tạo & gắn ${generatedTags.length} thẻ Tags SEO (${generatedTags.join(', ')})`
+          );
+        }
+
+        const candidateFeaturedUrl =
+          featuredImageUrl || (finalImages[0] && finalImages[0].url) || '';
+        if (isMissingFeatured && opts.setFeaturedImage && candidateFeaturedUrl) {
+          supplementedItems.push(
+            'Tự động tải & đặt Ảnh đại diện (Featured Thumbnail) cho bài viết'
+          );
+        }
+
+        // Upload ảnh đại diện nếu bài cũ chưa có
+        if (featuredMediaId <= 0 && opts.setFeaturedImage && candidateFeaturedUrl) {
+          try {
+            let refererOrigin = DEFAULT_WP_SITE;
+            try {
+              refererOrigin = `${new URL(String(candidateFeaturedUrl)).origin}/`;
+            } catch {}
+            const imgRes = await fetchWithTimeout(
+              candidateFeaturedUrl,
+              {
+                headers: {
+                  'User-Agent': SCRAPER_USER_AGENT,
+                  Referer: refererOrigin,
+                  Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+                },
+              },
+              4500
+            );
+            if (imgRes.ok) {
+              const arr = await imgRes.arrayBuffer();
+              const buf = Buffer.from(arr);
+              if (buf.byteLength > 400) {
+                const upRes = await fetchWithTimeout(
+                  `${session.restRoot}wp/v2/media`,
+                  {
+                    method: 'POST',
+                    headers: {
+                      Cookie: session.cookieHeader,
+                      'X-WP-Nonce': session.restNonce,
+                      'Content-Type': 'image/jpeg',
+                      'Content-Disposition': `attachment; filename="featured-${postId}-${Date.now()}.jpg"`,
+                    },
+                    body: new Uint8Array(buf),
+                  },
+                  5000
+                );
+                if (upRes.ok) {
+                  const upJson = await upRes.json();
+                  if (upJson && upJson.id) featuredMediaId = Number(upJson.id);
+                }
+              }
+            }
+          } catch {}
+        }
+
+        // Cập nhật bài viết cũ trực tiếp qua postId
+        const wpAuthorId = resolveWpUserIdByEmployeeCode(effectiveEmpCode);
+        const updatePayload = {
+          title: postTitle,
+          content: updatedContentHtml,
+          excerpt: finalExcerpt,
+          status: 'publish',
+          author: wpAuthorId,
+          categories: postCategories,
+        };
+        if (postSlug) updatePayload.slug = postSlug;
+        if (featuredMediaId > 0) updatePayload.featured_media = featuredMediaId;
+
+        const wpUpdateRes = await fetchWithTimeout(
+          `${session.restRoot}wp/v2/posts/${postId}`,
+          {
+            method: 'POST',
+            headers: {
+              Cookie: session.cookieHeader,
+              'X-WP-Nonce': session.restNonce,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(updatePayload),
+          },
+          7500
+        );
+        const updatedJson = await wpUpdateRes.json();
+        if (!wpUpdateRes.ok) {
+          return res.status(wpUpdateRes.status).json({
+            ok: false,
+            error:
+              (updatedJson && updatedJson.message) ||
+              `Không thể cập nhật bài viết #${postId} trên celeb24h.com`,
+          });
+        }
+
+        const cleanUpdatedLink = String(updatedJson.link || postLink).replace(/\/+$/, '');
+        const trackingLink = `${cleanUpdatedLink}${
+          cleanUpdatedLink.includes('?') ? '&' : '?'
+        }${effectiveEmpCode}`;
+        const newH2Count = (updatedContentHtml.match(/<h[23]\b[^>]*>/gi) || []).length;
+        const newInlineImgCount = (updatedContentHtml.match(/<img\b[^>]*>/gi) || []).length;
+
+        return res.status(200).json({
+          ok: true,
+          mode: 'updated_old_post',
+          postId,
+          title: postTitle,
+          slug: postSlug,
+          link: cleanUpdatedLink,
+          trackingLink,
+          status: updatedJson.status || 'publish',
+          employeeCode: effectiveEmpCode,
+          categories: postCategories,
+          featuredMediaId,
+          featuredImageUrl: candidateFeaturedUrl,
+          focusKeyword: contextProfile.primaryPerson || contextProfile.subjectDisplay || '',
+          tags: generatedTags,
+          oldWordCount,
+          newWordCount,
+          oldParagraphCount,
+          newParagraphCount,
+          oldH2Count,
+          newH2Count,
+          oldInlineImageCount,
+          newInlineImageCount: Math.max(newInlineImgCount, finalImages.length),
+          originalImageCount: imagesBeforeExternal,
+          externalImageCount: Math.max(0, finalImages.length - imagesBeforeExternal),
+          oldYoutubeCount,
+          newYoutubeCount: finalYoutubeVideos.length,
+          missingChecks,
+          totalMissingCount,
+          supplementedItems:
+            supplementedItems.length > 0
+              ? supplementedItems
+              : ['Đồng bộ & cập nhật lại cấu trúc chuẩn SEO cho bài viết trên celeb24h.com'],
+          contentHtml: updatedContentHtml,
+          excerpt: finalExcerpt,
+          extractedImages: finalImages,
+          youtubeVideos: finalYoutubeVideos,
+          updatedPost: {
+            id: postId,
+            title: postTitle,
+            link: cleanUpdatedLink,
+            trackingLink,
+            status: updatedJson.status || 'publish',
+            slug: postSlug,
+            date: String(updatedJson.date || new Date().toISOString()),
+            authorId: wpAuthorId,
+            employeeCode: effectiveEmpCode,
+            wasDuplicateUpdated: true,
+            duplicateMatchReason: `Cập nhật bổ sung phần còn thiếu cho bài cũ #${postId} trên celeb24h.com`,
+            oldWordCount,
+            newWordCount,
+          },
+        });
+      }
+
+      if (action !== 'publish') {
+        return res.status(400).json({
+          ok: false,
+          error: `Action không hợp lệ: "${action}"`,
+        });
+      }
+
       // 5. Đẩy bài viết lên WordPress
       const empCode = String(body.employeeCode || 'A0006').trim().toUpperCase();
       const wpAuthorId = resolveWpUserIdByEmployeeCode(empCode);
       let pubTitle = String(body.title || '').trim();
       let pubContent = String(body.content || '').trim();
       let pubExcerpt = String(body.excerpt || '').trim();
+      if (!pubTitle && !body.postId) {
+        return res.status(400).json({
+          ok: false,
+          error: 'Vui lòng nhập tiêu đề bài viết trước khi đăng lên WordPress!',
+        });
+      }
       let candidateImgs = Array.isArray(body.extractedImages)
         ? body.extractedImages.filter((im) => im && im.url)
         : [];
