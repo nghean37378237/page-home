@@ -801,6 +801,17 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
     }
   }
 
+  // CHỐT CHẶN TUYỆT ĐỐI: Nếu sourceUrl là link thuộc domain celeb24h.com mà không có postId -> Tuyệt đối không được tạo bài mới (link mới)!
+  if (
+    !input.postId &&
+    input.sourceUrl &&
+    /(?:^|\/\/)(?:www\.)?celeb24h\.com(?:\/|$)/i.test(input.sourceUrl)
+  ) {
+    throw new Error(
+      `Đường dẫn "${input.sourceUrl}" thuộc domain celeb24h.com nhưng không tìm thấy ID bài viết cũ tương ứng. Hệ thống chỉ update trên chính bài cũ, tuyệt đối không viết bài mới hay tạo link mới!`
+    );
+  }
+
   // Đảm bảo luôn có ảnh gắn trong bài viết và nội dung chuẩn trước khi đẩy lên web
   let finalContent = input.content || '';
   let candidateImgs = Array.isArray(input.extractedImages)

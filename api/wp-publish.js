@@ -4340,6 +4340,47 @@ export default async function handler(req, res) {
       let pubTitle = String(body.title || '').trim();
       let pubContent = String(body.content || '').trim();
       let pubExcerpt = String(body.excerpt || '').trim();
+
+      // Nếu người dùng truyền link thuộc domain celeb24h.com mà chưa có postId -> Tự động dò postId trên celeb24h.com để update chính bài đó, tuyệt đối không tạo bài mới!
+      const rawCelebUrl = String(body.celeb24hUrl || body.sourceUrl || '').trim();
+      if (
+        !body.postId &&
+        rawCelebUrl &&
+        /(?:^|\/\/)(?:www\.)?celeb24h\.com(?:\/|$)/i.test(rawCelebUrl)
+      ) {
+        try {
+          const u = new URL(/^https?:\/\//i.test(rawCelebUrl) ? rawCelebUrl : `https://${rawCelebUrl}`);
+          const pParam = u.searchParams.get('p') || u.searchParams.get('post');
+          const segs = u.pathname.split('/').filter(Boolean);
+          const numSeg = segs.find((s) => /^\d+$/.test(s));
+          if (pParam && /^\d+$/.test(pParam)) {
+            body.postId = Number(pParam);
+          } else if (numSeg && segs.length <= 2) {
+            body.postId = Number(numSeg);
+          } else if (segs.length > 0) {
+            const lastSeg = decodeURIComponent(segs[segs.length - 1]).replace(/\.(html|htm|php)$/i, '');
+            const r = await fetchWithTimeout(
+              `${session.restRoot}wp/v2/posts?slug=${encodeURIComponent(lastSeg)}`,
+              { headers: { Cookie: session.cookieHeader, 'X-WP-Nonce': session.restNonce } },
+              5000
+            );
+            if (r.ok) {
+              const arr = await r.json();
+              if (Array.isArray(arr) && arr[0] && arr[0].id) {
+                body.postId = Number(arr[0].id);
+              }
+            }
+          }
+        } catch {}
+
+        if (!body.postId) {
+          return res.status(400).json({
+            ok: false,
+            error: `Đường dẫn "${rawCelebUrl}" thuộc domain celeb24h.com nhưng không tìm thấy ID bài cũ. Hệ thống chỉ update trên chính bài cũ, không tạo link mới!`,
+          });
+        }
+      }
+
       if (!pubTitle && !body.postId) {
         return res.status(400).json({
           ok: false,

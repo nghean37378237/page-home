@@ -1483,6 +1483,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       setAiSourceUrl(detectedSourceUrl);
     }
 
+    // Nếu người dùng dán link thuộc domain celeb24h.com ở bất kỳ ô nào -> Bắt buộc chuyển sang chế độ Update trực tiếp trên chính bài cũ đó, tuyệt đối không viết bài mới hay tạo link mới!
+    if (
+      detectedSourceUrl &&
+      /(?:^|\/\/)(?:www\.)?celeb24h\.com(?:\/|$)/i.test(detectedSourceUrl)
+    ) {
+      await handleInspectOrUpdateOldCeleb24hLinks(true, detectedSourceUrl);
+      return null;
+    }
+
     const rawTarget =
       activeMode === 'from_url'
         ? detectedSourceUrl || aiSourceUrl.trim()
@@ -2688,35 +2697,196 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         };
       }
 
-      // Chế độ autoApplyUpdate qua API ai_write + publish
-      const aiRes = await fetch('/api/wp-publish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'ai_write',
-          mode: oldCeleb24hRefSourceUrl.trim() ? 'from_url' : 'rewrite',
-          sourceUrl: oldCeleb24hRefSourceUrl.trim() || undefined,
-          topic: postTitle,
-          existingTitle: postTitle,
-          existingContent: rawContentHtml,
-          existingImages: inlineImgs,
-          language: aiLanguage,
-          employeeCode: selectedEmployeeCode,
-          autoUpdateIfDuplicate: false,
-        }),
-      });
-      const aiData = await safeParseApiJson(aiRes);
-      const finalHtml = String(aiData.contentHtml || rawContentHtml);
-      const finalExcerpt = String(aiData.excerpt || rawExcerpt);
-      const finalImgs =
-        Array.isArray(aiData.extractedImages) && aiData.extractedImages.length > 0
-          ? aiData.extractedImages
-          : inlineImgs;
-      const finalVids =
-        Array.isArray(aiData.youtubeVideos) && aiData.youtubeVideos.length > 0
-          ? aiData.youtubeVideos
-          : existingYtVideos;
+      // Chế độ autoApplyUpdate: Chỉ bổ sung những phần còn thiếu và UPDATE TRỰC TIẾP lên chính postId cũ trên celeb24h.com (tuyệt đối không tạo link mới!)
+      const supplementedItems: string[] = [];
+      let finalHtml = rawContentHtml;
+      let finalExcerpt = rawExcerpt;
+      let finalImgs = [...inlineImgs];
+      let finalVids = [...existingYtVideos];
+      let finalTags: string[] = [];
 
+      const shouldExpandOrAddH2 =
+        (isContentShort && oldCeleb24hOptions.expandContent) ||
+        (isMissingH2 && oldCeleb24hOptions.addHeadingsH2);
+
+      if (shouldExpandOrAddH2) {
+        const aiRes = await fetch('/api/wp-publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'ai_write',
+            mode: oldCeleb24hRefSourceUrl.trim() ? 'from_url' : 'rewrite',
+            sourceUrl: oldCeleb24hRefSourceUrl.trim() || undefined,
+            topic: postTitle,
+            existingTitle: postTitle,
+            existingContent: rawContentHtml,
+            existingImages: inlineImgs,
+            language: aiLanguage,
+            employeeCode: selectedEmployeeCode,
+            autoUpdateIfDuplicate: false,
+          }),
+        });
+        const aiData = await safeParseApiJson(aiRes);
+        if (aiData && aiData.contentHtml) {
+          finalHtml = String(aiData.contentHtml);
+        }
+        if (aiData && aiData.excerpt && isMissingExcerpt && oldCeleb24hOptions.addExcerptAndTags) {
+          finalExcerpt = String(aiData.excerpt);
+          supplementedItems.push(
+            `Bổ sung Mô tả ngắn chuẩn SEO (Meta Excerpt: ${finalExcerpt.length} ký tự)`
+          );
+        }
+        if (Array.isArray(aiData?.extractedImages) && aiData.extractedImages.length > 0) {
+          const seen = new Set(finalImgs.map((im) => im.url.split('?')[0].toLowerCase()));
+          for (const im of aiData.extractedImages) {
+            const k = String(im?.url || '').split('?')[0].toLowerCase();
+            if (k && !seen.has(k)) {
+              seen.add(k);
+              finalImgs.push({
+                url: String(im.url),
+                alt: String(im.alt || postTitle),
+                isFeatured: finalImgs.length === 0,
+                isExternal: Boolean(im.isExternal),
+              });
+            }
+          }
+        }
+        if (Array.isArray(aiData?.youtubeVideos) && aiData.youtubeVideos.length > 0) {
+          for (const v of aiData.youtubeVideos) {
+            if (v?.videoId && !finalVids.some((ev) => ev.videoId === v.videoId)) {
+              finalVids.push(v);
+            }
+          }
+        }
+        if (Array.isArray(aiData?.tags) && aiData.tags.length > 0) {
+          finalTags = aiData.tags.map(String);
+        }
+      }
+
+      // Nếu bài cũ còn thiếu ảnh (< 5 ảnh) -> tìm bù thêm ảnh cùng nhân vật/bối cảnh để đủ 5–6 ảnh
+      if (finalImgs.length < 5 && oldCeleb24hOptions.addMissingImages) {
+        try {
+          const neededExt = Math.max(1, 6 - finalImgs.length);
+          const extRes = await fetch('/api/wp-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'search_external_images',
+              forceExternalSearch: true,
+              query: postTitle,
+              title: postTitle,
+              articleText: plainText.slice(0, 4000),
+              existingImages: finalImgs,
+              limit: neededExt,
+            }),
+          });
+          const extData = await safeParseApiJson(extRes);
+          const extList = Array.isArray(extData?.externalImages)
+            ? extData.externalImages
+            : Array.isArray(extData?.images)
+            ? extData.images
+            : [];
+          const seen = new Set(finalImgs.map((im) => im.url.split('?')[0].toLowerCase()));
+          for (const ext of extList) {
+            const k = String(ext?.url || '').split('?')[0].toLowerCase();
+            if (k && !seen.has(k)) {
+              seen.add(k);
+              finalImgs.push({
+                url: String(ext.url),
+                alt: String(ext.alt || postTitle),
+                isFeatured: finalImgs.length === 0,
+                isExternal: true,
+              });
+            }
+          }
+        } catch {}
+      }
+
+      if (finalImgs.length > oldInlineImageCount) {
+        supplementedItems.push(
+          `Bổ sung thêm ${finalImgs.length - oldInlineImageCount} ảnh minh họa còn thiếu (${oldInlineImageCount} → ${finalImgs.length} ảnh trong bài)`
+        );
+      }
+
+      // Gắn toàn bộ bộ ảnh (ảnh cũ + ảnh mới bù thêm) xen kẽ vào giữa các đoạn văn của bài
+      if (finalImgs.length > 0) {
+        const currentImgCountInHtml = (finalHtml.match(/<img\b[^>]*>/gi) || []).length;
+        if (currentImgCountInHtml < finalImgs.length) {
+          const strippedFigs = finalHtml
+            .replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, '')
+            .replace(/<p>\s*<img\b[^>]*>\s*<\/p>/gi, '');
+          finalHtml = distributeAndAttachImagesToHtml(strippedFigs, finalImgs, postTitle);
+        }
+      }
+
+      // Nếu bài cũ còn thiếu Video YouTube (< 2 video) -> tìm bù thêm cho đủ 2 Video YouTube cuối bài
+      if (finalVids.length < 2 && oldCeleb24hOptions.addYoutubeVideos) {
+        try {
+          const ytRes = await fetch('/api/wp-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'search_youtube',
+              query: postTitle,
+              title: postTitle,
+              articleText: plainText.slice(0, 4000),
+              excludeVideoIds: finalVids.map((v) => v.videoId),
+              limit: 2 - finalVids.length,
+            }),
+          });
+          const ytData = await safeParseApiJson(ytRes);
+          if (Array.isArray(ytData?.videos)) {
+            for (const v of ytData.videos) {
+              if (v?.videoId && !finalVids.some((ev) => ev.videoId === v.videoId)) {
+                finalVids.push(v);
+              }
+            }
+          }
+        } catch {}
+      }
+
+      if (finalVids.length > oldYoutubeCount) {
+        supplementedItems.push(
+          `Gắn bổ sung ${finalVids.length - oldYoutubeCount} Video YouTube liên quan ở cuối bài (${oldYoutubeCount} → ${finalVids.length} video)`
+        );
+      }
+
+      // Đảm bảo khối 2 Video YouTube có mặt ở cuối bài viết
+      if (finalVids.length > 0 && oldCeleb24hOptions.addYoutubeVideos) {
+        const currentYtInHtml = (finalHtml.match(/youtube\.com\/embed\//gi) || []).length;
+        if (currentYtInHtml < finalVids.length) {
+          const headingText =
+            aiLanguage === 'vi'
+              ? '🎬 Video Liên Quan Đáng Chú Ý'
+              : '🎬 Related Videos & Exclusive Moments';
+          const videoBlocks = finalVids
+            .slice(0, 2)
+            .map((v, idx) => {
+              const safeTitle = String(v.title || postTitle).replace(/"/g, '&quot;');
+              return `<div class="wp-youtube-embed-box" style="margin: 20px 0 28px 0;">
+  <p style="margin-bottom: 10px;"><strong>Video #${idx + 1}: ${v.title}</strong></p>
+  <figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio" style="margin: 12px 0;">
+    <div class="wp-block-embed__wrapper" style="position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000;">
+      <iframe src="https://www.youtube.com/embed/${v.videoId}" title="${safeTitle}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    </div>
+  </figure>
+  <p style="font-size: 13px; color: #475569;">👉 <a href="${v.watchUrl}" target="_blank" rel="noopener noreferrer">${
+                aiLanguage === 'vi' ? 'Xem trực tiếp trên YouTube' : 'Watch on YouTube'
+              }: ${v.title}</a></p>
+</div>`;
+            })
+            .join('\n\n');
+          const cleanedHtmlWithoutOldYt = finalHtml
+            .replace(
+              /<h2[^>]*>\s*🎬\s*(Video Liên Quan Đáng Chú Ý|Related Videos & Exclusive Moments)\s*<\/h2>[\s\S]*$/i,
+              ''
+            )
+            .trim();
+          finalHtml = `${cleanedHtmlWithoutOldYt}\n\n<h2 style="margin: 32px 0 16px 0; font-weight: 800;">${headingText}</h2>\n\n${videoBlocks}`;
+        }
+      }
+
+      // Cập nhật trực tiếp lên CHÍNH BÀI CŨ (postId) trên celeb24h.com — giữ nguyên postId, postTitle, postSlug và link cũ!
       const pubRes = await fetch('/api/wp-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2729,7 +2899,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           slug: postSlug,
           status: 'publish',
           categories: postCategories,
-          tags: Array.isArray(aiData.tags) ? aiData.tags : undefined,
+          tags: finalTags.length > 0 ? finalTags : undefined,
           employeeCode: selectedEmployeeCode,
           featuredMediaId: featuredMediaId > 0 ? featuredMediaId : undefined,
           featuredImageUrl: featuredImageUrl || finalImgs[0]?.url || undefined,
@@ -2741,17 +2911,29 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         throw new Error(pubData.error || `Không thể cập nhật bài #${postId} trên celeb24h.com`);
       }
 
-      const newWordCount = Number(
-        aiData.wordCount || stripTags(finalHtml).split(/\s+/).filter(Boolean).length
-      );
-      const newParagraphCount = Number(
-        aiData.paragraphCount || (finalHtml.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || []).length
-      );
+      const newWordCount = stripTags(finalHtml).split(/\s+/).filter(Boolean).length;
+      const newParagraphCount = (finalHtml.match(/<p\b[^>]*>[\s\S]*?<\/p>/gi) || []).length;
       const newH2Count = (finalHtml.match(/<h[23]\b[^>]*>/gi) || []).length;
       const newInlineImageCount = Math.max(
         (finalHtml.match(/<img\b[^>]*>/gi) || []).length,
         finalImgs.length
       );
+
+      if (isContentShort && newWordCount > oldWordCount) {
+        supplementedItems.unshift(
+          `Mở rộng nội dung chuẩn SEO từ ${oldWordCount.toLocaleString('vi-VN')} từ → ${newWordCount.toLocaleString('vi-VN')} từ (${newParagraphCount} đoạn văn 40–50 từ)`
+        );
+      }
+      if (isMissingH2 && newH2Count > oldH2Count) {
+        supplementedItems.push(
+          `Bổ sung cấu trúc thẻ tiêu đề phụ H2 chuẩn SEO (${oldH2Count} → ${newH2Count} thẻ H2)`
+        );
+      }
+      if (isMissingTags && finalTags.length > 0) {
+        supplementedItems.push(
+          `Tự động gắn ${finalTags.length} thẻ Tags SEO (${finalTags.join(', ')})`
+        );
+      }
 
       return {
         ok: true,
@@ -2759,14 +2941,14 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         postId,
         title: postTitle,
         slug: postSlug,
-        link: pubData.post?.link || postLink,
-        trackingLink: pubData.post?.trackingLink || trackingLink,
+        link: postLink,
+        trackingLink,
         status: 'publish',
         employeeCode: selectedEmployeeCode,
         categories: postCategories,
         featuredMediaId,
         featuredImageUrl: featuredImageUrl || finalImgs[0]?.url || '',
-        tags: aiData.tags || [],
+        tags: finalTags,
         oldWordCount,
         newWordCount,
         oldParagraphCount,
@@ -2779,13 +2961,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         newYoutubeCount: finalVids.length,
         hasFeaturedImage: true,
         hasExcerpt: Boolean(finalExcerpt),
-        hasTags: true,
+        hasTags: finalTags.length > 0 || !isMissingTags,
         missingChecks,
         totalMissingCount,
-        supplementedItems: [
-          `Mở rộng nội dung chuẩn SEO từ ${oldWordCount} từ → ${newWordCount} từ (${newParagraphCount} đoạn)`,
-          `Đồng bộ ${newInlineImageCount} ảnh minh họa & ${finalVids.length} Video YouTube trong bài`,
-        ],
+        supplementedItems:
+          supplementedItems.length > 0
+            ? supplementedItems
+            : [
+                `Đã cập nhật bổ sung trực tiếp trên bài cũ #${postId} (${postLink}) — giữ nguyên link gốc!`,
+              ],
         contentHtml: finalHtml,
         excerpt: finalExcerpt,
         extractedImages: finalImgs,
@@ -2794,12 +2978,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           ...(pubData.post || {}),
           id: postId,
           title: postTitle,
-          link: pubData.post?.link || postLink,
-          trackingLink: pubData.post?.trackingLink || trackingLink,
+          link: postLink,
+          trackingLink,
           status: 'publish',
           employeeCode: selectedEmployeeCode,
           wasDuplicateUpdated: true,
-          duplicateMatchReason: `Cập nhật bổ sung phần còn thiếu cho bài cũ #${postId} trên celeb24h.com`,
+          duplicateMatchReason: `Cập nhật trực tiếp trên chính bài cũ #${postId} (${postLink}) — không tạo link mới`,
           oldWordCount,
           newWordCount,
         },
@@ -2808,43 +2992,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
     try {
       for (const targetLink of extractedTargets) {
-        let data: any = null;
-        try {
-          const res = await fetch('/api/wp-publish', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: autoApplyUpdate ? 'update_old_celeb24h' : 'inspect_old_celeb24h',
-              celeb24hUrl: targetLink,
-              referenceSourceUrl: oldCeleb24hRefSourceUrl.trim() || undefined,
-              employeeCode: selectedEmployeeCode,
-              language: aiLanguage,
-              autoApplyUpdate,
-              supplementOptions: oldCeleb24hOptions,
-            }),
-          });
-          const parsed = await safeParseApiJson(res);
-          if (
-            res.ok &&
-            parsed.ok &&
-            Number.isFinite(Number(parsed.postId)) &&
-            Number(parsed.postId) > 0 &&
-            Array.isArray(parsed.missingChecks) &&
-            parsed.missingChecks.length > 0
-          ) {
-            data = parsed;
-          } else if (!res.ok && parsed.error && !/Action không hợp lệ/i.test(String(parsed.error))) {
-            throw new Error(String(parsed.error));
-          }
-        } catch (apiErr: any) {
-          if (apiErr?.message && /Không tìm thấy bài viết tương ứng/i.test(apiErr.message)) {
-            throw apiErr;
-          }
-        }
-
-        if (!data) {
-          data = await runClientSideFallbackForCeleb24hLink(targetLink);
-        }
+        // Luôn đọc trực tiếp bài cũ trên celeb24h.com qua GET để lấy chính xác postId và chỉ update lên đúng postId đó (tuyệt đối không gửi POST tạo bài mới!)
+        const data = await runClientSideFallbackForCeleb24hLink(targetLink);
 
         lastSuccessData = data;
         newReports.push({
@@ -3060,12 +3209,60 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         .map((t) => t.trim())
         .filter(Boolean);
 
+      // Nếu người dùng đang thao tác với link trên domain celeb24h.com mà chưa có editingPostId, bắt buộc dò ID bài cũ để update trực tiếp, tuyệt đối không tạo bài mới!
+      let targetPostIdToPublish = editingPostId;
+      const candidateCeleb24hLink = [
+        oldCeleb24hLinksInput.trim().split(/[\r\n]+/)[0]?.trim(),
+        detectedLinkForPub,
+      ].find((u) => u && /(?:^|\/\/)(?:www\.)?celeb24h\.com(?:\/|$)/i.test(u));
+
+      if (!targetPostIdToPublish && candidateCeleb24hLink) {
+        try {
+          const u = new URL(
+            /^https?:\/\//i.test(candidateCeleb24hLink)
+              ? candidateCeleb24hLink
+              : `https://${candidateCeleb24hLink}`
+          );
+          const pParam = u.searchParams.get('p') || u.searchParams.get('post');
+          const segs = u.pathname.split('/').filter(Boolean);
+          const numSeg = segs.find((s) => /^\d+$/.test(s));
+          if (pParam && /^\d+$/.test(pParam)) {
+            targetPostIdToPublish = Number(pParam);
+          } else if (numSeg && segs.length <= 2) {
+            targetPostIdToPublish = Number(numSeg);
+          } else if (segs.length > 0) {
+            const lastSeg = decodeURIComponent(segs[segs.length - 1]).replace(
+              /\.(html|htm|php)$/i,
+              ''
+            );
+            const r = await fetch(
+              `https://celeb24h.com/wp-json/wp/v2/posts?slug=${encodeURIComponent(lastSeg)}`
+            );
+            if (r.ok) {
+              const arr = await r.json();
+              if (Array.isArray(arr) && arr[0]?.id) {
+                targetPostIdToPublish = Number(arr[0].id);
+              }
+            }
+          }
+          if (targetPostIdToPublish) {
+            setEditingPostId(targetPostIdToPublish);
+          }
+        } catch {}
+
+        if (!targetPostIdToPublish) {
+          throw new Error(
+            `Không tìm thấy ID bài viết cũ từ đường dẫn "${candidateCeleb24hLink}". Bài cũ trên celeb24h.com chỉ được update trên chính bài đó, hệ thống đã chặn tạo link mới!`
+          );
+        }
+      }
+
       const res = await fetch('/api/wp-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'publish',
-          postId: editingPostId,
+          postId: targetPostIdToPublish,
           title: pubTitle,
           content: formattedContent,
           excerpt: pubExcerpt,
