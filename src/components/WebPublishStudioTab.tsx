@@ -202,12 +202,61 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   // Chế độ hiển thị khung soạn thảo: 'preview' (Xem Trực Quan Có Ảnh & Video) | 'split' (Soạn Thảo + Xem Ảnh Song Song) | 'visual' (Mã HTML / Văn Bản)
   const [editorViewMode, setEditorViewMode] = useState<'visual' | 'preview' | 'split'>('preview');
 
-  // Trợ lý viết bài chuẩn SEO (2 Chức năng chính: Từ đoạn nội dung HOẶC Từ link web bất kỳ + Ảnh + 2 Video YouTube)
-  const [aiMode, setAiMode] = useState<'from_text' | 'from_url'>('from_url');
+  // Trợ lý viết bài chuẩn SEO (3 Chức năng chính: Từ link web bất kỳ | Từ đoạn nội dung | Update link cũ celeb24h.com bù phần còn thiếu)
+  const [aiMode, setAiMode] = useState<'from_text' | 'from_url' | 'update_celeb24h'>('from_url');
   const [aiTopic, setAiTopic] = useState('');
   const [aiSourceUrl, setAiSourceUrl] = useState('');
   const [aiLanguage, setAiLanguage] = useState<'en' | 'vi'>('en');
   const [aiLoading, setAiLoading] = useState(false);
+
+  // State riêng cho mục: Update Link Cũ celeb24h.com (Kiểm tra & Bổ sung những phần còn thiếu)
+  const [oldCeleb24hLinksInput, setOldCeleb24hLinksInput] = useState('');
+  const [oldCeleb24hRefSourceUrl, setOldCeleb24hRefSourceUrl] = useState('');
+  const [oldCeleb24hOptions, setOldCeleb24hOptions] = useState({
+    expandContent: true,
+    addHeadingsH2: true,
+    setFeaturedImage: true,
+    addMissingImages: true,
+    addYoutubeVideos: true,
+    addExcerptAndTags: true,
+  });
+  const [inspectingOldCeleb24h, setInspectingOldCeleb24h] = useState(false);
+  const [updatingOldCeleb24h, setUpdatingOldCeleb24h] = useState(false);
+  const [oldCeleb24hReports, setOldCeleb24hReports] = useState<
+    {
+      postId: number;
+      title: string;
+      slug: string;
+      link: string;
+      trackingLink: string;
+      status: string;
+      employeeCode: string;
+      mode: 'inspect_only' | 'updated_old_post';
+      oldWordCount: number;
+      newWordCount?: number;
+      oldParagraphCount: number;
+      newParagraphCount?: number;
+      oldH2Count: number;
+      newH2Count?: number;
+      oldInlineImageCount: number;
+      newInlineImageCount?: number;
+      oldYoutubeCount: number;
+      newYoutubeCount?: number;
+      hasFeaturedImage: boolean;
+      hasExcerpt: boolean;
+      hasTags: boolean;
+      totalMissingCount: number;
+      missingChecks: {
+        key: string;
+        label: string;
+        isMissing: boolean;
+        currentStatus: string;
+        actionToTake: string;
+      }[];
+      supplementedItems: string[];
+    }[]
+  >([]);
+
   const [extractedWebImages, setExtractedWebImages] = useState<
     { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[]
   >([]);
@@ -1422,7 +1471,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     featuredImageUrl: string;
     tags: string[];
   } | null> => {
-    const activeMode = overrideMode || aiMode;
+    const activeMode: 'from_text' | 'from_url' =
+      overrideMode || (aiMode === 'from_text' ? 'from_text' : 'from_url');
     const detectedSourceUrl =
       aiSourceUrl.trim() ||
       extractFirstArticleUrl(aiTopic) ||
@@ -2278,6 +2328,169 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     }
   };
 
+  // Kiểm tra hoặc Tự động bổ sung những phần còn thiếu cho Link cũ trên domain celeb24h.com (hỗ trợ 1 hoặc nhiều link)
+  const handleInspectOrUpdateOldCeleb24hLinks = async (
+    autoApplyUpdate: boolean,
+    overrideSingleUrl?: string
+  ) => {
+    const rawText = (overrideSingleUrl || oldCeleb24hLinksInput || aiSourceUrl || '').trim();
+    if (!rawText) {
+      setPublishError(
+        'Vui lòng dán đường dẫn (Link) bài viết cũ trên domain celeb24h.com (VD: https://celeb24h.com/1159 hoặc https://celeb24h.com/slug-bai-viet) để kiểm tra & bổ sung những phần còn thiếu!'
+      );
+      return;
+    }
+
+    // Tách danh sách link (nếu người dùng gửi nhiều link mỗi dòng 1 link)
+    const rawLines = rawText
+      .split(/[\r\n]+/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const extractedTargets: string[] = [];
+    for (const line of rawLines) {
+      const urlMatches = line.match(/https?:\/\/[^\s"'<>]+/gi);
+      if (urlMatches && urlMatches.length > 0) {
+        for (const u of urlMatches) {
+          const cleanU = u.replace(/[),.;]+$/, '');
+          if (!extractedTargets.includes(cleanU)) extractedTargets.push(cleanU);
+        }
+      } else if (line) {
+        if (!extractedTargets.includes(line)) extractedTargets.push(line);
+      }
+    }
+
+    if (extractedTargets.length === 0) {
+      setPublishError('Không tìm thấy đường dẫn celeb24h.com hợp lệ. Vui lòng kiểm tra lại!');
+      return;
+    }
+
+    if (overrideSingleUrl) {
+      setOldCeleb24hLinksInput(overrideSingleUrl);
+      setAiMode('update_celeb24h');
+      setActiveSubTab('editor');
+    }
+
+    if (autoApplyUpdate) {
+      setUpdatingOldCeleb24h(true);
+    } else {
+      setInspectingOldCeleb24h(true);
+    }
+    setPublishError(null);
+
+    const newReports: typeof oldCeleb24hReports = [];
+    let lastSuccessData: any = null;
+
+    try {
+      for (const targetLink of extractedTargets) {
+        const res = await fetch('/api/wp-publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: autoApplyUpdate ? 'update_old_celeb24h' : 'inspect_old_celeb24h',
+            celeb24hUrl: targetLink,
+            referenceSourceUrl: oldCeleb24hRefSourceUrl.trim() || undefined,
+            employeeCode: selectedEmployeeCode,
+            language: aiLanguage,
+            autoApplyUpdate,
+            supplementOptions: oldCeleb24hOptions,
+          }),
+        });
+        const data = await safeParseApiJson(res);
+        if (!res.ok || !data.ok) {
+          throw new Error(
+            data.error || `Không thể xử lý link celeb24h.com: ${targetLink}`
+          );
+        }
+
+        lastSuccessData = data;
+        newReports.push({
+          postId: Number(data.postId),
+          title: String(data.title || ''),
+          slug: String(data.slug || ''),
+          link: String(data.link || ''),
+          trackingLink: String(data.trackingLink || data.link || ''),
+          status: String(data.status || 'publish'),
+          employeeCode: String(data.employeeCode || selectedEmployeeCode),
+          mode: data.mode === 'updated_old_post' ? 'updated_old_post' : 'inspect_only',
+          oldWordCount: Number(data.oldWordCount || 0),
+          newWordCount: data.newWordCount !== undefined ? Number(data.newWordCount) : undefined,
+          oldParagraphCount: Number(data.oldParagraphCount || 0),
+          newParagraphCount:
+            data.newParagraphCount !== undefined ? Number(data.newParagraphCount) : undefined,
+          oldH2Count: Number(data.oldH2Count || 0),
+          newH2Count: data.newH2Count !== undefined ? Number(data.newH2Count) : undefined,
+          oldInlineImageCount: Number(data.oldInlineImageCount || 0),
+          newInlineImageCount:
+            data.newInlineImageCount !== undefined ? Number(data.newInlineImageCount) : undefined,
+          oldYoutubeCount: Number(data.oldYoutubeCount || 0),
+          newYoutubeCount:
+            data.newYoutubeCount !== undefined ? Number(data.newYoutubeCount) : undefined,
+          hasFeaturedImage: Boolean(data.hasFeaturedImage ?? data.featuredImageUrl),
+          hasExcerpt: Boolean(data.hasExcerpt ?? data.excerpt),
+          hasTags: Boolean(data.hasTags ?? (Array.isArray(data.tags) && data.tags.length > 0)),
+          totalMissingCount: Number(data.totalMissingCount || 0),
+          missingChecks: Array.isArray(data.missingChecks) ? data.missingChecks : [],
+          supplementedItems: Array.isArray(data.supplementedItems) ? data.supplementedItems : [],
+        });
+      }
+
+      setOldCeleb24hReports(newReports);
+
+      // Nạp bài viết vừa kiểm tra / vừa bổ sung vào trình soạn thảo để xem trực quan ngay
+      if (lastSuccessData) {
+        setEditingPostId(Number(lastSuccessData.postId));
+        if (lastSuccessData.title) setTitle(String(lastSuccessData.title));
+        if (lastSuccessData.slug) {
+          setSlug(String(lastSuccessData.slug));
+          setAutoSlug(false);
+        }
+        if (lastSuccessData.contentHtml) setContent(String(lastSuccessData.contentHtml));
+        if (lastSuccessData.excerpt) setExcerpt(String(lastSuccessData.excerpt));
+        if (lastSuccessData.focusKeyword) setFocusKeyword(String(lastSuccessData.focusKeyword));
+        if (Array.isArray(lastSuccessData.tags) && lastSuccessData.tags.length > 0) {
+          setTagsInput(lastSuccessData.tags.join(', '));
+        }
+        if (Array.isArray(lastSuccessData.categories) && lastSuccessData.categories.length > 0) {
+          setSelectedCategories(lastSuccessData.categories.map(Number));
+        }
+        if (lastSuccessData.featuredMediaId) {
+          setFeaturedMediaId(Number(lastSuccessData.featuredMediaId));
+        }
+        if (lastSuccessData.featuredImageUrl) {
+          setFeaturedImageUrl(String(lastSuccessData.featuredImageUrl));
+          setFeaturedImageBase64('');
+        }
+        if (Array.isArray(lastSuccessData.extractedImages)) {
+          setExtractedWebImages(lastSuccessData.extractedImages);
+        }
+        if (Array.isArray(lastSuccessData.youtubeVideos)) {
+          setAttachedYoutubeVideos(lastSuccessData.youtubeVideos);
+        }
+
+        if (autoApplyUpdate && lastSuccessData.updatedPost) {
+          setPublishResult(lastSuccessData.updatedPost);
+          setAiArticleStats({
+            wordCount: Number(lastSuccessData.newWordCount || lastSuccessData.oldWordCount || 2500),
+            paragraphCount: Number(
+              lastSuccessData.newParagraphCount || lastSuccessData.oldParagraphCount || 45
+            ),
+            originalImageCount: Number(lastSuccessData.originalImageCount || 0),
+            externalImageCount: Number(lastSuccessData.externalImageCount || 0),
+          });
+          fetchRemoteWpData();
+        }
+        setEditorViewMode('preview');
+      }
+    } catch (err: any) {
+      setPublishError(
+        err?.message || 'Lỗi khi kiểm tra / cập nhật bài viết cũ trên celeb24h.com'
+      );
+    } finally {
+      setInspectingOldCeleb24h(false);
+      setUpdatingOldCeleb24h(false);
+    }
+  };
+
   // Nạp bài viết từ danh sách vào trình soạn thảo để chỉnh sửa
   const handleLoadRemotePostToEdit = (post: WpRemotePostItem) => {
     setEditingPostId(post.id);
@@ -2580,6 +2793,24 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
             <button
               type="button"
+              onClick={() => {
+                setActiveSubTab('editor');
+                setEditorSectionFilter('all');
+                setAiMode('update_celeb24h');
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
+                activeSubTab === 'editor' && aiMode === 'update_celeb24h'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200'
+              }`}
+              title="Dán link cũ trên celeb24h.com để hệ thống kiểm tra và tự động update bổ sung những phần còn thiếu"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>🛠️ Update Link Cũ celeb24h.com</span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveSubTab('posts')}
               className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center space-x-1.5 ${
                 activeSubTab === 'posts'
@@ -2650,7 +2881,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 {
                   id: 'step1_ai' as const,
                   label: '1. Nguồn Bài & Mở Rộng AI',
-                  badge: aiMode === 'from_url' ? 'Từ Link' : 'Từ Văn Bản',
+                  badge:
+                    aiMode === 'update_celeb24h'
+                      ? 'Update Link Cũ'
+                      : aiMode === 'from_url'
+                      ? 'Từ Link'
+                      : 'Từ Văn Bản',
                 },
                 {
                   id: 'step2_content' as const,
@@ -2896,7 +3132,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
                 {/* Thanh gộp Chế độ đầu vào + Ngôn ngữ trên 1 hàng khoa học */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <div className="inline-flex items-center bg-white/90 p-1 rounded-xl border border-emerald-200 shadow-2xs">
+                  <div className="inline-flex flex-wrap items-center bg-white/90 p-1 rounded-xl border border-emerald-200 shadow-2xs gap-1">
                     <button
                       type="button"
                       onClick={() => setAiMode('from_url')}
@@ -2920,6 +3156,18 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     >
                       <FileText className="w-3.5 h-3.5" />
                       <span>2. Nhập Đoạn Văn / Chặn Copy</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAiMode('update_celeb24h')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                        aiMode === 'update_celeb24h'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'text-amber-900 bg-amber-50/80 hover:bg-amber-100'
+                      }`}
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>3. 🛠️ Update Link Cũ celeb24h.com (Bù Phần Thiếu)</span>
                     </button>
                   </div>
 
@@ -3051,7 +3299,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     </button>
                   </div>
                 </div>
-              ) : (
+              ) : aiMode === 'from_text' ? (
                 /* GIAO DIỆN CHỨC NĂNG 2: NHẬP ĐOẠN NỘI DUNG THÔ HOẶC HÚT TỪ WEB CHẶN COPY */
                 <div className="space-y-3 bg-white/95 p-3.5 sm:p-4 rounded-xl border border-emerald-200 shadow-2xs">
                   <div className="flex flex-col sm:flex-row gap-2">
@@ -3137,6 +3385,344 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       <span className="truncate">3. Lấy 5–7 Ảnh &amp; Gắn Vào Bài</span>
                     </button>
                   </div>
+                </div>
+              ) : (
+                /* GIAO DIỆN CHỨC NĂNG 3: UPDATE LINK CŨ TRÊN DOMAIN CELEB24H.COM (KIỂM TRA & TỰ ĐỘNG BỔ SUNG NHỮNG PHẦN CÒN THIẾU) */
+                <div className="space-y-3.5 bg-gradient-to-br from-amber-50/95 via-white to-emerald-50/80 p-3.5 sm:p-4 rounded-xl border-2 border-amber-400 shadow-xs">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-amber-200">
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-black text-amber-950 flex items-center gap-1.5">
+                        <RefreshCw className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span>
+                          🛠️ Update Link Cũ Domain celeb24h.com — Tự Động Kiểm Tra &amp; Bổ Sung Những Phần Còn Thiếu
+                        </span>
+                      </h4>
+                      <p className="text-[11px] text-amber-900/90 mt-0.5">
+                        Gửi 1 hoặc nhiều link bài cũ trên <b>celeb24h.com</b>: Hệ thống tự động giữ nguyên URL/ID bài cũ, kiểm tra mục nào thiếu (Nội dung ngắn, thiếu H2, thiếu Ảnh đại diện, thiếu 5–7 Ảnh trong bài, thiếu 2 Video YouTube, thiếu Excerpt/Tags) và tự động bù đầy đủ!
+                      </p>
+                    </div>
+                    {oldCeleb24hLinksInput.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOldCeleb24hLinksInput('');
+                          setOldCeleb24hRefSourceUrl('');
+                          setOldCeleb24hReports([]);
+                        }}
+                        className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer shrink-0 self-start sm:self-auto"
+                      >
+                        Xóa danh sách link
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Ô nhập 1 hoặc nhiều link celeb24h.com */}
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                    <div className="lg:col-span-2 space-y-1">
+                      <label className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                        <Link2 className="w-3.5 h-3.5 text-amber-600" />
+                        <span>
+                          Dán Link bài cũ trên celeb24h.com (hỗ trợ dán 1 link hoặc nhiều link, mỗi dòng 1 link):
+                        </span>
+                      </label>
+                      <textarea
+                        rows={2}
+                        value={oldCeleb24hLinksInput}
+                        onChange={(e) => setOldCeleb24hLinksInput(e.target.value)}
+                        placeholder="VD: https://celeb24h.com/1159 hoặc https://celeb24h.com/ten-bai-viet?H2000 (Có thể dán nhiều link, mỗi dòng 1 link)..."
+                        className="w-full px-3.5 py-2 bg-white border-2 border-amber-300 rounded-xl text-xs sm:text-sm font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-xs font-bold text-slate-700 block">
+                        🔗 Link báo gốc để hút thêm ảnh gốc (Tùy chọn):
+                      </label>
+                      <input
+                        type="text"
+                        value={oldCeleb24hRefSourceUrl}
+                        onChange={(e) => setOldCeleb24hRefSourceUrl(e.target.value)}
+                        placeholder="Không bắt buộc (hệ thống tự động dò)..."
+                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                      <span className="text-[10px] text-slate-500 block leading-tight">
+                        Nếu để trống, hệ thống tự động tìm bài gốc + ảnh cùng nhân vật để bù vào bài cũ.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Tùy chọn những hạng mục muốn tự động bổ sung nếu bài cũ bị thiếu */}
+                  <div className="bg-white/90 p-2.5 rounded-xl border border-amber-200/80 space-y-1.5">
+                    <div className="text-[11px] font-black text-slate-700 uppercase">
+                      Các hạng mục hệ thống sẽ tự động kiểm tra &amp; bù vào bài cũ nếu thiếu:
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 text-xs">
+                      {[
+                        {
+                          key: 'expandContent' as const,
+                          label: '📝 Mở rộng 2.000–3.500 từ (40–50 từ/đoạn) nếu bài ngắn',
+                        },
+                        {
+                          key: 'addMissingImages' as const,
+                          label: '🖼️ Bù đủ 5–7 Ảnh minh họa xen kẽ trong bài',
+                        },
+                        {
+                          key: 'addYoutubeVideos' as const,
+                          label: '🎬 Nhúng 2 Video YouTube liên quan ở cuối bài',
+                        },
+                        {
+                          key: 'setFeaturedImage' as const,
+                          label: '⭐ Đặt Ảnh đại diện (Featured Thumbnail) nếu thiếu',
+                        },
+                        {
+                          key: 'addHeadingsH2' as const,
+                          label: '📑 Bổ sung 5–7 thẻ tiêu đề phụ H2 chuẩn SEO',
+                        },
+                        {
+                          key: 'addExcerptAndTags' as const,
+                          label: '🏷️ Tạo Mô tả ngắn (Meta Excerpt) & Thẻ Tags SEO',
+                        },
+                      ].map((item) => (
+                        <label
+                          key={item.key}
+                          className="flex items-center space-x-2 p-1.5 rounded-lg bg-amber-50/50 hover:bg-amber-100/60 border border-amber-200/60 cursor-pointer font-bold text-slate-800 text-[11px]"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={oldCeleb24hOptions[item.key]}
+                            onChange={(e) =>
+                              setOldCeleb24hOptions((prev) => ({
+                                ...prev,
+                                [item.key]: e.target.checked,
+                              }))
+                            }
+                            className="w-3.5 h-3.5 text-amber-600 rounded"
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2 Nút thao tác chính: 1. Kiểm tra xem thiếu gì | 2. Tự động bổ sung & Update ngay lên celeb24h.com */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      disabled={inspectingOldCeleb24h || updatingOldCeleb24h}
+                      onClick={() => void handleInspectOrUpdateOldCeleb24hLinks(false)}
+                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-all"
+                    >
+                      {inspectingOldCeleb24h ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                          <span>Đang quét kiểm tra bài cũ trên celeb24h.com...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search className="w-4 h-4 shrink-0 text-amber-400" />
+                          <span>🔍 1. Kiểm Tra Link Cũ Thiếu Gì (Quét Chi Tiết)</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={updatingOldCeleb24h || inspectingOldCeleb24h}
+                      onClick={() => void handleInspectOrUpdateOldCeleb24hLinks(true)}
+                      className="px-3.5 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-black flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all"
+                    >
+                      {updatingOldCeleb24h ? (
+                        <>
+                          <RefreshCw className="w-4 h-4 animate-spin shrink-0" />
+                          <span>Đang tự động bổ sung phần thiếu &amp; Update celeb24h...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 shrink-0" />
+                          <span>⚡ 2. Bổ Sung Phần Còn Thiếu &amp; Update Lên celeb24h.com</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* BẢNG BÁO CÁO KẾT QUẢ KIỂM TRA & CẬP NHẬT LINK CŨ CELEB24H.COM */}
+                  {oldCeleb24hReports.length > 0 && (
+                    <div className="space-y-3 pt-1">
+                      {oldCeleb24hReports.map((rep) => (
+                        <div
+                          key={rep.postId}
+                          className={`p-3.5 rounded-xl border-2 space-y-2.5 ${
+                            rep.mode === 'updated_old_post'
+                              ? 'bg-emerald-50/90 border-emerald-500'
+                              : 'bg-white border-amber-400'
+                          }`}
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-200/80 pb-2">
+                            <div>
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span
+                                  className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${
+                                    rep.mode === 'updated_old_post'
+                                      ? 'bg-emerald-600 text-white'
+                                      : 'bg-amber-500 text-slate-950'
+                                  }`}
+                                >
+                                  {rep.mode === 'updated_old_post'
+                                    ? `✅ ĐÃ BỔ SUNG & UPDATE THÀNH CÔNG (ID #${rep.postId})`
+                                    : `🔍 BÁO CÁO KIỂM TRA BÀI CŨ (ID #${rep.postId})`}
+                                </span>
+                                <span className="text-xs font-black text-slate-900">
+                                  {rep.title}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-600 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                <span>
+                                  📝 Số từ:{' '}
+                                  <b>
+                                    {rep.oldWordCount} từ
+                                    {rep.newWordCount !== undefined
+                                      ? ` → ${rep.newWordCount.toLocaleString('vi-VN')} từ`
+                                      : ''}
+                                  </b>
+                                </span>
+                                <span>
+                                  🖼️ Ảnh trong bài:{' '}
+                                  <b>
+                                    {rep.oldInlineImageCount} ảnh
+                                    {rep.newInlineImageCount !== undefined
+                                      ? ` → ${rep.newInlineImageCount} ảnh`
+                                      : ''}
+                                  </b>
+                                </span>
+                                <span>
+                                  🎬 Video YouTube:{' '}
+                                  <b>
+                                    {rep.oldYoutubeCount} video
+                                    {rep.newYoutubeCount !== undefined
+                                      ? ` → ${rep.newYoutubeCount} video`
+                                      : ''}
+                                  </b>
+                                </span>
+                                <span>
+                                  📑 Thẻ H2:{' '}
+                                  <b>
+                                    {rep.oldH2Count} thẻ
+                                    {rep.newH2Count !== undefined ? ` → ${rep.newH2Count} thẻ` : ''}
+                                  </b>
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              {rep.mode === 'inspect_only' && (
+                                <button
+                                  type="button"
+                                  disabled={updatingOldCeleb24h}
+                                  onClick={() =>
+                                    void handleInspectOrUpdateOldCeleb24hLinks(true, rep.link)
+                                  }
+                                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-black cursor-pointer flex items-center gap-1 shadow-2xs"
+                                >
+                                  <Sparkles className="w-3.5 h-3.5" />
+                                  <span>Bổ Sung &amp; Update Bài Này Ngay</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCopyText(rep.trackingLink, `old-track-${rep.postId}`)
+                                }
+                                className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black cursor-pointer flex items-center gap-1"
+                              >
+                                {copiedKey === `old-track-${rep.postId}` ? (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>Đã Copy Link NV</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Copy className="w-3.5 h-3.5" />
+                                    <span>Copy Link ?{rep.employeeCode}</span>
+                                  </>
+                                )}
+                              </button>
+                              <a
+                                href={rep.trackingLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-800 border border-slate-300 rounded-lg text-xs font-bold flex items-center gap-1"
+                              >
+                                <span>Mở bài</span>
+                                <ExternalLink className="w-3 h-3" />
+                              </a>
+                            </div>
+                          </div>
+
+                          {/* Nếu đã update: Hiển thị danh sách những phần vừa được tự động bổ sung */}
+                          {rep.mode === 'updated_old_post' && rep.supplementedItems.length > 0 && (
+                            <div className="p-2.5 rounded-lg bg-emerald-900 text-white text-xs space-y-1">
+                              <div className="font-black text-emerald-300 text-[11px] uppercase">
+                                ✨ Các hạng mục còn thiếu đã được hệ thống bổ sung &amp; cập nhật lên celeb24h.com:
+                              </div>
+                              <ul className="space-y-0.5 list-disc list-inside text-[11px] font-semibold">
+                                {rep.supplementedItems.map((sItem, sIdx) => (
+                                  <li key={sIdx}>{sItem}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Bảng 7 tiêu chí kiểm tra chi tiết từng hạng mục của bài cũ */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 text-[11px]">
+                            {rep.missingChecks.map((chk) => {
+                              const wasFixed = rep.mode === 'updated_old_post' && chk.isMissing;
+                              return (
+                                <div
+                                  key={chk.key}
+                                  className={`p-2 rounded-lg border flex items-start justify-between gap-2 ${
+                                    !chk.isMissing
+                                      ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
+                                      : wasFixed
+                                      ? 'bg-emerald-100/90 border-emerald-400 text-emerald-950'
+                                      : 'bg-amber-50 border-amber-300 text-amber-950'
+                                  }`}
+                                >
+                                  <div className="space-y-0.5">
+                                    <div className="font-black flex items-center gap-1">
+                                      <span>
+                                        {!chk.isMissing ? '✅' : wasFixed ? '🛠️✅' : '⚠️'}
+                                      </span>
+                                      <span>{chk.label}</span>
+                                    </div>
+                                    <div className="text-[10px] opacity-85">
+                                      {wasFixed
+                                        ? `Đã bù: ${chk.actionToTake}`
+                                        : `Hiện tại: ${chk.currentStatus} → ${chk.actionToTake}`}
+                                    </div>
+                                  </div>
+                                  <span
+                                    className={`px-1.5 py-0.5 rounded text-[9px] font-black shrink-0 ${
+                                      !chk.isMissing
+                                        ? 'bg-emerald-200 text-emerald-900'
+                                        : wasFixed
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'bg-amber-300 text-amber-950'
+                                    }`}
+                                  >
+                                    {!chk.isMissing
+                                      ? 'Đạt chuẩn'
+                                      : wasFixed
+                                      ? 'Đã bổ sung'
+                                      : 'Đang thiếu'}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -4598,6 +5184,16 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                                 🎨 Làm ảnh
                               </button>
                             )}
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleInspectOrUpdateOldCeleb24hLinks(true, post.link)
+                              }
+                              className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-black cursor-pointer"
+                              title="Tự động kiểm tra bài cũ trên celeb24h.com và bổ sung đầy đủ những phần còn thiếu (Nội dung 40-50 từ/đoạn, H2, Ảnh đại diện, 5-7 Ảnh, 2 Video YouTube, Excerpt, Tags)"
+                            >
+                              🛠️ Bù phần thiếu
+                            </button>
                             <button
                               type="button"
                               onClick={() => handleLoadRemotePostToEdit(post)}

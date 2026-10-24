@@ -13,6 +13,7 @@ import {
   scrapeWebArticleForSeoRewrite,
   tryDiscoverSourceArticleImagesFromText,
   findExistingDuplicatePostOnWp,
+  inspectAndUpdateOldCeleb24hPost,
 } from './src/server/wpPublishService';
 import { extractImagesFromWebUrl } from './src/server/webImageExtractor';
 import { fetchMgidPublisherDashboard } from './src/server/mgidService';
@@ -334,6 +335,19 @@ async function startServer() {
           duplicateFound: Boolean(duplicate),
           duplicate: duplicate || null,
         });
+        return;
+      }
+
+      if (action === 'inspect_old_celeb24h' || action === 'update_old_celeb24h') {
+        const result = await inspectAndUpdateOldCeleb24hPost({
+          celeb24hUrl: String(body.celeb24hUrl || body.sourceUrl || body.url || ''),
+          referenceSourceUrl: body.referenceSourceUrl ? String(body.referenceSourceUrl) : undefined,
+          employeeCode: body.employeeCode ? String(body.employeeCode) : undefined,
+          language: body.language === 'vi' ? 'vi' : 'en',
+          autoApplyUpdate: action === 'update_old_celeb24h' ? true : Boolean(body.autoApplyUpdate),
+          supplementOptions: body.supplementOptions || undefined,
+        });
+        res.json(result);
         return;
       }
 
