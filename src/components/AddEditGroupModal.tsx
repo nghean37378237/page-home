@@ -400,24 +400,24 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden my-8">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-red-600 via-rose-600 to-red-700 px-6 py-4 text-white flex items-center justify-between">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden">
+        {/* Pinned Header */}
+        <div className="shrink-0 bg-gradient-to-r from-red-600 via-rose-600 to-red-700 px-5 py-3.5 text-white flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold">
+            <div className="w-9 h-9 rounded-xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white font-bold shrink-0">
               <Users className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-bold">
+              <h2 className="text-sm sm:text-base font-bold leading-tight">
                 {isEditing
                   ? 'Chỉnh Sửa Dòng Group Facebook'
                   : presetGroup
                   ? `Thêm Nick Vào Nhóm: ${presetGroup.groupName}`
                   : 'Quản Lý Thêm Nick Vào Group Facebook'}
               </h2>
-              <p className="text-xs text-red-100">
-                Thêm 1 nick hoặc nhập hàng loạt danh sách UID vào 1 group tiện lợi
+              <p className="text-[11px] text-red-100 mt-0.5">
+                Bố cục khoa học: 1. Nhóm FB • 2. Nick Via & Tình trạng • 3. Nhân viên phụ trách
               </p>
             </div>
           </div>
@@ -425,1073 +425,1130 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
             type="button"
             onClick={onClose}
             className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            title="Đóng"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Mode Switcher (only for adding new) */}
+        {/* Pinned Mode Switcher (only for adding new) */}
         {!isEditing && (
-          <div className="bg-slate-100 px-6 pt-3 flex space-x-2 border-b border-slate-200">
-            <button
-              type="button"
-              onClick={() => setMode('single')}
-              className={`px-4 py-2 text-xs font-bold rounded-t-lg transition-colors cursor-pointer ${
-                mode === 'single'
-                  ? 'bg-white text-red-700 border-t-2 border-red-600 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Thêm 1 Nick Via
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode('batch')}
-              className={`px-4 py-2 text-xs font-bold rounded-t-lg transition-colors cursor-pointer flex items-center space-x-1.5 ${
-                mode === 'batch'
-                  ? 'bg-white text-red-700 border-t-2 border-red-600 shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Nhập Hàng Loạt UID Vào 1 Group</span>
-            </button>
+          <div className="shrink-0 bg-slate-100 px-5 pt-2.5 flex items-center justify-between border-b border-slate-200">
+            <div className="flex space-x-2">
+              <button
+                type="button"
+                onClick={() => setMode('single')}
+                className={`px-4 py-2 text-xs font-bold rounded-t-lg transition-colors cursor-pointer ${
+                  mode === 'single'
+                    ? 'bg-white text-red-700 border-t-2 border-red-600 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                1. Thêm 1 Nick Via
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('batch')}
+                className={`px-4 py-2 text-xs font-bold rounded-t-lg transition-colors cursor-pointer flex items-center space-x-1.5 ${
+                  mode === 'batch'
+                    ? 'bg-white text-red-700 border-t-2 border-red-600 shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>2. Nhập Hàng Loạt UID Vào 1 Group</span>
+              </button>
+            </div>
+            {groupName && (
+              <span className="hidden sm:inline-flex items-center space-x-1 text-[11px] font-bold text-red-700 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full mb-1.5">
+                <span>Nhóm:</span>
+                <span className="max-w-[220px] truncate">{groupName}</span>
+              </span>
+            )}
           </div>
         )}
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
-          {errorMessage && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center space-x-2">
-              <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
-              <span>{errorMessage}</span>
-            </div>
-          )}
+        {/* Form Wrapper (Flex Column with Scrollable Body + Sticky Footer) */}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+          {/* Scrollable Body */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
+            {errorMessage && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-red-500" />
+                <span>{errorMessage}</span>
+              </div>
+            )}
 
-          {/* Section 1: Thông tin Group */}
-          <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
-                <Users className="w-3.5 h-3.5 text-red-600" />
-                <span>1. Thông Tin Nhóm Facebook (Group)</span>
-              </label>
+            {/* Section 1: Thông tin Group (Always visible right at the top) */}
+            <div className="bg-red-50/40 p-3.5 sm:p-4 rounded-xl border border-red-200/80 space-y-2.5 shadow-2xs">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <label className="text-xs font-extrabold text-red-900 uppercase tracking-wider flex items-center space-x-1.5">
+                  <span className="w-5 h-5 rounded-md bg-red-600 text-white flex items-center justify-center text-[11px] font-black">
+                    1
+                  </span>
+                  <span>Thông Tin Nhóm Facebook (Group)</span>
+                </label>
 
-              {/* Quick Select Existing Group dropdown */}
-              {existingGroups.length > 0 && !isEditing && (
-                <div className="flex items-center space-x-1 text-[11px] text-slate-500">
-                  <span>Chọn nhóm có sẵn:</span>
-                  <select
-                    className="text-xs bg-white border border-slate-200 rounded-md px-1.5 py-0.5 text-slate-700 focus:outline-hidden font-bold"
-                    onChange={(e) => handleSelectExistingGroup(e.target.value)}
-                    value={existingGroups.some((g) => g.groupName === groupName) ? groupName : ''}
-                  >
-                    <option value="" disabled>
-                      -- Chọn nhóm --
-                    </option>
-                    {existingGroups.map((g) => (
-                      <option key={g.groupId} value={g.groupName}>
-                        {g.groupName}
+                {/* Quick Select Existing Group dropdown */}
+                {existingGroups.length > 0 && !isEditing && (
+                  <div className="flex items-center space-x-1.5 text-[11px] text-slate-600">
+                    <span className="font-semibold">Chọn nhanh nhóm có sẵn ({existingGroups.length}):</span>
+                    <select
+                      className="text-xs bg-white border border-red-200 rounded-lg px-2 py-1 text-red-700 focus:outline-hidden focus:ring-2 focus:ring-red-500 font-bold cursor-pointer"
+                      onChange={(e) => handleSelectExistingGroup(e.target.value)}
+                      value={existingGroups.some((g) => g.groupName === groupName) ? groupName : ''}
+                    >
+                      <option value="" disabled>
+                        -- Chọn nhóm --
                       </option>
-                    ))}
-                  </select>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Tên Nhóm (Cột E) <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="VD: Beautifull World ✅, Movies World..."
-                  value={groupName}
-                  onChange={(e) => setGroupName(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-red-700 font-bold placeholder:text-slate-400 placeholder:font-normal bg-white"
-                />
+                      {existingGroups.map((g) => (
+                        <option key={g.groupId} value={g.groupName}>
+                          {g.groupName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Link Nhóm (Cột D)
-                </label>
-                <div className="relative">
-                  <input
-                    type="url"
-                    placeholder="https://www.facebook.com/groups/..."
-                    value={groupLink}
-                    onChange={(e) => setGroupLink(e.target.value)}
-                    className="w-full pl-8 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-blue-700 bg-white"
-                  />
-                  <LinkIcon className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Section 2: Thông tin Nick Via (Single Mode) */}
-          {mode === 'single' ? (
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
-                <Tag className="w-3.5 h-3.5 text-indigo-600" />
-                <span>2. Thông Tin Nick Facebook Cầm Group</span>
-              </label>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    UID Nick Facebook (Cột B) <span className="text-red-500">*</span>
+                    Tên Nhóm (Cột E) <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    list="group-modal-via-datalist"
-                    placeholder="Nhập UID hoặc dán UID|Pass|2FA|Mail..."
-                    value={uid}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val.includes('|')) {
-                        const parsed = parseSupplementalViaInput(val);
-                        const nextUid = parsed.uid || val.split('|')[0].trim();
-                        setUid(nextUid);
-                        if (parsed.pass) setSuppPass(parsed.pass);
-                        if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
-                        if (parsed.email) setSuppEmail(parsed.email);
-                        if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
-                      } else {
-                        setUid(val);
-                        loadExistingViaCreds(val);
-                        if (existingVias) {
-                          const matched = existingVias.find((v) => v.uid === val.trim());
-                          if (matched && matched.note && !viaName) {
-                            setViaName(matched.note);
-                          }
-                        }
-                      }
-                    }}
-                    className="w-full px-3 py-2 text-xs font-mono font-bold text-indigo-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                    placeholder="VD: Beautifull World ✅, Movies World..."
+                    value={groupName}
+                    onChange={(e) => setGroupName(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-red-700 font-bold placeholder:text-slate-400 placeholder:font-normal bg-white"
                   />
-                  {existingVias && existingVias.length > 0 && (
-                    <datalist id="group-modal-via-datalist">
-                      {existingVias.map((v) => (
-                        <option key={v.id || v.uid} value={v.uid} label={`${v.note || ''} (${v.staffName})`} />
-                      ))}
-                    </datalist>
-                  )}
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">
-                    Tên Via (Cột C)
+                    Link Nhóm (Cột D)
                   </label>
-                  <input
-                    type="text"
-                    placeholder="VD: Lucas Santos, Tolga Yagmur..."
-                    value={viaName}
-                    onChange={(e) => setViaName(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 font-semibold bg-white"
-                  />
+                  <div className="relative">
+                    <input
+                      type="url"
+                      placeholder="https://www.facebook.com/groups/..."
+                      value={groupLink}
+                      onChange={(e) => setGroupLink(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 text-blue-700 bg-white"
+                    />
+                    <LinkIcon className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
                 </div>
               </div>
+            </div>
 
-              {/* Quick Via selector chips from existingVias */}
-              {existingVias && existingVias.length > 0 && (
-                <div className="bg-white p-2.5 rounded-lg border border-slate-200">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-[11px] font-bold text-slate-600 flex items-center space-x-1">
-                      <Users className="w-3 h-3 text-indigo-600" />
-                      <span>Chọn nhanh Nick Via có sẵn trong kho ({existingVias.length} Via):</span>
+            {/* Section 2: Thông tin Nick Via (Single Mode vs Batch Mode) */}
+            {mode === 'single' ? (
+              <div className="bg-slate-50 p-3.5 sm:p-4 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <label className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider flex items-center space-x-1.5">
+                    <span className="w-5 h-5 rounded-md bg-indigo-600 text-white flex items-center justify-center text-[11px] font-black">
+                      2
                     </span>
+                    <span>Thông Tin Nick Facebook Cầm Group & Tình Trạng</span>
+                  </label>
+                  <span className="text-[11px] text-slate-500 hidden sm:inline">
+                    Chia 2 cột khoa học: Thông tin Via (Trái) • Trạng thái & Ghi chú (Phải)
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  {/* Left Column (6 cols): Định danh UID, Tên Via, Chọn nhanh Via, Bổ sung 2FA/Mail/Pass, Via Chính */}
+                  <div className="lg:col-span-6 space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          UID Nick Facebook (Cột B) <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          list="group-modal-via-datalist"
+                          placeholder="Nhập UID hoặc dán UID|Pass|2FA..."
+                          value={uid}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            if (val.includes('|')) {
+                              const parsed = parseSupplementalViaInput(val);
+                              const nextUid = parsed.uid || val.split('|')[0].trim();
+                              setUid(nextUid);
+                              if (parsed.pass) setSuppPass(parsed.pass);
+                              if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
+                              if (parsed.email) setSuppEmail(parsed.email);
+                              if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
+                            } else {
+                              setUid(val);
+                              loadExistingViaCreds(val);
+                              if (existingVias) {
+                                const matched = existingVias.find((v) => v.uid === val.trim());
+                                if (matched && matched.note && !viaName) {
+                                  setViaName(matched.note);
+                                }
+                              }
+                            }
+                          }}
+                          className="w-full px-3 py-2 text-xs font-mono font-bold text-indigo-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                        />
+                        {existingVias && existingVias.length > 0 && (
+                          <datalist id="group-modal-via-datalist">
+                            {existingVias.map((v) => (
+                              <option key={v.id || v.uid} value={v.uid} label={`${v.note || ''} (${v.staffName})`} />
+                            ))}
+                          </datalist>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1">
+                          Tên Via (Cột C)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="VD: Lucas Santos, Tolga Yagmur..."
+                          value={viaName}
+                          onChange={(e) => setViaName(e.target.value)}
+                          className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-slate-800 font-semibold bg-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick Via selector chips from existingVias */}
+                    {existingVias && existingVias.length > 0 && (
+                      <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[11px] font-bold text-slate-600 flex items-center space-x-1">
+                            <Users className="w-3 h-3 text-indigo-600" />
+                            <span>Chọn nhanh Nick Via có sẵn trong kho ({existingVias.length} Via):</span>
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                          {existingVias.slice(0, 30).map((v) => {
+                            const isSelected = uid.trim() === v.uid;
+                            return (
+                              <button
+                                key={v.id || v.uid}
+                                type="button"
+                                onClick={() => {
+                                  setUid(v.uid);
+                                  loadExistingViaCreds(v.uid);
+                                  if (v.note) setViaName(v.note);
+                                  if (v.staffName && isAdmin) setStaffName(v.staffName);
+                                }}
+                                className={`text-[10px] px-2 py-0.5 rounded-md font-mono border transition-all cursor-pointer flex items-center space-x-1 ${
+                                  isSelected
+                                    ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs font-bold'
+                                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300'
+                                }`}
+                                title={`UID: ${v.uid} | NV: ${v.staffName} | Ghi chú: ${v.note || 'None'}`}
+                              >
+                                <span>{v.uid}</span>
+                                {v.note && <span className="opacity-75 max-w-[85px] truncate">({v.note})</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* BỔ SUNG THÊM THÔNG TIN VIA (2FA | MAIL | PASS...) KHI CHỌN VIA HOẶC ĐÃ CÓ UID */}
+                    {uid.trim() && (
+                      <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-2.5 space-y-2 text-xs">
+                        <div className="flex items-center justify-between flex-wrap gap-1">
+                          <div className="flex items-center space-x-1.5 font-extrabold text-amber-950">
+                            <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                            <span>
+                              Bổ sung Via ({uid.split('|')[0].trim()}): 2FA | Mail | Pass
+                            </span>
+                          </div>
+                          <div className="flex items-center space-x-1 text-[10px] font-bold">
+                            <span className={`px-1.5 py-0.5 rounded border ${suppPass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                              {suppPass ? '✓ Pass' : 'Thiếu Pass'}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded border ${suppTwoFa ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                              {suppTwoFa ? '✓ 2FA' : 'Thiếu 2FA'}
+                            </span>
+                            <span className={`px-1.5 py-0.5 rounded border ${suppEmail ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'}`}>
+                              {suppEmail ? '✓ Mail' : '+ Mail'}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-1.5">
+                          <input
+                            type="text"
+                            value={quickPasteSupp}
+                            onChange={(e) => {
+                              const rawVal = e.target.value;
+                              setQuickPasteSupp(rawVal);
+                              setSuppToast(null);
+                              if (!rawVal.trim()) return;
+                              const parsed = parseSupplementalViaInput(rawVal, uid.trim());
+                              if (parsed.uid && parsed.uid !== uid.trim()) setUid(parsed.uid);
+                              if (parsed.pass) setSuppPass(parsed.pass);
+                              if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
+                              if (parsed.email) setSuppEmail(parsed.email);
+                              if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
+                            }}
+                            placeholder="⚡ Dán nhanh: 2FA|Mail|Pass..."
+                            className="flex-1 px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-[11px] font-mono text-slate-900 focus:outline-hidden focus:border-amber-600"
+                          />
+                          {onSupplementVia && (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                const cleanU = uid.split('|')[0].trim();
+                                if (!cleanU) return;
+                                const built = buildFullViaString({
+                                  uid: cleanU,
+                                  pass: suppPass,
+                                  twoFa: suppTwoFa,
+                                  email: suppEmail,
+                                  emailPass: suppEmailPass,
+                                });
+                                await onSupplementVia(
+                                  cleanU,
+                                  built,
+                                  isAdmin ? staffName.trim() || 'Anh Quỳnh' : currentUser.name
+                                );
+                                setSuppToast(`Đã lưu bổ sung thông tin cho UID ${cleanU}!`);
+                              }}
+                              className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] shrink-0 cursor-pointer"
+                            >
+                              Lưu Via
+                            </button>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <input
+                            type="text"
+                            value={suppPass}
+                            onChange={(e) => setSuppPass(e.target.value)}
+                            placeholder="Pass Via..."
+                            className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                          />
+                          <input
+                            type="text"
+                            value={suppTwoFa}
+                            onChange={(e) => setSuppTwoFa(e.target.value)}
+                            placeholder="Mã 2FA..."
+                            className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                          />
+                          <input
+                            type="text"
+                            value={suppEmail}
+                            onChange={(e) => setSuppEmail(e.target.value)}
+                            placeholder="Mail khôi phục..."
+                            className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                          />
+                          <input
+                            type="text"
+                            value={suppEmailPass}
+                            onChange={(e) => setSuppEmailPass(e.target.value)}
+                            placeholder="Pass Mail..."
+                            className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
+                          />
+                        </div>
+                        {suppToast && (
+                          <div className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1">
+                            ✅ {suppToast}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Via Chính (Bôi xanh lá) */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Đánh Dấu Via Chính / Quản Trị Duyệt Bài
+                      </label>
+                      <div
+                        onClick={() => setIsHighlighted(!isHighlighted)}
+                        className={`p-2.5 rounded-lg border flex items-center space-x-2.5 cursor-pointer transition-all ${
+                          isHighlighted
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-500/20'
+                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isHighlighted}
+                          onChange={(e) => setIsHighlighted(e.target.checked)}
+                          className="w-4 h-4 rounded-sm text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                        <div className="text-xs">
+                          <span className="font-bold">Bôi xanh lá (Dòng Via chính)</span>
+                          <p className="text-[10px] text-slate-500">
+                            Đánh dấu nick cầm quyền duyệt bài / quản trị chính của nhóm
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
-                    {existingVias.slice(0, 30).map((v) => {
-                      const isSelected = uid.trim() === v.uid;
-                      return (
+
+                  {/* Right Column (6 cols): Nhân Viên Báo, Admin Báo, Tương Tác & Ghi Chú Tình Trạng (Cột F) */}
+                  <div className="lg:col-span-6 space-y-3 bg-white p-3 rounded-xl border border-slate-200/90">
+                    {/* Nhân Viên báo: Đã Jon, Jon chờ duyệt, Chưa */}
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                        <span>Nhân Viên Báo (Đã Jon / Jon chờ duyệt / Chưa)</span>
+                        <span className="text-[10px] text-slate-500 font-normal">(Cột Nhân Viên báo)</span>
+                      </label>
+                      <div className="grid grid-cols-3 gap-1.5">
                         <button
-                          key={v.id || v.uid}
+                          type="button"
+                          onClick={() => setJoinStatus('Đã Jon')}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            joinStatus === 'Đã Jon'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/25'
+                              : 'bg-emerald-50/70 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>Đã Jon</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setJoinStatus('Jon chờ duyệt')}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            joinStatus === 'Jon chờ duyệt'
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/25'
+                              : 'bg-amber-50/70 text-amber-800 border-amber-200 hover:bg-amber-100'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          <span>Jon chờ duyệt</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setJoinStatus('Chưa')}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            joinStatus === 'Chưa'
+                              ? 'bg-slate-700 text-white border-slate-800 shadow-xs ring-2 ring-slate-500/25'
+                              : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                          }`}
+                        >
+                          <XCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Chưa</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Cột Admin Báo (Ngay sau cột Nhân Viên báo): Đã Duyệt, Chưa Jont, Không tìm thấy */}
+                    {isAdmin && (
+                      <div className="pt-1 border-t border-slate-100">
+                        <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                          <span>Admin Báo Cho Nhân Viên Biết</span>
+                          <span className="text-[10px] text-slate-500 font-normal">(Ngay sau cột NV báo)</span>
+                        </label>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setAdminJoinReport(adminJoinReport === 'Đã Duyệt' ? '' : 'Đã Duyệt')}
+                            className={`px-2 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                              adminJoinReport === 'Đã Duyệt'
+                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/25'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                            }`}
+                          >
+                            <CheckCircle2 className="w-3 h-3 shrink-0" />
+                            <span>Đã Duyệt</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setAdminJoinReport(adminJoinReport === 'Chưa Jont' ? '' : 'Chưa Jont')}
+                            className={`px-2 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                              adminJoinReport === 'Chưa Jont'
+                                ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/25'
+                                : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                            }`}
+                          >
+                            <Clock className="w-3 h-3 shrink-0" />
+                            <span>Chưa Jont</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setAdminJoinReport(adminJoinReport === 'Không tìm thấy' ? '' : 'Không tìm thấy')}
+                            className={`px-2 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                              adminJoinReport === 'Không tìm thấy'
+                                ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-500/25'
+                                : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                            }`}
+                          >
+                            <XCircle className="w-3 h-3 shrink-0" />
+                            <span>Không thấy</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setAdminJoinReport('')}
+                            className={`px-2 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer flex items-center justify-center ${
+                              !adminJoinReport
+                                ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
+                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                            }`}
+                          >
+                            <span>- Chưa báo -</span>
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Màu & Ghi Chú Tương Tác Của Nhóm + Cột Nhảy Ngày Tương Tác */}
+                    <div className="pt-1 border-t border-slate-100 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="block text-xs font-semibold text-slate-700">
+                          Ghi Chú & Mức Độ Tương Tác (Tự nhảy ngày TT)
+                        </label>
+                        <div className="flex items-center space-x-1">
+                          <span className="text-[11px] font-bold text-slate-600">Ngày TT:</span>
+                          <input
+                            type="text"
+                            value={interactionDate}
+                            onChange={(e) => setInteractionDate(e.target.value)}
+                            onDoubleClick={() => setInteractionDate(getTodayShortStr())}
+                            placeholder={getTodayShortStr()}
+                            className="w-16 px-2 py-0.5 text-center text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                            title="Ngày chọn có tương tác (tự động nhảy khi chọn tương tác, hoặc nhấp đúp để lấy ngày hôm nay)"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                        <button
                           type="button"
                           onClick={() => {
-                            setUid(v.uid);
-                            loadExistingViaCreds(v.uid);
-                            if (v.note) setViaName(v.note);
-                            if (v.staffName && isAdmin) setStaffName(v.staffName);
+                            const next = interactionStatus === 'Đang lên tương tác' ? '' : 'Đang lên tương tác';
+                            setInteractionStatus(next);
+                            setInteractionDate(next ? getTodayShortStr() : '');
                           }}
-                          className={`text-[10px] px-2 py-0.5 rounded-md font-mono border transition-all cursor-pointer flex items-center space-x-1 ${
-                            isSelected
-                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs font-bold'
-                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-indigo-50 hover:border-indigo-300'
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            interactionStatus === 'Đang lên tương tác'
+                              ? 'bg-sky-600 text-white border-sky-700 shadow-xs ring-2 ring-sky-500/30'
+                              : 'bg-sky-50 text-sky-900 border-sky-300 hover:bg-sky-100'
                           }`}
-                          title={`UID: ${v.uid} | NV: ${v.staffName} | Ghi chú: ${v.note || 'None'}`}
                         >
-                          <span>{v.uid}</span>
-                          {v.note && <span className="opacity-75 max-w-[80px] truncate">({v.note})</span>}
+                          <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shrink-0"></span>
+                          <span>🔥 Đang lên TT</span>
                         </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
 
-              {/* BỔ SUNG THÊM THÔNG TIN VIA (2FA | MAIL | PASS...) KHI CHỌN VIA HOẶC ĐÃ CÓ UID */}
-              {uid.trim() && (
-                <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 space-y-2 text-xs">
-                  <div className="flex items-center justify-between flex-wrap gap-1">
-                    <div className="flex items-center space-x-1.5 font-extrabold text-amber-950">
-                      <KeyRound className="w-3.5 h-3.5 text-amber-700" />
-                      <span>
-                        Bổ sung thêm thông tin Via ({uid.split('|')[0].trim()}): 2FA | Mail | Pass...
-                      </span>
-                    </div>
-                    <div className="flex items-center space-x-1 text-[10px] font-bold">
-                      <span className={`px-1.5 py-0.5 rounded border ${suppPass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
-                        {suppPass ? '✓ Có Pass' : 'Thiếu Pass'}
-                      </span>
-                      <span className={`px-1.5 py-0.5 rounded border ${suppTwoFa ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
-                        {suppTwoFa ? '✓ Có 2FA' : 'Thiếu 2FA'}
-                      </span>
-                      <span className={`px-1.5 py-0.5 rounded border ${suppEmail ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-600 border-slate-200'}`}>
-                        {suppEmail ? '✓ Có Mail' : '+ Mail'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="text"
-                      value={quickPasteSupp}
-                      onChange={(e) => {
-                        const rawVal = e.target.value;
-                        setQuickPasteSupp(rawVal);
-                        setSuppToast(null);
-                        if (!rawVal.trim()) return;
-                        const parsed = parseSupplementalViaInput(rawVal, uid.trim());
-                        if (parsed.uid && parsed.uid !== uid.trim()) setUid(parsed.uid);
-                        if (parsed.pass) setSuppPass(parsed.pass);
-                        if (parsed.twoFa) setSuppTwoFa(parsed.twoFa);
-                        if (parsed.email) setSuppEmail(parsed.email);
-                        if (parsed.emailPass) setSuppEmailPass(parsed.emailPass);
-                      }}
-                      placeholder="⚡ Dán nhanh: 2FA|Mail|Pass hoặc Pass|2FA|Mail|PassMail..."
-                      className="flex-1 px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-[11px] font-mono text-slate-900 focus:outline-hidden focus:border-amber-600"
-                    />
-                    {onSupplementVia && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          const cleanU = uid.split('|')[0].trim();
-                          if (!cleanU) return;
-                          const built = buildFullViaString({
-                            uid: cleanU,
-                            pass: suppPass,
-                            twoFa: suppTwoFa,
-                            email: suppEmail,
-                            emailPass: suppEmailPass,
-                          });
-                          await onSupplementVia(
-                            cleanU,
-                            built,
-                            isAdmin ? staffName.trim() || 'Anh Quỳnh' : currentUser.name
-                          );
-                          setSuppToast(`Đã lưu bổ sung thông tin (Pass/2FA/Mail) cho UID ${cleanU}!`);
-                        }}
-                        className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[11px] shrink-0 cursor-pointer"
-                      >
-                        Lưu bổ sung Via
-                      </button>
-                    )}
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <input
-                      type="text"
-                      value={suppPass}
-                      onChange={(e) => setSuppPass(e.target.value)}
-                      placeholder="Pass Via..."
-                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
-                    />
-                    <input
-                      type="text"
-                      value={suppTwoFa}
-                      onChange={(e) => setSuppTwoFa(e.target.value)}
-                      placeholder="Mã 2FA..."
-                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
-                    />
-                    <input
-                      type="text"
-                      value={suppEmail}
-                      onChange={(e) => setSuppEmail(e.target.value)}
-                      placeholder="Mail khôi phục..."
-                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
-                    />
-                    <input
-                      type="text"
-                      value={suppEmailPass}
-                      onChange={(e) => setSuppEmailPass(e.target.value)}
-                      placeholder="Pass Mail..."
-                      className="px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-[11px] font-mono"
-                    />
-                  </div>
-                  {suppToast && (
-                    <div className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1">
-                      ✅ {suppToast}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* Nhân Viên báo: Đã Jon, Jon chờ duyệt, Chưa */}
-              <div className="pt-1">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Nhân Viên Báo (Đã Jon / Jon chờ duyệt / Chưa)</span>
-                  <span className="text-[10px] text-slate-500 font-normal">(Cột Nhân Viên báo)</span>
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setJoinStatus('Đã Jon')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      joinStatus === 'Đã Jon'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/25'
-                        : 'bg-emerald-50/70 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Đã Jon</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setJoinStatus('Jon chờ duyệt')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      joinStatus === 'Jon chờ duyệt'
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/25'
-                        : 'bg-amber-50/70 text-amber-800 border-amber-200 hover:bg-amber-100'
-                    }`}
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Jon chờ duyệt</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setJoinStatus('Chưa')}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      joinStatus === 'Chưa'
-                        ? 'bg-slate-700 text-white border-slate-800 shadow-xs ring-2 ring-slate-500/25'
-                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                    }`}
-                  >
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span>Chưa</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Cột Admin Báo (Ngay sau cột Nhân Viên báo): Đã Duyệt, Chưa Jont, Không tìm thấy */}
-              {isAdmin && (
-                <div className="pt-1">
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                    <span>Admin Báo Cho Nhân Viên Biết</span>
-                    <span className="text-[10px] text-slate-500 font-normal">(Ngay sau cột Nhân Viên báo)</span>
-                  </label>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setAdminJoinReport(adminJoinReport === 'Đã Duyệt' ? '' : 'Đã Duyệt')}
-                      className={`px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
-                        adminJoinReport === 'Đã Duyệt'
-                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/25'
-                          : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                      }`}
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Đã Duyệt</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setAdminJoinReport(adminJoinReport === 'Chưa Jont' ? '' : 'Chưa Jont')}
-                      className={`px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
-                        adminJoinReport === 'Chưa Jont'
-                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/25'
-                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                      }`}
-                    >
-                      <Clock className="w-3.5 h-3.5" />
-                      <span>Chưa Jont</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setAdminJoinReport(adminJoinReport === 'Không tìm thấy' ? '' : 'Không tìm thấy')}
-                      className={`px-2.5 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
-                        adminJoinReport === 'Không tìm thấy'
-                          ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-500/25'
-                          : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
-                      }`}
-                    >
-                      <XCircle className="w-3.5 h-3.5" />
-                      <span>Không tìm thấy</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setAdminJoinReport('')}
-                      className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center justify-center ${
-                        !adminJoinReport
-                          ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
-                          : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      <span>- Chưa báo -</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Màu & Ghi Chú Tương Tác Của Nhóm + Cột Nhảy Ngày Tương Tác */}
-              <div className="pt-1 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    Ghi Chú & Mức Độ Tương Tác (Tự nhảy ngày TT)
-                  </label>
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-[11px] font-bold text-slate-600">Ngày TT:</span>
-                    <input
-                      type="text"
-                      value={interactionDate}
-                      onChange={(e) => setInteractionDate(e.target.value)}
-                      onDoubleClick={() => setInteractionDate(getTodayShortStr())}
-                      placeholder={getTodayShortStr()}
-                      className="w-16 px-2 py-1 text-center text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                      title="Ngày chọn có tương tác (tự động nhảy khi chọn tương tác, hoặc nhấp đúp để lấy ngày hôm nay)"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = interactionStatus === 'Đang lên tương tác' ? '' : 'Đang lên tương tác';
-                      setInteractionStatus(next);
-                      setInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      interactionStatus === 'Đang lên tương tác'
-                        ? 'bg-sky-600 text-white border-sky-700 shadow-xs ring-2 ring-sky-500/30'
-                        : 'bg-sky-50 text-sky-900 border-sky-300 hover:bg-sky-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
-                    <span>🔥 Đang lên tương tác</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = interactionStatus === 'Có tương tác' ? '' : 'Có tương tác';
-                      setInteractionStatus(next);
-                      setInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      interactionStatus === 'Có tương tác'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/30'
-                        : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                    <span>🟢 Có tương tác</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = interactionStatus === 'Tương tác ổn' ? '' : 'Tương tác ổn';
-                      setInteractionStatus(next);
-                      setInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      interactionStatus === 'Tương tác ổn'
-                        ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-500/30'
-                        : 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
-                    <span>Tương tác ổn</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = interactionStatus === 'Tương tác vừa' ? '' : 'Tương tác vừa';
-                      setInteractionStatus(next);
-                      setInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      interactionStatus === 'Tương tác vừa'
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/30'
-                        : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                    <span>Tương tác vừa</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = interactionStatus === 'Không có tương tác' ? '' : 'Không có tương tác';
-                      setInteractionStatus(next);
-                      setInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      interactionStatus === 'Không có tương tác'
-                        ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-500/30'
-                        : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-400"></span>
-                    <span>Không có tương tác</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInteractionStatus('');
-                      setInteractionDate('');
-                    }}
-                    className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
-                      !interactionStatus
-                        ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
-                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>⚪ Chưa chọn</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Ghi chú & Lựa chọn VHH, 282, 956, Hạn Chế */}
-              <div className="pt-1">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Ghi Chú Tình Trạng (Cột F)
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Nhập ghi chú hoặc bấm chọn nhanh bên dưới..."
-                    value={note}
-                    onChange={(e) => setNote(e.target.value)}
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 font-semibold text-slate-800 bg-white"
-                  />
-                  {note && (
-                    <button
-                      type="button"
-                      onClick={() => setNote('')}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
-                      title="Xóa ghi chú"
-                    >
-                      ✕
-                    </button>
-                  )}
-                </div>
-
-                {/* 4 Lựa chọn ghi chú theo yêu cầu: VHH, 282, 956, Hạn Chế */}
-                <div className="mt-2">
-                  <div className="text-[11px] font-semibold text-slate-500 mb-1.5 flex items-center justify-between">
-                    <span>Chọn nhanh tình trạng:</span>
-                    <span className="text-[10px] text-slate-400">(Nhấp để chọn / bỏ chọn)</span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {GROUP_NOTE_CHOICES.map((choice) => {
-                      const isSelected = note.trim() === choice.key;
-                      return (
                         <button
-                          key={choice.key}
                           type="button"
-                          onClick={() => setNote(isSelected ? '' : choice.key)}
-                          className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                            isSelected ? choice.activeColor : choice.color
+                          onClick={() => {
+                            const next = interactionStatus === 'Có tương tác' ? '' : 'Có tương tác';
+                            setInteractionStatus(next);
+                            setInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            interactionStatus === 'Có tương tác'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-500/30'
+                              : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
                           }`}
                         >
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              isSelected ? 'bg-white' : choice.dot
-                            }`}
-                          ></span>
-                          <span>{choice.label}</span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                          <span>🟢 Có tương tác</span>
                         </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
 
-              {/* Via Chính (Bôi xanh lá) */}
-              <div className="pt-1">
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Đánh Dấu Via Chính / Quản Trị Duyệt Bài
-                </label>
-                <div
-                  onClick={() => setIsHighlighted(!isHighlighted)}
-                  className={`p-2.5 rounded-lg border flex items-center space-x-2.5 cursor-pointer transition-all ${
-                    isHighlighted
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-500/20'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isHighlighted}
-                    onChange={(e) => setIsHighlighted(e.target.checked)}
-                    className="w-4 h-4 rounded-sm text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                  />
-                  <div className="text-xs">
-                    <span className="font-bold">Bôi xanh lá (Dòng Via chính)</span>
-                    <p className="text-[10px] text-slate-500">
-                      Đánh dấu nick cầm quyền duyệt bài / quản trị chính của nhóm
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : (
-            /* Batch Mode: Nhập hàng loạt UID vào 1 group */
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-red-600" />
-                  <span>2. Nhập Hàng Loạt UID Vào Nhóm "{groupName || 'Nhóm này'}"</span>
-                </label>
-                <span className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                  Đã nhận diện: <b>{parsedBatchItems.length}</b> UID
-                </span>
-              </div>
-
-              <p className="text-[11px] text-slate-500">
-                Dán danh sách UID vào ô bên dưới (mỗi dòng 1 UID), hoặc định dạng: <code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-[10px]">UID | Tên Via | Ghi chú</code>:
-              </p>
-
-              <textarea
-                rows={6}
-                required
-                placeholder="100060665184656&#10;100067576758991&#10;100023228976334&#10;100091827364512 | Lucas Santos | VHH"
-                value={batchRawText}
-                onChange={(e) => setBatchRawText(e.target.value)}
-                className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
-              />
-
-              {/* Trạng thái mặc định cho danh sách batch: Đã Jon, Jon chờ duyệt, Chưa */}
-              <div className="pt-1 border-t border-slate-200/80">
-                <div className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Trạng thái mặc định cho các UID thêm đợt này:</span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setBatchDefaultJoinStatus('Đã Jon')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultJoinStatus === 'Đã Jon'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                        : 'bg-emerald-50/70 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                    }`}
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>Đã Jon</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setBatchDefaultJoinStatus('Jon chờ duyệt')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultJoinStatus === 'Jon chờ duyệt'
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                        : 'bg-amber-50/70 text-amber-800 border-amber-200 hover:bg-amber-100'
-                    }`}
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Jon chờ duyệt</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setBatchDefaultJoinStatus('Chưa')}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultJoinStatus === 'Chưa'
-                        ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
-                        : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
-                    }`}
-                  >
-                    <XCircle className="w-3.5 h-3.5" />
-                    <span>Chưa</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Mức tương tác mặc định cho danh sách batch */}
-              <div className="pt-1 border-t border-slate-200/80 space-y-2">
-                <div className="text-xs font-semibold text-slate-700 flex items-center justify-between">
-                  <span>Ghi chú & Mức độ tương tác mặc định (tự nhảy ngày TT):</span>
-                  <div className="flex items-center space-x-1.5">
-                    <span className="text-[11px] font-bold text-slate-600">Ngày TT:</span>
-                    <input
-                      type="text"
-                      value={batchDefaultInteractionDate}
-                      onChange={(e) => setBatchDefaultInteractionDate(e.target.value)}
-                      onDoubleClick={() => setBatchDefaultInteractionDate(getTodayShortStr())}
-                      placeholder={getTodayShortStr()}
-                      className="w-16 px-2 py-0.5 text-center text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg focus:outline-hidden"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = batchDefaultInteractionStatus === 'Đang lên tương tác' ? '' : 'Đang lên tương tác';
-                      setBatchDefaultInteractionStatus(next);
-                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultInteractionStatus === 'Đang lên tương tác'
-                        ? 'bg-sky-600 text-white border-sky-700 shadow-xs'
-                        : 'bg-sky-50 text-sky-900 border-sky-300 hover:bg-sky-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-sky-400 animate-pulse"></span>
-                    <span>🔥 Đang lên tương tác</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = batchDefaultInteractionStatus === 'Có tương tác' ? '' : 'Có tương tác';
-                      setBatchDefaultInteractionStatus(next);
-                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultInteractionStatus === 'Có tương tác'
-                        ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                        : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
-                    <span>🟢 Có tương tác</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = batchDefaultInteractionStatus === 'Tương tác ổn' ? '' : 'Tương tác ổn';
-                      setBatchDefaultInteractionStatus(next);
-                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultInteractionStatus === 'Tương tác ổn'
-                        ? 'bg-teal-600 text-white border-teal-700 shadow-xs'
-                        : 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-teal-400"></span>
-                    <span>Tương tác ổn</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = batchDefaultInteractionStatus === 'Tương tác vừa' ? '' : 'Tương tác vừa';
-                      setBatchDefaultInteractionStatus(next);
-                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultInteractionStatus === 'Tương tác vừa'
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                        : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
-                    <span>Tương tác vừa</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const next = batchDefaultInteractionStatus === 'Không có tương tác' ? '' : 'Không có tương tác';
-                      setBatchDefaultInteractionStatus(next);
-                      setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                      batchDefaultInteractionStatus === 'Không có tương tác'
-                        ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
-                        : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
-                    }`}
-                  >
-                    <span className="w-2.5 h-2.5 rounded-full bg-rose-400"></span>
-                    <span>Không có tương tác</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setBatchDefaultInteractionStatus('');
-                      setBatchDefaultInteractionDate('');
-                    }}
-                    className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all cursor-pointer flex items-center justify-center ${
-                      !batchDefaultInteractionStatus
-                        ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
-                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span>⚪ Chưa chọn</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Lựa chọn ghi chú mặc định cho cả danh sách: VHH, 282, 956, Hạn Chế */}
-              <div className="pt-1 border-t border-slate-200/80">
-                <div className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
-                  <span>Ghi chú mặc định áp dụng cho các UID trên (nếu dòng chưa có):</span>
-                  {batchDefaultNote && (
-                    <button
-                      type="button"
-                      onClick={() => setBatchDefaultNote('')}
-                      className="text-[11px] text-red-600 hover:underline cursor-pointer"
-                    >
-                      Bỏ chọn (Trống)
-                    </button>
-                  )}
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {GROUP_NOTE_CHOICES.map((choice) => {
-                    const isSelected = batchDefaultNote === choice.key;
-                    return (
-                      <button
-                        key={choice.key}
-                        type="button"
-                        onClick={() => setBatchDefaultNote(isSelected ? '' : choice.key)}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
-                          isSelected ? choice.activeColor : choice.color
-                        }`}
-                      >
-                        <span
-                          className={`w-2 h-2 rounded-full ${
-                            isSelected ? 'bg-white' : choice.dot
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = interactionStatus === 'Tương tác ổn' ? '' : 'Tương tác ổn';
+                            setInteractionStatus(next);
+                            setInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            interactionStatus === 'Tương tác ổn'
+                              ? 'bg-teal-600 text-white border-teal-700 shadow-xs ring-2 ring-teal-500/30'
+                              : 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
                           }`}
-                        ></span>
-                        <span>{choice.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+                        >
+                          <span className="w-2 h-2 rounded-full bg-teal-400 shrink-0"></span>
+                          <span>Tương tác ổn</span>
+                        </button>
 
-              {/* Đánh dấu tất cả via chính */}
-              <div
-                onClick={() => setBatchDefaultHighlighted(!batchDefaultHighlighted)}
-                className={`p-2.5 rounded-lg border flex items-center space-x-2.5 cursor-pointer transition-all ${
-                  batchDefaultHighlighted
-                    ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-500/20'
-                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={batchDefaultHighlighted}
-                  onChange={(e) => setBatchDefaultHighlighted(e.target.checked)}
-                  className="w-4 h-4 rounded-sm text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                />
-                <div className="text-xs">
-                  <span className="font-bold">Bôi xanh lá (Dòng Via chính) cho toàn bộ danh sách</span>
-                </div>
-              </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = interactionStatus === 'Tương tác vừa' ? '' : 'Tương tác vừa';
+                            setInteractionStatus(next);
+                            setInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            interactionStatus === 'Tương tác vừa'
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-500/30'
+                              : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                          <span>Tương tác vừa</span>
+                        </button>
 
-              {/* Preview Box if UIDs detected */}
-              {parsedBatchItems.length > 0 && (
-                <div className="p-3 bg-red-50/60 border border-red-200 rounded-lg max-h-36 overflow-y-auto text-[11px]">
-                  <div className="font-bold text-red-800 mb-1.5 flex items-center justify-between">
-                    <span>
-                      Xem trước ({parsedBatchItems.length} UID sẽ được lưu vào nhóm "{groupName || 'Nhóm này'}"):
-                    </span>
-                  </div>
-                  <div className="space-y-1 text-slate-700 font-mono">
-                    {parsedBatchItems.slice(0, 6).map((item, idx) => (
-                      <div key={idx} className="flex items-center space-x-2">
-                        <span className="text-slate-400 w-6">#{idx + 1}</span>
-                        <span className="font-bold text-indigo-700">{item.uid}</span>
-                        <span className="text-slate-500 text-[10px]">({item.viaName})</span>
-                        {item.note && (
-                          <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-white border border-slate-300 text-slate-800">
-                            {item.note}
-                          </span>
-                        )}
-                        {item.isHighlighted && (
-                          <span className="text-emerald-700 font-bold text-[10px]">★ Via chính</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = interactionStatus === 'Không có tương tác' ? '' : 'Không có tương tác';
+                            setInteractionStatus(next);
+                            setInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            interactionStatus === 'Không có tương tác'
+                              ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-500/30'
+                              : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0"></span>
+                          <span>Không có TT</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInteractionStatus('');
+                            setInteractionDate('');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            !interactionStatus
+                              ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
+                              : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>⚪ Chưa chọn</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Ghi chú & Lựa chọn VHH, 282, 956, 956 Code mail, 956 SDT, Hạn Chế */}
+                    <div className="pt-1 border-t border-slate-100">
+                      <label className="block text-xs font-semibold text-slate-700 mb-1">
+                        Ghi Chú Tình Trạng (Cột F)
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Nhập ghi chú hoặc bấm chọn nhanh bên dưới..."
+                          value={note}
+                          onChange={(e) => setNote(e.target.value)}
+                          className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 font-semibold text-slate-800 bg-white"
+                        />
+                        {note && (
+                          <button
+                            type="button"
+                            onClick={() => setNote('')}
+                            className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-slate-600 font-bold cursor-pointer"
+                            title="Xóa ghi chú"
+                          >
+                            ✕
+                          </button>
                         )}
                       </div>
-                    ))}
-                    {parsedBatchItems.length > 6 && (
-                      <div className="text-slate-400 italic pt-0.5">
-                        ...và {parsedBatchItems.length - 6} UID khác nữa
+
+                      <div className="mt-2">
+                        <div className="text-[11px] font-semibold text-slate-500 mb-1.5 flex items-center justify-between">
+                          <span>Chọn nhanh tình trạng:</span>
+                          <span className="text-[10px] text-slate-400">(Nhấp để chọn / bỏ chọn)</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                          {GROUP_NOTE_CHOICES.map((choice) => {
+                            const isSelected = note.trim() === choice.key;
+                            return (
+                              <button
+                                key={choice.key}
+                                type="button"
+                                onClick={() => setNote(isSelected ? '' : choice.key)}
+                                className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                                  isSelected ? choice.activeColor : choice.color
+                                }`}
+                              >
+                                <span
+                                  className={`w-2 h-2 rounded-full shrink-0 ${
+                                    isSelected ? 'bg-white' : choice.dot
+                                  }`}
+                                ></span>
+                                <span>{choice.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Batch Mode: Nhập hàng loạt UID vào 1 group */
+              <div className="bg-slate-50 p-3.5 sm:p-4 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                  <label className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center space-x-1.5">
+                    <span className="w-5 h-5 rounded-md bg-red-600 text-white flex items-center justify-center text-[11px] font-black">
+                      2
+                    </span>
+                    <span>Nhập Hàng Loạt UID Vào Nhóm "{groupName || 'Nhóm này'}"</span>
+                  </label>
+                  <span className="text-[11px] font-bold text-red-600 bg-red-50 border border-red-200 px-2.5 py-0.5 rounded-full">
+                    Đã nhận diện: <b>{parsedBatchItems.length}</b> UID
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                  {/* Left Column: Textarea + Preview */}
+                  <div className="lg:col-span-6 space-y-2.5">
+                    <p className="text-[11px] text-slate-600">
+                      Dán danh sách UID (mỗi dòng 1 UID) hoặc định dạng:{' '}
+                      <code className="bg-slate-200 px-1 py-0.5 rounded font-mono text-[10px]">
+                        UID | Tên Via | Ghi chú
+                      </code>
+                    </p>
+
+                    <textarea
+                      rows={6}
+                      required
+                      placeholder="100060665184656&#10;100067576758991&#10;100023228976334&#10;100091827364512 | Lucas Santos | VHH"
+                      value={batchRawText}
+                      onChange={(e) => setBatchRawText(e.target.value)}
+                      className="w-full px-3 py-2 text-xs font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
+                    />
+
+                    {/* Đánh dấu tất cả via chính */}
+                    <div
+                      onClick={() => setBatchDefaultHighlighted(!batchDefaultHighlighted)}
+                      className={`p-2.5 rounded-lg border flex items-center space-x-2.5 cursor-pointer transition-all ${
+                        batchDefaultHighlighted
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800 ring-2 ring-emerald-500/20'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={batchDefaultHighlighted}
+                        onChange={(e) => setBatchDefaultHighlighted(e.target.checked)}
+                        className="w-4 h-4 rounded-sm text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <div className="text-xs">
+                        <span className="font-bold">Bôi xanh lá (Dòng Via chính) cho toàn bộ danh sách</span>
+                      </div>
+                    </div>
+
+                    {/* Preview Box if UIDs detected */}
+                    {parsedBatchItems.length > 0 && (
+                      <div className="p-2.5 bg-red-50/60 border border-red-200 rounded-lg max-h-32 overflow-y-auto text-[11px]">
+                        <div className="font-bold text-red-800 mb-1 flex items-center justify-between">
+                          <span>
+                            Xem trước ({parsedBatchItems.length} UID sẽ lưu vào "{groupName || 'Nhóm này'}"):
+                          </span>
+                        </div>
+                        <div className="space-y-1 text-slate-700 font-mono">
+                          {parsedBatchItems.slice(0, 6).map((item, idx) => (
+                            <div key={idx} className="flex items-center space-x-2">
+                              <span className="text-slate-400 w-6">#{idx + 1}</span>
+                              <span className="font-bold text-indigo-700">{item.uid}</span>
+                              <span className="text-slate-500 text-[10px]">({item.viaName})</span>
+                              {item.note && (
+                                <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-white border border-slate-300 text-slate-800">
+                                  {item.note}
+                                </span>
+                              )}
+                              {item.isHighlighted && (
+                                <span className="text-emerald-700 font-bold text-[10px]">★ Via chính</span>
+                              )}
+                            </div>
+                          ))}
+                          {parsedBatchItems.length > 6 && (
+                            <div className="text-slate-400 italic pt-0.5">
+                              ...và {parsedBatchItems.length - 6} UID khác nữa
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>
+
+                  {/* Right Column: Default Status, Interaction, and Note */}
+                  <div className="lg:col-span-6 space-y-3 bg-white p-3 rounded-xl border border-slate-200/90">
+                    {/* Trạng thái mặc định cho danh sách batch: Đã Jon, Jon chờ duyệt, Chưa */}
+                    <div>
+                      <div className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                        <span>Trạng thái mặc định cho các UID thêm đợt này:</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setBatchDefaultJoinStatus('Đã Jon')}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            batchDefaultJoinStatus === 'Đã Jon'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                              : 'bg-emerald-50/70 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>Đã Jon</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setBatchDefaultJoinStatus('Jon chờ duyệt')}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            batchDefaultJoinStatus === 'Jon chờ duyệt'
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                              : 'bg-amber-50/70 text-amber-800 border-amber-200 hover:bg-amber-100'
+                          }`}
+                        >
+                          <Clock className="w-3.5 h-3.5 shrink-0" />
+                          <span>Jon chờ duyệt</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setBatchDefaultJoinStatus('Chưa')}
+                          className={`px-2.5 py-1.5 rounded-xl text-xs font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            batchDefaultJoinStatus === 'Chưa'
+                              ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
+                              : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                          }`}
+                        >
+                          <XCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>Chưa</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Mức tương tác mặc định cho danh sách batch */}
+                    <div className="pt-1 border-t border-slate-100 space-y-1.5">
+                      <div className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                        <span>Mức độ tương tác mặc định (tự nhảy ngày TT):</span>
+                        <div className="flex items-center space-x-1">
+                          <span className="text-[11px] font-bold text-slate-600">Ngày TT:</span>
+                          <input
+                            type="text"
+                            value={batchDefaultInteractionDate}
+                            onChange={(e) => setBatchDefaultInteractionDate(e.target.value)}
+                            onDoubleClick={() => setBatchDefaultInteractionDate(getTodayShortStr())}
+                            placeholder={getTodayShortStr()}
+                            className="w-16 px-2 py-0.5 text-center text-xs font-bold text-emerald-800 bg-emerald-50 border border-emerald-300 rounded-lg focus:outline-hidden"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = batchDefaultInteractionStatus === 'Đang lên tương tác' ? '' : 'Đang lên tương tác';
+                            setBatchDefaultInteractionStatus(next);
+                            setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            batchDefaultInteractionStatus === 'Đang lên tương tác'
+                              ? 'bg-sky-600 text-white border-sky-700 shadow-xs'
+                              : 'bg-sky-50 text-sky-900 border-sky-300 hover:bg-sky-100'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-sky-400 animate-pulse shrink-0"></span>
+                          <span>🔥 Đang lên TT</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = batchDefaultInteractionStatus === 'Có tương tác' ? '' : 'Có tương tác';
+                            setBatchDefaultInteractionStatus(next);
+                            setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            batchDefaultInteractionStatus === 'Có tương tác'
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                              : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>
+                          <span>🟢 Có tương tác</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = batchDefaultInteractionStatus === 'Tương tác ổn' ? '' : 'Tương tác ổn';
+                            setBatchDefaultInteractionStatus(next);
+                            setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            batchDefaultInteractionStatus === 'Tương tác ổn'
+                              ? 'bg-teal-600 text-white border-teal-700 shadow-xs'
+                              : 'bg-teal-50 text-teal-800 border-teal-300 hover:bg-teal-100'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-teal-400 shrink-0"></span>
+                          <span>Tương tác ổn</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = batchDefaultInteractionStatus === 'Tương tác vừa' ? '' : 'Tương tác vừa';
+                            setBatchDefaultInteractionStatus(next);
+                            setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            batchDefaultInteractionStatus === 'Tương tác vừa'
+                              ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                              : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0"></span>
+                          <span>Tương tác vừa</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = batchDefaultInteractionStatus === 'Không có tương tác' ? '' : 'Không có tương tác';
+                            setBatchDefaultInteractionStatus(next);
+                            setBatchDefaultInteractionDate(next ? getTodayShortStr() : '');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1 ${
+                            batchDefaultInteractionStatus === 'Không có tương tác'
+                              ? 'bg-rose-600 text-white border-rose-700 shadow-xs'
+                              : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                          }`}
+                        >
+                          <span className="w-2 h-2 rounded-full bg-rose-400 shrink-0"></span>
+                          <span>Không có TT</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBatchDefaultInteractionStatus('');
+                            setBatchDefaultInteractionDate('');
+                          }}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-semibold border transition-all cursor-pointer flex items-center justify-center ${
+                            !batchDefaultInteractionStatus
+                              ? 'bg-slate-200 text-slate-800 border-slate-300 font-bold'
+                              : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>⚪ Chưa chọn</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Lựa chọn ghi chú mặc định cho cả danh sách: VHH, 282, 956, 956 Code mail, 956 SDT, Hạn Chế */}
+                    <div className="pt-1 border-t border-slate-100">
+                      <div className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center justify-between">
+                        <span>Ghi chú tình trạng mặc định (Cột F):</span>
+                        {batchDefaultNote && (
+                          <button
+                            type="button"
+                            onClick={() => setBatchDefaultNote('')}
+                            className="text-[11px] text-red-600 hover:underline cursor-pointer"
+                          >
+                            Bỏ chọn (Trống)
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                        {GROUP_NOTE_CHOICES.map((choice) => {
+                          const isSelected = batchDefaultNote === choice.key;
+                          return (
+                            <button
+                              key={choice.key}
+                              type="button"
+                              onClick={() => setBatchDefaultNote(isSelected ? '' : choice.key)}
+                              className={`px-2 py-1.5 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center space-x-1.5 ${
+                                isSelected ? choice.activeColor : choice.color
+                              }`}
+                            >
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  isSelected ? 'bg-white' : choice.dot
+                                }`}
+                              ></span>
+                              <span>{choice.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
                 </div>
+              </div>
+            )}
+
+            {/* Section 3: Phân Quyền & Chỉnh Sửa Nhân Viên Chăm Group */}
+            {isAdmin ? (
+              <div className="bg-blue-50/40 p-3.5 sm:p-4 rounded-xl border border-blue-200/80 space-y-2.5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <label className="text-xs font-extrabold text-blue-950 uppercase tracking-wider flex items-center space-x-1.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-600 text-white flex items-center justify-center text-[11px] font-black">
+                      3
+                    </span>
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    <span>Nhân Viên Chăm Nhóm (Cột Tên NV)</span>
+                  </label>
+                  {currentUser.name && (
+                    <button
+                      type="button"
+                      onClick={() => setStaffName(currentUser.name)}
+                      className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                        staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
+                      }`}
+                    >
+                      Gán cho tôi ({currentUser.name})
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-center">
+                  {/* Quick staff chips */}
+                  <div className="lg:col-span-7">
+                    <div className="flex flex-wrap gap-1.5">
+                      {Array.from(
+                        new Set([
+                          ...(currentUser.name ? [currentUser.name.trim()] : []),
+                          ...availableStaffNames.map((n) => n.trim()),
+                          ...allRecords.map((r) => (r.staffName || '').trim()).filter(Boolean),
+                        ])
+                      ).map((name) => {
+                        const isSelected = staffName.trim().toLowerCase() === name.toLowerCase();
+                        return (
+                          <button
+                            key={name}
+                            type="button"
+                            onClick={() => setStaffName(name)}
+                            className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center space-x-1 ${
+                              isSelected
+                                ? 'bg-blue-600 text-white border-blue-700 shadow-2xs ring-2 ring-blue-500/25'
+                                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                            }`}
+                          >
+                            <span>{name}</span>
+                            {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Text Input + Dropdown selector for custom or existing staff */}
+                  <div className="lg:col-span-5 flex flex-col sm:flex-row gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        list="group-staff-list"
+                        value={staffName}
+                        onChange={(e) => setStaffName(e.target.value)}
+                        placeholder="Nhập hoặc chọn tên NV..."
+                        className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-bold text-slate-800 bg-white"
+                      />
+                      <datalist id="group-staff-list">
+                        {Array.from(
+                          new Set([
+                            ...(currentUser.name ? [currentUser.name.trim()] : []),
+                            ...availableStaffNames.map((n) => n.trim()),
+                            ...allRecords.map((r) => (r.staffName || '').trim()).filter(Boolean),
+                          ])
+                        ).map((name) => (
+                          <option key={name} value={name} />
+                        ))}
+                      </datalist>
+                    </div>
+
+                    <select
+                      value={staffName}
+                      onChange={(e) => {
+                        if (e.target.value) setStaffName(e.target.value);
+                      }}
+                      className="px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-700 cursor-pointer"
+                    >
+                      <option value="">-- Chọn NV --</option>
+                      {Array.from(
+                        new Set([
+                          ...(currentUser.name ? [currentUser.name.trim()] : []),
+                          ...availableStaffNames.map((n) => n.trim()),
+                          ...allRecords.map((r) => (r.staffName || '').trim()).filter(Boolean),
+                        ])
+                      ).map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-blue-50/40 p-3.5 rounded-xl border border-blue-200/80 flex items-center justify-between">
+                <div>
+                  <label className="text-xs font-extrabold text-blue-950 flex items-center space-x-1.5">
+                    <span className="w-5 h-5 rounded-md bg-blue-600 text-white flex items-center justify-center text-[11px] font-black">
+                      3
+                    </span>
+                    <ShieldCheck className="w-4 h-4 text-blue-600" />
+                    <span>Nhân Viên Phụ Trách:</span>
+                  </label>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Bạn chỉ thêm và quản lý dữ liệu của chính mình ({currentUser.name}).
+                  </p>
+                </div>
+                <div className="px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs font-black text-blue-700 flex items-center space-x-1.5 shadow-2xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>{currentUser.name}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Pinned Bottom Footer Actions */}
+          <div className="shrink-0 px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2">
+            <div className="text-[11px] text-slate-500 hidden sm:block">
+              {mode === 'batch' ? (
+                <span>
+                  Sẵn sàng lưu <b className="text-red-600">{parsedBatchItems.length} UID</b> vào nhóm{' '}
+                  <b className="text-slate-800">{groupName || '...'}</b> • NV:{' '}
+                  <b className="text-blue-700">{isAdmin ? staffName || 'Anh Quỳnh' : currentUser.name}</b>
+                </span>
+              ) : (
+                <span>
+                  Nhóm: <b className="text-slate-800">{groupName || '...'}</b> • UID:{' '}
+                  <b className="text-indigo-700">{uid || '...'}</b> • NV:{' '}
+                  <b className="text-blue-700">{isAdmin ? staffName || 'Anh Quỳnh' : currentUser.name}</b>
+                </span>
               )}
             </div>
-          )}
-
-          {/* Section 3: Phân Quyền & Chỉnh Sửa Nhân Viên Chăm Group */}
-          {isAdmin ? (
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                  <ShieldCheck className="w-4 h-4 text-blue-600" />
-                  <span>Nhân Viên Chăm Nhóm (Cột Tên NV)</span>
-                </label>
-                {currentUser.name && (
-                  <button
-                    type="button"
-                    onClick={() => setStaffName(currentUser.name)}
-                    className={`text-[11px] font-bold px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
-                      staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase()
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                        : 'bg-white text-blue-700 border-blue-200 hover:bg-blue-50'
-                    }`}
-                  >
-                    Gán cho tôi ({currentUser.name})
-                  </button>
-                )}
-              </div>
-
-              {/* Quick staff chips */}
-              <div>
-                <div className="text-[11px] font-semibold text-slate-500 mb-1.5">
-                  Chọn nhanh nhân viên:
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {Array.from(
-                    new Set([
-                      ...(currentUser.name ? [currentUser.name.trim()] : []),
-                      ...availableStaffNames.map((n) => n.trim()),
-                      ...allRecords.map((r) => (r.staffName || '').trim()).filter(Boolean),
-                    ])
-                  ).map((name) => {
-                    const isSelected = staffName.trim().toLowerCase() === name.toLowerCase();
-                    return (
-                      <button
-                        key={name}
-                        type="button"
-                        onClick={() => setStaffName(name)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer flex items-center space-x-1 ${
-                          isSelected
-                            ? 'bg-blue-600 text-white border-blue-700 shadow-2xs ring-2 ring-blue-500/25'
-                            : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
-                        }`}
-                      >
-                        <span>{name}</span>
-                        {isSelected && <CheckCircle2 className="w-3 h-3 text-white" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Text Input + Dropdown selector for custom or existing staff */}
-              <div className="flex flex-col sm:flex-row gap-2">
-                <div className="relative flex-1">
-                  <input
-                    type="text"
-                    list="group-staff-list"
-                    value={staffName}
-                    onChange={(e) => setStaffName(e.target.value)}
-                    placeholder="Nhập hoặc chọn tên nhân viên..."
-                    className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-bold text-slate-800 bg-white"
-                  />
-                  <datalist id="group-staff-list">
-                    {Array.from(
-                      new Set([
-                        ...(currentUser.name ? [currentUser.name.trim()] : []),
-                        ...availableStaffNames.map((n) => n.trim()),
-                        ...allRecords.map((r) => (r.staffName || '').trim()).filter(Boolean),
-                      ])
-                    ).map((name) => (
-                      <option key={name} value={name} />
-                    ))}
-                  </datalist>
-                </div>
-
-                <select
-                  value={staffName}
-                  onChange={(e) => {
-                    if (e.target.value) setStaffName(e.target.value);
-                  }}
-                  className="px-3 py-2 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-700 cursor-pointer"
-                >
-                  <option value="">-- Danh sách tất cả NV --</option>
-                  {Array.from(
-                    new Set([
-                      ...(currentUser.name ? [currentUser.name.trim()] : []),
-                      ...availableStaffNames.map((n) => n.trim()),
-                      ...allRecords.map((r) => (r.staffName || '').trim()).filter(Boolean),
-                    ])
-                  ).map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <p className="text-[11px] text-slate-500">
-                {mode === 'batch'
-                  ? `Mẹo: Tất cả ${parsedBatchItems.length} UID nhập đợt này sẽ được giao cho nhân viên "${staffName || '...'}" chăm sóc.`
-                  : `Nhân viên "${staffName || '...'}" sẽ phụ trách chăm sóc dòng nick UID này.`}
-              </p>
+            <div className="flex items-center space-x-2 ml-auto">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isSubmitting}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200/70 rounded-xl transition-colors cursor-pointer"
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="inline-flex items-center space-x-1.5 px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <Save className="w-4 h-4" />
+                <span>
+                  {isSubmitting
+                    ? 'Đang lưu...'
+                    : isEditing
+                    ? 'Cập Nhật'
+                    : mode === 'batch'
+                    ? `Lưu ${parsedBatchItems.length} UID Vào Nhóm`
+                    : 'Lưu Vào Nhóm'}
+                </span>
+              </button>
             </div>
-          ) : (
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex items-center justify-between">
-              <div>
-                <label className="text-xs font-bold text-slate-700 flex items-center space-x-1.5">
-                  <ShieldCheck className="w-4 h-4 text-blue-600" />
-                  <span>Nhân Viên Phụ Trách:</span>
-                </label>
-                <p className="text-[11px] text-slate-500 mt-0.5">
-                  Bạn chỉ thêm và quản lý dữ liệu của chính mình ({currentUser.name}).
-                </p>
-              </div>
-              <div className="px-3 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-xs font-black text-blue-700 flex items-center space-x-1.5 shadow-2xs">
-                <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />
-                <span>{currentUser.name}</span>
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-200">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isSubmitting}
-              className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
-            >
-              Hủy
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className="inline-flex items-center space-x-1.5 px-5 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <Save className="w-4 h-4" />
-              <span>
-                {isSubmitting
-                  ? 'Đang lưu...'
-                  : isEditing
-                  ? 'Cập Nhật'
-                  : mode === 'batch'
-                  ? `Lưu ${parsedBatchItems.length} UID Vào Nhóm`
-                  : 'Lưu Vào Nhóm'}
-              </span>
-            </button>
           </div>
         </form>
       </div>
