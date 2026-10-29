@@ -2997,7 +2997,12 @@ export default function App() {
 
   const executeDeleteViasInternal = async (
     viaIds: string[],
-    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean; deleteLinkedPages?: boolean }
+    options?: {
+      clearPageViaUid?: boolean;
+      deleteHeldPages?: boolean;
+      deleteLinkedPages?: boolean;
+      deleteLinkedGroups?: boolean;
+    }
   ) => {
     if (!viaIds || viaIds.length === 0) return;
     const idSet = new Set(viaIds);
@@ -3066,11 +3071,12 @@ export default function App() {
       })
     );
 
-    // 4. Xử lý các Fanpage đang liên kết với UID vừa xóa
+    // 4. Xử lý các Fanpage đang liên kết với UID vừa xóa (Bảng 1)
     if (targetUidLowers.size > 0) {
-      const matchingPages = records.filter((r) =>
-        targetUidLowers.has(normalizeViaUidKey(r.viaUid))
-      );
+      const matchingPages = records.filter((r) => {
+        const rUid = normalizeViaUidKey(r.viaUid) || normalizeViaUidKey(r.fullVia);
+        return Boolean(rUid && targetUidLowers.has(rUid));
+      });
       if (matchingPages.length > 0) {
         if (options?.deleteHeldPages || options?.deleteLinkedPages) {
           const pageIdsToRemove = matchingPages.map((p) => p.id);
@@ -3103,6 +3109,32 @@ export default function App() {
       }
     }
 
+    // 4b. Xử lý xóa các dòng Group liên kết với UID vừa xóa (Bảng 2) nếu Admin chọn xóa luôn Group
+    if (targetUidLowers.size > 0 && options?.deleteLinkedGroups) {
+      const matchingGroups = groupRecords.filter((g) => {
+        const gUid = normalizeViaUidKey(g.uid);
+        return Boolean(gUid && targetUidLowers.has(gUid));
+      });
+      if (matchingGroups.length > 0) {
+        const groupIdsToRemove = matchingGroups.map((g) => g.id);
+        const removeGroupSet = new Set(groupIdsToRemove);
+        setGroupRecords((prev) => {
+          const next = prev.filter((g) => !removeGroupSet.has(g.id));
+          saveLocalGroupBackup(next);
+          return next;
+        });
+        try {
+          await batchDeleteCloudGroupRecords(groupIdsToRemove);
+        } catch (err) {
+          for (const gId of groupIdsToRemove) {
+            try {
+              await deleteCloudGroupRecord(gId);
+            } catch {}
+          }
+        }
+      }
+    }
+
     // 5. Xóa vĩnh viễn trên Cloud Firestore
     if (allDocIdsToDelete.length > 0) {
       try {
@@ -3119,14 +3151,24 @@ export default function App() {
 
   const handleDeleteVia = async (
     viaId: string,
-    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean; deleteLinkedPages?: boolean }
+    options?: {
+      clearPageViaUid?: boolean;
+      deleteHeldPages?: boolean;
+      deleteLinkedPages?: boolean;
+      deleteLinkedGroups?: boolean;
+    }
   ) => {
     await executeDeleteViasInternal([viaId], options);
   };
 
   const handleDeleteBatchVias = async (
     viaIds: string[],
-    options?: { clearPageViaUid?: boolean; deleteHeldPages?: boolean; deleteLinkedPages?: boolean }
+    options?: {
+      clearPageViaUid?: boolean;
+      deleteHeldPages?: boolean;
+      deleteLinkedPages?: boolean;
+      deleteLinkedGroups?: boolean;
+    }
   ) => {
     await executeDeleteViasInternal(viaIds, options);
   };
@@ -4661,6 +4703,7 @@ export default function App() {
             <FullViaTable
               viaList={viaList}
               allRecords={records}
+              allGroupRecords={groupRecords}
               currentUser={currentUser}
               availableStaffNames={allStaffNames}
               activeStaffFilter={filter.staffName}

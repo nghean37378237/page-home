@@ -35,7 +35,7 @@ import {
   CheckSquare,
   Archive,
 } from 'lucide-react';
-import { FullViaItem, AppUser, PageRecord, ViaPageUpdateStatus, ViaAdminReportStatus, VIA_ADMIN_REPORT_OPTIONS, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
+import { FullViaItem, AppUser, PageRecord, GroupRecord, ViaPageUpdateStatus, ViaAdminReportStatus, VIA_ADMIN_REPORT_OPTIONS, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
 import { generateTOTPCode } from '../utils/totp';
 import { downloadViaExcelTemplate } from '../utils/excelTemplates';
 import { batchDeleteCloudVias } from '../services/firebase';
@@ -49,6 +49,7 @@ function normalizeUidKey(raw?: string): string {
 interface FullViaTableProps {
   viaList: FullViaItem[];
   allRecords: PageRecord[];
+  allGroupRecords?: GroupRecord[];
   currentUser: AppUser;
   availableStaffNames: string[];
   activeStaffFilter?: string;
@@ -57,8 +58,14 @@ interface FullViaTableProps {
   onBackToFanpageTab?: () => void;
   onAddVia: (via: FullViaItem) => void;
   onUpdateVia: (via: FullViaItem) => void;
-  onDeleteVia: (viaId: string, options?: { clearPageViaUid?: boolean; deleteLinkedPages?: boolean }) => void | Promise<void>;
-  onDeleteBatchVias?: (viaIds: string[], options?: { clearPageViaUid?: boolean; deleteLinkedPages?: boolean }) => void | Promise<void>;
+  onDeleteVia: (
+    viaId: string,
+    options?: { clearPageViaUid?: boolean; deleteLinkedPages?: boolean; deleteLinkedGroups?: boolean }
+  ) => void | Promise<void>;
+  onDeleteBatchVias?: (
+    viaIds: string[],
+    options?: { clearPageViaUid?: boolean; deleteLinkedPages?: boolean; deleteLinkedGroups?: boolean }
+  ) => void | Promise<void>;
   onOpenBulkImport: (presetStaff?: string) => void;
   onFilterPageByVia?: (viaUid: string) => void;
   onAddPageForVia?: (viaUid: string, staffName: string) => void;
@@ -71,6 +78,7 @@ interface FullViaTableProps {
 export const FullViaTable: React.FC<FullViaTableProps> = ({
   viaList,
   allRecords,
+  allGroupRecords = [],
   currentUser,
   availableStaffNames,
   activeStaffFilter,
@@ -162,6 +170,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   const [isConfirmDeleteModalOpen, setIsConfirmDeleteModalOpen] = useState(false);
   const [pendingDeleteVia, setPendingDeleteVia] = useState<FullViaItem | null>(null);
   const [deletePageAction, setDeletePageAction] = useState<'keep' | 'unlink' | 'delete_pages'>('keep');
+  const [deleteGroupAction, setDeleteGroupAction] = useState<'keep' | 'delete_groups'>('keep');
   const [isDeletingBatch, setIsDeletingBatch] = useState(false);
 
   // Live TOTP generator state: stores { viaId: { code: string; remainingSeconds: number } }
@@ -220,6 +229,20 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     });
     return map;
   }, [allRecords]);
+
+  // Calculate group records associated with each viaUid (case-insensitive)
+  const groupsPerViaUid = useMemo(() => {
+    const map = new Map<string, GroupRecord[]>();
+    (allGroupRecords || []).forEach((g) => {
+      const uid = normalizeUidKey(g.uid);
+      if (!uid) return;
+      if (!map.has(uid)) {
+        map.set(uid, []);
+      }
+      map.get(uid)!.push(g);
+    });
+    return map;
+  }, [allGroupRecords]);
 
   // List of all distinct staff names (excluding Admin Waiting Pool which gets its own prominent tab)
   const distinctStaffNames = useMemo(() => {
@@ -761,12 +784,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     }
     setPendingDeleteVia(null);
     setDeletePageAction('keep');
+    setDeleteGroupAction('keep');
     setIsConfirmDeleteModalOpen(true);
   };
 
   const handlePromptSingleDelete = (via: FullViaItem) => {
     setPendingDeleteVia(via);
     setDeletePageAction('keep');
+    setDeleteGroupAction('keep');
     setIsConfirmDeleteModalOpen(true);
   };
 
@@ -782,7 +807,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     const deleteOptions = {
       clearPageViaUid: deletePageAction === 'unlink',
       deleteLinkedPages: deletePageAction === 'delete_pages',
+      deleteLinkedGroups: deleteGroupAction === 'delete_groups',
     };
+
+    const extraSummaryParts: string[] = [];
+    if (deleteOptions.deleteLinkedPages) extraSummaryParts.push('xóa luôn Fanpage liên quan');
+    else if (deleteOptions.clearPageViaUid) extraSummaryParts.push('gỡ UID khỏi Fanpage');
+    if (deleteOptions.deleteLinkedGroups) extraSummaryParts.push('xóa luôn Group liên quan');
+    const extraSummary = extraSummaryParts.length > 0 ? ` (Đã ${extraSummaryParts.join(' & ')})` : '';
 
     setIsDeletingBatch(true);
     try {
@@ -801,9 +833,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       setIsConfirmDeleteModalOpen(false);
       setPendingDeleteVia(null);
       setCopyToastMessage(
-        `🗑️ Đã xóa vĩnh viễn ${idsToDelete.length} nick Via (${targetVias.map((v) => v.uid).join(', ')}) khỏi hệ thống!`
+        `🗑️ Đã xóa vĩnh viễn ${idsToDelete.length} nick Via (${targetVias.map((v) => v.uid).join(', ')})${extraSummary} khỏi hệ thống!`
       );
-      setTimeout(() => setCopyToastMessage(null), 3500);
+      setTimeout(() => setCopyToastMessage(null), 4000);
     } catch (err: any) {
       console.error('Lỗi khi xóa via:', err);
       for (const id of idsToDelete) {
@@ -820,7 +852,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       });
       setIsConfirmDeleteModalOpen(false);
       setPendingDeleteVia(null);
-      setCopyToastMessage(`🗑️ Đã xóa ${idsToDelete.length} nick Via khỏi hệ thống!`);
+      setCopyToastMessage(`🗑️ Đã xóa ${idsToDelete.length} nick Via${extraSummary} khỏi hệ thống!`);
       setTimeout(() => setCopyToastMessage(null), 3500);
     } finally {
       setIsDeletingBatch(false);
@@ -1309,6 +1341,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     const liveOtp = liveOtpMap[via.id];
     const uidClean = via.uid?.trim() || '';
     const assignedPages = (uidClean && (pagesPerViaUid.get(uidClean) || pagesPerViaUid.get(uidClean.toLowerCase()))) || [];
+    const assignedGroups = (uidClean && groupsPerViaUid.get(normalizeUidKey(uidClean))) || [];
     const isPendingPage = isViaPendingPageUpdate(via);
     const isUpdatedPage = !isPendingPage && isViaPageUpdated(via, assignedPages.length);
     const hasPages = isUpdatedPage || assignedPages.length > 0;
@@ -1414,6 +1447,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 >
                   📗 {assignedPages.length} Page
                 </button>
+              )}
+              {assignedGroups.length > 0 && (
+                <span
+                  className="font-extrabold text-[9.5px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 bg-purple-100 text-purple-900 border border-purple-300"
+                  title={`Nick Via này đang gắn với ${assignedGroups.length} dòng Group trong Bảng Group (${assignedGroups.map((g) => g.viaName || `${g.groupCount} nhóm`).join(', ')})`}
+                >
+                  🟣 {assignedGroups.length} Group
+                </span>
               )}
               {via.adminReportStatus === 'VHH' ? (
                 <span
@@ -4252,7 +4293,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         </div>
       )}
 
-      {/* Modal Xác Nhận Xóa Via (Đơn Lẻ Hoặc Hàng Loạt) */}
+      {/* Modal Xác Nhận Xóa Via (Đơn Lẻ Hoặc Hàng Loạt) - Hỏi Xóa Luôn Group Và Page Liên Quan */}
       {isConfirmDeleteModalOpen && (() => {
         const targetVias = pendingDeleteVia ? [pendingDeleteVia] : getSelectedViasForDelete();
         const targetUidSet = new Set(targetVias.map((v) => normalizeUidKey(v.uid)).filter(Boolean));
@@ -4260,12 +4301,20 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           const rUid = normalizeUidKey(r.viaUid) || normalizeUidKey(r.fullVia);
           return Boolean(rUid && targetUidSet.has(rUid));
         });
+        const linkedGroups = (allGroupRecords || []).filter((g) => {
+          const gUid = normalizeUidKey(g.uid);
+          return Boolean(gUid && targetUidSet.has(gUid));
+        });
+        const isDeletingAllRelated =
+          deletePageAction === 'delete_pages' && deleteGroupAction === 'delete_groups';
+        const isKeepingAllRelated =
+          deletePageAction === 'keep' && deleteGroupAction === 'keep';
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150">
-            <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200 my-auto max-h-[92vh] flex flex-col">
               {/* Modal Header */}
-              <div className="px-5 py-4 bg-gradient-to-r from-rose-700 via-rose-600 to-red-700 text-white flex items-center justify-between shadow-xs">
+              <div className="px-5 py-4 bg-gradient-to-r from-rose-700 via-rose-600 to-red-700 text-white flex items-center justify-between shadow-xs shrink-0">
                 <div className="flex items-center space-x-2.5">
                   <div className="p-2 bg-white/20 rounded-xl">
                     <Trash2 className="w-5 h-5 text-white" />
@@ -4277,7 +4326,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                         : `Xác Nhận Xóa Toàn Bộ (${targetVias.length}) Via Đã Chọn`}
                     </h3>
                     <p className="text-[11px] text-rose-100 font-medium">
-                      Xóa vĩnh viễn trên Cloud Firestore & chặn tự động khôi phục từ Page
+                      Tùy chọn xóa luôn Fanpage (Bảng 1) & Group (Bảng 2) liên quan với Via
                     </p>
                   </div>
                 </div>
@@ -4297,7 +4346,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               </div>
 
               {/* Modal Body */}
-              <div className="p-5 space-y-4 text-xs">
+              <div className="p-5 space-y-4 text-xs overflow-y-auto">
                 <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-950 flex items-start space-x-3">
                   <AlertTriangle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
                   <div className="space-y-1">
@@ -4305,74 +4354,158 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       Bạn đang chuẩn bị xóa vĩnh viễn {targetVias.length} tài khoản nick Via!
                     </p>
                     <p className="text-xs text-rose-800 leading-relaxed">
-                      Toàn bộ thông tin UID, Mật khẩu (PASS), mã 2FA, ghi chú và các bản ghi trùng UID sẽ bị xóa vĩnh viễn khỏi hệ thống và <strong className="underline">không tự động nhảy lại</strong> từ bảng Fanpage/Nhóm.
+                      Toàn bộ thông tin UID, Mật khẩu (PASS), mã 2FA, ghi chú sẽ bị xóa khỏi Kho Via. Bạn có thể chọn <strong>xóa luôn các Fanpage và Group liên quan</strong> hoặc giữ lại bên dưới.
                     </p>
                   </div>
                 </div>
 
                 {/* Danh sách các UID chuẩn bị xóa */}
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
+                  <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
                     <label className="font-bold text-slate-700 text-xs flex items-center gap-1.5">
                       <Key className="w-3.5 h-3.5 text-slate-500" />
                       <span>Danh sách Nick UID sẽ bị xóa ({targetVias.length}):</span>
                     </label>
-                    <span className="text-[11px] text-slate-500">
-                      Đang gắn với {linkedPages.length} Page/Nhóm
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                        📗 {linkedPages.length} Fanpage liên quan
+                      </span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-900 border border-purple-300">
+                        🟣 {linkedGroups.length} dòng Group liên quan
+                      </span>
+                    </div>
                   </div>
-                  <div className="max-h-40 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2 space-y-1 divide-y divide-slate-200/60 font-mono text-xs">
-                    {targetVias.map((via, idx) => (
-                      <div key={via.id} className="pt-1 first:pt-0 flex items-center justify-between text-[11px]">
-                        <div className="flex items-center space-x-2">
-                          <span className="text-slate-400 w-6 text-right font-sans">{idx + 1}.</span>
-                          <span className="font-bold text-slate-900">{via.uid}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded-sm bg-indigo-100 text-indigo-800 font-sans font-semibold">
-                            {via.staffName}
+                  <div className="max-h-32 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50 p-2 space-y-1 divide-y divide-slate-200/60 font-mono text-xs">
+                    {targetVias.map((via, idx) => {
+                      const vUid = normalizeUidKey(via.uid);
+                      const pCount = (vUid && (pagesPerViaUid.get(vUid) || []).length) || 0;
+                      const gCount = (vUid && (groupsPerViaUid.get(vUid) || []).length) || 0;
+                      return (
+                        <div key={via.id} className="pt-1 first:pt-0 flex items-center justify-between text-[11px] gap-2">
+                          <div className="flex items-center space-x-2 min-w-0">
+                            <span className="text-slate-400 w-5 text-right font-sans shrink-0">{idx + 1}.</span>
+                            <span className="font-bold text-slate-900 truncate">{via.uid}</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded-sm bg-indigo-100 text-indigo-800 font-sans font-semibold shrink-0">
+                              {via.staffName}
+                            </span>
+                            {pCount > 0 && (
+                              <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-900 font-sans font-bold shrink-0">
+                                {pCount} Page
+                              </span>
+                            )}
+                            {gCount > 0 && (
+                              <span className="text-[9.5px] px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 font-sans font-bold shrink-0">
+                                {gCount} Group
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-500 truncate max-w-[140px] font-sans">
+                            {via.note || via.sharedNote || (via.status === 'checkpoint' ? 'Checkpoint' : 'Live')}
                           </span>
                         </div>
-                        <span className="text-[10px] text-slate-500 truncate max-w-[160px] font-sans">
-                          {via.note || via.sharedNote || (via.status === 'checkpoint' ? 'Checkpoint' : 'Live')}
-                        </span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
-                {/* Tuỳ chọn xử lý Fanpage / Group đang gắn với UID này */}
-                {linkedPages.length > 0 && (
-                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                    <p className="font-bold text-slate-800 text-xs">
-                      Phát hiện {linkedPages.length} Fanpage/Nhóm đang gắn với UID này ({linkedPages.slice(0, 2).map((p) => p.pageName).join(', ')}{linkedPages.length > 2 ? '...' : ''}):
-                    </p>
+                {/* KHỐI LỰA CHỌN XÓA DỮ LIỆU LIÊN QUAN: FANPAGE & GROUP */}
+                <div className="p-3.5 bg-slate-50 border-2 border-slate-200 rounded-xl space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200 pb-2.5">
+                    <div>
+                      <p className="font-black text-slate-900 text-xs uppercase tracking-tight">
+                        ⚙️ Tùy chọn xóa dữ liệu liên quan (Fanpage & Group):
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Admin chọn xử lý các Fanpage (Bảng 1) và Group (Bảng 2) đang gắn với Via này
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeletePageAction('keep');
+                          setDeleteGroupAction('keep');
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+                          isKeepingAllRelated
+                            ? 'bg-slate-800 text-white border-slate-900 shadow-2xs'
+                            : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                        }`}
+                      >
+                        🛡️ Chỉ xóa Via
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDeletePageAction('delete_pages');
+                          setDeleteGroupAction('delete_groups');
+                        }}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
+                          isDeletingAllRelated
+                            ? 'bg-rose-600 text-white border-rose-700 shadow-2xs ring-2 ring-rose-300'
+                            : 'bg-rose-50 text-rose-700 border-rose-300 hover:bg-rose-100'
+                        }`}
+                      >
+                        🔥 Chọn xóa tất cả (Via + Page + Group)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 1. Tùy chọn xử lý Fanpage (Bảng 1) */}
+                  <div className="p-3 bg-white border border-emerald-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <span className="font-extrabold text-emerald-950 text-xs flex items-center gap-1.5">
+                        <span>📗 1. Fanpage liên kết (Bảng 1 - Quản Lý Fanpage):</span>
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        linkedPages.length > 0
+                          ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {linkedPages.length > 0
+                          ? `Có ${linkedPages.length} Fanpage (${linkedPages.slice(0, 2).map((p) => p.pageName).join(', ')}${linkedPages.length > 2 ? '...' : ''})`
+                          : '0 Fanpage liên kết'}
+                      </span>
+                    </div>
+
                     <div className="space-y-1.5">
-                      <label className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-lg hover:bg-white border border-transparent hover:border-slate-200">
+                      <label className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200">
                         <input
                           type="radio"
                           name="deletePageAction"
                           checked={deletePageAction === 'keep'}
                           onChange={() => setDeletePageAction('keep')}
-                          className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                          className="mt-0.5 text-emerald-600 focus:ring-emerald-500"
                         />
                         <div>
-                          <span className="font-bold text-slate-800 block">Chỉ xóa Via — Giữ nguyên các Fanpage/Nhóm</span>
-                          <span className="text-[11px] text-slate-500">Xóa vĩnh viễn Via ở bảng Full Via và khóa không cho tự tạo lại.</span>
+                          <span className="font-bold text-slate-800 block">
+                            Giữ nguyên các Fanpage bên Bảng 1
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            Chỉ xóa Via khỏi Kho Via, không xóa các Fanpage đang hiển thị ở Bảng Quản Lý Page.
+                          </span>
                         </div>
                       </label>
-                      <label className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-lg hover:bg-white border border-transparent hover:border-slate-200">
+
+                      <label className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200">
                         <input
                           type="radio"
                           name="deletePageAction"
                           checked={deletePageAction === 'unlink'}
                           onChange={() => setDeletePageAction('unlink')}
-                          className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                          className="mt-0.5 text-amber-600 focus:ring-amber-500"
                         />
                         <div>
-                          <span className="font-bold text-slate-800 block">Xóa Via & Gỡ mã UID này khỏi {linkedPages.length} Fanpage/Nhóm</span>
-                          <span className="text-[11px] text-slate-500">Làm trống ô Via Cầm trên các Fanpage/Nhóm đang liên kết để thay Via mới.</span>
+                          <span className="font-bold text-slate-800 block">
+                            Gỡ mã UID này khỏi {linkedPages.length} Fanpage (Giữ lại Page trống Via)
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            Làm trống cột Via Cầm trên các Fanpage đang liên kết để Admin gán Via mới sau.
+                          </span>
                         </div>
                       </label>
-                      <label className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-lg hover:bg-white border border-transparent hover:border-rose-200">
+
+                      <label className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-lg hover:bg-rose-50/70 border border-transparent hover:border-rose-200">
                         <input
                           type="radio"
                           name="deletePageAction"
@@ -4381,49 +4514,121 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                           className="mt-0.5 text-rose-600 focus:ring-rose-500"
                         />
                         <div>
-                          <span className="font-bold text-rose-700 block">Xóa cả Via lẫn {linkedPages.length} Fanpage/Nhóm liên kết</span>
-                          <span className="text-[11px] text-rose-600">Xóa sạch cả nick Via và các Fanpage/Nhóm đang thuộc UID này.</span>
+                          <span className="font-extrabold text-rose-700 block">
+                            🗑️ Xóa luôn {linkedPages.length > 0 ? `${linkedPages.length} ` : ''}Fanpage liên quan khỏi Bảng 1
+                          </span>
+                          <span className="text-[11px] text-rose-600">
+                            Xóa vĩnh viễn toàn bộ các Fanpage đang gắn với UID này khỏi hệ thống.
+                          </span>
                         </div>
                       </label>
                     </div>
                   </div>
-                )}
+
+                  {/* 2. Tùy chọn xử lý Group (Bảng 2) */}
+                  <div className="p-3 bg-white border border-purple-200 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <span className="font-extrabold text-purple-950 text-xs flex items-center gap-1.5">
+                        <span>🟣 2. Group liên kết (Bảng 2 - Quản Lý Group):</span>
+                      </span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                        linkedGroups.length > 0
+                          ? 'bg-purple-100 text-purple-900 border border-purple-300'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {linkedGroups.length > 0
+                          ? `Có ${linkedGroups.length} dòng Group (${linkedGroups.slice(0, 2).map((g) => g.viaName || `${g.groupCount} nhóm`).join(', ')}${linkedGroups.length > 2 ? '...' : ''})`
+                          : '0 dòng Group liên kết'}
+                      </span>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-lg hover:bg-slate-50 border border-transparent hover:border-slate-200">
+                        <input
+                          type="radio"
+                          name="deleteGroupAction"
+                          checked={deleteGroupAction === 'keep'}
+                          onChange={() => setDeleteGroupAction('keep')}
+                          className="mt-0.5 text-purple-600 focus:ring-purple-500"
+                        />
+                        <div>
+                          <span className="font-bold text-slate-800 block">
+                            Giữ nguyên các dòng Group bên Bảng 2
+                          </span>
+                          <span className="text-[11px] text-slate-500">
+                            Chỉ xóa Via khỏi Kho Via, giữ nguyên dữ liệu của UID này trong Bảng Quản Lý Group.
+                          </span>
+                        </div>
+                      </label>
+
+                      <label className="flex items-start space-x-2 cursor-pointer p-1.5 rounded-lg hover:bg-rose-50/70 border border-transparent hover:border-rose-200">
+                        <input
+                          type="radio"
+                          name="deleteGroupAction"
+                          checked={deleteGroupAction === 'delete_groups'}
+                          onChange={() => setDeleteGroupAction('delete_groups')}
+                          className="mt-0.5 text-rose-600 focus:ring-rose-500"
+                        />
+                        <div>
+                          <span className="font-extrabold text-rose-700 block">
+                            🗑️ Xóa luôn {linkedGroups.length > 0 ? `${linkedGroups.length} ` : ''}dòng Group liên quan khỏi Bảng 2
+                          </span>
+                          <span className="text-[11px] text-rose-600">
+                            Xóa vĩnh viễn toàn bộ các dòng Group đang gắn với UID này trong Bảng Quản Lý Group.
+                          </span>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Modal Footer */}
-              <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end space-x-2.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsConfirmDeleteModalOpen(false);
-                    setPendingDeleteVia(null);
-                  }}
-                  disabled={isDeletingBatch}
-                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  Hủy Bỏ
-                </button>
-                <button
-                  type="button"
-                  id="btn-confirm-execute-bulk-delete"
-                  onClick={handleConfirmBulkDelete}
-                  disabled={isDeletingBatch}
-                  className="px-4 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-xl shadow-md transition-all cursor-pointer flex items-center space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isDeletingBatch ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Đang Xóa Dữ Liệu...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Trash2 className="w-3.5 h-3.5 text-white" />
-                      <span>
-                        Xác Nhận Xóa Vĩnh Viễn ({targetVias.length}) Via
-                      </span>
-                    </>
-                  )}
-                </button>
+              <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between flex-wrap gap-2 shrink-0">
+                <div className="text-[11px] font-bold text-slate-600">
+                  Sẽ xóa:{' '}
+                  <span className="text-rose-700 font-black">
+                    {targetVias.length} Via
+                    {deletePageAction === 'delete_pages' ? ` + ${linkedPages.length} Fanpage` : ''}
+                    {deleteGroupAction === 'delete_groups' ? ` + ${linkedGroups.length} dòng Group` : ''}
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsConfirmDeleteModalOpen(false);
+                      setPendingDeleteVia(null);
+                    }}
+                    disabled={isDeletingBatch}
+                    className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+                  >
+                    Hủy Bỏ
+                  </button>
+                  <button
+                    type="button"
+                    id="btn-confirm-execute-bulk-delete"
+                    onClick={handleConfirmBulkDelete}
+                    disabled={isDeletingBatch}
+                    className="px-4 py-2 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-xl shadow-md transition-all cursor-pointer flex items-center space-x-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isDeletingBatch ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Đang Xóa Dữ Liệu...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5 text-white" />
+                        <span>
+                          Xác Nhận Xóa ({targetVias.length} Via
+                          {deletePageAction === 'delete_pages' ? ` + ${linkedPages.length} Page` : ''}
+                          {deleteGroupAction === 'delete_groups' ? ` + ${linkedGroups.length} Group` : ''})
+                        </span>
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           </div>
