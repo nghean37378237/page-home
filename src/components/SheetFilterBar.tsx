@@ -679,30 +679,42 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
         {/* HÀNG 3: TÌM KIẾM & BỘ LỌC CHI TIẾT TRÊN 1 DÒNG GỌN GÀNG */}
         <div className="flex flex-wrap items-center justify-between gap-1.5">
           <div className="flex flex-wrap items-center gap-1.5 flex-1">
-            {/* Search input */}
-            <div className="relative w-44 sm:w-52">
-              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
+            {/* Search input (Supports multi-line bulk UID search - 1 UID per line) */}
+            <div className="relative w-52 sm:w-64">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1.5 pointer-events-none" />
+              <textarea
                 id="input-sheet-search"
+                rows={
+                  filter.search.includes('\n')
+                    ? Math.min(filter.search.split(/\r?\n/).filter((l) => l.trim()).length, 5)
+                    : 1
+                }
                 placeholder={
                   currentUser.role === 'staff'
-                    ? `Tìm page của ${currentUser.name}...`
-                    : 'Tìm Page, Link, UID Via...'
+                    ? `Tìm page hoặc dán nhiều UID (1 UID/dòng)...`
+                    : 'Tìm Page, Link, hoặc dán nhiều UID (1 UID/dòng)...'
                 }
                 value={filter.search}
                 onChange={(e) => onChangeFilter({ ...filter, search: e.target.value })}
-                className="w-full pl-7 pr-6 py-0.5 bg-white border border-slate-300 rounded-md text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 text-[11px] shadow-2xs"
+                className="w-full pl-7 pr-14 py-1 bg-white border border-slate-300 rounded-md text-slate-800 placeholder-slate-400 focus:outline-hidden focus:ring-1 focus:ring-emerald-600 focus:border-emerald-600 text-[11px] shadow-2xs font-mono resize-y leading-snug"
+                title="Có thể dán hàng loạt UID (mỗi UID 1 dòng) để lọc nhanh các Fanpage theo nhiều UID"
               />
               {filter.search && (
-                <button
-                  type="button"
-                  onClick={() => onChangeFilter({ ...filter, search: '' })}
-                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  title="Xóa tìm kiếm"
-                >
-                  <X className="w-3 h-3" />
-                </button>
+                <div className="absolute right-1.5 top-1 flex items-center space-x-1">
+                  {filter.search.split(/\r?\n/).filter((l) => l.trim()).length > 1 && (
+                    <span className="px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded text-[9px] font-extrabold font-sans">
+                      {filter.search.split(/\r?\n/).filter((l) => l.trim()).length} UID
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => onChangeFilter({ ...filter, search: '' })}
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer bg-white/90 rounded"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
               )}
             </div>
 

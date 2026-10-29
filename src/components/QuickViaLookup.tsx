@@ -95,11 +95,39 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
     return list;
   }, [systemViasMap, currentUser]);
 
-  // Evaluate query
+  // Evaluate query (supports single UID or multiple UIDs - 1 UID per line)
   const trimmedSearch = searchUid.trim();
-  const foundVia = trimmedSearch ? systemViasMap.get(trimmedSearch) : null;
+  const searchUidLines = useMemo(() => {
+    if (!trimmedSearch) return [];
+    const lines = trimmedSearch
+      .split(/\r?\n|,|;/)
+      .map((l) => l.split(/[|\t]/)[0]?.trim() || '')
+      .filter(Boolean);
+    return Array.from(new Set(lines));
+  }, [trimmedSearch]);
 
-  // Check authorization
+  const isMultiUidMode = searchUidLines.length > 1;
+  const singleUidKey = searchUidLines[0] || trimmedSearch;
+  const foundVia = !isMultiUidMode && singleUidKey ? systemViasMap.get(singleUidKey) : null;
+
+  const bulkLookupResults = useMemo(() => {
+    if (!isMultiUidMode) return [];
+    return searchUidLines.map((uid) => {
+      const via = systemViasMap.get(uid);
+      const authorized = Boolean(
+        via &&
+          (currentUser.role === 'admin' ||
+            via.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
+      );
+      return {
+        uid,
+        via: via || null,
+        authorized,
+      };
+    });
+  }, [isMultiUidMode, searchUidLines, systemViasMap, currentUser]);
+
+  // Check authorization for single mode
   const isAuthorized = useMemo(() => {
     if (!foundVia) return false;
     if (currentUser.role === 'admin') return true;
@@ -159,13 +187,13 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
           </div>
           <div>
             <h3 className="font-bold text-sm tracking-tight text-white flex items-center space-x-2">
-              <span>Tra Cứu Nhanh Full Via (UID|PASS|2FA)</span>
+              <span>Tra Cứu Nhanh Full Via (UID|PASS|2FA) — Hỗ Trợ Tìm Hàng Loạt UID</span>
               <span className="text-[10px] bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full font-mono">
                 {currentUser.role === 'admin' ? 'Quyền Admin: Tất Cả Via' : `Quyền NV: ${currentUser.name}`}
               </span>
             </h3>
             <p className="text-[11px] text-emerald-200/80">
-              Nhập hoặc chọn UID Nick Via để lấy thông tin đăng nhập Full Via được phân công.
+              Dán 1 hoặc hàng loạt UID Nick Via (mỗi UID 1 dòng) để lấy thông tin đăng nhập Full Via cùng lúc.
             </p>
           </div>
         </div>
@@ -180,31 +208,39 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
         </button>
       </div>
 
-      {/* Quick search input */}
-      <div className="mt-3 flex flex-col sm:flex-row items-stretch gap-2">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-emerald-300 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
+      {/* Quick search input (Supports multi-line bulk UID paste) */}
+      <div className="mt-3 flex flex-col sm:flex-row items-start gap-2">
+        <div className="relative flex-1 w-full">
+          <Search className="w-4 h-4 text-emerald-300 absolute left-3 top-2.5 pointer-events-none" />
+          <textarea
+            rows={searchUid.includes('\n') ? Math.min(searchUidLines.length || 2, 5) : 1}
             value={searchUid}
             onChange={(e) => {
               setSearchUid(e.target.value);
               setIsEditingAdmin(false);
             }}
-            placeholder="Dán hoặc nhập UID nick Via cần lấy Full..."
-            className="w-full pl-9 pr-8 py-2 bg-emerald-950/60 border border-emerald-500/50 rounded-lg text-white placeholder-emerald-300/50 focus:outline-hidden focus:ring-2 focus:ring-emerald-400 text-xs sm:text-sm font-mono"
+            placeholder="Dán 1 hoặc hàng loạt UID cần tìm (mỗi UID là 1 dòng)..."
+            className="w-full pl-9 pr-20 py-2 bg-emerald-950/60 border border-emerald-500/50 rounded-lg text-white placeholder-emerald-300/50 focus:outline-hidden focus:ring-2 focus:ring-emerald-400 text-xs sm:text-sm font-mono resize-y leading-snug"
           />
           {searchUid && (
-            <button
-              type="button"
-              onClick={() => {
-                setSearchUid('');
-                setIsEditingAdmin(false);
-              }}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-emerald-300/70 hover:text-white"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="absolute right-2.5 top-2 flex items-center space-x-1.5">
+              {searchUidLines.length > 1 && (
+                <span className="px-1.5 py-0.5 rounded bg-emerald-400 text-emerald-950 font-black text-[10px] font-sans">
+                  {searchUidLines.length} UID
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchUid('');
+                  setIsEditingAdmin(false);
+                }}
+                className="text-emerald-300/70 hover:text-white cursor-pointer"
+                title="Xóa tìm kiếm"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           )}
         </div>
 
@@ -236,14 +272,155 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
         )}
       </div>
 
-      {/* Result Card when UID is entered */}
+      {/* Result Card when UID(s) are entered */}
       {trimmedSearch && (
         <div className="mt-3 transition-all animate-fadeIn">
-          {!foundVia ? (
+          {isMultiUidMode ? (
+            /* BULK MULTI-UID LOOKUP VIEW */
+            <div className="p-3.5 bg-emerald-950/90 border-2 border-emerald-400 rounded-xl text-xs space-y-3 shadow-lg">
+              {(() => {
+                const authorizedMatches = bulkLookupResults.filter(
+                  (item) => item.via && item.authorized
+                );
+                const fullViaLinesToCopy = authorizedMatches
+                  .map((item) => item.via?.fullVia || item.uid)
+                  .filter(Boolean);
+                const missingUids = bulkLookupResults
+                  .filter((item) => !item.via)
+                  .map((item) => item.uid);
+
+                return (
+                  <>
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-emerald-800/70">
+                      <div className="flex items-center flex-wrap gap-2">
+                        <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+                        <span className="font-bold text-white text-xs sm:text-sm">
+                          Kết quả tìm hàng loạt:{' '}
+                          <span className="text-emerald-300 font-black">
+                            {authorizedMatches.length}/{searchUidLines.length}
+                          </span>{' '}
+                          UID khớp
+                        </span>
+                        {missingUids.length > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/40 text-[10px] font-bold">
+                            ⚠️ {missingUids.length} UID không tìm thấy
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center flex-wrap gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="px-2.5 py-1 bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 hover:text-white rounded border border-emerald-600/50 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                        >
+                          {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          <span>{showPassword ? 'Ẩn Pass' : 'Hiện Pass'}</span>
+                        </button>
+
+                        {fullViaLinesToCopy.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleCopy(fullViaLinesToCopy.join('\n'), 'bulk-full-via')}
+                            className={`px-3 py-1 rounded font-bold text-xs flex items-center space-x-1 transition-all cursor-pointer ${
+                              copiedKey === 'bulk-full-via'
+                                ? 'bg-emerald-400 text-emerald-950 font-black shadow-xs'
+                                : 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-extrabold shadow-2xs'
+                            }`}
+                          >
+                            {copiedKey === 'bulk-full-via' ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>Đã chép {fullViaLinesToCopy.length} Full Via!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="w-3.5 h-3.5" />
+                                <span>Sao Chép Tất Cả ({fullViaLinesToCopy.length}) Full Via</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
+                      {bulkLookupResults.map((item, idx) => {
+                        if (!item.via) {
+                          return (
+                            <div
+                              key={item.uid}
+                              className="px-3 py-1.5 bg-amber-950/50 border border-amber-500/40 rounded-lg flex items-center justify-between text-[11px] text-amber-200"
+                            >
+                              <span className="font-mono font-bold">
+                                {idx + 1}. {item.uid}
+                              </span>
+                              <span>⚠️ Không tìm thấy trong hệ thống</span>
+                            </div>
+                          );
+                        }
+
+                        if (!item.authorized) {
+                          return (
+                            <div
+                              key={item.uid}
+                              className="px-3 py-1.5 bg-rose-950/60 border border-rose-500/50 rounded-lg flex items-center justify-between text-[11px] text-rose-200"
+                            >
+                              <span className="font-mono font-bold">
+                                {idx + 1}. {item.uid}
+                              </span>
+                              <span>🔒 Thuộc NV: {item.via.staffName}</span>
+                            </div>
+                          );
+                        }
+
+                        const p = parseFullVia(item.via.fullVia);
+                        const displayStr = showPassword
+                          ? item.via.fullVia || item.via.viaUid
+                          : p
+                          ? `${p.uid}|••••••••••|${p.twoFa || '••••'}${p.email ? `|${p.email}` : ''}`
+                          : item.via.fullVia || item.via.viaUid;
+
+                        return (
+                          <div
+                            key={item.uid}
+                            className="px-3 py-1.5 bg-black/45 border border-emerald-600/40 rounded-lg flex flex-wrap items-center justify-between gap-2 text-[11px]"
+                          >
+                            <div className="flex items-center space-x-2 min-w-0 flex-1">
+                              <span className="text-emerald-400 font-mono font-bold shrink-0">
+                                {idx + 1}.
+                              </span>
+                              <span className="font-mono text-white font-semibold truncate select-all">
+                                {displayStr}
+                              </span>
+                              <span className="px-1.5 py-0.2 rounded bg-emerald-800/80 text-emerald-200 text-[10px] shrink-0">
+                                {item.via.staffName} ({item.via.pages.length}p)
+                              </span>
+                            </div>
+                            <div className="flex items-center space-x-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleCopy(item.via!.fullVia || item.via!.viaUid, `row-${item.uid}`)
+                                }
+                                className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[10px] cursor-pointer"
+                              >
+                                {copiedKey === `row-${item.uid}` ? '✓ Đã chép' : 'Copy Full'}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          ) : !foundVia ? (
             <div className="p-3 bg-emerald-950/80 border border-emerald-600/50 rounded-lg text-xs flex items-center space-x-2 text-amber-200">
               <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
               <span>
-                Không tìm thấy Nick Via có UID <strong>{trimmedSearch}</strong> trong hệ thống. Hãy kiểm tra lại dãy số UID.
+                Không tìm thấy Nick Via có UID <strong>{singleUidKey}</strong> trong hệ thống. Hãy kiểm tra lại dãy số UID.
               </span>
             </div>
           ) : !isAuthorized ? (
@@ -255,7 +432,7 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
                   <span>🔒 GIỚI HẠN BẢO MẬT PHÂN QUYỀN NHÂN VIÊN</span>
                 </div>
                 <p className="text-rose-200/90 text-[11px] leading-relaxed">
-                  Nick Via UID <strong>{trimmedSearch}</strong> đang được phân công cho nhân viên{' '}
+                  Nick Via UID <strong>{singleUidKey}</strong> đang được phân công cho nhân viên{' '}
                   <strong className="text-white underline">{foundVia.staffName}</strong>. Theo chính sách bảo mật,
                   bạn (<strong>{currentUser.name}</strong>) chỉ có quyền xem thông tin Full Via (UID|PASS|2FA) của các Nick Via được giao cho mình.
                 </p>

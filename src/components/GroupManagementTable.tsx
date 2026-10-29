@@ -397,21 +397,54 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   // Filtered list
   const filteredRecords = useMemo(() => {
     return scopedRecords.filter((r) => {
-      // Search filter
+      // Search filter (supports single search or bulk multi-line UID search - 1 UID per line)
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchGroup = (r.groupName || '').toLowerCase().includes(q);
-        const matchLink = (r.groupLink || '').toLowerCase().includes(q);
-        const matchUid = (r.uid || '').toLowerCase().includes(q);
-        const matchVia = (r.viaName || '').toLowerCase().includes(q);
-        const matchNote = (r.note || '').toLowerCase().includes(q);
-        const matchStaff = (r.staffName || '').toLowerCase().includes(q);
-        const matchJoinStatus = (r.joinStatus || 'Chưa').toLowerCase().includes(q);
-        const matchAdminReport = (r.adminJoinReport || '').toLowerCase().includes(q);
-        const matchInteraction = (r.interactionStatus || '').toLowerCase().includes(q);
-        const matchInteractionDate = (r.interactionDate || '').toLowerCase().includes(q);
-        if (!matchGroup && !matchLink && !matchUid && !matchVia && !matchNote && !matchStaff && !matchJoinStatus && !matchAdminReport && !matchInteraction && !matchInteractionDate) {
-          return false;
+        const rawLines = searchQuery
+          .split(/\r?\n|,|;/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+
+        const searchTokens = rawLines
+          .map((line) => {
+            const firstPart = line.split(/[|\t]/)[0]?.trim().toLowerCase() || '';
+            return {
+              fullLine: line.toLowerCase(),
+              uidToken: firstPart,
+            };
+          })
+          .filter((t) => Boolean(t.fullLine));
+
+        if (searchTokens.length > 0) {
+          const rGroup = (r.groupName || '').toLowerCase();
+          const rLink = (r.groupLink || '').toLowerCase();
+          const rUid = (r.uid || '').toLowerCase();
+          const rVia = (r.viaName || '').toLowerCase();
+          const rNote = (r.note || '').toLowerCase();
+          const rStaff = (r.staffName || '').toLowerCase();
+          const rJoin = (r.joinStatus || 'Chưa').toLowerCase();
+          const rAdminRep = (r.adminJoinReport || '').toLowerCase();
+          const rInter = (r.interactionStatus || '').toLowerCase();
+          const rInterDate = (r.interactionDate || '').toLowerCase();
+
+          const matchedAny = searchTokens.some(({ fullLine, uidToken }) => {
+            if (uidToken && rUid.includes(uidToken)) return true;
+            return (
+              rGroup.includes(fullLine) ||
+              rLink.includes(fullLine) ||
+              rUid.includes(fullLine) ||
+              rVia.includes(fullLine) ||
+              rNote.includes(fullLine) ||
+              rStaff.includes(fullLine) ||
+              rJoin.includes(fullLine) ||
+              rAdminRep.includes(fullLine) ||
+              rInter.includes(fullLine) ||
+              rInterDate.includes(fullLine)
+            );
+          });
+
+          if (!matchedAny) {
+            return false;
+          }
         }
       }
 
@@ -1830,24 +1863,37 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
         {/* ROW 4: Filter Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 pt-1">
           <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
-            {/* Search */}
-            <div className="relative min-w-[190px] max-w-xs flex-1">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Tìm nhóm, UID, tên via, link..."
+            {/* Search (Supports multi-line bulk UID paste - 1 UID per line) */}
+            <div className="relative min-w-[220px] max-w-md flex-1">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+              <textarea
+                rows={
+                  searchQuery.includes('\n')
+                    ? Math.min(searchQuery.split(/\r?\n/).filter((l) => l.trim()).length, 5)
+                    : 1
+                }
+                placeholder="Tìm nhóm, hoặc dán hàng loạt UID (mỗi UID 1 dòng)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-7 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-1 focus:ring-red-500 focus:border-red-500 transition-all placeholder:text-slate-400"
+                className="w-full pl-8 pr-16 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-1 focus:ring-red-500 focus:border-red-500 transition-all placeholder:text-slate-400 font-mono resize-y leading-snug"
+                title="Có thể dán nhiều UID cùng lúc (mỗi UID 1 dòng) để tìm kiếm hàng loạt"
               />
               {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                >
-                  ✕
-                </button>
+                <div className="absolute right-2 top-1.5 flex items-center space-x-1">
+                  {searchQuery.split(/\r?\n/).filter((l) => l.trim()).length > 1 && (
+                    <span className="px-1.5 py-0.5 bg-red-100 text-red-800 rounded text-[10px] font-extrabold font-sans">
+                      {searchQuery.split(/\r?\n/).filter((l) => l.trim()).length} UID
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="text-slate-400 hover:text-slate-600 cursor-pointer bg-white/80 rounded px-1"
+                    title="Xóa tìm kiếm"
+                  >
+                    ✕
+                  </button>
+                </div>
               )}
             </div>
 

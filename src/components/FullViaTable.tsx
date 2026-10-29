@@ -599,18 +599,48 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     }
 
     if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      list = list.filter(
-        (v) =>
-          v.uid.toLowerCase().includes(q) ||
-          v.pass.toLowerCase().includes(q) ||
-          v.twoFa.toLowerCase().includes(q) ||
-          (v.email && v.email.toLowerCase().includes(q)) ||
-          (v.rawFullVia && v.rawFullVia.toLowerCase().includes(q)) ||
-          v.staffName.toLowerCase().includes(q) ||
-          (v.adminReportStatus && v.adminReportStatus.toLowerCase().includes(q)) ||
-          (v.note && v.note.toLowerCase().includes(q))
-      );
+      const rawLines = searchQuery
+        .split(/\r?\n|,|;/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      // Extract clean UID or search token per line (supports pasting UID|Pass|2FA per line too)
+      const searchTokens = rawLines
+        .map((line) => {
+          const firstPart = line.split(/[|\t]/)[0]?.trim().toLowerCase() || '';
+          return {
+            fullLine: line.toLowerCase(),
+            uidToken: firstPart,
+          };
+        })
+        .filter((t) => Boolean(t.fullLine));
+
+      if (searchTokens.length > 0) {
+        list = list.filter((v) => {
+          const vUid = v.uid.trim().toLowerCase();
+          const vPass = v.pass.toLowerCase();
+          const vTwoFa = v.twoFa.toLowerCase();
+          const vEmail = (v.email || '').toLowerCase();
+          const vRaw = (v.rawFullVia || '').toLowerCase();
+          const vStaff = v.staffName.toLowerCase();
+          const vRep = (v.adminReportStatus || '').toLowerCase();
+          const vNote = (v.note || '').toLowerCase();
+
+          return searchTokens.some(({ fullLine, uidToken }) => {
+            if (uidToken && vUid.includes(uidToken)) return true;
+            return (
+              vUid.includes(fullLine) ||
+              vPass.includes(fullLine) ||
+              vTwoFa.includes(fullLine) ||
+              vEmail.includes(fullLine) ||
+              vRaw.includes(fullLine) ||
+              vStaff.includes(fullLine) ||
+              vRep.includes(fullLine) ||
+              vNote.includes(fullLine)
+            );
+          });
+        });
+      }
     }
 
     return list;
@@ -2863,24 +2893,37 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       {/* Unified Filter Toolbar */}
       <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs">
         <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
-          {/* Search Input */}
-          <div className="relative min-w-[200px] max-w-xs">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Tìm UID, Mật khẩu, 2FA, NV, Ghi chú..."
+          {/* Search Input (Supports Bulk Multi-line UID Search - 1 UID per line) */}
+          <div className="relative min-w-[230px] sm:min-w-[280px] max-w-md flex-1">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
+            <textarea
+              rows={
+                searchQuery.includes('\n')
+                  ? Math.min(searchQuery.split(/\r?\n/).filter((l) => l.trim()).length, 5)
+                  : 1
+              }
+              placeholder="Tìm 1 hoặc dán hàng loạt UID (mỗi UID 1 dòng), Pass, 2FA, NV..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-7 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              className="w-full pl-8 pr-16 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono resize-y leading-snug"
+              title="Có thể dán nhiều UID cùng lúc (mỗi UID 1 dòng) để lọc hàng loạt"
             />
             {searchQuery && (
-              <button
-                type="button"
-                onClick={() => setSearchQuery('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              <div className="absolute right-1.5 top-1.5 flex items-center space-x-1">
+                {searchQuery.split(/\r?\n/).filter((l) => l.trim()).length > 1 && (
+                  <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-[10px] font-extrabold font-sans">
+                    {searchQuery.split(/\r?\n/).filter((l) => l.trim()).length} UID
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer bg-white/90 rounded"
+                  title="Xóa tìm kiếm"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             )}
           </div>
 

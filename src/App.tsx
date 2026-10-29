@@ -1101,16 +1101,45 @@ export default function App() {
   // Filtered records based on active filters
   const filteredRecords = useMemo(() => {
     return userScopedRecords.filter((r) => {
-      if (filter.search) {
-        const query = filter.search.toLowerCase();
-        const matchPage = r.pageName.toLowerCase().includes(query);
-        const matchVia = r.viaUid.toLowerCase().includes(query);
-        const matchFull = (r.fullVia || '').toLowerCase().includes(query);
-        const matchStaff = r.staffName.toLowerCase().includes(query);
-        const matchNote = getCleanBmName(r.bmNote).toLowerCase().includes(query);
-        const matchTransfer = (r.viaTransferNote || '').toLowerCase().includes(query);
-        if (!matchPage && !matchVia && !matchFull && !matchStaff && !matchNote && !matchTransfer) {
-          return false;
+      if (filter.search && filter.search.trim()) {
+        const rawLines = filter.search
+          .split(/\r?\n|,|;/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+
+        const searchTokens = rawLines
+          .map((line) => {
+            const firstPart = line.split(/[|\t]/)[0]?.trim().toLowerCase() || '';
+            return {
+              fullLine: line.toLowerCase(),
+              uidToken: firstPart,
+            };
+          })
+          .filter((t) => Boolean(t.fullLine));
+
+        if (searchTokens.length > 0) {
+          const rPage = r.pageName.toLowerCase();
+          const rVia = r.viaUid.toLowerCase();
+          const rFull = (r.fullVia || '').toLowerCase();
+          const rStaff = r.staffName.toLowerCase();
+          const rNote = getCleanBmName(r.bmNote).toLowerCase();
+          const rTransfer = (r.viaTransferNote || '').toLowerCase();
+
+          const matchedAny = searchTokens.some(({ fullLine, uidToken }) => {
+            if (uidToken && rVia.includes(uidToken)) return true;
+            return (
+              rPage.includes(fullLine) ||
+              rVia.includes(fullLine) ||
+              rFull.includes(fullLine) ||
+              rStaff.includes(fullLine) ||
+              rNote.includes(fullLine) ||
+              rTransfer.includes(fullLine)
+            );
+          });
+
+          if (!matchedAny) {
+            return false;
+          }
         }
       }
 
