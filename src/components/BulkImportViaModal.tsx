@@ -66,7 +66,9 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
       (currentUser?.role === 'staff' ? currentUser.name : availableStaffNames[0] || 'Anh Quỳnh')
   );
   const [batchNote, setBatchNote] = useState('');
-  const [pageStatusOption, setPageStatusOption] = useState<'none' | 'has_page' | 'admin_added_page' | 'pending_page'>('none');
+  const [pageStatusOption, setPageStatusOption] = useState<
+    'none' | 'has_page' | 'admin_added_page' | 'pending_page' | 'admin_added_group' | 'has_group'
+  >('none');
   const [overwriteDuplicates, setOverwriteDuplicates] = useState(true); // Default to supplement/update existing UIDs with 2FA|Mail|Pass
   const [assignmentMode, setAssignmentMode] = useState<'single' | 'round_robin' | 'auto_detect'>('auto_detect');
   const [previewFilter, setPreviewFilter] = useState<'all' | 'new' | 'duplicate' | 'invalid'>('all');
@@ -323,22 +325,53 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
         assignedStaff = staffPool[index % staffPool.length];
       }
 
+      const noteLower = batchNote.toLowerCase();
+      const isAdminAddedGroup =
+        pageStatusOption === 'admin_added_group' ||
+        noteLower.includes('thêm mới để thêm group') ||
+        noteLower.includes('admin đã thêm group') ||
+        noteLower.includes('admin thêm group') ||
+        noteLower.includes('cần thêm group') ||
+        noteLower.includes('cần join group');
+
+      const isMarkedHasGroup =
+        !isAdminAddedGroup &&
+        (pageStatusOption === 'has_group' ||
+          noteLower.includes('có group từ đầu') ||
+          noteLower.includes('đã có group'));
+
       const isAdminAddedPage =
-        pageStatusOption === 'admin_added_page' ||
-        pageStatusOption === 'pending_page' ||
-        batchNote.toLowerCase().includes('admin đã thêm page') ||
-        batchNote.toLowerCase().includes('admin thêm page') ||
-        batchNote.toLowerCase().includes('cần gán page');
+        !isAdminAddedGroup &&
+        !isMarkedHasGroup &&
+        (pageStatusOption === 'admin_added_page' ||
+          pageStatusOption === 'pending_page' ||
+          noteLower.includes('admin đã thêm page') ||
+          noteLower.includes('admin thêm page') ||
+          noteLower.includes('cần gán page'));
 
       const isMarkedHasPage =
         !isAdminAddedPage &&
+        !isAdminAddedGroup &&
+        !isMarkedHasGroup &&
         (pageStatusOption === 'has_page' ||
-          batchNote.toLowerCase().includes('có page từ đầu') ||
-          batchNote.toLowerCase().includes('đã có page'));
+          noteLower.includes('có page từ đầu') ||
+          noteLower.includes('đã có page'));
+
+      const isPendingAssign = isAdminAddedPage || isAdminAddedGroup;
+      const isUpdatedAssign = isMarkedHasPage || isMarkedHasGroup;
 
       const finalNote = batchNote
         ? `${batchNote}${row.extra ? ` - ${row.extra}` : ''}`
-        : row.extra || (isAdminAddedPage ? 'Admin đã thêm page' : isMarkedHasPage ? 'Có page từ đầu' : 'Nhập hàng loạt');
+        : row.extra ||
+          (isAdminAddedGroup
+            ? 'Thêm mới để thêm Group'
+            : isMarkedHasGroup
+            ? 'Có Group từ đầu'
+            : isAdminAddedPage
+            ? 'Admin đã thêm page'
+            : isMarkedHasPage
+            ? 'Có page từ đầu'
+            : 'Nhập hàng loạt');
 
       const item: FullViaItem = {
         id: `via-imported-${Date.now()}-${index}-${Math.random().toString(36).substring(2, 6)}`,
@@ -354,10 +387,10 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
         adminReportStatus: 'None',
         createdAt: new Date().toLocaleDateString('vi-VN'),
         rawFullVia: buildFullViaString(row.uid, row.pass, row.twoFa, row.email, row.emailPass, row.extra),
-        pageUpdateStatus: isAdminAddedPage ? 'pending' : isMarkedHasPage ? 'updated' : 'none',
-        hasAdminAssignedPage: isAdminAddedPage,
-        pageAssignedAt: isAdminAddedPage ? new Date().toLocaleDateString('vi-VN') : undefined,
-        pageUpdatedAt: isMarkedHasPage ? new Date().toLocaleDateString('vi-VN') : undefined,
+        pageUpdateStatus: isPendingAssign ? 'pending' : isUpdatedAssign ? 'updated' : 'none',
+        hasAdminAssignedPage: isPendingAssign,
+        pageAssignedAt: isPendingAssign ? new Date().toLocaleDateString('vi-VN') : undefined,
+        pageUpdatedAt: isUpdatedAssign ? new Date().toLocaleDateString('vi-VN') : undefined,
       };
 
       newItems.push(item);
@@ -680,16 +713,26 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                 </div>
                 <input
                   type="text"
-                  placeholder="VD: Admin đã thêm page, Có page từ đầu, Lô Via Ngoại..."
+                  placeholder="VD: Thêm mới để thêm Group, Admin đã thêm Group, Admin đã thêm page..."
                   value={batchNote}
                   onChange={(e) => {
                     const val = e.target.value;
+                    const lower = val.toLowerCase();
                     setBatchNote(val);
-                    if (val.toLowerCase().includes('admin đã thêm page') || val.toLowerCase().includes('admin thêm page')) {
+                    if (
+                      lower.includes('thêm mới để thêm group') ||
+                      lower.includes('admin đã thêm group') ||
+                      lower.includes('admin thêm group') ||
+                      lower.includes('cần thêm group')
+                    ) {
+                      setPageStatusOption('admin_added_group');
+                    } else if (lower.includes('có group từ đầu') || lower.includes('đã có group')) {
+                      setPageStatusOption('has_group');
+                    } else if (lower.includes('admin đã thêm page') || lower.includes('admin thêm page')) {
                       setPageStatusOption('admin_added_page');
-                    } else if (val.toLowerCase().includes('có page từ đầu') || val.toLowerCase().includes('đã có page')) {
+                    } else if (lower.includes('có page từ đầu') || lower.includes('đã có page')) {
                       setPageStatusOption('has_page');
-                    } else if (val.toLowerCase().includes('cần gán page')) {
+                    } else if (lower.includes('cần gán page')) {
                       setPageStatusOption('admin_added_page');
                     }
                   }}
@@ -697,123 +740,309 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                 />
               </div>
 
-              {/* CÁC NÚT CHỌN NHANH GHI CHÚ: MÀU ĐỎ (ADMIN ĐÃ THÊM PAGE) & MÀU XANH (CÓ PAGE TỪ ĐẦU) */}
-              <div>
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                  Chọn Nhanh Ghi Chú:
-                </span>
-                <div className="flex flex-wrap gap-1">
-                  {/* NÚT CHỌN "ADMIN ĐÃ THÊM PAGE" - MÀU ĐỎ ĐỂ NHÂN VIÊN BIẾT */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const isSelected =
+              {/* CÁC NÚT CHỌN NHANH GHI CHÚ: CHỌN THÊM PAGE & CHỌN THÊM MỚI ĐỂ THÊM GROUP */}
+              <div className="space-y-1.5">
+                {/* NHÓM 1: GHI CHÚ THÊM PAGE */}
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                    Chọn Nhanh Ghi Chú — Phần Thêm Page:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {/* NÚT CHỌN "ADMIN ĐÃ THÊM PAGE" - MÀU ĐỎ ĐỂ NHÂN VIÊN BIẾT */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSelected =
+                          pageStatusOption === 'admin_added_page' ||
+                          batchNote.toLowerCase().includes('admin đã thêm page');
+                        if (isSelected) {
+                          setPageStatusOption('none');
+                          setBatchNote((prev) =>
+                            prev.replace(/(\s*-\s*)?Admin đã thêm page/gi, '').trim()
+                          );
+                        } else {
+                          setPageStatusOption('admin_added_page');
+                          setBatchNote((prev) => {
+                            const cleaned = prev
+                              .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Đã có page/gi, '')
+                              .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                              .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Cần thêm Group/gi, '')
+                              .trim();
+                            return cleaned ? `${cleaned} - Admin đã thêm page` : 'Admin đã thêm page';
+                          });
+                        }
+                      }}
+                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
                         pageStatusOption === 'admin_added_page' ||
-                        batchNote.toLowerCase().includes('admin đã thêm page');
-                      if (isSelected) {
-                        setPageStatusOption('none');
-                        setBatchNote((prev) =>
-                          prev.replace(/(\s*-\s*)?Admin đã thêm page/gi, '').trim()
-                        );
-                      } else {
-                        setPageStatusOption('admin_added_page');
-                        setBatchNote((prev) => {
-                          const cleaned = prev
-                            .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
-                            .replace(/(\s*-\s*)?Đã có page/gi, '')
-                            .replace(/(\s*-\s*)?Cần gán page/gi, '')
-                            .trim();
-                          return cleaned ? `${cleaned} - Admin đã thêm page` : 'Admin đã thêm page';
-                        });
-                      }
-                    }}
-                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
-                      pageStatusOption === 'admin_added_page' ||
-                      batchNote.toLowerCase().includes('admin đã thêm page')
-                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-400/30'
-                        : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
-                    }`}
-                    title="Admin đã thêm page để nhân viên biết (MÀU ĐỎ)"
-                  >
-                    <span>🔴 Admin đã thêm page</span>
-                  </button>
+                        batchNote.toLowerCase().includes('admin đã thêm page')
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs ring-2 ring-rose-400/30'
+                          : 'bg-rose-50 text-rose-800 border-rose-300 hover:bg-rose-100'
+                      }`}
+                      title="Admin đã thêm page để nhân viên biết (MÀU ĐỎ)"
+                    >
+                      <span>🔴 Admin đã thêm page</span>
+                    </button>
 
-                  {/* NÚT CHỌN "CÓ PAGE TỪ ĐẦU" - MÀU XANH */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const isSelected =
+                    {/* NÚT CHỌN "CÓ PAGE TỪ ĐẦU" - MÀU XANH */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSelected =
+                          pageStatusOption === 'has_page' ||
+                          batchNote.toLowerCase().includes('có page từ đầu') ||
+                          batchNote.toLowerCase().includes('đã có page');
+                        if (isSelected) {
+                          setPageStatusOption('none');
+                          setBatchNote((prev) =>
+                            prev
+                              .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Đã có page/gi, '')
+                              .trim()
+                          );
+                        } else {
+                          setPageStatusOption('has_page');
+                          setBatchNote((prev) => {
+                            const cleaned = prev
+                              .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                              .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                              .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Cần thêm Group/gi, '')
+                              .trim();
+                            return cleaned ? `${cleaned} - Có page từ đầu` : 'Có page từ đầu';
+                          });
+                        }
+                      }}
+                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
                         pageStatusOption === 'has_page' ||
                         batchNote.toLowerCase().includes('có page từ đầu') ||
-                        batchNote.toLowerCase().includes('đã có page');
-                      if (isSelected) {
-                        setPageStatusOption('none');
-                        setBatchNote((prev) =>
-                          prev
-                            .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
-                            .replace(/(\s*-\s*)?Đã có page/gi, '')
-                            .trim()
-                        );
-                      } else {
-                        setPageStatusOption('has_page');
-                        setBatchNote((prev) => {
-                          const cleaned = prev
-                            .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
-                            .replace(/(\s*-\s*)?Cần gán page/gi, '')
-                            .trim();
-                          return cleaned ? `${cleaned} - Có page từ đầu` : 'Có page từ đầu';
-                        });
-                      }
-                    }}
-                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
-                      pageStatusOption === 'has_page' ||
-                      batchNote.toLowerCase().includes('có page từ đầu') ||
-                      batchNote.toLowerCase().includes('đã có page')
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/30'
-                        : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                    }`}
-                    title="Nick có page từ đầu (MÀU XANH)"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>🟢 Có page từ đầu</span>
-                  </button>
+                        batchNote.toLowerCase().includes('đã có page')
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs ring-2 ring-emerald-500/30'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                      }`}
+                      title="Nick có page từ đầu (MÀU XANH)"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>🟢 Có page từ đầu</span>
+                    </button>
 
-                  {/* Nút Cần Gán Page */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const isSelected =
+                    {/* Nút Cần Gán Page */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSelected =
+                          pageStatusOption === 'pending_page' ||
+                          batchNote.toLowerCase().includes('cần gán page');
+                        if (isSelected) {
+                          setPageStatusOption('none');
+                          setBatchNote((prev) =>
+                            prev.replace(/(\s*-\s*)?Cần gán page/gi, '').trim()
+                          );
+                        } else {
+                          setPageStatusOption('admin_added_page');
+                          setBatchNote((prev) => {
+                            const cleaned = prev
+                              .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                              .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Đã có page/gi, '')
+                              .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Cần thêm Group/gi, '')
+                              .trim();
+                            return cleaned ? `${cleaned} - Cần gán page` : 'Cần gán page';
+                          });
+                        }
+                      }}
+                      className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
                         pageStatusOption === 'pending_page' ||
-                        batchNote.toLowerCase().includes('cần gán page');
-                      if (isSelected) {
-                        setPageStatusOption('none');
-                        setBatchNote((prev) =>
-                          prev.replace(/(\s*-\s*)?Cần gán page/gi, '').trim()
-                        );
-                      } else {
-                        setPageStatusOption('admin_added_page');
-                        setBatchNote((prev) => {
-                          const cleaned = prev
-                            .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
-                            .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
-                            .replace(/(\s*-\s*)?Đã có page/gi, '')
-                            .trim();
-                          return cleaned ? `${cleaned} - Cần gán page` : 'Cần gán page';
-                        });
-                      }
-                    }}
-                    className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
-                      pageStatusOption === 'pending_page' ||
-                      batchNote.toLowerCase().includes('cần gán page')
-                        ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
-                        : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
-                    }`}
-                    title="Báo động đỏ: Cần nhân viên gán Page"
-                  >
-                    <span>🔴 Cần gán page</span>
-                  </button>
+                        batchNote.toLowerCase().includes('cần gán page')
+                          ? 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                          : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                      }`}
+                      title="Báo động đỏ: Cần nhân viên gán Page"
+                    >
+                      <span>🔴 Cần gán page</span>
+                    </button>
+                  </div>
+                </div>
 
-                  {/* Nút Lô Via Ngoại */}
+                {/* NHÓM 2: GHI CHÚ CHO PHẦN THÊM MỚI ĐỂ THÊM GROUP */}
+                <div className="p-2 rounded-lg bg-purple-50/70 border border-purple-200">
+                  <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wider block mb-1">
+                    🟣 Chọn Nhanh Ghi Chú — Phần Thêm Mới Để Thêm Group:
+                  </span>
+                  <div className="flex flex-wrap gap-1">
+                    {/* Nút 1: Thêm mới để thêm Group */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSelected = batchNote
+                          .toLowerCase()
+                          .includes('thêm mới để thêm group');
+                        if (isSelected) {
+                          setPageStatusOption('none');
+                          setBatchNote((prev) =>
+                            prev.replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '').trim()
+                          );
+                        } else {
+                          setPageStatusOption('admin_added_group');
+                          setBatchNote((prev) => {
+                            const cleaned = prev
+                              .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                              .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Đã có page/gi, '')
+                              .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                              .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Cần thêm Group/gi, '')
+                              .trim();
+                            return cleaned
+                              ? `${cleaned} - Thêm mới để thêm Group`
+                              : 'Thêm mới để thêm Group';
+                          });
+                        }
+                      }}
+                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                        batchNote.toLowerCase().includes('thêm mới để thêm group')
+                          ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-400/30'
+                          : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
+                      }`}
+                      title="Ghi chú nick thêm mới dùng để thêm Group / làm Group"
+                    >
+                      <span>🟣 Thêm mới để thêm Group</span>
+                    </button>
+
+                    {/* Nút 2: Admin đã thêm Group */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSelected = batchNote
+                          .toLowerCase()
+                          .includes('admin đã thêm group');
+                        if (isSelected) {
+                          setPageStatusOption('none');
+                          setBatchNote((prev) =>
+                            prev.replace(/(\s*-\s*)?Admin đã thêm Group/gi, '').trim()
+                          );
+                        } else {
+                          setPageStatusOption('admin_added_group');
+                          setBatchNote((prev) => {
+                            const cleaned = prev
+                              .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                              .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Đã có page/gi, '')
+                              .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                              .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Cần thêm Group/gi, '')
+                              .trim();
+                            return cleaned
+                              ? `${cleaned} - Admin đã thêm Group`
+                              : 'Admin đã thêm Group';
+                          });
+                        }
+                      }}
+                      className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-black transition-all cursor-pointer border ${
+                        batchNote.toLowerCase().includes('admin đã thêm group')
+                          ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-400/30'
+                          : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
+                      }`}
+                      title="Admin đã thêm Group cho nhân viên biết"
+                    >
+                      <span>🟣 Admin đã thêm Group</span>
+                    </button>
+
+                    {/* Nút 3: Có Group từ đầu */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSelected =
+                          pageStatusOption === 'has_group' ||
+                          batchNote.toLowerCase().includes('có group từ đầu');
+                        if (isSelected) {
+                          setPageStatusOption('none');
+                          setBatchNote((prev) =>
+                            prev.replace(/(\s*-\s*)?Có Group từ đầu/gi, '').trim()
+                          );
+                        } else {
+                          setPageStatusOption('has_group');
+                          setBatchNote((prev) => {
+                            const cleaned = prev
+                              .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                              .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Đã có page/gi, '')
+                              .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                              .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Cần thêm Group/gi, '')
+                              .trim();
+                            return cleaned
+                              ? `${cleaned} - Có Group từ đầu`
+                              : 'Có Group từ đầu';
+                          });
+                        }
+                      }}
+                      className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                        pageStatusOption === 'has_group' ||
+                        batchNote.toLowerCase().includes('có group từ đầu')
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                          : 'bg-white text-indigo-800 border-indigo-300 hover:bg-indigo-100'
+                      }`}
+                      title="Nick đã có sẵn Group từ đầu"
+                    >
+                      <span>🔵 Có Group từ đầu</span>
+                    </button>
+
+                    {/* Nút 4: Cần thêm Group */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSelected = batchNote
+                          .toLowerCase()
+                          .includes('cần thêm group');
+                        if (isSelected) {
+                          setPageStatusOption('none');
+                          setBatchNote((prev) =>
+                            prev.replace(/(\s*-\s*)?Cần thêm Group/gi, '').trim()
+                          );
+                        } else {
+                          setPageStatusOption('admin_added_group');
+                          setBatchNote((prev) => {
+                            const cleaned = prev
+                              .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                              .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Đã có page/gi, '')
+                              .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                              .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                              .trim();
+                            return cleaned
+                              ? `${cleaned} - Cần thêm Group`
+                              : 'Cần thêm Group';
+                          });
+                        }
+                      }}
+                      className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                        batchNote.toLowerCase().includes('cần thêm group')
+                          ? 'bg-amber-600 text-white border-amber-700 shadow-xs'
+                          : 'bg-white text-amber-800 border-amber-300 hover:bg-amber-100'
+                      }`}
+                      title="Nick cần Join / Thêm Group"
+                    >
+                      <span>🟠 Cần thêm Group</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* NHÓM 3: TAG KHÁC */}
+                <div className="flex flex-wrap gap-1 pt-0.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -826,7 +1055,6 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                     Via Ngoại
                   </button>
 
-                  {/* Nút BM 2K5 */}
                   <button
                     type="button"
                     onClick={() => {
@@ -837,7 +1065,6 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                     BM 2K5
                   </button>
 
-                  {/* Nút Ngâm */}
                   <button
                     type="button"
                     onClick={() => {
@@ -850,12 +1077,12 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                 </div>
               </div>
 
-              {/* TÙY CHỌN TRẠNG THÁI PAGE KÈM THEO (BẢNG 4) */}
+              {/* TÙY CHỌN TRẠNG THÁI PAGE / GROUP KÈM THEO (BẢNG 4) */}
               <div className="pt-1.5 border-t border-slate-200/80">
                 <label className="text-[11px] font-bold text-slate-700 block mb-1">
-                  Trạng Thái Cột Page (Bảng 4):
+                  Trạng Thái Cột Page / Group (Bảng 4):
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                   {/* LỰA CHỌN 1: ADMIN ĐÃ THÊM PAGE (MÀU ĐỎ NHÉ - ĐỂ NHÂN VIÊN BIẾT) */}
                   <label
                     className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
@@ -878,7 +1105,14 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       }
                       onChange={() => {
                         setPageStatusOption('admin_added_page');
-                        if (!batchNote || batchNote === 'Có page từ đầu' || batchNote === 'Đã có page') {
+                        if (
+                          !batchNote ||
+                          batchNote === 'Có page từ đầu' ||
+                          batchNote === 'Đã có page' ||
+                          batchNote === 'Thêm mới để thêm Group' ||
+                          batchNote === 'Admin đã thêm Group' ||
+                          batchNote === 'Có Group từ đầu'
+                        ) {
                           setBatchNote('Admin đã thêm page');
                         }
                       }}
@@ -914,7 +1148,14 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       }
                       onChange={() => {
                         setPageStatusOption('has_page');
-                        if (!batchNote || batchNote === 'Admin đã thêm page' || batchNote === 'Cần gán page') {
+                        if (
+                          !batchNote ||
+                          batchNote === 'Admin đã thêm page' ||
+                          batchNote === 'Cần gán page' ||
+                          batchNote === 'Thêm mới để thêm Group' ||
+                          batchNote === 'Admin đã thêm Group' ||
+                          batchNote === 'Có Group từ đầu'
+                        ) {
                           setBatchNote('Có page từ đầu');
                         }
                       }}
@@ -926,14 +1167,56 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                     </div>
                   </label>
 
-                  {/* LỰA CHỌN 3: CHƯA CÓ PAGE */}
+                  {/* LỰA CHỌN 3: THÊM MỚI ĐỂ THÊM GROUP / ADMIN ĐÃ THÊM GROUP */}
+                  <label
+                    className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                      pageStatusOption === 'admin_added_group' ||
+                      batchNote.toLowerCase().includes('thêm mới để thêm group') ||
+                      batchNote.toLowerCase().includes('admin đã thêm group') ||
+                      batchNote.toLowerCase().includes('cần thêm group')
+                        ? 'bg-purple-50 border-purple-400 font-bold text-purple-950 shadow-2xs ring-1 ring-purple-300'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-purple-50/50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pageStatusRadio"
+                      checked={
+                        pageStatusOption === 'admin_added_group' ||
+                        batchNote.toLowerCase().includes('thêm mới để thêm group') ||
+                        batchNote.toLowerCase().includes('admin đã thêm group') ||
+                        batchNote.toLowerCase().includes('cần thêm group')
+                      }
+                      onChange={() => {
+                        setPageStatusOption('admin_added_group');
+                        if (
+                          !batchNote ||
+                          batchNote === 'Admin đã thêm page' ||
+                          batchNote === 'Có page từ đầu' ||
+                          batchNote === 'Đã có page' ||
+                          batchNote === 'Cần gán page' ||
+                          batchNote === 'Có Group từ đầu'
+                        ) {
+                          setBatchNote('Thêm mới để thêm Group');
+                        }
+                      }}
+                      className="w-3.5 h-3.5 text-purple-600 focus:ring-purple-500 cursor-pointer shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="truncate block font-bold text-purple-700">🟣 Thêm mới để thêm Group</span>
+                      <span className="text-[10px] text-purple-600 font-medium block">Ghi chú thêm Group cho NV</span>
+                    </div>
+                  </label>
+
+                  {/* LỰA CHỌN 4: CHƯA CÓ PAGE / GROUP */}
                   <label
                     className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
                       pageStatusOption === 'none' &&
                       !batchNote.toLowerCase().includes('admin đã thêm page') &&
                       !batchNote.toLowerCase().includes('có page từ đầu') &&
                       !batchNote.toLowerCase().includes('đã có page') &&
-                      !batchNote.toLowerCase().includes('cần gán page')
+                      !batchNote.toLowerCase().includes('cần gán page') &&
+                      !batchNote.toLowerCase().includes('group')
                         ? 'bg-slate-100 border-slate-400 font-bold text-slate-900 shadow-2xs'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                     }`}
@@ -946,7 +1229,8 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                         !batchNote.toLowerCase().includes('admin đã thêm page') &&
                         !batchNote.toLowerCase().includes('có page từ đầu') &&
                         !batchNote.toLowerCase().includes('đã có page') &&
-                        !batchNote.toLowerCase().includes('cần gán page')
+                        !batchNote.toLowerCase().includes('cần gán page') &&
+                        !batchNote.toLowerCase().includes('group')
                       }
                       onChange={() => {
                         setPageStatusOption('none');
@@ -954,7 +1238,11 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                           batchNote === 'Admin đã thêm page' ||
                           batchNote === 'Có page từ đầu' ||
                           batchNote === 'Đã có page' ||
-                          batchNote === 'Cần gán page'
+                          batchNote === 'Cần gán page' ||
+                          batchNote === 'Thêm mới để thêm Group' ||
+                          batchNote === 'Admin đã thêm Group' ||
+                          batchNote === 'Có Group từ đầu' ||
+                          batchNote === 'Cần thêm Group'
                         ) {
                           setBatchNote('');
                         }
@@ -962,8 +1250,8 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       className="w-3.5 h-3.5 text-slate-600 focus:ring-slate-500 cursor-pointer shrink-0"
                     />
                     <div className="min-w-0">
-                      <span className="truncate block font-semibold text-slate-700">⚪ Chưa có page</span>
-                      <span className="text-[10px] text-slate-400 font-normal block">Chưa gán page</span>
+                      <span className="truncate block font-semibold text-slate-700">⚪ Chưa có Page / Group</span>
+                      <span className="text-[10px] text-slate-400 font-normal block">Nick trống chưa gán</span>
                     </div>
                   </label>
                 </div>
@@ -1110,7 +1398,7 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       <th className="py-2 px-3 min-w-[120px]">Mật Khẩu (PASS)</th>
                       <th className="py-2 px-3 min-w-[140px]">Mã 2FA</th>
                       <th className="py-2 px-3 min-w-[120px]">Gán Cho NV</th>
-                      <th className="py-2 px-3 min-w-[120px]">Trạng Thái Page</th>
+                      <th className="py-2 px-3 min-w-[140px]">Trạng Thái Page / Group</th>
                       <th className="py-2 px-3 min-w-[160px]">Kiểm Tra Trùng / Trạng Thái</th>
                     </tr>
                   </thead>
@@ -1167,19 +1455,34 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                             </div>
                           </td>
                           <td className="py-2 px-3">
-                            {pageStatusOption === 'has_page' ||
-                            batchNote.toLowerCase().includes('đã có page') ? (
+                            {pageStatusOption === 'admin_added_group' ||
+                            batchNote.toLowerCase().includes('thêm mới để thêm group') ||
+                            batchNote.toLowerCase().includes('admin đã thêm group') ||
+                            batchNote.toLowerCase().includes('cần thêm group') ? (
+                              <span className="px-2 py-0.5 bg-purple-100 text-purple-900 font-extrabold rounded-md text-[10px] inline-flex items-center gap-1 border border-purple-300">
+                                <span>🟣 Thêm Group</span>
+                              </span>
+                            ) : pageStatusOption === 'has_group' ||
+                              batchNote.toLowerCase().includes('có group từ đầu') ? (
+                              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 font-extrabold rounded-md text-[10px] inline-flex items-center gap-1 border border-indigo-300">
+                                <span>🔵 Có Group từ đầu</span>
+                              </span>
+                            ) : pageStatusOption === 'has_page' ||
+                              batchNote.toLowerCase().includes('đã có page') ||
+                              batchNote.toLowerCase().includes('có page từ đầu') ? (
                               <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-extrabold rounded-md text-[10px] inline-flex items-center gap-1 border border-emerald-300">
                                 <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
                                 <span>📗 Đã có page</span>
                               </span>
-                            ) : pageStatusOption === 'pending_page' ||
+                            ) : pageStatusOption === 'admin_added_page' ||
+                              pageStatusOption === 'pending_page' ||
+                              batchNote.toLowerCase().includes('admin đã thêm page') ||
                               batchNote.toLowerCase().includes('cần gán page') ? (
                               <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-extrabold rounded-md text-[10px] inline-flex items-center gap-1 border border-rose-300 animate-pulse">
-                                <span>🔴 Cần gán page</span>
+                                <span>🔴 Admin thêm page</span>
                               </span>
                             ) : (
-                              <span className="text-[10px] text-slate-400">⚪ Chưa có page</span>
+                              <span className="text-[10px] text-slate-400">⚪ Chưa có Page/Group</span>
                             )}
                           </td>
                           <td className="py-2 px-3">

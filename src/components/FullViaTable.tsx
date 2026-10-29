@@ -3703,76 +3703,291 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 </span>
               </label>
 
-              {/* Cập nhật trạng thái Page của Via (🔴 Đỏ: Admin đã thêm Page để NV biết -> 🟢 Xanh: Có page từ đầu) */}
+              {/* Cập nhật trạng thái Page / Group của Via */}
               <div className="p-3 rounded-xl border border-slate-300 bg-slate-50 space-y-2">
                 <div className="flex items-center justify-between">
                   <label className="font-bold text-slate-800 text-xs flex items-center space-x-1.5">
                     <Layers className="w-4 h-4 text-indigo-600" />
-                    <span>Trạng Thái Cập Nhật Page Của Nick:</span>
+                    <span>Trạng Thái Cập Nhật Page / Group Của Nick:</span>
                   </label>
                   <span className="text-[11px] font-semibold text-slate-500">
-                    {modalForm.pageUpdateStatus === 'pending'
+                    {modalForm.note?.toLowerCase().includes('group')
+                      ? '🟣 Thêm mới để thêm Group'
+                      : modalForm.pageUpdateStatus === 'pending'
                       ? '🔴 Admin đã thêm Page (Màu đỏ)'
                       : modalForm.pageUpdateStatus === 'updated'
                       ? '🟢 Có page từ đầu (Màu xanh)'
-                      : '⚪ Chưa có page (Màu trắng)'}
+                      : '⚪ Chưa có Page / Group'}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setModalForm({ ...modalForm, pageUpdateStatus: 'none' })}
+                    onClick={() => {
+                      const cleanedNote = modalForm.note
+                        .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                        .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                        .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
+                        .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
+                        .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                        .trim();
+                      setModalForm({ ...modalForm, pageUpdateStatus: 'none', note: cleanedNote });
+                    }}
                     className={`p-2 rounded-lg border text-center transition-all cursor-pointer font-bold text-[11px] ${
-                      modalForm.pageUpdateStatus === 'none'
+                      modalForm.pageUpdateStatus === 'none' &&
+                      !modalForm.note?.toLowerCase().includes('group')
                         ? 'bg-white border-slate-400 text-slate-800 shadow-2xs ring-2 ring-slate-400'
                         : 'bg-white/80 border-slate-200 text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    ⚪ Chưa có page
+                    ⚪ Chưa có Page/Group
                   </button>
                   <button
                     type="button"
-                    onClick={() => setModalForm({ ...modalForm, pageUpdateStatus: 'pending' })}
+                    onClick={() =>
+                      setModalForm({
+                        ...modalForm,
+                        pageUpdateStatus: 'pending',
+                        note:
+                          !modalForm.note ||
+                          modalForm.note === 'Có page từ đầu' ||
+                          modalForm.note === 'Thêm mới để thêm Group' ||
+                          modalForm.note === 'Admin đã thêm Group'
+                            ? 'Admin đã thêm page'
+                            : modalForm.note,
+                      })
+                    }
                     className={`p-2 rounded-lg border text-center transition-all cursor-pointer font-bold text-[11px] ${
-                      modalForm.pageUpdateStatus === 'pending'
+                      modalForm.pageUpdateStatus === 'pending' &&
+                      !modalForm.note?.toLowerCase().includes('group')
                         ? 'bg-rose-600 text-white border-rose-700 shadow-2xs ring-2 ring-rose-300'
                         : 'bg-rose-50 border-rose-300 text-rose-700 hover:bg-rose-100'
                     }`}
                     title="Chuyển sang trạng thái: Admin đã thêm Page (Màu đỏ để nhân viên biết)"
                   >
-                    🔴 Admin thêm Page (Đỏ)
+                    🔴 Admin thêm Page
                   </button>
                   <button
                     type="button"
-                    onClick={() => setModalForm({ ...modalForm, pageUpdateStatus: 'updated' })}
+                    onClick={() =>
+                      setModalForm({
+                        ...modalForm,
+                        pageUpdateStatus: 'updated',
+                        note:
+                          !modalForm.note ||
+                          modalForm.note === 'Admin đã thêm page' ||
+                          modalForm.note === 'Thêm mới để thêm Group' ||
+                          modalForm.note === 'Admin đã thêm Group'
+                            ? 'Có page từ đầu'
+                            : modalForm.note,
+                      })
+                    }
                     className={`p-2 rounded-lg border text-center transition-all cursor-pointer font-bold text-[11px] ${
-                      modalForm.pageUpdateStatus === 'updated'
+                      modalForm.pageUpdateStatus === 'updated' &&
+                      !modalForm.note?.toLowerCase().includes('group')
                         ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs ring-2 ring-emerald-300'
                         : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
                     }`}
                     title="Đánh dấu nick có page từ đầu (Màu xanh)"
                   >
-                    🟢 Có page từ đầu (Xanh)
+                    🟢 Có page từ đầu
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setModalForm({
+                        ...modalForm,
+                        pageUpdateStatus: 'pending',
+                        note:
+                          !modalForm.note ||
+                          modalForm.note === 'Admin đã thêm page' ||
+                          modalForm.note === 'Có page từ đầu'
+                            ? 'Thêm mới để thêm Group'
+                            : modalForm.note.toLowerCase().includes('group')
+                            ? modalForm.note
+                            : `${modalForm.note} - Thêm mới để thêm Group`,
+                      })
+                    }
+                    className={`p-2 rounded-lg border text-center transition-all cursor-pointer font-bold text-[11px] ${
+                      modalForm.note?.toLowerCase().includes('group')
+                        ? 'bg-purple-600 text-white border-purple-700 shadow-2xs ring-2 ring-purple-300'
+                        : 'bg-purple-50 border-purple-300 text-purple-800 hover:bg-purple-100'
+                    }`}
+                    title="Đánh dấu nick thêm mới dùng để thêm Group / làm Group"
+                  >
+                    🟣 Thêm mới để thêm Group
                   </button>
                 </div>
 
                 <p className="text-[10px] text-slate-500 italic">
-                  💡 <strong>Quy trình:</strong> <strong>🔴 Admin đã thêm Page (Màu đỏ)</strong> để nhân viên biết vào nhận việc/cập nhật. <strong>🟢 Có page từ đầu (Màu xanh)</strong> cho nick đã có sẵn page. <strong>⚪ Chưa có page</strong> cho nick trống.
+                  💡 <strong>Quy trình:</strong> Chọn <strong>🔴 Admin thêm Page</strong> hoặc <strong>🟢 Có page từ đầu</strong> cho nick làm Page, hoặc chọn <strong>🟣 Thêm mới để thêm Group</strong> cho nick thêm mới làm Group.
                 </p>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">
-                  Ghi Chú Chung Cả Via (Chung cho 2 hay 3 page chung nick này):
-                </label>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="font-bold text-slate-700 block">
+                    Ghi Chú Chung Cả Via (Chọn nhanh cho Thêm Page hoặc Thêm Group):
+                  </label>
+                  {modalForm.note && (
+                    <button
+                      type="button"
+                      onClick={() => setModalForm({ ...modalForm, note: '' })}
+                      className="text-[10px] font-bold text-slate-400 hover:text-red-600 cursor-pointer"
+                    >
+                      Xóa ghi chú
+                    </button>
+                  )}
+                </div>
+
                 <input
                   type="text"
-                  placeholder="VD: Nick via US 2019, đã thay ngày 18/09, chung cho 3 page..."
+                  placeholder="VD: Thêm mới để thêm Group, Admin đã thêm Group, Admin đã thêm page..."
                   value={modalForm.note}
                   onChange={(e) => setModalForm({ ...modalForm, note: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
                 />
+
+                {/* Chọn nhanh ghi chú cho Phần Thêm Page & Phần Thêm Mới Để Thêm Group */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                  {/* Khối 1: Chọn nhanh Ghi chú Thêm Page */}
+                  <div className="p-2 rounded-lg bg-rose-50/60 border border-rose-200 space-y-1">
+                    <span className="text-[10px] font-extrabold text-rose-900 uppercase tracking-wider block">
+                      📗 Chọn nhanh ghi chú Thêm Page:
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalForm((prev) => ({
+                            ...prev,
+                            pageUpdateStatus: 'pending',
+                            note: 'Admin đã thêm page',
+                          }))
+                        }
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                          modalForm.note.toLowerCase().includes('admin đã thêm page')
+                            ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
+                            : 'bg-white text-rose-800 border-rose-300 hover:bg-rose-100'
+                        }`}
+                      >
+                        🔴 Admin đã thêm page
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalForm((prev) => ({
+                            ...prev,
+                            pageUpdateStatus: 'updated',
+                            note: 'Có page từ đầu',
+                          }))
+                        }
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                          modalForm.note.toLowerCase().includes('có page từ đầu')
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
+                            : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                        }`}
+                      >
+                        🟢 Có page từ đầu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalForm((prev) => ({
+                            ...prev,
+                            pageUpdateStatus: 'pending',
+                            note: 'Cần gán page',
+                          }))
+                        }
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                          modalForm.note.toLowerCase().includes('cần gán page')
+                            ? 'bg-rose-600 text-white border-rose-700 shadow-2xs'
+                            : 'bg-white text-rose-800 border-rose-200 hover:bg-rose-100'
+                        }`}
+                      >
+                        🔴 Cần gán page
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Khối 2: Chọn nhanh Ghi chú Phần Thêm Mới Để Thêm Group */}
+                  <div className="p-2 rounded-lg bg-purple-50/70 border border-purple-200 space-y-1">
+                    <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wider block">
+                      🟣 Chọn nhanh ghi chú Thêm Mới Để Thêm Group:
+                    </span>
+                    <div className="flex flex-wrap gap-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalForm((prev) => ({
+                            ...prev,
+                            pageUpdateStatus: 'pending',
+                            note: 'Thêm mới để thêm Group',
+                          }))
+                        }
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                          modalForm.note.toLowerCase().includes('thêm mới để thêm group')
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
+                            : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
+                        }`}
+                      >
+                        🟣 Thêm mới để thêm Group
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalForm((prev) => ({
+                            ...prev,
+                            pageUpdateStatus: 'pending',
+                            note: 'Admin đã thêm Group',
+                          }))
+                        }
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                          modalForm.note.toLowerCase().includes('admin đã thêm group')
+                            ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
+                            : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
+                        }`}
+                      >
+                        🟣 Admin đã thêm Group
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalForm((prev) => ({
+                            ...prev,
+                            pageUpdateStatus: 'updated',
+                            note: 'Có Group từ đầu',
+                          }))
+                        }
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                          modalForm.note.toLowerCase().includes('có group từ đầu')
+                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                            : 'bg-white text-indigo-800 border-indigo-300 hover:bg-indigo-100'
+                        }`}
+                      >
+                        🔵 Có Group từ đầu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalForm((prev) => ({
+                            ...prev,
+                            pageUpdateStatus: 'pending',
+                            note: 'Cần thêm Group',
+                          }))
+                        }
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                          modalForm.note.toLowerCase().includes('cần thêm group')
+                            ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
+                            : 'bg-white text-amber-800 border-amber-300 hover:bg-amber-100'
+                        }`}
+                      >
+                        🟠 Cần thêm Group
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Action buttons */}
