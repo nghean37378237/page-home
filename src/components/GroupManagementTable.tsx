@@ -2458,7 +2458,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         )}
 
                         <span className="text-[11px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-2xs">
-                          {group.rows.length} Nick Via
+                          {groupUids.length > 0 ? `${groupUids.length} Nick Via` : 'Chờ NV thêm Via'}
                         </span>
 
                         {/* Staff display / change on group card header */}
@@ -2644,74 +2644,109 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
                               {/* UID Facebook */}
                               <td className="py-2.5 px-3">
-                                <div className="flex items-center space-x-2">
-                                  <span
-                                    onClick={() => handleCopyText(row.uid, `uid-${row.id}`, row.uid)}
-                                    className="font-mono font-bold text-indigo-700 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
-                                    title="Nhấp để copy UID"
-                                  >
-                                    {row.uid}
-                                  </span>
+                                {row.uid?.trim() ? (
+                                  <div className="flex items-center space-x-2">
+                                    <span
+                                      onClick={() => handleCopyText(row.uid, `uid-${row.id}`, row.uid)}
+                                      className="font-mono font-bold text-indigo-700 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
+                                      title="Nhấp để copy UID"
+                                    >
+                                      {row.uid}
+                                    </span>
 
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyText(row.uid, `uid-${row.id}`, row.uid)}
+                                      className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                        copiedKey === `uid-${row.id}`
+                                          ? 'bg-emerald-100 text-emerald-700'
+                                          : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                      }`}
+                                      title="Copy UID nick"
+                                    >
+                                      {copiedKey === `uid-${row.id}` ? (
+                                        <Check className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <Copy className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                  </div>
+                                ) : (
                                   <button
                                     type="button"
-                                    onClick={() => handleCopyText(row.uid, `uid-${row.id}`, row.uid)}
-                                    className={`p-1 rounded-md transition-colors cursor-pointer ${
-                                      copiedKey === `uid-${row.id}`
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                                    }`}
-                                    title="Copy UID nick"
+                                    onClick={() => {
+                                      setViaUpdateTarget({
+                                        type: 'single',
+                                        title: `Thêm Nick Via Jon vào nhóm "${row.groupName}"`,
+                                        groupName: row.groupName,
+                                        groupId: row.groupId,
+                                        count: 1,
+                                        recordIds: [row.id],
+                                        currentUid: '',
+                                        currentViaName: row.viaName || '',
+                                      });
+                                      setNewViaUidInput('');
+                                      loadExistingViaCredsForUpdate('');
+                                      setNewViaNameInput(row.viaName || '');
+                                      setNewViaJoinStatusInput('Đã Jon');
+                                      setNewViaStaffInput(row.staffName || 'keep');
+                                      setApplyToWholeGroupInViaModal(false);
+                                    }}
+                                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 border-dashed transition-colors cursor-pointer"
+                                    title="Nhấp để nhân viên điền UID Via đã Jon vào nhóm này"
                                   >
-                                    {copiedKey === `uid-${row.id}` ? (
-                                      <Check className="w-3.5 h-3.5" />
-                                    ) : (
-                                      <Copy className="w-3.5 h-3.5" />
-                                    )}
+                                    <Plus className="w-3 h-3 text-amber-600" />
+                                    <span>+ Bấm thêm Via Jon</span>
                                   </button>
-                                </div>
+                                )}
                               </td>
 
                               {/* Tên Via (Cột C) */}
                               <td className="py-2.5 px-3">
-                                <div className="flex items-center space-x-2">
-                                  <span
-                                    onClick={() =>
-                                      handleCopyText(
-                                        row.viaName || `Via ${row.uid.slice(-4)}`,
-                                        `via-${row.id}`,
-                                        row.viaName || `Via ${row.uid.slice(-4)}`
-                                      )
-                                    }
-                                    className="font-bold text-slate-800 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
-                                    title="Nhấp để copy Tên Via"
-                                  >
-                                    {row.viaName || `Via ${row.uid.slice(-4)}`}
-                                  </span>
+                                {row.viaName?.trim() || row.uid?.trim() ? (
+                                  <div className="flex items-center space-x-2">
+                                    <span
+                                      onClick={() =>
+                                        handleCopyText(
+                                          row.viaName || `Via ${row.uid.slice(-4)}`,
+                                          `via-${row.id}`,
+                                          row.viaName || `Via ${row.uid.slice(-4)}`
+                                        )
+                                      }
+                                      className="font-bold text-slate-800 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
+                                      title="Nhấp để copy Tên Via"
+                                    >
+                                      {row.viaName || `Via ${row.uid.slice(-4)}`}
+                                    </span>
 
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      handleCopyText(
-                                        row.viaName || `Via ${row.uid.slice(-4)}`,
-                                        `via-${row.id}`,
-                                        row.viaName || `Via ${row.uid.slice(-4)}`
-                                      )
-                                    }
-                                    className={`p-1 rounded-md transition-colors cursor-pointer ${
-                                      copiedKey === `via-${row.id}`
-                                        ? 'bg-emerald-100 text-emerald-700'
-                                        : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                                    }`}
-                                    title="Copy Tên Via"
-                                  >
-                                    {copiedKey === `via-${row.id}` ? (
-                                      <Check className="w-3.5 h-3.5" />
-                                    ) : (
-                                      <Copy className="w-3.5 h-3.5" />
-                                    )}
-                                  </button>
-                                </div>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        handleCopyText(
+                                          row.viaName || `Via ${row.uid.slice(-4)}`,
+                                          `via-${row.id}`,
+                                          row.viaName || `Via ${row.uid.slice(-4)}`
+                                        )
+                                      }
+                                      className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                        copiedKey === `via-${row.id}`
+                                          ? 'bg-emerald-100 text-emerald-700'
+                                          : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                                      }`}
+                                      title="Copy Tên Via"
+                                    >
+                                      {copiedKey === `via-${row.id}` ? (
+                                        <Check className="w-3.5 h-3.5" />
+                                      ) : (
+                                        <Copy className="w-3.5 h-3.5" />
+                                      )}
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-400 italic text-[11px]">
+                                    Chờ nhân viên Jon thêm Via...
+                                  </span>
+                                )}
                               </td>
 
                               {/* Cột Trạng Thái: Đã Jon, Jon chờ duyệt, Chưa */}
@@ -3088,71 +3123,106 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                       </td>
 
                       <td className="py-2.5 px-3">
-                        <div className="flex items-center space-x-1.5">
-                          <span
-                            onClick={() => handleCopyText(r.uid, `uid-${r.id}`, r.uid)}
-                            className="font-mono font-bold text-indigo-700 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
-                            title="Nhấp để copy UID"
-                          >
-                            {r.uid}
-                          </span>
+                        {r.uid?.trim() ? (
+                          <div className="flex items-center space-x-1.5">
+                            <span
+                              onClick={() => handleCopyText(r.uid, `uid-${r.id}`, r.uid)}
+                              className="font-mono font-bold text-indigo-700 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
+                              title="Nhấp để copy UID"
+                            >
+                              {r.uid}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyText(r.uid, `uid-${r.id}`, r.uid)}
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                copiedKey === `uid-${r.id}`
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              {copiedKey === `uid-${r.id}` ? (
+                                <Check className="w-3.5 h-3.5" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
                           <button
                             type="button"
-                            onClick={() => handleCopyText(r.uid, `uid-${r.id}`, r.uid)}
-                            className={`p-1 rounded-md transition-colors cursor-pointer ${
-                              copiedKey === `uid-${r.id}`
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                            }`}
+                            onClick={() => {
+                              setViaUpdateTarget({
+                                type: 'single',
+                                title: `Thêm Nick Via Jon vào nhóm "${r.groupName}"`,
+                                groupName: r.groupName,
+                                groupId: r.groupId,
+                                count: 1,
+                                recordIds: [r.id],
+                                currentUid: '',
+                                currentViaName: r.viaName || '',
+                              });
+                              setNewViaUidInput('');
+                              loadExistingViaCredsForUpdate('');
+                              setNewViaNameInput(r.viaName || '');
+                              setNewViaJoinStatusInput('Đã Jon');
+                              setNewViaStaffInput(r.staffName || 'keep');
+                              setApplyToWholeGroupInViaModal(false);
+                            }}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 border-dashed transition-colors cursor-pointer"
+                            title="Nhấp để nhân viên điền UID Via đã Jon vào nhóm này"
                           >
-                            {copiedKey === `uid-${r.id}` ? (
-                              <Check className="w-3.5 h-3.5" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
+                            <Plus className="w-3 h-3 text-amber-600" />
+                            <span>+ Bấm thêm Via Jon</span>
                           </button>
-                        </div>
+                        )}
                       </td>
 
                       {/* Tên Via (Cột C) */}
                       <td className="py-2.5 px-3">
-                        <div className="flex items-center space-x-1.5">
-                          <span
-                            onClick={() =>
-                              handleCopyText(
-                                r.viaName || `Via ${r.uid.slice(-4)}`,
-                                `via-${r.id}`,
-                                r.viaName || `Via ${r.uid.slice(-4)}`
-                              )
-                            }
-                            className="font-bold text-slate-800 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
-                            title="Nhấp để copy Tên Via"
-                          >
-                            {r.viaName || `Via ${r.uid.slice(-4)}`}
+                        {r.viaName?.trim() || r.uid?.trim() ? (
+                          <div className="flex items-center space-x-1.5">
+                            <span
+                              onClick={() =>
+                                handleCopyText(
+                                  r.viaName || `Via ${r.uid.slice(-4)}`,
+                                  `via-${r.id}`,
+                                  r.viaName || `Via ${r.uid.slice(-4)}`
+                                )
+                              }
+                              className="font-bold text-slate-800 hover:text-indigo-900 cursor-pointer hover:underline text-xs"
+                              title="Nhấp để copy Tên Via"
+                            >
+                              {r.viaName || `Via ${r.uid.slice(-4)}`}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleCopyText(
+                                  r.viaName || `Via ${r.uid.slice(-4)}`,
+                                  `via-${r.id}`,
+                                  r.viaName || `Via ${r.uid.slice(-4)}`
+                                )
+                              }
+                              className={`p-1 rounded-md transition-colors cursor-pointer ${
+                                copiedKey === `via-${r.id}`
+                                  ? 'bg-emerald-100 text-emerald-700'
+                                  : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
+                              }`}
+                              title="Copy Tên Via"
+                            >
+                              {copiedKey === `via-${r.id}` ? (
+                                <Check className="w-3.5 h-3.5" />
+                              ) : (
+                                <Copy className="w-3.5 h-3.5" />
+                              )}
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400 italic text-[11px]">
+                            Chờ nhân viên Jon thêm Via...
                           </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleCopyText(
-                                r.viaName || `Via ${r.uid.slice(-4)}`,
-                                `via-${r.id}`,
-                                r.viaName || `Via ${r.uid.slice(-4)}`
-                              )
-                            }
-                            className={`p-1 rounded-md transition-colors cursor-pointer ${
-                              copiedKey === `via-${r.id}`
-                                ? 'bg-emerald-100 text-emerald-700'
-                                : 'text-slate-400 hover:text-slate-700 hover:bg-slate-100'
-                            }`}
-                            title="Copy Tên Via"
-                          >
-                            {copiedKey === `via-${r.id}` ? (
-                              <Check className="w-3.5 h-3.5" />
-                            ) : (
-                              <Copy className="w-3.5 h-3.5" />
-                            )}
-                          </button>
-                        </div>
+                        )}
                       </td>
 
                       {/* Trạng Thái trong Flat View */}

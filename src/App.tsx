@@ -3668,12 +3668,33 @@ export default function App() {
 
   // Group Records handlers (Add, Update, Delete, Batch)
   const handleAddGroupRecord = async (record: GroupRecord) => {
+    const hasRealUid = Boolean(record.uid?.trim());
+    const targetGroupLower = (record.groupName || '').trim().toLowerCase();
+
+    // Nếu nhóm này đang có dòng trống (Admin tạo nhóm trước chưa điền Via) và nhân viên thêm Via thật vào, tự động thay thế dòng trống đó
+    const emptyPlaceholderIds = hasRealUid
+      ? groupRecords
+          .filter(
+            (g) =>
+              g.id !== record.id &&
+              !g.uid?.trim() &&
+              ((g.groupId && g.groupId === record.groupId) ||
+                (g.groupName || '').trim().toLowerCase() === targetGroupLower)
+          )
+          .map((g) => g.id)
+      : [];
+
     setGroupRecords((prev) => {
-      const next = [...prev.filter((g) => g.id !== record.id), record];
+      const removeSet = new Set([record.id, ...emptyPlaceholderIds]);
+      const next = [...prev.filter((g) => !removeSet.has(g.id)), record];
       saveLocalGroupBackup(next);
       return next;
     });
     await setCloudGroupRecord(record);
+
+    if (emptyPlaceholderIds.length > 0) {
+      batchDeleteCloudGroupRecords(emptyPlaceholderIds).catch(() => {});
+    }
 
     if (record.uid && record.note) {
       await syncGroupNoteToVia(record.uid, record.note, record.staffName, record.viaName);
@@ -3761,14 +3782,37 @@ export default function App() {
   };
 
   const handleBatchSaveGroupRecords = async (newRecords: GroupRecord[]) => {
+    const incomingIds = new Set(newRecords.map((r) => r.id));
+    const groupsWithRealUid = new Set(
+      newRecords
+        .filter((r) => r.uid?.trim())
+        .map((r) => (r.groupName || '').trim().toLowerCase())
+        .filter(Boolean)
+    );
+    const emptyPlaceholderIds =
+      groupsWithRealUid.size > 0
+        ? groupRecords
+            .filter(
+              (g) =>
+                !incomingIds.has(g.id) &&
+                !g.uid?.trim() &&
+                groupsWithRealUid.has((g.groupName || '').trim().toLowerCase())
+            )
+            .map((g) => g.id)
+        : [];
+
     setGroupRecords((prev) => {
-      const incomingMap = new Map(newRecords.map((r) => [r.id, r]));
-      const kept = prev.filter((r) => !incomingMap.has(r.id));
+      const removeSet = new Set([...Array.from(incomingIds), ...emptyPlaceholderIds]);
+      const kept = prev.filter((r) => !removeSet.has(r.id));
       const next = [...kept, ...newRecords];
       saveLocalGroupBackup(next);
       return next;
     });
     await batchSaveCloudGroupRecords(newRecords);
+
+    if (emptyPlaceholderIds.length > 0) {
+      batchDeleteCloudGroupRecords(emptyPlaceholderIds).catch(() => {});
+    }
 
     // Đồng bộ nhân viên và trạng thái ghi chú (VHH, 282, 956, Hạn Chế) sang Quản Trị Full Via
     const staffByUidLower = new Map<string, string>();

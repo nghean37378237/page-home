@@ -319,20 +319,20 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
         const cleanUid = uid.trim().replace(/[^\w]/g, '');
         const cleanViaName = viaName.trim();
 
-        if (!cleanUid) {
-          setErrorMessage('Vui lòng nhập UID nick Facebook (Cột B).');
-          setIsSubmitting(false);
-          return;
-        }
+        const effectiveJoinStatus: GroupJoinStatus = cleanUid
+          ? joinStatus
+          : initialRecord
+          ? joinStatus
+          : 'Chưa';
 
         const recordToSave: GroupRecord = {
           id: initialRecord?.id || `grp-row-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           groupId: resolvedGroupId,
           groupName: cleanGroupName,
-          groupLink: cleanGroupLink || (cleanUid ? `https://www.facebook.com/groups/` : ''),
+          groupLink: cleanGroupLink,
           uid: cleanUid,
-          viaName: cleanViaName || `Via ${cleanUid.slice(-4)}`,
-          joinStatus,
+          viaName: cleanViaName || (cleanUid ? `Via ${cleanUid.slice(-4)}` : ''),
+          joinStatus: effectiveJoinStatus,
           ...(adminJoinReport ? { adminJoinReport } : { adminJoinReport: '' }),
           interactionStatus: (interactionStatus || undefined) as any,
           interactionDate: interactionDate.trim() || (interactionStatus ? getTodayShortStr() : undefined),
@@ -344,6 +344,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
         };
 
         if (
+          cleanUid &&
           onSupplementVia &&
           (suppPass.trim() || suppTwoFa.trim() || suppEmail.trim() || suppEmailPass.trim())
         ) {
@@ -412,12 +413,12 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
               <h2 className="text-sm sm:text-base font-bold leading-tight">
                 {isEditing
                   ? 'Chỉnh Sửa Dòng Group Facebook'
-                  : presetGroup
+                  : presetGroup?.groupName
                   ? `Thêm Nick Vào Nhóm: ${presetGroup.groupName}`
-                  : 'Quản Lý Thêm Nick Vào Group Facebook'}
+                  : 'Quản Lý Thêm Group & Nick Vào Group Facebook'}
               </h2>
               <p className="text-[11px] text-red-100 mt-0.5">
-                Bố cục khoa học: 1. Nhóm FB • 2. Nick Via & Tình trạng • 3. Nhân viên phụ trách
+                Có thể tạo Nhóm trước (để trống Via) cho Nhân viên tự Jon thêm sau, hoặc thêm Via ngay
               </p>
             </div>
           </div>
@@ -547,15 +548,15 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
             {/* Section 2: Thông tin Nick Via (Single Mode vs Batch Mode) */}
             {mode === 'single' ? (
               <div className="bg-slate-50 p-3.5 sm:p-4 rounded-xl border border-slate-200 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-200/80 pb-2">
+                <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-200/80 pb-2">
                   <label className="text-xs font-extrabold text-indigo-950 uppercase tracking-wider flex items-center space-x-1.5">
                     <span className="w-5 h-5 rounded-md bg-indigo-600 text-white flex items-center justify-center text-[11px] font-black">
                       2
                     </span>
                     <span>Thông Tin Nick Facebook Cầm Group & Tình Trạng</span>
                   </label>
-                  <span className="text-[11px] text-slate-500 hidden sm:inline">
-                    Chia 2 cột khoa học: Thông tin Via (Trái) • Trạng thái & Ghi chú (Phải)
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full">
+                    💡 Không bắt buộc: Có thể để trống Via để Nhân viên nào Jon tự thêm sau
                   </span>
                 </div>
 
@@ -564,14 +565,14 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                   <div className="lg:col-span-6 space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                       <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1">
-                          UID Nick Facebook (Cột B) <span className="text-red-500">*</span>
+                        <label className="block text-xs font-semibold text-slate-700 mb-1 flex items-center justify-between">
+                          <span>UID Nick Facebook (Cột B)</span>
+                          <span className="text-[10px] font-bold text-slate-400">(Tùy chọn)</span>
                         </label>
                         <input
                           type="text"
-                          required
                           list="group-modal-via-datalist"
-                          placeholder="Nhập UID hoặc dán UID|Pass|2FA..."
+                          placeholder="Để trống nếu NV thêm sau, hoặc nhập UID..."
                           value={uid}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -594,7 +595,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                               }
                             }
                           }}
-                          className="w-full px-3 py-2 text-xs font-mono font-bold text-indigo-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                          className="w-full px-3 py-2 text-xs font-mono font-bold text-indigo-700 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white placeholder:font-sans placeholder:font-normal placeholder:text-slate-400"
                         />
                         {existingVias && existingVias.length > 0 && (
                           <datalist id="group-modal-via-datalist">
@@ -1517,9 +1518,11 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                 </span>
               ) : (
                 <span>
-                  Nhóm: <b className="text-slate-800">{groupName || '...'}</b> • UID:{' '}
-                  <b className="text-indigo-700">{uid || '...'}</b> • NV:{' '}
-                  <b className="text-blue-700">{isAdmin ? staffName || 'Anh Quỳnh' : currentUser.name}</b>
+                  Nhóm: <b className="text-slate-800">{groupName || '...'}</b> • Via:{' '}
+                  <b className={uid.trim() ? 'text-indigo-700' : 'text-emerald-700'}>
+                    {uid.trim() || 'Để NV tự thêm sau'}
+                  </b>{' '}
+                  • NV: <b className="text-blue-700">{isAdmin ? staffName || 'Anh Quỳnh' : currentUser.name}</b>
                 </span>
               )}
             </div>
@@ -1545,7 +1548,9 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                     ? 'Cập Nhật'
                     : mode === 'batch'
                     ? `Lưu ${parsedBatchItems.length} UID Vào Nhóm`
-                    : 'Lưu Vào Nhóm'}
+                    : uid.trim()
+                    ? 'Lưu Vào Nhóm'
+                    : 'Lưu Nhóm (NV Thêm Via Sau)'}
                 </span>
               </button>
             </div>
