@@ -37,10 +37,26 @@ export const GROUP_NOTE_CHOICES = [
   {
     key: '956',
     label: '956',
-    fullName: 'Checkpoint 956 (Két Sắt)',
+    fullName: 'Checkpoint 956 (Khóa Tím)',
     color: 'bg-purple-50 text-purple-800 border-purple-300 hover:bg-purple-100',
     activeColor: 'bg-purple-600 text-white border-purple-700 shadow-sm ring-2 ring-purple-500/25',
     dot: 'bg-purple-500',
+  },
+  {
+    key: '956 Code mail',
+    label: '956 Code mail',
+    fullName: 'Checkpoint 956 Code mail',
+    color: 'bg-fuchsia-50 text-fuchsia-800 border-fuchsia-300 hover:bg-fuchsia-100',
+    activeColor: 'bg-fuchsia-600 text-white border-fuchsia-700 shadow-sm ring-2 ring-fuchsia-500/25',
+    dot: 'bg-fuchsia-500',
+  },
+  {
+    key: '956 SDT',
+    label: '956 SDT',
+    fullName: 'Checkpoint 956 SDT',
+    color: 'bg-indigo-50 text-indigo-800 border-indigo-300 hover:bg-indigo-100',
+    activeColor: 'bg-indigo-600 text-white border-indigo-700 shadow-sm ring-2 ring-indigo-500/25',
+    dot: 'bg-indigo-500',
   },
   {
     key: 'Hạn Chế',

@@ -133,7 +133,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     }
   }, [activeStaffFilter]);
 
-  const [selectedNoteFilter, setSelectedNoteFilter] = useState<'ALL' | 'VHH' | '282' | '956' | 'Hạn Chế' | 'Đang lên tương tác' | 'Có tương tác' | 'NONE'>('ALL');
+  const [selectedNoteFilter, setSelectedNoteFilter] = useState<'ALL' | 'VHH' | '282' | '956' | '956 Code mail' | '956 SDT' | 'Hạn Chế' | 'Đang lên tương tác' | 'Có tương tác' | 'NONE'>('ALL');
   const [selectedJoinStatusFilter, setSelectedJoinStatusFilter] = useState<'ALL' | 'Đã Jon' | 'Jon chờ duyệt' | 'Chưa'>('ALL');
   const [selectedAdminReportFilter, setSelectedAdminReportFilter] = useState<'ALL' | 'Đã Duyệt' | 'Chưa Jont' | 'Không tìm thấy' | 'NONE'>('ALL');
   const [selectedInteractionFilter, setSelectedInteractionFilter] = useState<'ALL' | 'Đang lên tương tác' | 'Có tương tác' | 'Tương tác ổn' | 'Tương tác vừa' | 'Không có tương tác' | 'NONE'>('ALL');
@@ -256,6 +256,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
       return 'VHH';
     }
     if (linked?.adminReportStatus === '282') return '282';
+    if (linked?.adminReportStatus === 'Email code') return '956 Code mail';
+    if (linked?.adminReportStatus === 'SDT') return '956 SDT';
     if (linked?.adminReportStatus === '956') return '956';
     if (linked?.adminReportStatus === 'Hạn Chế') return 'Hạn Chế';
     return '';
@@ -272,6 +274,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     let vhh = 0;
     let c282 = 0;
     let c956 = 0;
+    let c956Mail = 0;
+    let c956Sdt = 0;
     let hanChe = 0;
     let none = 0;
 
@@ -304,8 +308,22 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
         lShared.includes('hạn chế') ||
         lShared.includes('han che');
 
-      const is282 = n.includes('282') || lStatus === 'checkpoint' || lNote.includes('282');
-      const is956 = n.includes('956') || lNote.includes('956');
+      const is282 = n.includes('282') || lNote.includes('282');
+      const isCodeMail =
+        n.includes('code mail') ||
+        n.includes('email code') ||
+        lReport === 'email code' ||
+        lNote.includes('code mail');
+      const isSdt =
+        n.includes('sdt') ||
+        n.includes('sđt') ||
+        lReport === 'sdt' ||
+        lNote.includes('sdt');
+      const is956 =
+        n.includes('956') || lNote.includes('956') || isCodeMail || isSdt;
+
+      if (isCodeMail) c956Mail++;
+      if (isSdt) c956Sdt++;
 
       if (isVhh) {
         vhh++;
@@ -332,6 +350,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
       c282,
       c282Uids: c282Uids.size,
       c956,
+      c956Mail,
+      c956Sdt,
       c956Uids: c956Uids.size,
       none,
     };
@@ -516,8 +536,28 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
           const is282 = n.includes('282') || lStatus === 'checkpoint' || lNote.includes('282');
           if (!is282) return false;
         } else if (selectedNoteFilter === '956') {
-          const is956 = n.includes('956') || lNote.includes('956');
+          const is956 =
+            n.includes('956') ||
+            lNote.includes('956') ||
+            n.includes('code mail') ||
+            n.includes('sdt') ||
+            lReport === 'email code' ||
+            lReport === 'sdt';
           if (!is956) return false;
+        } else if (selectedNoteFilter === '956 Code mail') {
+          const isCodeMail =
+            n.includes('code mail') ||
+            n.includes('email code') ||
+            lReport === 'email code' ||
+            lNote.includes('code mail');
+          if (!isCodeMail) return false;
+        } else if (selectedNoteFilter === '956 SDT') {
+          const isSdt =
+            n.includes('sdt') ||
+            n.includes('sđt') ||
+            lReport === 'sdt' ||
+            lNote.includes('sdt');
+          if (!isSdt) return false;
         } else if (selectedNoteFilter === 'Hạn Chế') {
           const isHanChe =
             n.includes('hạn chế') ||
@@ -1937,6 +1977,8 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <option value="VHH">🔴 VHH ({noteCounts.vhh})</option>
               <option value="282">🟠 282 ({noteCounts.c282})</option>
               <option value="956">🟣 956 ({noteCounts.c956})</option>
+              <option value="956 Code mail">✉️ 956 Code mail ({noteCounts.c956Mail})</option>
+              <option value="956 SDT">📱 956 SDT ({noteCounts.c956Sdt})</option>
               <option value="Hạn Chế">🟡 Hạn Chế ({noteCounts.hanChe})</option>
               <option value="NONE">Trống ({noteCounts.none})</option>
             </select>
@@ -2803,7 +2845,7 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                 />
                               </td>
 
-                              {/* Ghi chú: dropdown tương tác nhanh Đang lên tương tác, Có tương tác, VHH, 282, 956, Hạn Chế */}
+                              {/* Ghi chú: dropdown tương tác nhanh Đang lên tương tác, Có tương tác, VHH, 282, 956, 956 Code mail, 956 SDT, Hạn Chế */}
                               <td className="py-2.5 px-3">
                                 <div className="relative inline-flex items-center">
                                   {(() => {
@@ -2821,6 +2863,10 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                             ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
                                             : effNote.includes('282')
                                             ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                            : effNote.toLowerCase().includes('code mail') || effNote.toLowerCase().includes('email code')
+                                            ? 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300 hover:bg-fuchsia-200'
+                                            : effNote.toLowerCase().includes('sdt') || effNote.toLowerCase().includes('sđt')
+                                            ? 'bg-indigo-100 text-indigo-900 border-indigo-300 hover:bg-indigo-200'
                                             : effNote.includes('956')
                                             ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
                                             : effNote.toLowerCase().includes('hạn chế')
@@ -2835,9 +2881,11 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                         <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
                                         <option value="282">🟠 282 (Checkpoint 282)</option>
                                         <option value="956">🟣 956 (Khóa Tím)</option>
+                                        <option value="956 Code mail">✉️ 956 Code mail</option>
+                                        <option value="956 SDT">📱 956 SDT</option>
                                         <option value="Hạn Chế">🟡 Hạn Chế / Spam</option>
                                         <option value="Live">🟢 Hoạt Động Tốt</option>
-                                        {effNote && !['Đang lên tương tác', 'Có tương tác', 'VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effNote) && (
+                                        {effNote && !['Đang lên tương tác', 'Có tương tác', 'VHH', '282', '956', '956 Code mail', '956 SDT', 'Hạn Chế', 'Live'].includes(effNote) && (
                                           <option value={effNote}>{effNote}</option>
                                         )}
                                       </select>
@@ -3291,6 +3339,10 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                     ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
                                     : effNote.includes('282')
                                     ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
+                                    : effNote.toLowerCase().includes('code mail') || effNote.toLowerCase().includes('email code')
+                                    ? 'bg-fuchsia-100 text-fuchsia-900 border-fuchsia-300 hover:bg-fuchsia-200'
+                                    : effNote.toLowerCase().includes('sdt') || effNote.toLowerCase().includes('sđt')
+                                    ? 'bg-indigo-100 text-indigo-900 border-indigo-300 hover:bg-indigo-200'
                                     : effNote.includes('956')
                                     ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
                                     : effNote.toLowerCase().includes('hạn chế')
@@ -3305,9 +3357,11 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                 <option value="VHH">🔴 VHH (Vô Hiệu Hóa)</option>
                                 <option value="282">🟠 282 (Checkpoint 282)</option>
                                 <option value="956">🟣 956 (Khóa Tím)</option>
+                                <option value="956 Code mail">✉️ 956 Code mail</option>
+                                <option value="956 SDT">📱 956 SDT</option>
                                 <option value="Hạn Chế">🟡 Hạn Chế / Spam</option>
                                 <option value="Live">🟢 Hoạt Động Tốt</option>
-                                {effNote && !['Đang lên tương tác', 'Có tương tác', 'VHH', '282', '956', 'Hạn Chế', 'Live'].includes(effNote) && (
+                                {effNote && !['Đang lên tương tác', 'Có tương tác', 'VHH', '282', '956', '956 Code mail', '956 SDT', 'Hạn Chế', 'Live'].includes(effNote) && (
                                   <option value={effNote}>{effNote}</option>
                                 )}
                               </select>
@@ -3622,6 +3676,22 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               title="Gán ghi chú 956 cho các UID đã chọn"
             >
               956
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateNote('956 Code mail')}
+              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-fuchsia-600 text-white hover:bg-fuchsia-500 cursor-pointer transition-colors shadow-2xs"
+              title="Gán ghi chú 956 Code mail cho các UID đã chọn"
+            >
+              956 Code mail
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateNote('956 SDT')}
+              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-indigo-600 text-white hover:bg-indigo-500 cursor-pointer transition-colors shadow-2xs"
+              title="Gán ghi chú 956 SDT cho các UID đã chọn"
+            >
+              956 SDT
             </button>
             <button
               type="button"

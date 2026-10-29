@@ -3237,8 +3237,10 @@ export default function App() {
     const isVhh =
       noteLower === 'vhh' || noteLower.includes('vhh') || noteLower.includes('vô hiệu');
     const is282 = noteLower.includes('282');
+    const isCodeMail = noteLower.includes('code mail') || noteLower.includes('email code');
+    const isSdt = noteLower.includes('sdt') || noteLower.includes('sđt');
     const is956 = noteLower.includes('956');
-    const isCheckpoint = is282 || is956;
+    const isCheckpoint = is282 || is956 || isCodeMail || isSdt;
     const isHanChe = noteLower.includes('hạn chế') || noteLower.includes('han che');
     const isLive = noteLower === 'live' || noteLower.includes('hoạt động tốt');
 
@@ -3246,6 +3248,10 @@ export default function App() {
       ? 'VHH'
       : is282
       ? '282'
+      : isCodeMail
+      ? 'Email code'
+      : isSdt
+      ? 'SDT'
       : is956
       ? '956'
       : isHanChe
@@ -3279,10 +3285,16 @@ export default function App() {
           sharedNote: nextNote,
         };
       } else if (isCheckpoint) {
-        const cpCode = is282 ? '282' : '956';
+        const cpCode = is282
+          ? '282'
+          : isCodeMail
+          ? '956 Code mail'
+          : isSdt
+          ? '956 SDT'
+          : '956';
         updatedVia = {
           ...matchedVia,
-          adminReportStatus: cpCode,
+          adminReportStatus: reportStatus,
           status: 'checkpoint',
           isError: true,
           isFixed: false,
@@ -3305,8 +3317,8 @@ export default function App() {
         };
       } else if (!noteStr) {
         const cleanedNote = (matchedVia.note || '')
-          .replace(/^(VHH|282|956|Hạn Chế)\s*-?\s*/i, '')
-          .replace(/(VHH|282|956|Hạn Chế)\s*\([^)]*\)/gi, '')
+          .replace(/^(VHH|282|956 Code mail|956 SDT|956|Hạn Chế)\s*-?\s*/i, '')
+          .replace(/(VHH|282|956 Code mail|956 SDT|956|Hạn Chế)\s*\([^)]*\)/gi, '')
           .trim();
         updatedVia = {
           ...matchedVia,
@@ -3462,6 +3474,8 @@ export default function App() {
       if (!lower) return null;
       if (lower === 'vhh' || lower.includes('vhh') || lower.includes('vô hiệu')) return 'VHH';
       if (lower.includes('282')) return '282';
+      if (lower.includes('code mail') || lower.includes('email code')) return 'Email code';
+      if (lower.includes('sdt') || lower.includes('sđt')) return 'SDT';
       if (lower.includes('956')) return '956';
       if (lower.includes('hạn chế') || lower.includes('han che')) return 'Hạn Chế';
       return null;
