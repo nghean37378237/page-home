@@ -110,7 +110,11 @@ import { BulkImportFanpageModal } from './components/BulkImportFanpageModal';
 import { SharedAccountsTable } from './components/SharedAccountsTable';
 import { StaffManagementTable } from './components/StaffManagementTable';
 import { DeleteStaffDataModal } from './components/DeleteStaffDataModal';
-import { TransferPageViaModal, TransferPageViaParams } from './components/TransferPageViaModal';
+import {
+  TransferPageViaModal,
+  TransferPageViaParams,
+  FullStaffTransferOptions,
+} from './components/TransferPageViaModal';
 import { FetchPagesFromViaModal } from './components/FetchPagesFromViaModal';
 import { GroupManagementTable } from './components/GroupManagementTable';
 import { AddEditGroupModal } from './components/AddEditGroupModal';
@@ -200,6 +204,7 @@ export default function App() {
   const [isTransferModalOpen, setIsTransferModalOpen] = useState(false);
   const [selectedRecordToTransfer, setSelectedRecordToTransfer] = useState<PageRecord | null>(null);
   const [presetTransferViaUid, setPresetTransferViaUid] = useState<string | null>(null);
+  const [presetTransferSourceStaff, setPresetTransferSourceStaff] = useState<string | null>(null);
 
   // Fetch Pages from Via modal state
   const [isFetchPagesModalOpen, setIsFetchPagesModalOpen] = useState(false);
@@ -1546,6 +1551,7 @@ export default function App() {
     options: {
       deleteFanpages: boolean;
       deleteVias: boolean;
+      deleteGroups?: boolean;
       deleteAccount: boolean;
     }
   ) => {
@@ -1553,71 +1559,68 @@ export default function App() {
     const staffLower = cleanStaff.toLowerCase();
     if (!cleanStaff) return;
 
+    const matchStaff = (candidate?: string) =>
+      Boolean(
+        candidate &&
+          (candidate.trim().toLowerCase() === staffLower ||
+            areStaffNamesEquivalent(candidate, cleanStaff))
+      );
+
     // 1. Delete Fanpage records
     if (options.deleteFanpages) {
-      const recordsToDelete = records.filter(
-        (r) => r.staffName?.trim().toLowerCase() === staffLower
-      );
+      const recordsToDelete = records.filter((r) => matchStaff(r.staffName));
       const ids = recordsToDelete.map((r) => r.id);
       if (ids.length > 0) {
-        setRecords((prev) =>
-          prev.filter((r) => r.staffName?.trim().toLowerCase() !== staffLower)
-        );
+        setRecords((prev) => prev.filter((r) => !matchStaff(r.staffName)));
         await batchDeleteCloudPageRecords(ids);
       }
     }
 
     // 2. Delete Vias
     if (options.deleteVias) {
-      const viasToDelete = viaList.filter(
-        (v) => v.staffName?.trim().toLowerCase() === staffLower
-      );
+      const viasToDelete = viaList.filter((v) => matchStaff(v.staffName));
       const viaIds = viasToDelete.map((v) => v.id);
       if (viaIds.length > 0) {
-        setViaList((prev) =>
-          prev.filter((v) => v.staffName?.trim().toLowerCase() !== staffLower)
-        );
+        setViaList((prev) => prev.filter((v) => !matchStaff(v.staffName)));
         await batchDeleteCloudVias(viaIds);
       }
+    }
 
-      // Also clean up Group records of this staff
-      const groupsToDelete = groupRecords.filter(
-        (g) => g.staffName?.trim().toLowerCase() === staffLower
-      );
+    // 2b. Delete Group records of this staff (if deleteGroups is true or undefined when deleteVias is true)
+    if (options.deleteGroups ?? options.deleteVias) {
+      const groupsToDelete = groupRecords.filter((g) => matchStaff(g.staffName));
       const groupIds = groupsToDelete.map((g) => g.id);
       if (groupIds.length > 0) {
-        setGroupRecords((prev) =>
-          prev.filter((g) => g.staffName?.trim().toLowerCase() !== staffLower)
-        );
+        setGroupRecords((prev) => {
+          const next = prev.filter((g) => !matchStaff(g.staffName));
+          saveLocalGroupBackup(next);
+          return next;
+        });
         await batchDeleteCloudGroupRecords(groupIds);
       }
     }
 
     // 3. Delete Account(s)
     if (options.deleteAccount) {
-      const matchingAccounts = accounts.filter(
-        (a) => a.username?.trim().toLowerCase() === staffLower
-      );
+      const matchingAccounts = accounts.filter((a) => matchStaff(a.username));
       for (const acc of matchingAccounts) {
         setAccounts((prev) => prev.filter((a) => a.id !== acc.id));
         await deleteCloudAccount(acc.id);
       }
+
+      // 4. Remove from customStaffList
+      const nextStaff = customStaffList.filter((s) => !matchStaff(s));
+      setCustomStaffList(nextStaff);
+      await saveCloudSettings({ customStaffList: nextStaff });
     }
 
-    // 4. Remove from customStaffList
-    const nextStaff = customStaffList.filter(
-      (s) => s.trim().toLowerCase() !== staffLower
-    );
-    setCustomStaffList(nextStaff);
-    await saveCloudSettings({ customStaffList: nextStaff });
-
     // 5. Reset filter if currently filtering by this staff
-    if (filter.staffName?.trim().toLowerCase() === staffLower) {
+    if (matchStaff(filter.staffName)) {
       setFilter((prev) => ({ ...prev, staffName: '' }));
     }
 
     // 6. If currently logged in as this staff, log out
-    if (currentUser.name?.trim().toLowerCase() === staffLower) {
+    if (matchStaff(currentUser.name)) {
       handleLogout();
     }
   };
@@ -1780,9 +1783,10 @@ export default function App() {
   };
 
   // Transfer Page to another Via handlers
-  const handleOpenTransferModal = (record?: PageRecord, viaUid?: string) => {
+  const handleOpenTransferModal = (record?: PageRecord, viaUid?: string, sourceStaff?: string) => {
     setSelectedRecordToTransfer(record || null);
     setPresetTransferViaUid(viaUid || null);
+    setPresetTransferSourceStaff(sourceStaff || null);
     setIsTransferModalOpen(true);
   };
 
@@ -1885,7 +1889,240 @@ export default function App() {
     }
   };
 
+  // Bàn giao toàn bộ Via + Group + Page của 1 nhân viên bất kỳ sang cho 1 nhân viên khác (hoặc Kho Chờ Admin)
+  const handleTransferFullStaffData = async (options: FullStaffTransferOptions) => {
+    const cleanSource = options.sourceStaffName.trim();
+    const cleanTarget = options.targetStaffName.trim() || currentUser.name;
+    if (!cleanSource || !cleanTarget) return;
+
+    const sourceLower = cleanSource.toLowerCase();
+    const isMovingToWaitingPool = isAdminWaitingPool(cleanTarget);
+    const shouldMarkRedNew = !isMovingToWaitingPool;
+    const now = new Date();
+    const dateStr = `${now.getDate()}/${now.getMonth() + 1}`;
+
+    const isMatchingSourceStaff = (name?: string) =>
+      Boolean(
+        name &&
+          (name.trim().toLowerCase() === sourceLower ||
+            areStaffNamesEquivalent(name, cleanSource))
+      );
+
+    const noteMsg =
+      options.appendHistoryNote && options.historyNoteText
+        ? options.historyNoteText
+        : shouldMarkRedNew
+        ? `🔴 Bàn giao full từ NV ${cleanSource} sang ${cleanTarget} (${dateStr})`
+        : `📦 Thu hồi full từ NV ${cleanSource} vào ${cleanTarget} (${dateStr})`;
+
+    // 1. Chuyển toàn bộ Fanpage (Bảng 1) của nhân viên nguồn sang nhân viên đích
+    const updatedPageRecords: PageRecord[] = [];
+    if (options.transferPages) {
+      const nextRecords = records.map((r) => {
+        if (!isMatchingSourceStaff(r.staffName)) return r;
+        const cleanBm = (r.bmNote || '').split('|')[0].trim();
+        const updated: PageRecord = {
+          ...r,
+          staffName: cleanTarget,
+          bmNote: cleanBm,
+          viaTransferStatus: 'completed',
+          viaTransferColor: shouldMarkRedNew ? 'red' : 'yellow',
+          viaTransferNote: noteMsg,
+          viaTransferUpdatedAt: dateStr,
+          isNewlyTransferred: shouldMarkRedNew,
+          newlyTransferredAt: shouldMarkRedNew ? dateStr : undefined,
+        };
+        updatedPageRecords.push(updated);
+        return updated;
+      });
+      if (updatedPageRecords.length > 0) {
+        setRecords(nextRecords);
+      }
+    }
+
+    // 2. Chuyển toàn bộ Group FB (Bảng 2) của nhân viên nguồn sang nhân viên đích
+    const updatedGroups: GroupRecord[] = [];
+    if (options.transferGroups) {
+      const nextGroups = groupRecords.map((g) => {
+        if (!isMatchingSourceStaff(g.staffName)) return g;
+        const updated: GroupRecord = {
+          ...g,
+          staffName: cleanTarget,
+          updatedAt: new Date().toISOString(),
+        };
+        updatedGroups.push(updated);
+        return updated;
+      });
+      if (updatedGroups.length > 0) {
+        setGroupRecords(nextGroups);
+        saveLocalGroupBackup(nextGroups);
+      }
+    }
+
+    // 3. Chuyển toàn bộ Nick Via (Bảng 4) của nhân viên nguồn (kèm cả các Via cầm Page/Group của nhân viên đó) sang nhân viên đích
+    const updatedVias: FullViaItem[] = [];
+    const duplicateViaIdsToRemove: string[] = [];
+    if (options.transferVias) {
+      // Thu thập mọi UID thuộc nhân viên nguồn (từ viaList + từ Page/Group được chuyển)
+      const sourceViaItems = viaList.filter((v) => isMatchingSourceStaff(v.staffName));
+      const allSourceUidLowers = new Set<string>();
+      const rawUidByLower = new Map<string, string>();
+
+      sourceViaItems.forEach((v) => {
+        const cleanUid = (v.uid || v.rawFullVia || '').split('|')[0].trim();
+        const lower = normalizeViaUidKey(cleanUid);
+        if (lower) {
+          allSourceUidLowers.add(lower);
+          if (!rawUidByLower.has(lower)) rawUidByLower.set(lower, cleanUid);
+        }
+      });
+
+      if (options.transferPages) {
+        updatedPageRecords.forEach((p) => {
+          const cleanUid = (p.viaUid || '').split('|')[0].trim();
+          const lower = normalizeViaUidKey(cleanUid);
+          if (lower) {
+            allSourceUidLowers.add(lower);
+            if (!rawUidByLower.has(lower)) rawUidByLower.set(lower, cleanUid);
+          }
+        });
+      }
+
+      if (options.transferGroups) {
+        updatedGroups.forEach((g) => {
+          const cleanUid = (g.uid || '').split('|')[0].trim();
+          const lower = normalizeViaUidKey(cleanUid);
+          if (lower) {
+            allSourceUidLowers.add(lower);
+            if (!rawUidByLower.has(lower)) rawUidByLower.set(lower, cleanUid);
+          }
+        });
+      }
+
+      // Cập nhật các FullViaItem thuộc nhân viên nguồn (kể cả những dòng không có UID chuẩn)
+      const handledViaIds = new Set<string>();
+      allSourceUidLowers.forEach((uLower) => {
+        const cleanUid = rawUidByLower.get(uLower) || uLower;
+        const heldPages = records.filter((r) => normalizeViaUidKey(r.viaUid) === uLower);
+        const matchingVias = viaList.filter((v) => {
+          const vL = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+          return vL === uLower;
+        });
+        matchingVias.forEach((mv) => handledViaIds.add(mv.id));
+
+        const { primaryVia, duplicateViaIds } = buildMergedViaForStaff(
+          cleanUid,
+          cleanTarget,
+          matchingVias,
+          heldPages,
+          {
+            appendHistoryNote: options.appendHistoryNote,
+            historyNoteText: noteMsg,
+            dateStr,
+            markNewTransfer: shouldMarkRedNew,
+          }
+        );
+        updatedVias.push(primaryVia);
+        duplicateViaIdsToRemove.push(...duplicateViaIds);
+      });
+
+      // Nếu còn FullViaItem nào của nhân viên nguồn mà chưa nằm trong handledViaIds
+      sourceViaItems.forEach((v) => {
+        if (handledViaIds.has(v.id)) return;
+        updatedVias.push({
+          ...v,
+          staffName: cleanTarget,
+          isNewlyTransferred: shouldMarkRedNew,
+          pageUpdateStatus: shouldMarkRedNew ? 'pending' : isMovingToWaitingPool ? 'none' : v.pageUpdateStatus,
+          ...(shouldMarkRedNew ? { pageAssignedAt: dateStr } : {}),
+          ...(options.appendHistoryNote ? { note: noteMsg, sharedNote: noteMsg } : {}),
+        });
+        handledViaIds.add(v.id);
+      });
+
+      if (updatedVias.length > 0) {
+        setViaList((prev) => {
+          const kept = prev.filter((v) => !handledViaIds.has(v.id));
+          return [...kept, ...updatedVias];
+        });
+      }
+    }
+
+    // Lưu đồng bộ lên Cloud Firestore
+    if (updatedPageRecords.length > 0) {
+      await batchSaveCloudPageRecords(updatedPageRecords);
+    }
+    if (updatedGroups.length > 0) {
+      await batchSaveCloudGroupRecords(updatedGroups);
+    }
+    if (updatedVias.length > 0) {
+      await batchSaveCloudVias(updatedVias);
+    }
+    if (duplicateViaIdsToRemove.length > 0) {
+      await batchDeleteCloudVias(duplicateViaIdsToRemove);
+    }
+
+    // Đảm bảo tên nhân viên mới có trong customStaffList (nếu không phải Kho Chờ Admin)
+    let nextCustomStaff = [...customStaffList];
+    let staffListChanged = false;
+    if (
+      !isMovingToWaitingPool &&
+      !nextCustomStaff.some(
+        (s) =>
+          s.trim().toLowerCase() === cleanTarget.toLowerCase() ||
+          areStaffNamesEquivalent(s, cleanTarget)
+      )
+    ) {
+      nextCustomStaff.push(cleanTarget);
+      staffListChanged = true;
+    }
+
+    // 4. Xử lý tài khoản của nhân viên cũ (nếu chọn Tạm khóa hoặc Xóa tài khoản khi nghỉ việc)
+    if (options.oldAccountAction === 'block') {
+      const matchingAccounts = accounts.filter(
+        (a) => a.role !== 'admin' && isMatchingSourceStaff(a.username)
+      );
+      for (const acc of matchingAccounts) {
+        setAccounts((prev) =>
+          prev.map((a) => (a.id === acc.id ? { ...a, status: 'blocked' } : a))
+        );
+        await updateCloudAccount(acc.id, { status: 'blocked' });
+      }
+    } else if (options.oldAccountAction === 'delete') {
+      const matchingAccounts = accounts.filter(
+        (a) => a.role !== 'admin' && isMatchingSourceStaff(a.username)
+      );
+      for (const acc of matchingAccounts) {
+        setAccounts((prev) => prev.filter((a) => a.id !== acc.id));
+        await deleteCloudAccount(acc.id);
+      }
+      const filteredStaff = nextCustomStaff.filter((s) => !isMatchingSourceStaff(s));
+      if (filteredStaff.length !== nextCustomStaff.length) {
+        nextCustomStaff = filteredStaff;
+        staffListChanged = true;
+      }
+    }
+
+    if (staffListChanged) {
+      setCustomStaffList(nextCustomStaff);
+      await saveCloudSettings({ customStaffList: nextCustomStaff });
+    }
+
+    // 5. Nếu đang lọc theo nhân viên cũ thì tự động chuyển bộ lọc sang nhân viên mới để Admin thấy ngay kết quả
+    if (isMatchingSourceStaff(filter.staffName)) {
+      setFilter((prev) => ({
+        ...prev,
+        staffName: isMovingToWaitingPool ? '' : cleanTarget,
+      }));
+    }
+  };
+
   const handleConfirmTransferPageVia = async (params: TransferPageViaParams) => {
+    if (params.fullStaffTransfer) {
+      await handleTransferFullStaffData(params.fullStaffTransfer);
+      return;
+    }
+
     const {
       pageIds,
       targetViaUid,
@@ -4575,7 +4812,18 @@ export default function App() {
               onOpenImportModal={() => setIsBulkImportFanpageOpen(true)}
               onMarkAllDoneToday={handleMarkAllDoneToday}
               onOpenDeleteStaffModal={handleOpenDeleteStaffModal}
-              onOpenTransferModal={() => handleOpenTransferModal()}
+              onOpenTransferModal={() =>
+                handleOpenTransferModal(
+                  undefined,
+                  undefined,
+                  filter.staffName &&
+                    filter.staffName.trim() &&
+                    filter.staffName.trim().toLowerCase() !== 'all' &&
+                    !isAdminWaitingPool(filter.staffName)
+                    ? filter.staffName.trim()
+                    : undefined
+                )
+              }
               onOpenFetchPagesModal={() => handleOpenFetchPagesModal()}
             />
 
@@ -4844,6 +5092,9 @@ export default function App() {
             onUpdateAccountInfo={handleUpdateAccountInfo}
             onUpdateEmail={handleUpdateAccountEmail}
             onOpenDeleteStaffModal={handleOpenDeleteStaffModal}
+            onOpenTransferStaffModal={(staffName) =>
+              handleOpenTransferModal(undefined, undefined, staffName)
+            }
             onSwitchToStaffView={(staffName) => {
               const staffUser = availableUsers.find((u) => u.name.trim().toLowerCase() === staffName.trim().toLowerCase());
               if (staffUser) {
@@ -5137,7 +5388,7 @@ export default function App() {
         />
       )}
 
-      {/* Universal Modal: Chọn Xóa Toàn Bộ Dữ Liệu Của 1 Nhân Viên Bất Kỳ */}
+      {/* Universal Modal: Chọn Bàn Giao Hoặc Xóa Toàn Bộ Dữ Liệu Của 1 Nhân Viên Bất Kỳ */}
       {isDeleteStaffModalOpen && (
         <DeleteStaffDataModal
           isOpen={isDeleteStaffModalOpen}
@@ -5146,12 +5397,14 @@ export default function App() {
           allStaffNames={allSystemStaffNames}
           records={records}
           viaList={viaList}
+          groupRecords={groupRecords}
           accounts={accounts}
           onConfirmDelete={handleConfirmDeleteStaffAllData}
+          onConfirmTransferFullStaff={handleTransferFullStaffData}
         />
       )}
 
-      {/* Universal Modal: Chuyển Page Qua Via Khác Kèm Toàn Bộ Thông Tin */}
+      {/* Universal Modal: Chuyển Full NV (Via + Group + Page) Hoặc Chuyển Lẻ Page / Via */}
       {isTransferModalOpen && (
         <TransferPageViaModal
           isOpen={isTransferModalOpen}
@@ -5159,11 +5412,15 @@ export default function App() {
             setIsTransferModalOpen(false);
             setSelectedRecordToTransfer(null);
             setPresetTransferViaUid(null);
+            setPresetTransferSourceStaff(null);
           }}
           presetRecord={selectedRecordToTransfer}
           presetViaUid={presetTransferViaUid}
+          presetSourceStaff={presetTransferSourceStaff}
           records={records}
           viaList={viaList}
+          groupRecords={groupRecords}
+          accounts={accounts}
           allStaffNames={allStaffNames}
           currentUser={currentUser}
           onConfirmTransfer={handleConfirmTransferPageVia}

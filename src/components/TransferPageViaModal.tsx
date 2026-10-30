@@ -14,9 +14,32 @@ import {
   Users,
   Archive,
   KeyRound,
+  UserMinus,
+  Lock,
+  Trash2,
 } from 'lucide-react';
-import { PageRecord, FullViaItem, AppUser, ADMIN_WAITING_POOL, isAdminWaitingPool } from '../types';
+import {
+  PageRecord,
+  FullViaItem,
+  GroupRecord,
+  UserAccount,
+  AppUser,
+  ADMIN_WAITING_POOL,
+  isAdminWaitingPool,
+  areStaffNamesEquivalent,
+} from '../types';
 import { getCleanBmName, parseFullVia, parseSupplementalViaInput, buildFullViaString } from '../utils/helpers';
+
+export interface FullStaffTransferOptions {
+  sourceStaffName: string;
+  targetStaffName: string;
+  transferVias: boolean;
+  transferGroups: boolean;
+  transferPages: boolean;
+  oldAccountAction: 'keep' | 'block' | 'delete';
+  appendHistoryNote: boolean;
+  historyNoteText: string;
+}
 
 export interface TransferPageViaParams {
   pageIds: string[];
@@ -27,6 +50,8 @@ export interface TransferPageViaParams {
   historyNoteText: string;
   /** Nếu chuyển nguyên cả Nick Via (1 hoặc nhiều Via) kèm toàn bộ Page sang nhân viên khác hoặc vào Kho Chờ Admin */
   transferViaUidsToStaff?: string[];
+  /** Nếu chuyển toàn bộ Via + Group + Page của 1 nhân viên sang nhân viên khác (khi NV nghỉ việc / bàn giao) */
+  fullStaffTransfer?: FullStaffTransferOptions;
 }
 
 interface TransferPageViaModalProps {
@@ -34,10 +59,13 @@ interface TransferPageViaModalProps {
   onClose: () => void;
   presetRecord?: PageRecord | null;
   presetViaUid?: string | null;
+  presetSourceStaff?: string | null;
   presetTargetStaff?: string | null;
-  initialMode?: 'single' | 'batch' | 'via_to_staff';
+  initialMode?: 'single' | 'batch' | 'via_to_staff' | 'staff_to_staff';
   records: PageRecord[];
   viaList: FullViaItem[];
+  groupRecords?: GroupRecord[];
+  accounts?: UserAccount[];
   allStaffNames: string[];
   currentUser: AppUser;
   onConfirmTransfer: (params: TransferPageViaParams) => Promise<void>;
@@ -48,19 +76,35 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
   onClose,
   presetRecord,
   presetViaUid,
+  presetSourceStaff,
   presetTargetStaff,
   initialMode,
   records,
   viaList,
+  groupRecords = [],
+  accounts = [],
   allStaffNames,
   currentUser,
   onConfirmTransfer,
 }) => {
   // Transfer Mode:
+  // 'staff_to_staff': Chuyển FULL 1 Nhân Viên (Toàn bộ Via + Group + Page) sang cho nhân viên khác (khi NV cũ nghỉ)
   // 'via_to_staff': Chuyển Via + Toàn bộ Page Via đó cầm sang cho 1 nhân viên khác hoặc vào Kho Chờ Admin
   // 'single': Chuyển 1 Page sang Via khác
   // 'batch': Chuyển nhiều Page sang Via khác
-  const [transferMode, setTransferMode] = useState<'via_to_staff' | 'single' | 'batch'>('via_to_staff');
+  const [transferMode, setTransferMode] = useState<
+    'staff_to_staff' | 'via_to_staff' | 'single' | 'batch'
+  >('via_to_staff');
+
+  // States for 'staff_to_staff' mode (Chuyển Full 1 Nhân Viên sang Nhân Viên khác)
+  const [sourceStaffForFullTransfer, setSourceStaffForFullTransfer] = useState<string>('');
+  const [targetStaffForFullTransfer, setTargetStaffForFullTransfer] = useState<string>('');
+  const [customNewTargetStaff, setCustomNewTargetStaff] = useState<string>('');
+  const [sourceStaffSearchQuery, setSourceStaffSearchQuery] = useState<string>('');
+  const [fullTransferIncludeVias, setFullTransferIncludeVias] = useState<boolean>(true);
+  const [fullTransferIncludeGroups, setFullTransferIncludeGroups] = useState<boolean>(true);
+  const [fullTransferIncludePages, setFullTransferIncludePages] = useState<boolean>(true);
+  const [oldAccountAction, setOldAccountAction] = useState<'keep' | 'block' | 'delete'>('keep');
 
   // Selected Vias for 'via_to_staff' mode
   const [selectedViaUidsForStaffTransfer, setSelectedViaUidsForStaffTransfer] = useState<string[]>([]);
@@ -261,6 +305,103 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
     );
   }, [knownVias, targetViaSearchQuery]);
 
+  // Tổng hợp danh sách toàn bộ Nhân Viên trong hệ thống (từ accounts, allStaffNames, records, viaList, groupRecords) cho chế độ Chuyển Full 1 NV
+  const staffSummariesForFullTransfer = useMemo(() => {
+    const nameMap = new Map<string, string>();
+    const registerName = (raw?: string) => {
+      const clean = (raw || '').trim();
+      if (!clean || isAdminWaitingPool(clean) || clean.toLowerCase() === 'all') return;
+      const lower = clean.toLowerCase();
+      if (!nameMap.has(lower)) {
+        nameMap.set(lower, clean);
+      }
+    };
+
+    allStaffNames.forEach(registerName);
+    accounts.forEach((a) => {
+      if (a.role !== 'admin') registerName(a.username);
+    });
+    records.forEach((r) => registerName(r.staffName));
+    viaList.forEach((v) => registerName(v.staffName));
+    groupRecords.forEach((g) => registerName(g.staffName));
+
+    const list = Array.from(nameMap.values()).map((staffName) => {
+      const sLower = staffName.trim().toLowerCase();
+      const matchStaff = (candidate?: string) =>
+        Boolean(
+          candidate &&
+            (candidate.trim().toLowerCase() === sLower ||
+              areStaffNamesEquivalent(candidate, staffName))
+        );
+
+      const staffPages = records.filter((r) => matchStaff(r.staffName));
+      const staffVias = viaList.filter((v) => matchStaff(v.staffName));
+      const staffGroups = groupRecords.filter((g) => matchStaff(g.staffName));
+      const matchedAccount = accounts.find((a) => matchStaff(a.username));
+
+      return {
+        name: staffName,
+        pagesCount: staffPages.length,
+        viasCount: staffVias.length,
+        groupsCount: staffGroups.length,
+        totalAssets: staffPages.length + staffVias.length + staffGroups.length,
+        hasAccount: Boolean(matchedAccount),
+        accountStatus: matchedAccount?.status,
+      };
+    });
+
+    return list.sort((a, b) => b.totalAssets - a.totalAssets || a.name.localeCompare(b.name));
+  }, [allStaffNames, accounts, records, viaList, groupRecords]);
+
+  const filteredSourceStaffList = useMemo(() => {
+    const q = sourceStaffSearchQuery.trim().toLowerCase();
+    if (!q) return staffSummariesForFullTransfer;
+    return staffSummariesForFullTransfer.filter((s) => s.name.toLowerCase().includes(q));
+  }, [staffSummariesForFullTransfer, sourceStaffSearchQuery]);
+
+  // Chi tiết toàn bộ Via + Group + Page của Nhân viên nguồn đang chọn để bàn giao
+  const sourceStaffDetails = useMemo(() => {
+    const src = sourceStaffForFullTransfer.trim();
+    if (!src) {
+      return {
+        pages: [] as PageRecord[],
+        vias: [] as FullViaItem[],
+        groups: [] as GroupRecord[],
+        uniqueGroupNames: [] as string[],
+        matchedAccount: undefined as UserAccount | undefined,
+      };
+    }
+    const sLower = src.toLowerCase();
+    const matchStaff = (candidate?: string) =>
+      Boolean(
+        candidate &&
+          (candidate.trim().toLowerCase() === sLower || areStaffNamesEquivalent(candidate, src))
+      );
+
+    const pages = records.filter((r) => matchStaff(r.staffName));
+    const vias = viaList.filter((v) => matchStaff(v.staffName));
+    const groups = groupRecords.filter((g) => matchStaff(g.staffName));
+    const uniqueGroupNames = Array.from(
+      new Set(groups.map((g) => (g.groupName || g.groupLink || '').trim()).filter(Boolean))
+    );
+    const matchedAccount = accounts.find((a) => matchStaff(a.username));
+
+    return {
+      pages,
+      vias,
+      groups,
+      uniqueGroupNames,
+      matchedAccount,
+    };
+  }, [sourceStaffForFullTransfer, records, viaList, groupRecords, accounts]);
+
+  const resolvedFullTransferTargetStaff = useMemo(() => {
+    if (targetStaffForFullTransfer === '__CUSTOM_NEW__') {
+      return customNewTargetStaff.trim();
+    }
+    return targetStaffForFullTransfer.trim();
+  }, [targetStaffForFullTransfer, customNewTargetStaff]);
+
   // Initialize or reset when modal opens
   useEffect(() => {
     if (isOpen) {
@@ -271,18 +412,47 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
       setViaSourceQuickFilter('all');
       setPageSearchQuery('');
       setCustomTargetViaUid('');
+      setSourceStaffSearchQuery('');
+      setCustomNewTargetStaff('');
+      setFullTransferIncludeVias(true);
+      setFullTransferIncludeGroups(true);
+      setFullTransferIncludePages(true);
+      setOldAccountAction('keep');
 
       const todayStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
 
       if (initialMode) {
         setTransferMode(initialMode);
+      } else if (presetSourceStaff) {
+        setTransferMode('staff_to_staff');
       } else if (presetRecord) {
         setTransferMode('single');
       } else if (presetViaUid) {
         setTransferMode('via_to_staff');
       } else {
-        setTransferMode('via_to_staff');
+        setTransferMode('staff_to_staff');
       }
+
+      // Default source & target staff for 'staff_to_staff'
+      const defaultSrcStaff =
+        presetSourceStaff?.trim() ||
+        staffSummariesForFullTransfer.find((s) => s.totalAssets > 0)?.name ||
+        staffSummariesForFullTransfer[0]?.name ||
+        '';
+      setSourceStaffForFullTransfer(defaultSrcStaff);
+
+      const defaultDestStaff =
+        presetTargetStaff?.trim() ||
+        allStaffNames.find(
+          (name) =>
+            !isAdminWaitingPool(name) &&
+            name.trim().toLowerCase() !== defaultSrcStaff.trim().toLowerCase()
+        ) ||
+        staffSummariesForFullTransfer.find(
+          (s) => s.name.trim().toLowerCase() !== defaultSrcStaff.trim().toLowerCase()
+        )?.name ||
+        ADMIN_WAITING_POOL;
+      setTargetStaffForFullTransfer(defaultDestStaff);
 
       if (presetRecord) {
         setSelectedPageId(presetRecord.id);
@@ -350,7 +520,18 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
       setStaffAssignmentMode('target_via_owner');
       setAppendHistoryNote(true);
     }
-  }, [isOpen, presetRecord, presetViaUid, presetTargetStaff, initialMode, accessibleRecords, knownVias, allStaffNames]);
+  }, [
+    isOpen,
+    presetRecord,
+    presetViaUid,
+    presetSourceStaff,
+    presetTargetStaff,
+    initialMode,
+    accessibleRecords,
+    knownVias,
+    allStaffNames,
+    staffSummariesForFullTransfer,
+  ]);
 
   // Selected Via objects in 'via_to_staff' mode
   const selectedViaObjectsForStaffTransfer = useMemo(() => {
@@ -368,6 +549,19 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
     () => isAdminWaitingPool(targetStaffForViaTransfer),
     [targetStaffForViaTransfer]
   );
+
+  // Update history note automatically in 'staff_to_staff' mode
+  useEffect(() => {
+    if (transferMode === 'staff_to_staff' && sourceStaffForFullTransfer && resolvedFullTransferTargetStaff) {
+      const todayStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
+      const destLabel = isAdminWaitingPool(resolvedFullTransferTargetStaff)
+        ? 'Kho Chờ Admin'
+        : `NV ${resolvedFullTransferTargetStaff}`;
+      setHistoryNoteText(
+        `Bàn giao full từ NV ${sourceStaffForFullTransfer} sang ${destLabel} (${todayStr})`
+      );
+    }
+  }, [transferMode, sourceStaffForFullTransfer, resolvedFullTransferTargetStaff]);
 
   // Update history note automatically in 'via_to_staff' mode
   useEffect(() => {
@@ -397,7 +591,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
 
   // When selected single page changes, update default history note if not manually modified
   useEffect(() => {
-    if (transferMode !== 'via_to_staff' && currentSinglePage) {
+    if (transferMode !== 'via_to_staff' && transferMode !== 'staff_to_staff' && currentSinglePage) {
       const todayStr = `${new Date().getDate()}/${new Date().getMonth() + 1}`;
       setHistoryNoteText(
         `Chuyển từ Via ${currentSinglePage.viaUid || 'cũ'} sang Via mới (${todayStr})`
@@ -569,6 +763,60 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
   };
 
   const handleExecuteTransfer = async () => {
+    if (transferMode === 'staff_to_staff') {
+      const srcStaff = sourceStaffForFullTransfer.trim();
+      const destStaff = resolvedFullTransferTargetStaff;
+
+      if (!srcStaff) {
+        setErrorMessage('Vui lòng chọn Nhân viên cũ / nguồn cần chuyển dữ liệu.');
+        return;
+      }
+      if (!destStaff) {
+        setErrorMessage('Vui lòng chọn Nhân viên mới nhận bàn giao (hoặc Kho Chờ Admin).');
+        return;
+      }
+      if (
+        srcStaff.toLowerCase() === destStaff.toLowerCase() ||
+        areStaffNamesEquivalent(srcStaff, destStaff)
+      ) {
+        setErrorMessage('Nhân viên nguồn và Nhân viên nhận bàn giao đang trùng nhau. Vui lòng chọn nhân viên khác.');
+        return;
+      }
+      if (!fullTransferIncludeVias && !fullTransferIncludeGroups && !fullTransferIncludePages) {
+        setErrorMessage('Vui lòng tích chọn ít nhất 1 mục cần chuyển (Via, Group hoặc Page).');
+        return;
+      }
+
+      setIsSubmitting(true);
+      setErrorMessage(null);
+      try {
+        await onConfirmTransfer({
+          pageIds: fullTransferIncludePages ? sourceStaffDetails.pages.map((p) => p.id) : [],
+          targetViaUid: '',
+          targetStaffName: destStaff,
+          appendHistoryNote,
+          historyNoteText: historyNoteText.trim(),
+          fullStaffTransfer: {
+            sourceStaffName: srcStaff,
+            targetStaffName: destStaff,
+            transferVias: fullTransferIncludeVias,
+            transferGroups: fullTransferIncludeGroups,
+            transferPages: fullTransferIncludePages,
+            oldAccountAction,
+            appendHistoryNote,
+            historyNoteText: historyNoteText.trim(),
+          },
+        });
+        onClose();
+      } catch (err: any) {
+        console.error('Lỗi khi chuyển full dữ liệu nhân viên:', err);
+        setErrorMessage(err.message || 'Đã xảy ra lỗi trong quá trình bàn giao dữ liệu nhân viên.');
+      } finally {
+        setIsSubmitting(false);
+      }
+      return;
+    }
+
     if (transferMode === 'via_to_staff') {
       if (selectedViaUidsForStaffTransfer.length === 0) {
         setErrorMessage('Vui lòng chọn ít nhất 1 Nick Via để chuyển.');
@@ -645,7 +893,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-2xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 animate-fadeIn my-auto max-h-[94vh] flex flex-col">
+      <div className="bg-white rounded-2xl max-w-3xl w-full p-5 sm:p-6 shadow-2xl border border-slate-200 animate-fadeIn my-auto max-h-[94vh] flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 shrink-0">
           <div className="flex items-center space-x-3">
@@ -653,14 +901,14 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
               <ArrowRightLeft className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900 flex items-center space-x-2">
-                <span>Chuyển Via & Page (Kho Chờ Admin ⇄ Nhân Viên)</span>
+              <h3 className="text-base font-bold text-slate-900 flex items-center space-x-2 flex-wrap gap-y-1">
+                <span>Bàn Giao & Chuyển Toàn Bộ Via • Group • Page Giữa Các Nhân Viên</span>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Đồng bộ 100%
+                  Đồng bộ 100% Cloud
                 </span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Đưa Via hoặc Via + Page vào Kho Chờ Admin (chưa NV nào dùng) hoặc cấp từ Kho Chờ sang cho Nhân Viên
+                Chuyển Full 100% Via + Group + Page khi nhân viên cũ nghỉ sang nhân viên mới hoặc chuyển lẻ theo từng Via / Page
               </p>
             </div>
           </div>
@@ -675,8 +923,21 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
 
         {/* Scrollable Content */}
         <div className="py-4 space-y-4 overflow-y-auto flex-1 pr-1">
-          {/* Mode Switch: 3 Modes */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+          {/* Mode Switch: 4 Modes */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+            <button
+              type="button"
+              onClick={() => setTransferMode('staff_to_staff')}
+              className={`py-2 px-2 rounded-lg transition-all text-center cursor-pointer flex items-center justify-center space-x-1 ${
+                transferMode === 'staff_to_staff'
+                  ? 'bg-gradient-to-r from-rose-600 to-indigo-600 text-white shadow-xs font-extrabold'
+                  : 'text-rose-700 bg-rose-50/70 hover:bg-white border border-rose-200/70'
+              }`}
+              title="Chuyển toàn bộ Via, Group, Page của 1 nhân viên cũ nghỉ sang cho 1 nhân viên khác chỉ với 1 cú nhấp"
+            >
+              <UserCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>🔄 Chuyển Full 1 NV (Via+Group+Page)</span>
+            </button>
             <button
               type="button"
               onClick={() => setTransferMode('via_to_staff')}
@@ -687,7 +948,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
               }`}
             >
               <Users className="w-3.5 h-3.5 shrink-0" />
-              <span>Chuyển Via + Page (Kho Chờ / NV)</span>
+              <span>Chuyển Lẻ Via + Page</span>
             </button>
             <button
               type="button"
@@ -713,7 +974,574 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
             </button>
           </div>
 
-          {transferMode === 'via_to_staff' ? (
+          {transferMode === 'staff_to_staff' ? (
+            /* ================= MODE 0: CHUYỂN FULL 1 NHÂN VIÊN (TOÀN BỘ VIA + GROUP + PAGE) SANG NHÂN VIÊN KHÁC ================= */
+            <div className="space-y-4">
+              {/* Banner hướng dẫn */}
+              <div className="p-3 bg-gradient-to-r from-indigo-50 via-purple-50 to-rose-50 border border-indigo-200 rounded-xl flex items-start space-x-2.5 text-xs">
+                <UserCheck className="w-4 h-4 text-indigo-700 shrink-0 mt-0.5" />
+                <div className="text-slate-700 leading-relaxed">
+                  <strong className="text-indigo-950">Bàn Giao Full Khi Nhân Viên Nghỉ Việc / Điều Chuyển:</strong>{' '}
+                  Chọn <strong>1 Nhân viên cũ (nguồn)</strong> và <strong>1 Nhân viên mới nhận bàn giao</strong>. Hệ thống sẽ tự động chuyển toàn bộ{' '}
+                  <span className="font-bold text-indigo-700">Nick Via (Bảng 4)</span> +{' '}
+                  <span className="font-bold text-rose-700">Group FB (Bảng 2)</span> +{' '}
+                  <span className="font-bold text-emerald-700">Fanpage (Bảng 1)</span> sang cho nhân viên mới đồng bộ 100% trên Cloud Firestore.
+                </div>
+              </div>
+
+              {/* STEP 1: CHỌN NHÂN VIÊN CŨ / NGUỒN CẦN BÀN GIAO */}
+              <div className="space-y-2.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center space-x-1.5">
+                    <span className="w-5 h-5 rounded-full bg-rose-600 text-white text-[11px] flex items-center justify-center font-bold">
+                      1
+                    </span>
+                    <span>Chọn Nhân Viên Cũ / Nguồn Cần Chuyển Đi</span>
+                  </label>
+                  {staffSummariesForFullTransfer.length > 5 && (
+                    <div className="relative w-56">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={sourceStaffSearchQuery}
+                        onChange={(e) => setSourceStaffSearchQuery(e.target.value)}
+                        placeholder="Tìm nhanh tên nhân viên..."
+                        className="w-full pl-8 pr-2.5 py-1 text-xs bg-white border border-slate-300 rounded-lg focus:outline-hidden focus:border-rose-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Dropdown chọn nhân viên nguồn */}
+                <select
+                  value={sourceStaffForFullTransfer}
+                  onChange={(e) => {
+                    const nextSrc = e.target.value;
+                    setSourceStaffForFullTransfer(nextSrc);
+                    setErrorMessage(null);
+                    if (
+                      targetStaffForFullTransfer &&
+                      (targetStaffForFullTransfer.trim().toLowerCase() === nextSrc.trim().toLowerCase() ||
+                        areStaffNamesEquivalent(targetStaffForFullTransfer, nextSrc))
+                    ) {
+                      const alt = staffSummariesForFullTransfer.find(
+                        (s) => s.name.trim().toLowerCase() !== nextSrc.trim().toLowerCase()
+                      );
+                      setTargetStaffForFullTransfer(alt ? alt.name : ADMIN_WAITING_POOL);
+                    }
+                  }}
+                  className="w-full px-3 py-2 bg-white border-2 border-rose-300 rounded-xl text-sm font-extrabold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-rose-500/20 focus:border-rose-600 cursor-pointer"
+                >
+                  <option value="">-- Chọn nhân viên cũ cần chuyển toàn bộ dữ liệu --</option>
+                  {filteredSourceStaffList.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      👤 {s.name} — Đang giữ: {s.viasCount} Via • {s.groupsCount} Group • {s.pagesCount} Page
+                      {s.accountStatus === 'blocked' ? ' (Đã khóa TK)' : ''}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Lưới chọn nhanh nhân viên nguồn kèm badge số lượng Via / Group / Page */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto pt-1">
+                  {filteredSourceStaffList.map((s) => {
+                    const isSelected =
+                      sourceStaffForFullTransfer.trim().toLowerCase() === s.name.trim().toLowerCase();
+                    return (
+                      <button
+                        key={s.name}
+                        type="button"
+                        onClick={() => {
+                          setSourceStaffForFullTransfer(s.name);
+                          setErrorMessage(null);
+                          if (
+                            targetStaffForFullTransfer &&
+                            targetStaffForFullTransfer.trim().toLowerCase() === s.name.trim().toLowerCase()
+                          ) {
+                            const alt = staffSummariesForFullTransfer.find(
+                              (other) => other.name.trim().toLowerCase() !== s.name.trim().toLowerCase()
+                            );
+                            setTargetStaffForFullTransfer(alt ? alt.name : ADMIN_WAITING_POOL);
+                          }
+                        }}
+                        className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                          isSelected
+                            ? 'bg-rose-600 text-white border-rose-700 shadow-xs ring-2 ring-rose-300'
+                            : 'bg-white hover:bg-rose-50/60 text-slate-800 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-extrabold text-xs truncate">👤 {s.name}</span>
+                          {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                        </div>
+                        <div
+                          className={`text-[10px] font-semibold mt-1 flex flex-wrap items-center gap-1 ${
+                            isSelected ? 'text-rose-100' : 'text-slate-500'
+                          }`}
+                        >
+                          <span>{s.viasCount} Via</span>
+                          <span>•</span>
+                          <span>{s.groupsCount} Grp</span>
+                          <span>•</span>
+                          <span>{s.pagesCount} Page</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Chi tiết 3 hạng mục dữ liệu của Nhân viên nguồn (Tích chọn chuyển Full Via + Group + Page) */}
+                {sourceStaffForFullTransfer && (
+                  <div className="mt-2 pt-3 border-t border-slate-200 space-y-2.5">
+                    <div className="flex items-center justify-between flex-wrap gap-1">
+                      <span className="text-xs font-extrabold text-slate-800">
+                        Dữ liệu của <span className="text-rose-600">{sourceStaffForFullTransfer}</span> sẽ được chuyển:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFullTransferIncludeVias(true);
+                          setFullTransferIncludeGroups(true);
+                          setFullTransferIncludePages(true);
+                        }}
+                        className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                      >
+                        ✓ Chọn Full cả 3 (Via + Group + Page)
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      {/* Card 1: Nick Via (Bảng 4) */}
+                      <label
+                        className={`p-2.5 rounded-xl border-2 cursor-pointer transition-all select-none flex flex-col justify-between ${
+                          fullTransferIncludeVias
+                            ? 'bg-indigo-50/80 border-indigo-400 shadow-2xs'
+                            : 'bg-white border-slate-200 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div className="flex items-center space-x-1.5">
+                            <input
+                              type="checkbox"
+                              checked={fullTransferIncludeVias}
+                              onChange={(e) => setFullTransferIncludeVias(e.target.checked)}
+                              className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                            />
+                            <span className="text-xs font-extrabold text-indigo-950 flex items-center gap-1">
+                              <KeyRound className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Nick Via (Bảng 4)</span>
+                            </span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-black bg-indigo-600 text-white">
+                            {sourceStaffDetails.vias.length}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 text-[10px] text-slate-600">
+                          {sourceStaffDetails.vias.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-h-14 overflow-y-auto">
+                              {sourceStaffDetails.vias.slice(0, 6).map((v) => (
+                                <span
+                                  key={v.id}
+                                  className="px-1.5 py-0.5 bg-white border border-indigo-200 rounded font-mono text-[10px] text-indigo-900"
+                                >
+                                  {v.uid}
+                                </span>
+                              ))}
+                              {sourceStaffDetails.vias.length > 6 && (
+                                <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold">
+                                  +{sourceStaffDetails.vias.length - 6} Via
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="italic text-slate-400">Không có Via nào</span>
+                          )}
+                        </div>
+                      </label>
+
+                      {/* Card 2: Group FB (Bảng 2) */}
+                      <label
+                        className={`p-2.5 rounded-xl border-2 cursor-pointer transition-all select-none flex flex-col justify-between ${
+                          fullTransferIncludeGroups
+                            ? 'bg-rose-50/80 border-rose-400 shadow-2xs'
+                            : 'bg-white border-slate-200 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div className="flex items-center space-x-1.5">
+                            <input
+                              type="checkbox"
+                              checked={fullTransferIncludeGroups}
+                              onChange={(e) => setFullTransferIncludeGroups(e.target.checked)}
+                              className="rounded text-rose-600 focus:ring-rose-500 cursor-pointer"
+                            />
+                            <span className="text-xs font-extrabold text-rose-950 flex items-center gap-1">
+                              <Users className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Group FB (Bảng 2)</span>
+                            </span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-black bg-rose-600 text-white">
+                            {sourceStaffDetails.groups.length}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 text-[10px] text-slate-600">
+                          {sourceStaffDetails.groups.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-h-14 overflow-y-auto">
+                              {sourceStaffDetails.uniqueGroupNames.slice(0, 5).map((gName, idx) => (
+                                <span
+                                  key={idx}
+                                  className="px-1.5 py-0.5 bg-white border border-rose-200 rounded text-[10px] text-rose-900 truncate max-w-[130px]"
+                                  title={gName}
+                                >
+                                  {gName}
+                                </span>
+                              ))}
+                              {sourceStaffDetails.uniqueGroupNames.length > 5 && (
+                                <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 rounded font-bold">
+                                  +{sourceStaffDetails.uniqueGroupNames.length - 5} nhóm
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="italic text-slate-400">Không có Group nào</span>
+                          )}
+                        </div>
+                      </label>
+
+                      {/* Card 3: Fanpage (Bảng 1) */}
+                      <label
+                        className={`p-2.5 rounded-xl border-2 cursor-pointer transition-all select-none flex flex-col justify-between ${
+                          fullTransferIncludePages
+                            ? 'bg-emerald-50/80 border-emerald-400 shadow-2xs'
+                            : 'bg-white border-slate-200 opacity-60'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-1.5">
+                          <div className="flex items-center space-x-1.5">
+                            <input
+                              type="checkbox"
+                              checked={fullTransferIncludePages}
+                              onChange={(e) => setFullTransferIncludePages(e.target.checked)}
+                              className="rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                            />
+                            <span className="text-xs font-extrabold text-emerald-950 flex items-center gap-1">
+                              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Fanpage (Bảng 1)</span>
+                            </span>
+                          </div>
+                          <span className="px-2 py-0.5 rounded-full text-xs font-black bg-emerald-600 text-white">
+                            {sourceStaffDetails.pages.length}
+                          </span>
+                        </div>
+                        <div className="mt-1.5 text-[10px] text-slate-600">
+                          {sourceStaffDetails.pages.length > 0 ? (
+                            <div className="flex flex-wrap gap-1 max-h-14 overflow-y-auto">
+                              {sourceStaffDetails.pages.slice(0, 5).map((p) => (
+                                <span
+                                  key={p.id}
+                                  className="px-1.5 py-0.5 bg-white border border-emerald-200 rounded text-[10px] text-emerald-900 truncate max-w-[130px]"
+                                  title={p.pageName}
+                                >
+                                  {p.pageName}
+                                </span>
+                              ))}
+                              {sourceStaffDetails.pages.length > 5 && (
+                                <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold">
+                                  +{sourceStaffDetails.pages.length - 5} page
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="italic text-slate-400">Không có Fanpage nào</span>
+                          )}
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* STEP 2: CHỌN NHÂN VIÊN MỚI NHẬN BÀN GIAO (HOẶC KHO CHỜ ADMIN) */}
+              <div className="space-y-2.5 bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-200">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center space-x-1.5">
+                  <span className="w-5 h-5 rounded-full bg-emerald-600 text-white text-[11px] flex items-center justify-center font-bold">
+                    2
+                  </span>
+                  <span>Chọn Nhân Viên Khác Nhận Toàn Bộ Bàn Giao (Hoặc Kho Chờ Admin)</span>
+                </label>
+
+                <select
+                  value={targetStaffForFullTransfer}
+                  onChange={(e) => {
+                    setTargetStaffForFullTransfer(e.target.value);
+                    setErrorMessage(null);
+                  }}
+                  className="w-full px-3 py-2 bg-white border-2 border-emerald-400 rounded-xl text-sm font-extrabold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-600 cursor-pointer"
+                >
+                  <option value="">-- Chọn nhân viên nhận bàn giao --</option>
+                  {currentUser.role === 'admin' && (
+                    <option value={ADMIN_WAITING_POOL}>
+                      📦 {ADMIN_WAITING_POOL} (Cất vào Kho Chờ Admin - Chưa NV nào dùng)
+                    </option>
+                  )}
+                  {staffSummariesForFullTransfer
+                    .filter(
+                      (s) =>
+                        s.name.trim().toLowerCase() !==
+                        sourceStaffForFullTransfer.trim().toLowerCase()
+                    )
+                    .map((s) => (
+                      <option key={s.name} value={s.name}>
+                        👤 {s.name} (Hiện có: {s.viasCount} Via • {s.groupsCount} Group • {s.pagesCount} Page)
+                      </option>
+                    ))}
+                  <option value="__CUSTOM_NEW__">➕ Nhập tên nhân viên mới khác...</option>
+                </select>
+
+                {targetStaffForFullTransfer === '__CUSTOM_NEW__' && (
+                  <input
+                    type="text"
+                    value={customNewTargetStaff}
+                    onChange={(e) => setCustomNewTargetStaff(e.target.value)}
+                    placeholder="Nhập tên nhân viên mới nhận bàn giao (VD: MS.LAN)..."
+                    className="w-full px-3 py-2 bg-white border border-emerald-400 rounded-xl text-xs font-bold text-slate-900 focus:outline-hidden focus:border-emerald-600"
+                  />
+                )}
+
+                {/* Nút chọn nhanh nhân viên đích */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-36 overflow-y-auto pt-1">
+                  {currentUser.role === 'admin' && (
+                    <button
+                      type="button"
+                      onClick={() => setTargetStaffForFullTransfer(ADMIN_WAITING_POOL)}
+                      className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between ${
+                        isAdminWaitingPool(targetStaffForFullTransfer)
+                          ? 'bg-amber-600 text-white border-amber-700 shadow-xs font-extrabold'
+                          : 'bg-amber-50/80 hover:bg-amber-100 text-amber-950 border-amber-300 font-bold'
+                      }`}
+                    >
+                      <span className="text-xs truncate">📦 {ADMIN_WAITING_POOL}</span>
+                      {isAdminWaitingPool(targetStaffForFullTransfer) && (
+                        <Check className="w-3.5 h-3.5 shrink-0" />
+                      )}
+                    </button>
+                  )}
+                  {staffSummariesForFullTransfer
+                    .filter(
+                      (s) =>
+                        s.name.trim().toLowerCase() !==
+                        sourceStaffForFullTransfer.trim().toLowerCase()
+                    )
+                    .map((s) => {
+                      const isSelected =
+                        targetStaffForFullTransfer.trim().toLowerCase() ===
+                        s.name.trim().toLowerCase();
+                      return (
+                        <button
+                          key={s.name}
+                          type="button"
+                          onClick={() => setTargetStaffForFullTransfer(s.name)}
+                          className={`p-2 rounded-lg border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300'
+                              : 'bg-white hover:bg-emerald-50 text-slate-800 border-slate-200'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-extrabold text-xs truncate">👤 {s.name}</span>
+                            {isSelected && <Check className="w-3.5 h-3.5 shrink-0" />}
+                          </div>
+                          <span
+                            className={`text-[10px] font-semibold mt-0.5 ${
+                              isSelected ? 'text-emerald-100' : 'text-slate-500'
+                            }`}
+                          >
+                            Đang có: {s.viasCount} Via • {s.groupsCount} Grp • {s.pagesCount} Page
+                          </span>
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
+
+              {/* STEP 3: XỬ LÝ TÀI KHOẢN NHÂN VIÊN CŨ (KHI NHÂN VIÊN NGHỈ VIỆC) & GHI CHÚ */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-3">
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center space-x-1.5">
+                  <span className="w-5 h-5 rounded-full bg-slate-700 text-white text-[11px] flex items-center justify-center font-bold">
+                    3
+                  </span>
+                  <span>Tùy Chọn Xử Lý Tài Khoản Nhân Viên Cũ ({sourceStaffForFullTransfer || '...'})</span>
+                </label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs">
+                  <label
+                    className={`flex items-start space-x-2 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                      oldAccountAction === 'keep'
+                        ? 'bg-white border-indigo-500 ring-1 ring-indigo-500 font-bold'
+                        : 'bg-white/70 border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="oldAccountAction"
+                      checked={oldAccountAction === 'keep'}
+                      onChange={() => setOldAccountAction('keep')}
+                      className="mt-0.5 text-indigo-600"
+                    />
+                    <div>
+                      <span className="block text-slate-900 font-bold">Giữ nguyên tài khoản</span>
+                      <span className="text-[10px] text-slate-500 font-normal">
+                        Chỉ chuyển Via, Group, Page sang NV mới
+                      </span>
+                    </div>
+                  </label>
+
+                  <label
+                    className={`flex items-start space-x-2 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                      oldAccountAction === 'block'
+                        ? 'bg-amber-50 border-amber-500 ring-1 ring-amber-500 font-bold'
+                        : 'bg-white/70 border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="oldAccountAction"
+                      checked={oldAccountAction === 'block'}
+                      onChange={() => setOldAccountAction('block')}
+                      className="mt-0.5 text-amber-600"
+                    />
+                    <div>
+                      <span className="block text-amber-950 font-bold flex items-center gap-1">
+                        <Lock className="w-3 h-3 text-amber-600" />
+                        <span>Tạm khóa TK NV cũ</span>
+                      </span>
+                      <span className="text-[10px] text-amber-800 font-normal">
+                        Khóa đăng nhập nhân viên cũ sau khi bàn giao
+                      </span>
+                    </div>
+                  </label>
+
+                  <label
+                    className={`flex items-start space-x-2 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                      oldAccountAction === 'delete'
+                        ? 'bg-rose-50 border-rose-500 ring-1 ring-rose-500 font-bold'
+                        : 'bg-white/70 border-slate-200'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="oldAccountAction"
+                      checked={oldAccountAction === 'delete'}
+                      onChange={() => setOldAccountAction('delete')}
+                      className="mt-0.5 text-rose-600"
+                    />
+                    <div>
+                      <span className="block text-rose-950 font-bold flex items-center gap-1">
+                        <Trash2 className="w-3 h-3 text-rose-600" />
+                        <span>Xóa TK đăng nhập NV cũ</span>
+                      </span>
+                      <span className="text-[10px] text-rose-800 font-normal">
+                        Thu hồi PIN & xóa tên NV cũ đã nghỉ việc
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Ghi chú bàn giao */}
+                <div className="pt-2 border-t border-slate-200 space-y-1.5 text-xs">
+                  <label className="flex items-center space-x-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={appendHistoryNote}
+                      onChange={(e) => setAppendHistoryNote(e.target.checked)}
+                      className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <span className="font-bold text-slate-800">
+                      Ghi chú lịch sử bàn giao vào Via & Page
+                    </span>
+                  </label>
+                  {appendHistoryNote && (
+                    <input
+                      type="text"
+                      value={historyNoteText}
+                      onChange={(e) => setHistoryNoteText(e.target.value)}
+                      placeholder="Nội dung ghi chú bàn giao..."
+                      className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:border-indigo-500"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* STEP 4: TỔNG KẾT ĐỐI CHIẾU TRƯỚC KHI BÀN GIAO FULL */}
+              {sourceStaffForFullTransfer && resolvedFullTransferTargetStaff && (
+                <div className="p-3.5 bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-emerald-300 rounded-xl text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2 text-emerald-950 font-extrabold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Xác nhận bàn giao toàn bộ tài nguyên nhân sự:</span>
+                    </div>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white">
+                      Chuyển 1 Chạm
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-emerald-200 shadow-2xs">
+                    <div>
+                      <span className="text-[10px] text-rose-600 font-extrabold uppercase block">
+                        NHÂN VIÊN CŨ (NGUỒN)
+                      </span>
+                      <span className="text-sm font-black text-slate-900 block">
+                        👤 {sourceStaffForFullTransfer}
+                      </span>
+                      <span className="text-[11px] text-slate-500">
+                        {oldAccountAction === 'delete'
+                          ? '🗑️ Sẽ xóa TK đăng nhập sau khi chuyển'
+                          : oldAccountAction === 'block'
+                          ? '🔒 Sẽ tạm khóa TK sau khi chuyển'
+                          : 'Giữ nguyên tài khoản'}
+                      </span>
+                    </div>
+
+                    <div className="flex flex-col items-center px-3 text-center">
+                      <div className="flex flex-wrap items-center justify-center gap-1 mb-1">
+                        {fullTransferIncludeVias && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 text-indigo-800 border border-indigo-300">
+                            {sourceStaffDetails.vias.length} Via
+                          </span>
+                        )}
+                        {fullTransferIncludeGroups && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-300">
+                            {sourceStaffDetails.groups.length} Group
+                          </span>
+                        )}
+                        {fullTransferIncludePages && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            {sourceStaffDetails.pages.length} Page
+                          </span>
+                        )}
+                      </div>
+                      <ArrowRightLeft className="w-4 h-4 text-emerald-600" />
+                    </div>
+
+                    <div className="text-right">
+                      <span className="text-[10px] text-emerald-700 font-extrabold uppercase block">
+                        NHÂN VIÊN NHẬN BÀN GIAO
+                      </span>
+                      <span className="text-sm font-black text-emerald-800 block">
+                        {isAdminWaitingPool(resolvedFullTransferTargetStaff)
+                          ? `📦 ${resolvedFullTransferTargetStaff}`
+                          : `👤 ${resolvedFullTransferTargetStaff}`}
+                      </span>
+                      <span className="text-[11px] text-slate-600 font-semibold">
+                        {isAdminWaitingPool(resolvedFullTransferTargetStaff)
+                          ? 'Lưu trữ vào Kho Chờ Admin'
+                          : '🔴 Tự động báo đỏ Via & Page mới nhận'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : transferMode === 'via_to_staff' ? (
             /* ================= MODE 1: CHUYỂN VIA + TOÀN BỘ PAGE VIA ĐÓ CẦM (KHO CHỜ ADMIN ⇄ NHÂN VIÊN) ================= */
             <>
               {/* STEP 1: CHỌN NICK VIA (KÈM TOÀN BỘ PAGE ĐANG CẦM) */}
@@ -1796,7 +2624,43 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
             Hủy Bỏ
           </button>
 
-          {transferMode === 'via_to_staff' ? (
+          {transferMode === 'staff_to_staff' ? (
+            <button
+              type="button"
+              disabled={
+                !sourceStaffForFullTransfer.trim() ||
+                !resolvedFullTransferTargetStaff ||
+                (!fullTransferIncludeVias &&
+                  !fullTransferIncludeGroups &&
+                  !fullTransferIncludePages) ||
+                isSubmitting
+              }
+              onClick={handleExecuteTransfer}
+              className="px-5 py-2.5 text-xs font-extrabold text-white bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-700 hover:to-indigo-700 rounded-xl shadow-sm transition-all flex items-center space-x-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isSubmitting ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Đang Bàn Giao Toàn Bộ Dữ Liệu...</span>
+                </>
+              ) : (
+                <>
+                  <UserCheck className="w-4 h-4" />
+                  <span>
+                    🔄 Xác Nhận Chuyển Full (
+                    {[
+                      fullTransferIncludeVias ? `${sourceStaffDetails.vias.length} Via` : '',
+                      fullTransferIncludeGroups ? `${sourceStaffDetails.groups.length} Group` : '',
+                      fullTransferIncludePages ? `${sourceStaffDetails.pages.length} Page` : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' + ')}
+                    ) Từ {sourceStaffForFullTransfer || '...'} ➔ {resolvedFullTransferTargetStaff || '...'}
+                  </span>
+                </>
+              )}
+            </button>
+          ) : transferMode === 'via_to_staff' ? (
             <button
               type="button"
               disabled={

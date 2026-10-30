@@ -54,6 +54,7 @@ import {
   TrendingUp,
   PieChart,
   ArrowUpDown,
+  ArrowRightLeft,
 } from 'lucide-react';
 
 interface StaffManagementTableProps {
@@ -81,6 +82,7 @@ interface StaffManagementTableProps {
   onSwitchToStaffView?: (staffName: string) => void;
   onOpenAdminModal?: (tab?: 'staff' | 'pending' | 'blocked' | 'admin_pin' | 'security_db') => void;
   onOpenDeleteStaffModal?: (staffName?: string) => void;
+  onOpenTransferStaffModal?: (staffName?: string) => void;
 }
 
 export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
@@ -108,6 +110,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
   onSwitchToStaffView,
   onOpenAdminModal,
   onOpenDeleteStaffModal,
+  onOpenTransferStaffModal,
 }) => {
   const isAdmin = currentUser.role === 'admin';
   const myStaffNameLower = (currentUser.name || '').trim().toLowerCase();
@@ -742,16 +745,29 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                 {isMasterAdminExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
               </button>
 
+              {onOpenTransferStaffModal && (
+                <button
+                  type="button"
+                  id="btn-transfer-full-staff-top"
+                  onClick={() => onOpenTransferStaffModal()}
+                  className="inline-flex items-center space-x-1.5 px-3.5 py-2.5 bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-700 hover:to-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-xs transition-all cursor-pointer hover:scale-[1.02]"
+                  title="Chuyển toàn bộ Via, Group và Fanpage của 1 nhân viên cũ nghỉ sang cho nhân viên khác"
+                >
+                  <ArrowRightLeft className="w-3.5 h-3.5" />
+                  <span>🔄 Chuyển Full NV Nghỉ (Via + Group + Page)</span>
+                </button>
+              )}
+
               {onOpenDeleteStaffModal && (
                 <button
                   type="button"
                   id="btn-delete-staff-data-top"
                   onClick={() => onOpenDeleteStaffModal()}
                   className="inline-flex items-center space-x-1.5 px-3 py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-xl border border-rose-200 transition-colors cursor-pointer"
-                  title="Chọn xóa toàn bộ dữ liệu của 1 nhân viên bất kỳ"
+                  title="Bàn giao hoặc xóa toàn bộ dữ liệu của 1 nhân viên bất kỳ"
                 >
                   <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                  <span>Xóa Dữ Liệu 1 NV</span>
+                  <span>Xử Lý NV Nghỉ / Xóa</span>
                 </button>
               )}
 
@@ -2211,6 +2227,19 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                               </button>
                             ) : null}
 
+                            {/* Bàn Giao Full Via + Group + Page Sang NV Khác */}
+                            {onOpenTransferStaffModal && acc.role !== 'admin' && (
+                              <button
+                                type="button"
+                                onClick={() => onOpenTransferStaffModal(acc.username)}
+                                className="px-2 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg border border-emerald-300 text-[11px] font-extrabold transition-colors cursor-pointer flex items-center space-x-1 shadow-2xs"
+                                title={`Bàn giao toàn bộ ${staffViasCount} Via, ${staffGroupsCount} Group, ${staffPagesCount} Page của ${acc.username} sang nhân viên khác`}
+                              >
+                                <ArrowRightLeft className="w-3 h-3 text-emerald-700" />
+                                <span>Bàn giao Full</span>
+                              </button>
+                            )}
+
                             {/* Xóa Nhân Viên */}
                             <button
                               type="button"
@@ -2224,7 +2253,7 @@ export const StaffManagementTable: React.FC<StaffManagementTableProps> = ({
                                 }
                               }}
                               className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
-                              title={`Xóa dữ liệu & tài khoản của ${acc.username}`}
+                              title={`Bàn giao hoặc xóa dữ liệu & tài khoản của ${acc.username}`}
                             >
                               <Trash2 className="w-3.5 h-3.5" />
                             </button>

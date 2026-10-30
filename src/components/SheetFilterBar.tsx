@@ -430,6 +430,22 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                   </button>
                 );
               })}
+
+              {onOpenTransferModal &&
+                filter.staffName &&
+                filter.staffName.trim() &&
+                filter.staffName.trim().toLowerCase() !== 'all' &&
+                !isAdminWaitingPool(filter.staffName) && (
+                  <button
+                    type="button"
+                    onClick={onOpenTransferModal}
+                    className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold bg-gradient-to-r from-rose-600 to-indigo-600 hover:from-rose-700 hover:to-indigo-700 text-white shadow-2xs transition-all cursor-pointer shrink-0"
+                    title={`Chuyển toàn bộ Via + Group + Page của ${filter.staffName} sang cho nhân viên khác`}
+                  >
+                    <ArrowRightLeft className="w-3 h-3" />
+                    <span>Bàn giao Full {filter.staffName}</span>
+                  </button>
+                )}
             </div>
           )}
 
@@ -619,10 +635,10 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
                 id="btn-transfer-page-in-filter-bar"
                 onClick={onOpenTransferModal}
                 className="inline-flex items-center space-x-1 px-2 py-0.5 text-[11px] font-bold text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md shadow-2xs transition-all cursor-pointer"
-                title="Chuyển Fanpage / Nick Via sang Nhân viên khác hoặc Kho Chờ Admin"
+                title="Chuyển Full 1 Nhân Viên (Via + Group + Page) sang Nhân viên khác khi nghỉ việc hoặc chuyển lẻ Via/Page"
               >
                 <ArrowRightLeft className="w-3 h-3" />
-                <span>Chuyển Via/Page</span>
+                <span>Chuyển Full NV / Via / Page</span>
               </button>
             )}
 
