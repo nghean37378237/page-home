@@ -2957,12 +2957,21 @@ export default function App() {
       await batchSaveCloudPageRecords(matching);
     }
 
-    // Đồng bộ ngược sang Bảng Group nếu Via được báo hoặc đổi nhân viên ở Quản Trị Via
+    // Đồng bộ ngược sang Bảng Group nếu Via được báo, đổi nhân viên, hoặc đổi trạng thái Jon Group ở Quản Trị Via
     if (cleanUidLower) {
       const matchingGroups = groupRecords.filter(
         (g) => normalizeViaUidKey(g.uid) === cleanUidLower
       );
       if (matchingGroups.length > 0) {
+        const mappedJoinStatus =
+          updatedVia.groupJoinStatus === 'chua_jon'
+            ? ('Chưa' as const)
+            : updatedVia.groupJoinStatus === 'cho_duyet'
+            ? ('Jon chờ duyệt' as const)
+            : updatedVia.groupJoinStatus === 'da_jon'
+            ? ('Đã Jon' as const)
+            : undefined;
+
         const toUpdateGroups = matchingGroups
           .map((g) => {
             const nextStaff = updatedVia.staffName || g.staffName;
@@ -2972,11 +2981,28 @@ export default function App() {
             } else if (isViaRestored || updatedVia.adminReportStatus === 'None') {
               nextNote = '';
             }
-            if (nextStaff === g.staffName && nextNote === (g.note || '')) return null;
+            const nextJoinStatus = mappedJoinStatus || g.joinStatus;
+            const nextAdminJoinReport =
+              mappedJoinStatus === 'Chưa'
+                ? ('Chưa Jont' as const)
+                : mappedJoinStatus === 'Đã Jon' && g.adminJoinReport === 'Chưa Jont'
+                ? ('Đã Duyệt' as const)
+                : g.adminJoinReport;
+
+            if (
+              nextStaff === g.staffName &&
+              nextNote === (g.note || '') &&
+              nextJoinStatus === g.joinStatus &&
+              nextAdminJoinReport === g.adminJoinReport
+            ) {
+              return null;
+            }
             return {
               ...g,
               staffName: nextStaff,
               note: nextNote,
+              ...(nextJoinStatus ? { joinStatus: nextJoinStatus } : {}),
+              ...(nextAdminJoinReport !== undefined ? { adminJoinReport: nextAdminJoinReport } : {}),
               updatedAt: new Date().toISOString(),
             };
           })

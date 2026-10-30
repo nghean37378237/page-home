@@ -67,7 +67,13 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
   );
   const [batchNote, setBatchNote] = useState('');
   const [pageStatusOption, setPageStatusOption] = useState<
-    'none' | 'has_page' | 'admin_added_page' | 'pending_page' | 'admin_added_group' | 'has_group'
+    | 'none'
+    | 'has_page'
+    | 'admin_added_page'
+    | 'pending_page'
+    | 'admin_added_group'
+    | 'has_group'
+    | 'not_joined_group'
   >('none');
   const [overwriteDuplicates, setOverwriteDuplicates] = useState(true); // Default to supplement/update existing UIDs with 2FA|Mail|Pass
   const [assignmentMode, setAssignmentMode] = useState<'single' | 'round_robin' | 'auto_detect'>('auto_detect');
@@ -239,6 +245,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
     let adminThemGroup = 0;
     let coGroupTuDau = 0;
     let canThemGroup = 0;
+    let chuaJonGroup = 0;
 
     existingVias.forEach((v) => {
       const noteLower = `${v.note || ''} ${v.sharedNote || ''}`.toLowerCase();
@@ -249,11 +256,18 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
         noteLower.includes('có group từ đầu') || noteLower.includes('đã có group');
       const isCanThem =
         noteLower.includes('cần thêm group') || noteLower.includes('cần join group');
+      const isChuaJon =
+        v.groupJoinStatus === 'chua_jon' ||
+        v.pageUpdateStatus === 'not_joined_group' ||
+        noteLower.includes('chưa jon group') ||
+        noteLower.includes('chưa join group') ||
+        noteLower.includes('via chưa jon');
       const isAnyGroup =
         isThemMoi ||
         isAdminThem ||
         isCoTuDau ||
         isCanThem ||
+        isChuaJon ||
         noteLower.includes('group') ||
         v.pageUpdateStatus === 'for_group';
 
@@ -262,6 +276,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
       if (isAdminThem) adminThemGroup++;
       if (isCoTuDau) coGroupTuDau++;
       if (isCanThem) canThemGroup++;
+      if (isChuaJon) chuaJonGroup++;
     });
 
     return {
@@ -270,6 +285,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
       adminThemGroup,
       coGroupTuDau,
       canThemGroup,
+      chuaJonGroup,
     };
   }, [existingVias]);
 
@@ -367,21 +383,30 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
       }
 
       const noteLower = batchNote.toLowerCase();
+      const isNotJoinedGroup =
+        pageStatusOption === 'not_joined_group' ||
+        noteLower.includes('chưa jon group') ||
+        noteLower.includes('chưa join group') ||
+        noteLower.includes('via chưa jon');
+
       const isAdminAddedGroup =
-        pageStatusOption === 'admin_added_group' ||
-        noteLower.includes('thêm mới để thêm group') ||
-        noteLower.includes('admin đã thêm group') ||
-        noteLower.includes('admin thêm group') ||
-        noteLower.includes('cần thêm group') ||
-        noteLower.includes('cần join group');
+        !isNotJoinedGroup &&
+        (pageStatusOption === 'admin_added_group' ||
+          noteLower.includes('thêm mới để thêm group') ||
+          noteLower.includes('admin đã thêm group') ||
+          noteLower.includes('admin thêm group') ||
+          noteLower.includes('cần thêm group') ||
+          noteLower.includes('cần join group'));
 
       const isMarkedHasGroup =
+        !isNotJoinedGroup &&
         !isAdminAddedGroup &&
         (pageStatusOption === 'has_group' ||
           noteLower.includes('có group từ đầu') ||
           noteLower.includes('đã có group'));
 
       const isAdminAddedPage =
+        !isNotJoinedGroup &&
         !isAdminAddedGroup &&
         !isMarkedHasGroup &&
         (pageStatusOption === 'admin_added_page' ||
@@ -391,6 +416,7 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
           noteLower.includes('cần gán page'));
 
       const isMarkedHasPage =
+        !isNotJoinedGroup &&
         !isAdminAddedPage &&
         !isAdminAddedGroup &&
         !isMarkedHasGroup &&
@@ -404,7 +430,9 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
       const finalNote = batchNote
         ? `${batchNote}${row.extra ? ` - ${row.extra}` : ''}`
         : row.extra ||
-          (isAdminAddedGroup
+          (isNotJoinedGroup
+            ? 'Via chưa Jon Group'
+            : isAdminAddedGroup
             ? 'Thêm mới để thêm Group'
             : isMarkedHasGroup
             ? 'Có Group từ đầu'
@@ -428,7 +456,20 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
         adminReportStatus: 'None',
         createdAt: new Date().toLocaleDateString('vi-VN'),
         rawFullVia: buildFullViaString(row.uid, row.pass, row.twoFa, row.email, row.emailPass, row.extra),
-        pageUpdateStatus: isPendingAssign ? 'pending' : isUpdatedAssign ? 'updated' : 'none',
+        pageUpdateStatus: isNotJoinedGroup
+          ? 'not_joined_group'
+          : isPendingAssign
+          ? 'pending'
+          : isUpdatedAssign
+          ? 'updated'
+          : 'none',
+        groupJoinStatus: isNotJoinedGroup
+          ? 'chua_jon'
+          : isMarkedHasGroup
+          ? 'da_jon'
+          : isAdminAddedGroup
+          ? 'chua_jon'
+          : 'none',
         hasAdminAssignedPage: isPendingAssign,
         pageAssignedAt: isPendingAssign ? new Date().toLocaleDateString('vi-VN') : undefined,
         pageUpdatedAt: isUpdatedAssign ? new Date().toLocaleDateString('vi-VN') : undefined,
@@ -928,7 +969,13 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                   </div>
 
                   {/* Bảng thống kê mini cho mục Group của Via */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 bg-white/90 p-1.5 rounded-lg border border-purple-200/80 text-[10px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 bg-white/90 p-1.5 rounded-lg border border-purple-200/80 text-[10px]">
+                    <div className="px-1.5 py-1 rounded bg-orange-50 border border-orange-200 flex flex-col">
+                      <span className="text-orange-800 font-bold truncate">🟠 Chưa Jon Group</span>
+                      <span className="font-black text-orange-950 text-xs">
+                        {existingGroupViaStats.chuaJonGroup} <span className="text-[9px] font-normal">via</span>
+                      </span>
+                    </div>
                     <div className="px-1.5 py-1 rounded bg-purple-50 border border-purple-100 flex flex-col">
                       <span className="text-purple-700 font-semibold truncate">🟣 Thêm mới Group</span>
                       <span className="font-black text-purple-950 text-xs">
@@ -1153,6 +1200,58 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                         {existingGroupViaStats.canThemGroup}
                       </span>
                     </button>
+
+                    {/* Nút 5: Via chưa Jon Group */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const isSelected =
+                          pageStatusOption === 'not_joined_group' ||
+                          batchNote.toLowerCase().includes('chưa jon group');
+                        if (isSelected) {
+                          setPageStatusOption('none');
+                          setBatchNote((prev) =>
+                            prev.replace(/(\s*-\s*)?Via chưa Jon Group/gi, '').trim()
+                          );
+                        } else {
+                          setPageStatusOption('not_joined_group');
+                          setBatchNote((prev) => {
+                            const cleaned = prev
+                              .replace(/(\s*-\s*)?Admin đã thêm page/gi, '')
+                              .replace(/(\s*-\s*)?Có page từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Đã có page/gi, '')
+                              .replace(/(\s*-\s*)?Cần gán page/gi, '')
+                              .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
+                              .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                              .replace(/(\s*-\s*)?Cần thêm Group/gi, '')
+                              .trim();
+                            return cleaned
+                              ? `${cleaned} - Via chưa Jon Group`
+                              : 'Via chưa Jon Group';
+                          });
+                        }
+                      }}
+                      className={`inline-flex items-center space-x-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer border ${
+                        pageStatusOption === 'not_joined_group' ||
+                        batchNote.toLowerCase().includes('chưa jon group')
+                          ? 'bg-orange-600 text-white border-orange-700 shadow-xs ring-2 ring-orange-300'
+                          : 'bg-white text-orange-800 border-orange-300 hover:bg-orange-100'
+                      }`}
+                      title="Đánh dấu nick Via chưa Jon Group (đồng bộ mục Trạng Thái)"
+                    >
+                      <span>🟠 Via chưa Jon Group</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          pageStatusOption === 'not_joined_group' ||
+                          batchNote.toLowerCase().includes('chưa jon group')
+                            ? 'bg-white/25 text-white'
+                            : 'bg-orange-100 text-orange-800'
+                        }`}
+                      >
+                        {existingGroupViaStats.chuaJonGroup}
+                      </span>
+                    </button>
                   </div>
                 </div>
 
@@ -1323,7 +1422,46 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                     </div>
                   </label>
 
-                  {/* LỰA CHỌN 4: CHƯA CÓ PAGE / GROUP */}
+                  {/* LỰA CHỌN 4: VIA CHƯA JON GROUP */}
+                  <label
+                    className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                      pageStatusOption === 'not_joined_group' ||
+                      batchNote.toLowerCase().includes('chưa jon group')
+                        ? 'bg-orange-50 border-orange-400 font-bold text-orange-950 shadow-2xs ring-1 ring-orange-300'
+                        : 'bg-white border-slate-200 text-slate-600 hover:bg-orange-50/50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="pageStatusRadio"
+                      checked={
+                        pageStatusOption === 'not_joined_group' ||
+                        batchNote.toLowerCase().includes('chưa jon group')
+                      }
+                      onChange={() => {
+                        setPageStatusOption('not_joined_group');
+                        if (
+                          !batchNote ||
+                          batchNote === 'Admin đã thêm page' ||
+                          batchNote === 'Có page từ đầu' ||
+                          batchNote === 'Đã có page' ||
+                          batchNote === 'Cần gán page' ||
+                          batchNote === 'Thêm mới để thêm Group' ||
+                          batchNote === 'Admin đã thêm Group' ||
+                          batchNote === 'Có Group từ đầu'
+                        ) {
+                          setBatchNote('Via chưa Jon Group');
+                        }
+                      }}
+                      className="w-3.5 h-3.5 text-orange-600 focus:ring-orange-500 cursor-pointer shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <span className="truncate block font-bold text-orange-700">🟠 Via chưa Jon Group</span>
+                      <span className="text-[10px] text-orange-600 font-medium block">Chưa Jon Group ({existingGroupViaStats.chuaJonGroup} nick)</span>
+                    </div>
+                  </label>
+
+                  {/* LỰA CHỌN 5: CHƯA CÓ PAGE / GROUP */}
                   <label
                     className={`flex items-center space-x-1.5 px-2 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
                       pageStatusOption === 'none' &&
@@ -1357,7 +1495,8 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                           batchNote === 'Thêm mới để thêm Group' ||
                           batchNote === 'Admin đã thêm Group' ||
                           batchNote === 'Có Group từ đầu' ||
-                          batchNote === 'Cần thêm Group'
+                          batchNote === 'Cần thêm Group' ||
+                          batchNote === 'Via chưa Jon Group'
                         ) {
                           setBatchNote('');
                         }

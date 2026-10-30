@@ -159,6 +159,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     | 'group_can_them'
     | 'has_group'
     | 'group_chua_gan'
+    | 'group_chua_jon'
+    | 'group_cho_duyet'
+    | 'group_da_jon'
+    | 'no_group_at_all'
   >('all');
   const [adminReportFilter, setAdminReportFilter] = useState<'all' | ViaAdminReportStatus>('all');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>(
@@ -208,6 +212,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     isError?: boolean;
     isFixed?: boolean;
     pageUpdateStatus: ViaPageUpdateStatus;
+    groupJoinStatus?: 'none' | 'chua_jon' | 'cho_duyet' | 'da_jon';
     adminReportStatus?: ViaAdminReportStatus;
   }>({
     uid: '',
@@ -222,6 +227,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     isError: false,
     isFixed: false,
     pageUpdateStatus: 'none',
+    groupJoinStatus: 'none',
     adminReportStatus: 'None',
   });
 
@@ -270,20 +276,108 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       noteLower.includes('có group từ đầu') || noteLower.includes('đã có group');
     const isCanThemGroup =
       noteLower.includes('cần thêm group') || noteLower.includes('cần join group');
+    const isChuaJonNote =
+      noteLower.includes('chưa jon') ||
+      noteLower.includes('chưa join') ||
+      noteLower.includes('chưa jont') ||
+      via.groupJoinStatus === 'chua_jon' ||
+      via.pageUpdateStatus === 'not_joined_group';
     const hasGroupNote =
       isThemMoiGroup ||
       isAdminThemGroup ||
       isCoGroupTuDau ||
       isCanThemGroup ||
+      isChuaJonNote ||
       noteLower.includes('group') ||
-      via.pageUpdateStatus === 'for_group';
+      via.pageUpdateStatus === 'for_group' ||
+      via.pageUpdateStatus === 'not_joined_group' ||
+      Boolean(via.groupJoinStatus && via.groupJoinStatus !== 'none');
 
     return {
       isThemMoiGroup,
       isAdminThemGroup,
       isCoGroupTuDau,
       isCanThemGroup,
+      isChuaJonNote,
       hasGroupNote,
+    };
+  };
+
+  // Helper: Tổng hợp trạng thái Jon Group thực tế của 1 Nick Via (đồng bộ giữa Bảng 4 & Bảng 2)
+  const getViaGroupJoinSummary = (via: FullViaItem) => {
+    const uidKey = normalizeUidKey(via.uid);
+    const assignedGroups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
+    const gFlags = getViaGroupNoteFlags(via);
+
+    let notJoinedCount = 0;
+    let pendingCount = 0;
+    let joinedCount = 0;
+
+    assignedGroups.forEach((g) => {
+      const isNotJoined =
+        g.joinStatus === 'Chưa' ||
+        g.adminJoinReport === 'Chưa Jont' ||
+        g.adminJoinReport === 'Không tìm thấy';
+      const isPending =
+        !isNotJoined &&
+        g.joinStatus === 'Jon chờ duyệt' &&
+        g.adminJoinReport !== 'Đã Duyệt';
+
+      if (isNotJoined) {
+        notJoinedCount++;
+      } else if (isPending) {
+        pendingCount++;
+      } else {
+        joinedCount++;
+      }
+    });
+
+    const explicit = via.groupJoinStatus;
+
+    // Nick Via được tính là "Chưa Jon Group" trong mục Group khi:
+    // 1. Được chọn trực tiếp trạng thái "Chưa Jon Group" (groupJoinStatus === 'chua_jon' hoặc ghi chú 'Chưa Jon Group')
+    // 2. Hoặc có dòng trong Bảng Group nhưng trạng thái bên Bảng Group là 'Chưa' / 'Chưa Jont' / 'Không tìm thấy'
+    // 3. Hoặc có ghi chú mục Group nhưng chưa gắn/jon vào nhóm nào (assignedGroups.length === 0)
+    const isChuaJonGroup =
+      explicit === 'chua_jon' ||
+      gFlags.isChuaJonNote ||
+      (explicit !== 'da_jon' &&
+        explicit !== 'cho_duyet' &&
+        ((assignedGroups.length > 0 && notJoinedCount > 0) ||
+          (assignedGroups.length === 0 && gFlags.hasGroupNote)));
+
+    const isChoDuyetGroup =
+      !isChuaJonGroup &&
+      (explicit === 'cho_duyet' ||
+        (assignedGroups.length > 0 && pendingCount > 0 && joinedCount === 0));
+
+    const isDaJonGroup =
+      !isChuaJonGroup &&
+      !isChoDuyetGroup &&
+      (explicit === 'da_jon' ||
+        (assignedGroups.length > 0 && joinedCount > 0));
+
+    // Ngoài ra: Nick hoàn toàn chưa có Group nào (0 Group) hoặc đang ở trạng thái Chưa Jon Group
+    const isZeroOrNotJoinedGroup = assignedGroups.length === 0 || isChuaJonGroup;
+
+    const effectiveJoinStatus: 'chua_jon' | 'cho_duyet' | 'da_jon' | 'none' = isChuaJonGroup
+      ? 'chua_jon'
+      : isChoDuyetGroup
+      ? 'cho_duyet'
+      : isDaJonGroup
+      ? 'da_jon'
+      : 'none';
+
+    return {
+      assignedGroups,
+      notJoinedCount,
+      pendingCount,
+      joinedCount,
+      isChuaJonGroup,
+      isChoDuyetGroup,
+      isDaJonGroup,
+      isZeroOrNotJoinedGroup,
+      effectiveJoinStatus,
     };
   };
 
@@ -521,6 +615,45 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     setTimeout(() => setCopyToastMessage(null), 3000);
   };
 
+  // Quick action: Cập nhật trạng thái Jon Group của Via ngay tại Bảng 4 (và tự đồng bộ sang Bảng 2 nếu có dòng Group cùng UID)
+  const handleSetViaGroupJoinStatus = (
+    via: FullViaItem,
+    nextStatus: 'chua_jon' | 'cho_duyet' | 'da_jon' | 'none'
+  ) => {
+    const currentNote = (via.note || '').trim();
+    let nextNote = currentNote;
+    if (nextStatus === 'chua_jon' && !currentNote.toLowerCase().includes('group')) {
+      nextNote = currentNote ? `${currentNote} - Via chưa Jon Group` : 'Via chưa Jon Group';
+    } else if (nextStatus === 'da_jon' && currentNote === 'Via chưa Jon Group') {
+      nextNote = 'Đã Jon Group';
+    }
+
+    const updated: FullViaItem = {
+      ...via,
+      groupJoinStatus: nextStatus,
+      note: nextNote,
+      sharedNote: nextNote,
+      ...(nextStatus === 'chua_jon' && (!via.pageUpdateStatus || via.pageUpdateStatus === 'none')
+        ? { pageUpdateStatus: 'not_joined_group' as const }
+        : nextStatus === 'da_jon' && via.pageUpdateStatus === 'not_joined_group'
+        ? { pageUpdateStatus: 'for_group' as const }
+        : nextStatus === 'none' && via.pageUpdateStatus === 'not_joined_group'
+        ? { pageUpdateStatus: 'none' as const }
+        : {}),
+    };
+    onUpdateVia(updated);
+    if (nextStatus === 'chua_jon') {
+      setCopyToastMessage(`🟠 Đã cập nhật nick ${via.uid}: Via Chưa Jon Group (Đã đồng bộ sang Bảng Group)!`);
+    } else if (nextStatus === 'cho_duyet') {
+      setCopyToastMessage(`⏳ Đã cập nhật nick ${via.uid}: Jon Chờ Duyệt Group (Đã đồng bộ sang Bảng Group)!`);
+    } else if (nextStatus === 'da_jon') {
+      setCopyToastMessage(`🟢 Đã cập nhật nick ${via.uid}: Đã Jon Group (Đã đồng bộ sang Bảng Group)!`);
+    } else {
+      setCopyToastMessage(`⚪ Đã đặt lại trạng thái Group của nick ${via.uid}.`);
+    }
+    setTimeout(() => setCopyToastMessage(null), 3000);
+  };
+
   // Toggle error status for via (bôi đỏ / bỏ bôi đỏ)
   const handleToggleErrorVia = (via: FullViaItem) => {
     const currentlyError = isViaError(via);
@@ -598,7 +731,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     };
   }, [currentBaseVias, pagesPerViaUid]);
 
-  // 🟣 THỐNG KÊ MỤC GROUP CHO VIA TRONG PHẠM VI HIỆN TẠI (Thêm mới để thêm Group, Admin đã thêm Group, Có Group từ đầu, Cần thêm Group, Đang cầm Group)
+  // 🟣 THỐNG KÊ MỤC GROUP CHO VIA TRONG PHẠM VI HIỆN TẠI (Thêm mới để thêm Group, Admin đã thêm Group, Có Group từ đầu, Cần thêm Group, Đang cầm Group, Via Chưa Jon Group)
   const groupViaStatsInScope = useMemo(() => {
     let totalGroupVias = 0;
     let themMoiGroup = 0;
@@ -608,11 +741,16 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     let hasGroupInTable2 = 0;
     let totalGroupsInTable2 = 0;
     let chuaGanGroup = 0;
+    let chuaJonGroupTotal = 0; // Tổng Via được đánh dấu Chưa Jon Group / có Group bên Bảng 2 nhưng Chưa Jon / có ghi chú Group nhưng chưa gắn nhóm
+    let chuaJonInTable2 = 0; // Có dòng trong Bảng 2 nhưng trạng thái là Chưa / Chưa Jont
+    let choDuyetGroup = 0; // Trạng thái Jon chờ duyệt
+    let daJonGroup = 0; // Đã Jon Group thành công
+    let zeroGroupCount = 0; // Toàn bộ Via trong kho hiện có 0 Group hoặc đang ở trạng thái Chưa Jon Group
 
     currentBaseVias.forEach((v) => {
-      const uidKey = normalizeUidKey(v.uid);
-      const assignedGroups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
       const flags = getViaGroupNoteFlags(v);
+      const joinSummary = getViaGroupJoinSummary(v);
+      const { assignedGroups, isChuaJonGroup, isChoDuyetGroup, isDaJonGroup } = joinSummary;
 
       if (flags.isThemMoiGroup) themMoiGroup++;
       if (flags.isAdminThemGroup) adminThemGroup++;
@@ -631,6 +769,22 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       if (flags.hasGroupNote && assignedGroups.length === 0) {
         chuaGanGroup++;
       }
+
+      if (isChuaJonGroup) {
+        chuaJonGroupTotal++;
+        if (assignedGroups.length > 0) {
+          chuaJonInTable2++;
+        }
+      }
+      if (isChoDuyetGroup) {
+        choDuyetGroup++;
+      }
+      if (isDaJonGroup) {
+        daJonGroup++;
+      }
+      if (assignedGroups.length === 0 || isChuaJonGroup) {
+        zeroGroupCount++;
+      }
     });
 
     return {
@@ -642,6 +796,11 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       hasGroupInTable2,
       totalGroupsInTable2,
       chuaGanGroup,
+      chuaJonGroupTotal,
+      chuaJonInTable2,
+      choDuyetGroup,
+      daJonGroup,
+      zeroGroupCount,
     };
   }, [currentBaseVias, groupsPerViaUid]);
 
@@ -746,6 +905,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         const groups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
         return getViaGroupNoteFlags(v).hasGroupNote && groups.length === 0;
       });
+    } else if (statusFilter === 'group_chua_jon') {
+      list = list.filter((v) => getViaGroupJoinSummary(v).isChuaJonGroup);
+    } else if (statusFilter === 'group_cho_duyet') {
+      list = list.filter((v) => getViaGroupJoinSummary(v).isChoDuyetGroup);
+    } else if (statusFilter === 'group_da_jon') {
+      list = list.filter((v) => getViaGroupJoinSummary(v).isDaJonGroup);
+    } else if (statusFilter === 'no_group_at_all') {
+      list = list.filter((v) => getViaGroupJoinSummary(v).isZeroOrNotJoinedGroup);
     }
 
     // Filter by Báo Admin
@@ -805,7 +972,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     }
 
     return list;
-  }, [strictlyGuardedVias, currentUser, selectedStaffFilter, searchQuery, statusFilter, adminReportFilter, pagesPerViaUid]);
+  }, [strictlyGuardedVias, currentUser, selectedStaffFilter, searchQuery, statusFilter, adminReportFilter, pagesPerViaUid, groupsPerViaUid]);
 
   // Computed values for multi-selection
   const isAllSelected = useMemo(() => {
@@ -1373,6 +1540,11 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
     const isPending = modalForm.pageUpdateStatus === 'pending';
     const isUpdated = modalForm.pageUpdateStatus === 'updated';
+    const isNotJoinedGroup =
+      modalForm.pageUpdateStatus === 'not_joined_group' ||
+      modalForm.note.toLowerCase().includes('chưa jon group') ||
+      modalForm.note.toLowerCase().includes('chưa join group') ||
+      modalForm.note.toLowerCase().includes('via chưa jon');
 
     if (targetExistingVia) {
       onUpdateVia({
@@ -1389,6 +1561,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         isFixed: isFix,
         rawFullVia: rawFull,
         pageUpdateStatus: modalForm.pageUpdateStatus,
+        ...(isNotJoinedGroup ? { groupJoinStatus: 'chua_jon' as const } : {}),
         adminReportStatus: modalForm.adminReportStatus || targetExistingVia.adminReportStatus || 'None',
         hasAdminAssignedPage: isPending || isUpdated ? true : Boolean(targetExistingVia.hasAdminAssignedPage),
         ...(isPending ? { pageAssignedAt: targetExistingVia.pageAssignedAt || new Date().toLocaleDateString('vi-VN') } : {}),
@@ -1412,6 +1585,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         createdAt: new Date().toLocaleDateString('vi-VN'),
         rawFullVia: rawFull,
         pageUpdateStatus: modalForm.pageUpdateStatus,
+        ...(isNotJoinedGroup ? { groupJoinStatus: 'chua_jon' as const } : {}),
         adminReportStatus: modalForm.adminReportStatus || 'None',
         hasAdminAssignedPage: isPending || isUpdated ? true : false,
         ...(isPending ? { pageAssignedAt: new Date().toLocaleDateString('vi-VN') } : {}),
@@ -1586,14 +1760,69 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   📗 {assignedPages.length} Page
                 </button>
               )}
-              {assignedGroups.length > 0 && (
-                <span
-                  className="font-extrabold text-[9.5px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 bg-purple-100 text-purple-900 border border-purple-300"
-                  title={`Nick Via này đang gắn với ${assignedGroups.length} dòng Group trong Bảng Group (${assignedGroups.map((g) => g.viaName || `${g.groupCount} nhóm`).join(', ')})`}
-                >
-                  🟣 {assignedGroups.length} Group
-                </span>
-              )}
+              {(() => {
+                const gJoin = getViaGroupJoinSummary(via);
+                if (assignedGroups.length > 0) {
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          handleSetViaGroupJoinStatus(
+                            via,
+                            gJoin.isChuaJonGroup ? 'da_jon' : 'chua_jon'
+                          )
+                        }
+                        className={`font-extrabold text-[9.5px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 cursor-pointer transition-colors ${
+                          gJoin.isChuaJonGroup
+                            ? 'bg-orange-100 hover:bg-orange-200 text-orange-950 border border-orange-400'
+                            : gJoin.isChoDuyetGroup
+                            ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-400'
+                            : 'bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300'
+                        }`}
+                        title={`Nick Via này có ${assignedGroups.length} dòng Group trong Bảng Group (${assignedGroups
+                          .map((g) => `${g.groupName || 'Nhóm'}: ${g.joinStatus || 'Đã Jon'}`)
+                          .join(' | ')}). Bấm để đổi nhanh trạng thái: Chưa Jon Group ⇄ Đã Jon Group.`}
+                      >
+                        🟣 {assignedGroups.length} Group
+                      </button>
+                      {gJoin.isChuaJonGroup && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetViaGroupJoinStatus(via, 'da_jon')}
+                          className="font-extrabold text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 bg-orange-600 hover:bg-orange-700 text-white cursor-pointer"
+                          title="Via này đang ở trạng thái Chưa Jon Group. Bấm để chuyển sang Đã Jon Group."
+                        >
+                          🟠 Chưa Jon
+                        </button>
+                      )}
+                      {gJoin.isChoDuyetGroup && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetViaGroupJoinStatus(via, 'da_jon')}
+                          className="font-extrabold text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 bg-amber-500 hover:bg-amber-600 text-white cursor-pointer"
+                          title="Via đang chờ duyệt vào Group. Bấm để chuyển sang Đã Jon Group."
+                        >
+                          ⏳ Chờ duyệt
+                        </button>
+                      )}
+                    </>
+                  );
+                }
+                if (gJoin.isChuaJonGroup) {
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => handleSetViaGroupJoinStatus(via, 'da_jon')}
+                      className="font-extrabold text-[9.5px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 bg-orange-100 hover:bg-orange-200 text-orange-900 border border-orange-300 cursor-pointer"
+                      title="Nick Via chưa Jon Group nào. Bấm để đổi sang Đã Jon Group."
+                    >
+                      🟠 Chưa Jon Group
+                    </button>
+                  );
+                }
+                return null;
+              })()}
               {via.adminReportStatus === 'VHH' ? (
                 <span
                   className="bg-rose-600 text-white font-extrabold text-[9px] px-1.5 py-0.2 rounded shadow-2xs shrink-0"
@@ -2247,12 +2476,15 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               </>
             )}
 
-            {/* 🟣 HIỂN THỊ TRẠNG THÁI MỤC GROUP CỦA VIA (Thêm mới để thêm Group, Admin đã thêm Group, Có Group từ đầu, Cần thêm Group & Group đang cầm) */}
+            {/* 🟣 HIỂN THỊ TRẠNG THÁI MỤC GROUP CỦA VIA (Thêm mới để thêm Group, Admin đã thêm Group, Có Group từ đầu, Cần thêm Group, Chưa Jon Group & Group đang cầm) */}
             {(() => {
               const gFlags = getViaGroupNoteFlags(via);
-              if (!gFlags.hasGroupNote && assignedGroups.length === 0) return null;
+              const gJoin = getViaGroupJoinSummary(via);
+              if (!gFlags.hasGroupNote && assignedGroups.length === 0 && !gJoin.isChuaJonGroup) {
+                return null;
+              }
               return (
-                <div className="w-full pt-1 border-t border-purple-200/80 flex flex-col gap-0.5">
+                <div className="w-full pt-1 border-t border-purple-200/80 flex flex-col gap-1">
                   <div className="flex items-center justify-between gap-1 flex-wrap">
                     {gFlags.isThemMoiGroup ? (
                       <span className="px-1.5 py-0.2 rounded bg-purple-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
@@ -2270,6 +2502,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       <span className="px-1.5 py-0.2 rounded bg-amber-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
                         🟠 Cần thêm Group
                       </span>
+                    ) : gJoin.isChuaJonGroup ? (
+                      <span className="px-1.5 py-0.2 rounded bg-orange-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                        🟠 Via chưa Jon Group
+                      </span>
                     ) : gFlags.hasGroupNote ? (
                       <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 font-bold text-[10px] truncate">
                         🟣 Mục Group
@@ -2285,52 +2521,162 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       </span>
                     )}
                   </div>
+
+                  {/* Trạng thái Jon Group (Chưa Jon / Chờ duyệt / Đã Jon) */}
+                  <div className="flex items-center justify-between gap-1 w-full">
+                    {gJoin.isChuaJonGroup ? (
+                      <span
+                        className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-950 border border-orange-400 font-extrabold text-[10px] truncate"
+                        title="Nick Via chưa Jon Group (Đồng bộ từ Bảng Group hoặc đánh dấu tại Bảng Via)"
+                      >
+                        🟠 Chưa Jon Group {assignedGroups.length > 0 ? `(${gJoin.notJoinedCount || assignedGroups.length}/${assignedGroups.length})` : ''}
+                      </span>
+                    ) : gJoin.isChoDuyetGroup ? (
+                      <span
+                        className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-950 border border-amber-400 font-extrabold text-[10px] truncate"
+                        title="Nick Via đang chờ duyệt vào Group"
+                      >
+                        ⏳ Jon chờ duyệt ({assignedGroups.length})
+                      </span>
+                    ) : (
+                      <span
+                        className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-950 border border-emerald-400 font-extrabold text-[10px] truncate"
+                        title="Nick Via đã Jon Group"
+                      >
+                        🟢 Đã Jon Group ({assignedGroups.length || 1})
+                      </span>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSetViaGroupJoinStatus(
+                          via,
+                          gJoin.isChuaJonGroup ? 'da_jon' : 'chua_jon'
+                        )
+                      }
+                      className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold border cursor-pointer shrink-0 transition-colors ${
+                        gJoin.isChuaJonGroup
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
+                          : 'bg-orange-50 hover:bg-orange-100 text-orange-900 border-orange-300'
+                      }`}
+                      title={
+                        gJoin.isChuaJonGroup
+                          ? 'Bấm để xác nhận Via đã Jon Group'
+                          : 'Bấm để đánh dấu Via chưa Jon Group'
+                      }
+                    >
+                      {gJoin.isChuaJonGroup ? '✓ Báo Đã Jon' : 'Đặt Chưa Jon'}
+                    </button>
+                  </div>
                 </div>
               );
             })()}
           </div>
         </td>
 
-        {/* 7. TRẠNG THÁI (GỌN GÀNG) */}
+        {/* 7. TRẠNG THÁI (NICK & JON GROUP) */}
         <td className={`py-2 px-2 border-r ${isRowError ? 'border-red-200' : isRowFixed ? 'border-emerald-200 bg-emerald-50/40' : 'border-slate-200'}`}>
-          <select
-            value={isRowError ? (via.status === 'dead' ? 'dead' : 'error') : isRowFixed ? 'fixed' : via.status || 'active'}
-            onChange={(e) => {
-              const val = e.target.value as 'active' | 'checkpoint' | 'dead' | 'error' | 'fixed';
-              const isErr = val === 'error' || val === 'dead';
-              const isFix = val === 'fixed';
-              onUpdateVia({
-                ...via,
-                status: val,
-                isError: isErr,
-                isFixed: isFix,
-              });
-              setCopyToastMessage(
-                isFix
-                  ? `❇️ Đã bôi màu xanh nick ${via.uid} (Admin đã sửa lỗi & thay via mới)`
-                  : isErr
-                  ? `🔴 Đã bôi màu đỏ nick ${via.uid} (Đánh dấu Via Bị Lỗi)`
-                  : `🟢 Đã chuyển trạng thái nick ${via.uid} thành: ${val === 'active' ? 'Hoạt Động' : 'Checkpoint'}`
+          <div className="flex flex-col space-y-1">
+            <select
+              value={isRowError ? (via.status === 'dead' ? 'dead' : 'error') : isRowFixed ? 'fixed' : via.status || 'active'}
+              onChange={(e) => {
+                const rawVal = e.target.value;
+                if (rawVal === 'group_chua_jon') {
+                  handleSetViaGroupJoinStatus(via, 'chua_jon');
+                  return;
+                }
+                if (rawVal === 'group_cho_duyet') {
+                  handleSetViaGroupJoinStatus(via, 'cho_duyet');
+                  return;
+                }
+                if (rawVal === 'group_da_jon') {
+                  handleSetViaGroupJoinStatus(via, 'da_jon');
+                  return;
+                }
+                const val = rawVal as 'active' | 'checkpoint' | 'dead' | 'error' | 'fixed';
+                const isErr = val === 'error' || val === 'dead';
+                const isFix = val === 'fixed';
+                onUpdateVia({
+                  ...via,
+                  status: val,
+                  isError: isErr,
+                  isFixed: isFix,
+                });
+                setCopyToastMessage(
+                  isFix
+                    ? `❇️ Đã bôi màu xanh nick ${via.uid} (Admin đã sửa lỗi & thay via mới)`
+                    : isErr
+                    ? `🔴 Đã bôi màu đỏ nick ${via.uid} (Đánh dấu Via Bị Lỗi)`
+                    : `🟢 Đã chuyển trạng thái nick ${via.uid} thành: ${val === 'active' ? 'Hoạt Động' : 'Checkpoint'}`
+                );
+                setTimeout(() => setCopyToastMessage(null), 2500);
+              }}
+              className={`w-full text-[11px] font-bold rounded px-2 py-1 border shadow-2xs cursor-pointer focus:outline-hidden transition-colors ${
+                isRowError
+                  ? 'bg-red-600 text-white border-red-700 ring-1 ring-red-300'
+                  : isRowFixed
+                  ? 'bg-emerald-600 text-white border-emerald-700 ring-1 ring-emerald-300'
+                  : via.status === 'checkpoint'
+                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                  : 'bg-emerald-50 text-emerald-900 border-emerald-300'
+              }`}
+              title="Đổi trạng thái nick hoặc cập nhật nhanh trạng thái Jon Group"
+            >
+              <option value="active">🟢 Live</option>
+              <option value="fixed">❇️ Đã Sửa (Xanh)</option>
+              <option value="error">🔴 Lỗi (Đỏ)</option>
+              <option value="checkpoint">🟠 Checkpoint</option>
+              <option value="dead">🪦 Bị Die</option>
+              <optgroup label="── Trạng Thái Group ──">
+                <option value="group_chua_jon">🟠 Chưa Jon Group</option>
+                <option value="group_cho_duyet">⏳ Jon chờ duyệt Group</option>
+                <option value="group_da_jon">🟣 Đã Jon Group</option>
+              </optgroup>
+            </select>
+
+            {/* Ô chọn nhanh Trạng Thái Jon Group trực tiếp tại cột Trạng Thái */}
+            {(() => {
+              const gJoin = getViaGroupJoinSummary(via);
+              const selectValue = gJoin.isChuaJonGroup
+                ? 'chua_jon'
+                : gJoin.isChoDuyetGroup
+                ? 'cho_duyet'
+                : gJoin.isDaJonGroup
+                ? 'da_jon'
+                : 'none';
+              return (
+                <select
+                  value={selectValue}
+                  onChange={(e) => {
+                    const nextVal = e.target.value as 'chua_jon' | 'cho_duyet' | 'da_jon' | 'none';
+                    handleSetViaGroupJoinStatus(via, nextVal);
+                  }}
+                  className={`w-full text-[10.5px] font-extrabold rounded px-1.5 py-0.5 border shadow-2xs cursor-pointer focus:outline-hidden transition-colors ${
+                    selectValue === 'chua_jon'
+                      ? 'bg-orange-500 text-white border-orange-600 ring-1 ring-orange-300'
+                      : selectValue === 'cho_duyet'
+                      ? 'bg-amber-100 text-amber-950 border-amber-400'
+                      : selectValue === 'da_jon'
+                      ? 'bg-purple-100 text-purple-950 border-purple-300'
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-orange-300'
+                  }`}
+                  title="Cập nhật trạng thái Jon Group của Via (Đồng bộ 2 chiều với Bảng Group)"
+                >
+                  <option value="none">⚪ Chưa Jon Group (0 Group)</option>
+                  <option value="chua_jon">
+                    🟠 Chưa Jon Group{assignedGroups.length > 0 ? ` (${assignedGroups.length} Group)` : ''}
+                  </option>
+                  <option value="cho_duyet">
+                    ⏳ Jon chờ duyệt{assignedGroups.length > 0 ? ` (${assignedGroups.length} Group)` : ''}
+                  </option>
+                  <option value="da_jon">
+                    🟣 Đã Jon Group{assignedGroups.length > 0 ? ` (${assignedGroups.length} Group)` : ''}
+                  </option>
+                </select>
               );
-              setTimeout(() => setCopyToastMessage(null), 2500);
-            }}
-            className={`w-full text-[11px] font-bold rounded px-2 py-1 border shadow-2xs cursor-pointer focus:outline-hidden transition-colors ${
-              isRowError
-                ? 'bg-red-600 text-white border-red-700 ring-1 ring-red-300'
-                : isRowFixed
-                ? 'bg-emerald-600 text-white border-emerald-700 ring-1 ring-emerald-300'
-                : via.status === 'checkpoint'
-                ? 'bg-amber-100 text-amber-900 border-amber-300'
-                : 'bg-emerald-50 text-emerald-900 border-emerald-300'
-            }`}
-            title="Đổi trạng thái nick"
-          >
-            <option value="active">🟢 Live</option>
-            <option value="fixed">❇️ Đã Sửa (Xanh)</option>
-            <option value="error">🔴 Lỗi (Đỏ)</option>
-            <option value="checkpoint">🟠 Checkpoint</option>
-            <option value="dead">🪦 Bị Die</option>
-          </select>
+            })()}
+          </div>
         </td>
 
         {/* 8. BÁO ADMIN / GHI CHÚ VIA TỪ PAGE & GROUP */}
@@ -3176,7 +3522,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         </div>
       )}
 
-      {/* 🟣 THANH THỐNG KÊ & LỌC NHANH CHO MỤC GROUP CỦA VIA (THÊM MỚI ĐỂ THÊM GROUP, ADMIN ĐÃ THÊM GROUP, CÓ GROUP TỪ ĐẦU, CẦN THÊM GROUP) */}
+      {/* 🟣 THANH THỐNG KÊ & LỌC NHANH CHO MỤC GROUP CỦA VIA (CHƯA JON GROUP, ĐÃ JON GROUP, THÊM MỚI ĐỂ THÊM GROUP, ADMIN ĐÃ THÊM GROUP, CÓ GROUP TỪ ĐẦU, CẦN THÊM GROUP) */}
       <div className="bg-gradient-to-r from-purple-50/90 via-indigo-50/70 to-purple-50/90 border-b border-purple-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
         <div className="flex items-center flex-wrap gap-1.5">
           <span className="text-[11px] font-black text-purple-950 uppercase tracking-wider mr-1 flex items-center gap-1">
@@ -3201,6 +3547,69 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               }`}
             >
               {groupViaStatsInScope.totalGroupVias} Via
+            </span>
+          </button>
+
+          {/* 🟠 Via Chưa Jon Group (Nổi bật theo yêu cầu) */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'group_chua_jon' ? 'all' : 'group_chua_jon')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
+              statusFilter === 'group_chua_jon'
+                ? 'bg-orange-600 text-white border-orange-700 shadow-xs ring-2 ring-orange-300'
+                : 'bg-orange-50 text-orange-950 border-orange-400 hover:bg-orange-100 shadow-2xs'
+            }`}
+            title={`Lọc các nick Via Chưa Jon Group (${groupViaStatsInScope.chuaJonInTable2} nick có Group ở Bảng 2 nhưng trạng thái Chưa Jon/Chưa Jont + ${groupViaStatsInScope.chuaGanGroup} nick mục Group chưa gắn nhóm)`}
+          >
+            <span>🟠 Via Chưa Jon Group:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'group_chua_jon' ? 'bg-white/25 text-white' : 'bg-orange-600 text-white'
+              }`}
+            >
+              {groupViaStatsInScope.chuaJonGroupTotal} Via
+            </span>
+          </button>
+
+          {/* ⏳ Via Jon Chờ Duyệt */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'group_cho_duyet' ? 'all' : 'group_cho_duyet')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              statusFilter === 'group_cho_duyet'
+                ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-300'
+                : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-100'
+            }`}
+            title="Lọc các nick Via đang ở trạng thái Jon chờ duyệt"
+          >
+            <span>⏳ Jon chờ duyệt:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'group_cho_duyet' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-900'
+              }`}
+            >
+              {groupViaStatsInScope.choDuyetGroup} Via
+            </span>
+          </button>
+
+          {/* 🟢 Via Đã Jon Group */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'group_da_jon' ? 'all' : 'group_da_jon')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              statusFilter === 'group_da_jon'
+                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300'
+                : 'bg-white text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+            }`}
+            title="Lọc các nick Via đã Jon Group thành công"
+          >
+            <span>🟢 Đã Jon Group:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'group_da_jon' ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-900'
+              }`}
+            >
+              {groupViaStatsInScope.daJonGroup} Via ({groupViaStatsInScope.totalGroupsInTable2} nhóm)
             </span>
           </button>
 
@@ -3288,51 +3697,30 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             </span>
           </button>
 
-          {/* 5. Đang cầm Group (Bảng 2) */}
+          {/* 5. Toàn kho chưa có Group (0 Group) */}
           <button
             type="button"
-            onClick={() => setStatusFilter(statusFilter === 'has_group' ? 'all' : 'has_group')}
+            onClick={() => setStatusFilter(statusFilter === 'no_group_at_all' ? 'all' : 'no_group_at_all')}
             className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'has_group'
-                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300'
-                : 'bg-white text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-            }`}
-            title="Lọc các nick Via hiện đang gắn với các nhóm bên Bảng 2 (Quản Lý Group)"
-          >
-            <span>👥 Đang cầm Group (Bảng 2):</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'has_group' ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-900'
-              }`}
-            >
-              {groupViaStatsInScope.hasGroupInTable2} Via ({groupViaStatsInScope.totalGroupsInTable2} nhóm)
-            </span>
-          </button>
-
-          {/* 6. Chưa gắn vào Bảng Group */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'group_chua_gan' ? 'all' : 'group_chua_gan')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'group_chua_gan'
+              statusFilter === 'no_group_at_all'
                 ? 'bg-slate-800 text-white border-slate-900 shadow-xs ring-2 ring-slate-300'
                 : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
             }`}
-            title="Lọc các nick đã đánh dấu mục Group nhưng chưa gắn vào nhóm nào ở Bảng 2"
+            title="Lọc toàn bộ các nick trong kho chưa có Group nào (0 Group) hoặc đang ở trạng thái Chưa Jon Group"
           >
-            <span>⏳ Chưa gắn vào Bảng Group:</span>
+            <span>⚪ Chưa Jon / 0 Group (Toàn kho):</span>
             <span
               className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'group_chua_gan' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-800'
+                statusFilter === 'no_group_at_all' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-800'
               }`}
             >
-              {groupViaStatsInScope.chuaGanGroup}
+              {groupViaStatsInScope.zeroGroupCount} Via
             </span>
           </button>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
-          {statusFilter.includes('group') && (
+          {(statusFilter.includes('group') || statusFilter === 'no_group_at_all') && (
             <button
               type="button"
               onClick={() => setStatusFilter('all')}
@@ -3341,6 +3729,28 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               ✕ Bỏ lọc Group
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => {
+              const targetNotJoined = currentBaseVias.filter(
+                (v) => getViaGroupJoinSummary(v).isChuaJonGroup
+              );
+              const uids = targetNotJoined.map((v) => v.uid?.trim()).filter(Boolean);
+              if (uids.length === 0) {
+                setCopyToastMessage('⚠️ Hiện không có UID nào ở trạng thái Via Chưa Jon Group!');
+                setTimeout(() => setCopyToastMessage(null), 2500);
+                return;
+              }
+              navigator.clipboard.writeText(uids.join('\n'));
+              setCopyToastMessage(`📋 Đã copy ${uids.length} UID Via Chưa Jon Group vào clipboard!`);
+              setTimeout(() => setCopyToastMessage(null), 3000);
+            }}
+            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-orange-600 hover:bg-orange-700 text-white shadow-2xs cursor-pointer transition-colors"
+            title="Sao chép toàn bộ UID của các Via Chưa Jon Group (mỗi UID 1 dòng)"
+          >
+            <Copy className="w-3 h-3" />
+            <span>Copy UID Chưa Jon ({groupViaStatsInScope.chuaJonGroupTotal})</span>
+          </button>
           <button
             type="button"
             onClick={() => {
@@ -3523,6 +3933,20 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               title="Lọc các nick thuộc mục Group (Thêm mới để thêm Group / Đang cầm Group)"
             >
               🟣 Via Group ({groupViaStatsInScope.totalGroupVias} Via / {groupViaStatsInScope.totalGroupsInTable2} Group)
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'group_chua_jon' ? 'all' : 'group_chua_jon')}
+              className={`px-2 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'group_chua_jon'
+                  ? 'bg-orange-600 text-white shadow-2xs ring-1 ring-orange-300'
+                  : groupViaStatsInScope.chuaJonGroupTotal > 0
+                  ? 'bg-orange-50 text-orange-800 border border-orange-300 hover:bg-orange-100'
+                  : 'text-orange-700 hover:bg-orange-50'
+              }`}
+              title="Lọc các nick Via chưa Jon Group (Có Group nhưng Chưa Jon / Chưa Jont hoặc đã đánh dấu Chưa Jon Group)"
+            >
+              🟠 Chưa Jon Group ({groupViaStatsInScope.chuaJonGroupTotal})
             </button>
             <button
               type="button"
@@ -4246,7 +4670,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     <span>Trạng Thái Cập Nhật Page / Group Của Nick:</span>
                   </label>
                   <span className="text-[11px] font-semibold text-slate-500">
-                    {modalForm.note?.toLowerCase().includes('group')
+                    {modalForm.pageUpdateStatus === 'not_joined_group' ||
+                    modalForm.note?.toLowerCase().includes('chưa jon group')
+                      ? '🟠 Via chưa Jon Group'
+                      : modalForm.note?.toLowerCase().includes('group')
                       ? '🟣 Thêm mới để thêm Group'
                       : modalForm.pageUpdateStatus === 'pending'
                       ? '🔴 Admin đã thêm Page (Màu đỏ)'
@@ -4256,7 +4683,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                   <button
                     type="button"
                     onClick={() => {
@@ -4266,6 +4693,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                         .replace(/(\s*-\s*)?Thêm mới để thêm Group/gi, '')
                         .replace(/(\s*-\s*)?Admin đã thêm Group/gi, '')
                         .replace(/(\s*-\s*)?Có Group từ đầu/gi, '')
+                        .replace(/(\s*-\s*)?Via chưa Jon Group/gi, '')
                         .trim();
                       setModalForm({ ...modalForm, pageUpdateStatus: 'none', note: cleanedNote });
                     }}
@@ -4288,7 +4716,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                           !modalForm.note ||
                           modalForm.note === 'Có page từ đầu' ||
                           modalForm.note === 'Thêm mới để thêm Group' ||
-                          modalForm.note === 'Admin đã thêm Group'
+                          modalForm.note === 'Admin đã thêm Group' ||
+                          modalForm.note === 'Via chưa Jon Group'
                             ? 'Admin đã thêm page'
                             : modalForm.note,
                       })
@@ -4313,7 +4742,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                           !modalForm.note ||
                           modalForm.note === 'Admin đã thêm page' ||
                           modalForm.note === 'Thêm mới để thêm Group' ||
-                          modalForm.note === 'Admin đã thêm Group'
+                          modalForm.note === 'Admin đã thêm Group' ||
+                          modalForm.note === 'Via chưa Jon Group'
                             ? 'Có page từ đầu'
                             : modalForm.note,
                       })
@@ -4337,7 +4767,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                         note:
                           !modalForm.note ||
                           modalForm.note === 'Admin đã thêm page' ||
-                          modalForm.note === 'Có page từ đầu'
+                          modalForm.note === 'Có page từ đầu' ||
+                          modalForm.note === 'Via chưa Jon Group'
                             ? 'Thêm mới để thêm Group'
                             : modalForm.note.toLowerCase().includes('group')
                             ? modalForm.note
@@ -4345,13 +4776,42 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       })
                     }
                     className={`p-2 rounded-lg border text-center transition-all cursor-pointer font-bold text-[11px] ${
-                      modalForm.note?.toLowerCase().includes('group')
+                      modalForm.note?.toLowerCase().includes('group') &&
+                      modalForm.pageUpdateStatus !== 'not_joined_group' &&
+                      !modalForm.note?.toLowerCase().includes('chưa jon group')
                         ? 'bg-purple-600 text-white border-purple-700 shadow-2xs ring-2 ring-purple-300'
                         : 'bg-purple-50 border-purple-300 text-purple-800 hover:bg-purple-100'
                     }`}
                     title="Đánh dấu nick thêm mới dùng để thêm Group / làm Group"
                   >
                     🟣 Thêm mới để thêm Group
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setModalForm({
+                        ...modalForm,
+                        pageUpdateStatus: 'not_joined_group',
+                        note:
+                          !modalForm.note ||
+                          modalForm.note === 'Admin đã thêm page' ||
+                          modalForm.note === 'Có page từ đầu' ||
+                          modalForm.note === 'Thêm mới để thêm Group'
+                            ? 'Via chưa Jon Group'
+                            : modalForm.note.toLowerCase().includes('chưa jon group')
+                            ? modalForm.note
+                            : `${modalForm.note} - Via chưa Jon Group`,
+                      })
+                    }
+                    className={`p-2 rounded-lg border text-center transition-all cursor-pointer font-bold text-[11px] ${
+                      modalForm.pageUpdateStatus === 'not_joined_group' ||
+                      modalForm.note?.toLowerCase().includes('chưa jon group')
+                        ? 'bg-orange-600 text-white border-orange-700 shadow-2xs ring-2 ring-orange-300'
+                        : 'bg-orange-50 border-orange-300 text-orange-800 hover:bg-orange-100'
+                    }`}
+                    title="Đánh dấu nick ở trạng thái Via chưa Jon Group"
+                  >
+                    🟠 Via chưa Jon Group
                   </button>
                 </div>
 
@@ -4459,6 +4919,10 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
                     {/* Bảng thống kê mini cho mục Via Group */}
                     <div className="grid grid-cols-2 gap-1 bg-white/90 p-1.5 rounded-md border border-purple-200 text-[10px]">
+                      <div className="col-span-2 flex items-center justify-between px-1.5 py-0.5 rounded bg-orange-50 border border-orange-200">
+                        <span className="font-bold text-orange-800 truncate">🟠 Via chưa Jon Group:</span>
+                        <span className="font-black text-orange-900 ml-1">{groupViaStatsInScope.chuaJonGroupTotal} Via</span>
+                      </div>
                       <div className="flex items-center justify-between px-1.5 py-0.5 rounded bg-purple-50 border border-purple-100">
                         <span className="font-semibold text-purple-800 truncate">🟣 Thêm mới Group:</span>
                         <span className="font-black text-purple-900 ml-1">{groupViaStatsInScope.themMoiGroup}</span>
@@ -4580,6 +5044,34 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                           }`}
                         >
                           {groupViaStatsInScope.canThemGroup}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setModalForm((prev) => ({
+                            ...prev,
+                            pageUpdateStatus: 'not_joined_group',
+                            note: 'Via chưa Jon Group',
+                          }))
+                        }
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center gap-1 ${
+                          modalForm.pageUpdateStatus === 'not_joined_group' ||
+                          modalForm.note.toLowerCase().includes('chưa jon group')
+                            ? 'bg-orange-600 text-white border-orange-700 shadow-2xs'
+                            : 'bg-white text-orange-800 border-orange-300 hover:bg-orange-100'
+                        }`}
+                      >
+                        <span>🟠 Via chưa Jon Group</span>
+                        <span
+                          className={`px-1 py-0.2 rounded-full text-[9px] font-extrabold ${
+                            modalForm.pageUpdateStatus === 'not_joined_group' ||
+                            modalForm.note.toLowerCase().includes('chưa jon group')
+                              ? 'bg-orange-800 text-orange-100'
+                              : 'bg-orange-100 text-orange-800'
+                          }`}
+                        >
+                          {groupViaStatsInScope.chuaJonGroupTotal}
                         </span>
                       </button>
                     </div>

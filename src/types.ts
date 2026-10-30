@@ -569,7 +569,14 @@ export interface AppUser {
   wpAllowedEmployeeCodes?: string[];
 }
 
-export type ViaPageUpdateStatus = 'none' | 'pending' | 'updated';
+export type ViaPageUpdateStatus =
+  | 'none'
+  | 'pending'
+  | 'updated'
+  | 'for_group'
+  | 'not_joined_group';
+
+export type ViaGroupJoinStatus = 'none' | 'chua_jon' | 'cho_duyet' | 'da_jon';
 
 export type ViaAdminReportStatus =
   | 'None'
@@ -613,6 +620,7 @@ export interface FullViaItem {
 
   // Admin cập nhật "Admin đã thêm Page" (Màu đỏ để NV biết) | "Có page từ đầu" (Màu xanh) | "Chưa có page" (Trắng)
   pageUpdateStatus?: ViaPageUpdateStatus; // 'pending' (Đỏ - Admin đã thêm page / mới bàn giao để NV biết), 'updated' (Xanh - Có page từ đầu / Đã update page), 'updated' / 'none'
+  groupJoinStatus?: ViaGroupJoinStatus; // Trạng thái Jon Group của Via: 'chua_jon' (Chưa Jon Group) | 'cho_duyet' (Jon chờ duyệt) | 'da_jon' (Đã Jon Group) | 'none'
   hasAdminAssignedPage?: boolean; // Cờ đánh dấu Admin đã thêm page
   pageAssignedAt?: string; // Thời điểm Admin thêm page / bàn giao
   pageUpdatedAt?: string; // Thời điểm hoàn tất update page
