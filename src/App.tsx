@@ -74,6 +74,7 @@ import {
   updateCloudImageTask,
   deleteCloudImageTask,
   batchSaveCloudImageTasks,
+  encryptAllPlaintextViasOnCloud,
 } from './services/firebase';
 import {
   loadCurrentUserSession,
@@ -448,6 +449,49 @@ export default function App() {
         // Seed default initial data into Firestore if database is empty (only when authenticated)
         await seedCloudFirestoreIfEmpty();
 
+        // Tự động nâng cấp & mã hóa ENCv2 toàn bộ kho Full Via trên Cloud nếu Admin đăng nhập
+        if (currentUser.role === 'admin') {
+          encryptAllPlaintextViasOnCloud().catch((err) =>
+            console.warn('[SecurityVault] Auto-encrypt cloud vias check:', err)
+          );
+        }
+
+        // Helper bảo mật bộ nhớ RAM: Nếu là Nhân viên, xóa trắng hoàn toàn Pass/2FA/Mail của các nick không thuộc nhân viên đó trước khi đưa vào RAM
+        const sanitizeViasForRoleMemory = (list: FullViaItem[]): FullViaItem[] => {
+          if (currentUser.role === 'admin') return list;
+          return list.map((v) => {
+            const isMine =
+              Boolean(v.staffName) &&
+              !isAdminWaitingPool(v.staffName) &&
+              areStaffNamesEquivalent(v.staffName, currentUser.name);
+            if (isMine) return v;
+            return {
+              ...v,
+              pass: '',
+              twoFa: '',
+              email: '',
+              emailPass: '',
+              extraInfo: '',
+              rawFullVia: '',
+            };
+          });
+        };
+
+        const sanitizePageRecordsForRoleMemory = (list: PageRecord[]): PageRecord[] => {
+          if (currentUser.role === 'admin') return list;
+          return list.map((r) => {
+            const isMine =
+              Boolean(r.staffName) &&
+              !isAdminWaitingPool(r.staffName) &&
+              areStaffNamesEquivalent(r.staffName, currentUser.name);
+            if (isMine) return r;
+            return {
+              ...r,
+              fullVia: '',
+            };
+          });
+        };
+
         // 1. Listen to live page records in Cloud Firestore
         unsubRecords = subscribeToPageRecords((cloudRecords) => {
           let hasDirtyBm = false;
@@ -458,10 +502,10 @@ export default function App() {
             }
             return { ...r, bmNote: clean };
           });
-          setRecords(cleanedRecords);
+          setRecords(sanitizePageRecordsForRoleMemory(cleanedRecords));
 
           // Tự động dọn dẹp các bản ghi cũ có dấu | trong bmNote trên Firestore
-          if (hasDirtyBm) {
+          if (hasDirtyBm && currentUser.role === 'admin') {
             const dirtyToClean = cloudRecords
               .filter((r) => r.bmNote && r.bmNote !== getCleanBmName(r.bmNote))
               .map((r) => ({ ...r, bmNote: getCleanBmName(r.bmNote) }));
@@ -479,23 +523,33 @@ export default function App() {
               const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
               return Boolean(uLower && deletedSet.has(uLower));
             });
-            if (staleToPurge.length > 0) {
+            if (staleToPurge.length > 0 && currentUser.role === 'admin') {
               batchDeleteCloudVias(staleToPurge.map((v) => v.id)).catch(() => {});
             }
-            setViaList(
-              cloudVias.filter((v) => {
-                const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
-                return !uLower || !deletedSet.has(uLower);
-              })
-            );
+            const activeVias = cloudVias.filter((v) => {
+              const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+              return !uLower || !deletedSet.has(uLower);
+            });
+            setViaList(sanitizeViasForRoleMemory(activeVias));
             return;
           }
-          setViaList(cloudVias);
+          setViaList(sanitizeViasForRoleMemory(cloudVias));
         });
 
         // 3. Listen to live shared website accounts
         unsubSharedAccounts = subscribeToSharedAccounts((cloudShared) => {
-          setSharedAccounts(cloudShared);
+          if (currentUser.role === 'admin') {
+            setSharedAccounts(cloudShared);
+          } else {
+            setSharedAccounts(
+              cloudShared.map((acc) => {
+                const isAllowed =
+                  acc.assignedStaff?.includes('ALL') ||
+                  acc.assignedStaff?.some((s) => areStaffNamesEquivalent(s, currentUser.name));
+                return isAllowed ? acc : { ...acc, password: '', twoFa: '' };
+              })
+            );
+          }
         });
 
         // 4. Listen to live group records in Cloud Firestore

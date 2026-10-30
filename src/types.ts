@@ -625,6 +625,8 @@ export interface FullViaItem {
   pageAssignedAt?: string; // Thời điểm Admin thêm page / bàn giao
   pageUpdatedAt?: string; // Thời điểm hoàn tất update page
   isNewlyTransferred?: boolean; // Đánh dấu đỏ báo nhân viên mới nhận Via & Page mới chuyển giao
+  isEncrypted?: boolean; // Cờ xác nhận dữ liệu nhạy cảm (Pass, 2FA, Mail, RawFullVia) đã được mã hóa ENCv2 trên Cloud
+  vaultVersion?: number; // Phiên bản chuẩn mã hóa kho Via trên Cloud (v2)
 }
 
 export interface SharedAccount {

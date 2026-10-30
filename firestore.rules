@@ -20,18 +20,21 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Super Admin độc quyền: cualokhachsan@gmail.com (Bắt buộc xác thực email_verified == true để chống giả mạo)
+    // Super Admin độc quyền: cualokhachsan@gmail.com & myphuong2295@gmail.com (Bắt buộc xác thực email_verified == true để chống giả mạo)
     function isSuperAdmin() {
       return isSignedIn() &&
         request.auth.token.email_verified == true &&
-        request.auth.token.email.lower() == 'cualokhachsan@gmail.com';
+        (request.auth.token.email.lower() == 'cualokhachsan@gmail.com' ||
+         request.auth.token.email.lower() == 'myphuong2295@gmail.com');
     }
 
-    // Kiểm tra xem tài khoản mục tiêu có phải là Master Admin (cualokhachsan@gmail.com) hay không
+    // Kiểm tra xem tài khoản mục tiêu có phải là Master Admin hay không
     function isProtectedMasterAdminDoc(docId, existingData) {
       return docId == 'admin' ||
         docId == 'account-admin' ||
-        ('email' in existingData && existingData.email is string && existingData.email.lower() == 'cualokhachsan@gmail.com');
+        ('email' in existingData && existingData.email is string &&
+         (existingData.email.lower() == 'cualokhachsan@gmail.com' ||
+          existingData.email.lower() == 'myphuong2295@gmail.com'));
     }
 
     // --- Validation Helpers for Each Entity ---
@@ -45,7 +48,7 @@ service cloud.firestore {
              data.isCompleted is bool &&
              (!('pageLink' in data) || (data.pageLink is string && data.pageLink.size() <= 500)) &&
              (!('viaUid' in data) || (data.viaUid is string && data.viaUid.size() <= 100)) &&
-             (!('fullVia' in data) || (data.fullVia is string && data.fullVia.size() <= 500)) &&
+             (!('fullVia' in data) || (data.fullVia is string && data.fullVia.size() <= 2000)) &&
              (!('bmNote' in data) || (data.bmNote is string && data.bmNote.size() <= 500)) &&
              (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
              (!('blockStatus' in data) || (data.blockStatus is string && data.blockStatus.size() <= 50)) &&
@@ -68,15 +71,24 @@ service cloud.firestore {
 
     function isValidViaItem(data) {
       return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
-             data.uid is string && data.uid.size() <= 100 &&
+             data.uid is string && data.uid.size() > 0 && data.uid.size() <= 100 &&
              data.staffName is string && data.staffName.size() <= 100 &&
-             (!('pass' in data) || (data.pass is string && data.pass.size() <= 200)) &&
-             (!('twoFa' in data) || (data.twoFa is string && data.twoFa.size() <= 200)) &&
+             (!('pass' in data) || (data.pass is string && data.pass.size() <= 1500)) &&
+             (!('twoFa' in data) || (data.twoFa is string && data.twoFa.size() <= 1500)) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 500)) &&
+             (!('emailPass' in data) || (data.emailPass is string && data.emailPass.size() <= 1000)) &&
+             (!('extraInfo' in data) || (data.extraInfo is string && data.extraInfo.size() <= 1500)) &&
              (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
+             (!('sharedNote' in data) || (data.sharedNote is string && data.sharedNote.size() <= 500)) &&
              (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
+             (!('adminReportStatus' in data) || (data.adminReportStatus is string && data.adminReportStatus.size() <= 50)) &&
+             (!('pageUpdateStatus' in data) || (data.pageUpdateStatus is string && data.pageUpdateStatus.size() <= 50)) &&
+             (!('groupJoinStatus' in data) || (data.groupJoinStatus is string && data.groupJoinStatus.size() <= 50)) &&
              (!('isError' in data) || data.isError is bool) &&
              (!('isFixed' in data) || data.isFixed is bool) &&
-             (!('rawFullVia' in data) || (data.rawFullVia is string && data.rawFullVia.size() <= 500)) &&
+             (!('isEncrypted' in data) || data.isEncrypted is bool) &&
+             (!('vaultVersion' in data) || data.vaultVersion is number) &&
+             (!('rawFullVia' in data) || (data.rawFullVia is string && data.rawFullVia.size() <= 3000)) &&
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50));
     }
 
@@ -99,8 +111,10 @@ service cloud.firestore {
     function isValidSetting(data) {
       return data.id is string && data.id.size() <= 128 &&
              (!('adminPin' in data) || (data.adminPin is string && data.adminPin.size() <= 50)) &&
-             // Khóa cứng quyền sở hữu: adminEmail & ownerEmail phải là cualokhachsan@gmail.com (hoặc do chính SuperAdmin sửa)
-             (!('adminEmail' in data) || (data.adminEmail is string && data.adminEmail.size() <= 200 && (data.adminEmail.lower() == 'cualokhachsan@gmail.com' || isSuperAdmin()))) &&
+             (!('adminEmail' in data) || (data.adminEmail is string && data.adminEmail.size() <= 200 &&
+               (data.adminEmail.lower() == 'cualokhachsan@gmail.com' ||
+                data.adminEmail.lower() == 'myphuong2295@gmail.com' ||
+                isSuperAdmin()))) &&
              (!('adminName' in data) || (data.adminName is string && data.adminName.size() <= 100)) &&
              (!('requireApproval' in data) || data.requireApproval is bool) &&
              (!('requireGoogleLoginOnly' in data) || data.requireGoogleLoginOnly is bool) &&
@@ -108,7 +122,10 @@ service cloud.firestore {
              (!('redirectConfigJson' in data) || (data.redirectConfigJson is string && data.redirectConfigJson.size() <= 5000)) &&
              (!('targetProjectId' in data) || (data.targetProjectId is string && data.targetProjectId.size() <= 200)) &&
              (!('targetDatabaseId' in data) || (data.targetDatabaseId is string && data.targetDatabaseId.size() <= 200)) &&
-             (!('ownerEmail' in data) || (data.ownerEmail is string && data.ownerEmail.size() <= 200 && (data.ownerEmail.lower() == 'cualokhachsan@gmail.com' || isSuperAdmin()))) &&
+             (!('ownerEmail' in data) || (data.ownerEmail is string && data.ownerEmail.size() <= 200 &&
+               (data.ownerEmail.lower() == 'cualokhachsan@gmail.com' ||
+                data.ownerEmail.lower() == 'myphuong2295@gmail.com' ||
+                isSuperAdmin()))) &&
              (!('updatedAt' in data) || (data.updatedAt is string && data.updatedAt.size() <= 100));
     }
 
@@ -116,9 +133,9 @@ service cloud.firestore {
       return (!('id' in data) || (data.id is string && data.id.size() <= 128)) &&
              data.websiteName is string && data.websiteName.size() <= 200 &&
              data.username is string && data.username.size() <= 200 &&
-             data.password is string && data.password.size() <= 200 &&
+             data.password is string && data.password.size() <= 1000 &&
              (!('websiteUrl' in data) || (data.websiteUrl is string && data.websiteUrl.size() <= 500)) &&
-             (!('twoFa' in data) || (data.twoFa is string && data.twoFa.size() <= 200)) &&
+             (!('twoFa' in data) || (data.twoFa is string && data.twoFa.size() <= 1000)) &&
              (!('assignedStaff' in data) || (data.assignedStaff is list && data.assignedStaff.size() <= 100)) &&
              (!('note' in data) || (data.note is string && data.note.size() <= 500)) &&
              (!('createdAt' in data) || (data.createdAt is string && data.createdAt.size() <= 50)) &&
@@ -148,10 +165,10 @@ service cloud.firestore {
              data.ip is string && data.ip.size() <= 100 &&
              data.port is string && data.port.size() <= 20 &&
              (!('username' in data) || (data.username is string && data.username.size() <= 100)) &&
-             (!('password' in data) || (data.password is string && data.password.size() <= 100)) &&
+             (!('password' in data) || (data.password is string && data.password.size() <= 1000)) &&
              (!('protocol' in data) || (data.protocol is string && data.protocol.size() <= 20)) &&
              (!('type' in data) || (data.type is string && data.type.size() <= 20)) &&
-             (!('fullProxy' in data) || (data.fullProxy is string && data.fullProxy.size() <= 300)) &&
+             (!('fullProxy' in data) || (data.fullProxy is string && data.fullProxy.size() <= 1500)) &&
              (!('location' in data) || (data.location is string && data.location.size() <= 100)) &&
              (!('provider' in data) || (data.provider is string && data.provider.size() <= 200)) &&
              (!('status' in data) || (data.status is string && data.status.size() <= 50)) &&
@@ -209,7 +226,7 @@ service cloud.firestore {
       allow delete: if isValidId(recordId);
     }
 
-    // 2. Full Vias
+    // 2. Full Vias (Encrypted ENCv2 Vault on Cloud)
     match /vias/{viaId} {
       allow read: if true;
       allow create: if isValidId(viaId) && isValidViaItem(request.resource.data);
@@ -220,17 +237,19 @@ service cloud.firestore {
     // 3. User Accounts (Staff and Admin)
     match /accounts/{accountId} {
       allow read: if true;
-      // Chỉ cho phép tạo tài khoản staff, hoặc tạo tài khoản admin chuẩn của cualokhachsan@gmail.com
+      // Chỉ cho phép tạo tài khoản staff, hoặc tạo tài khoản admin chuẩn của cualokhachsan@gmail.com / myphuong2295@gmail.com
       allow create: if isValidId(accountId) && isValidAccount(request.resource.data) &&
                        (request.resource.data.role == 'staff' ||
-                        (request.resource.data.role == 'admin' && 'email' in request.resource.data && request.resource.data.email.lower() == 'cualokhachsan@gmail.com') ||
+                        (request.resource.data.role == 'admin' && 'email' in request.resource.data &&
+                         (request.resource.data.email.lower() == 'cualokhachsan@gmail.com' ||
+                          request.resource.data.email.lower() == 'myphuong2295@gmail.com')) ||
                         isSuperAdmin());
-      // Ngăn chặn tự nâng quyền từ staff lên admin, và cấm hạ quyền hoặc khóa tài khoản Master Admin (cualokhachsan@gmail.com)
+      // Ngăn chặn tự nâng quyền từ staff lên admin, và cấm hạ quyền hoặc khóa tài khoản Master Admin
       allow update: if isValidId(accountId) && isValidAccount(request.resource.data) &&
                        (request.resource.data.role == resource.data.role || isSuperAdmin()) &&
                        (!isProtectedMasterAdminDoc(accountId, resource.data) ||
                         (request.resource.data.role == 'admin' && request.resource.data.status == 'approved'));
-      // Cấm xóa tài khoản Master Admin của cualokhachsan@gmail.com dưới mọi hình thức
+      // Cấm xóa tài khoản Master Admin dưới mọi hình thức
       allow delete: if isValidId(accountId) &&
                        !isProtectedMasterAdminDoc(accountId, resource.data) &&
                        (!('role' in resource.data) || resource.data.role != 'admin' || isSuperAdmin());

@@ -35,6 +35,22 @@ import {
   INITIAL_IMAGE_TASKS,
 } from './storage';
 import { getCleanBmName } from '../utils/helpers';
+import {
+  encryptViaForCloud,
+  encryptPartialViaForCloud,
+  decryptViaFromCloud,
+  isRawViaEncryptedOnCloud,
+  encryptPageRecordForCloud,
+  encryptPartialPageRecordForCloud,
+  decryptPageRecordFromCloud,
+  isVaultEncryptedString,
+  encryptSharedAccountForCloud,
+  encryptPartialSharedAccountForCloud,
+  decryptSharedAccountFromCloud,
+  encryptProxyForCloud,
+  encryptPartialProxyForCloud,
+  decryptProxyFromCloud,
+} from '../utils/viaSecurityVault';
 
 export const BUNDLED_BACKUP_DATA = bundledBackupJson as any;
 const CUSTOM_FIREBASE_CONFIG_STORAGE_KEY = 'mmo_custom_firebase_config_v1';
@@ -382,22 +398,28 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       }
     }
 
-    // 3. Full Vias
+    // 3. Full Vias (Tự động mã hóa ENCv2 trước khi khởi tạo lên Cloud)
     const viasSnapshot = await getDocs(collection(db, VIAS_COLLECTION));
     if (viasSnapshot.empty) {
       const bundledVias = Array.isArray(BUNDLED_BACKUP_DATA?.vias) && BUNDLED_BACKUP_DATA.vias.length > 0
         ? BUNDLED_BACKUP_DATA.vias
         : getInitialFullViaItems();
-      await writeBundledCollection(VIAS_COLLECTION, bundledVias);
+      await writeBundledCollection(
+        VIAS_COLLECTION,
+        bundledVias.map((v: FullViaItem) => encryptViaForCloud(v))
+      );
     }
 
-    // 4. Fanpage Records
+    // 4. Fanpage Records (Mã hóa trường nhạy cảm fullVia nếu có)
     const recordsSnapshot = await getDocs(collection(db, PAGE_RECORDS_COLLECTION));
     if (recordsSnapshot.empty) {
       const bundledRecords = Array.isArray(BUNDLED_BACKUP_DATA?.pageRecords) && BUNDLED_BACKUP_DATA.pageRecords.length > 0
         ? BUNDLED_BACKUP_DATA.pageRecords
         : INITIAL_PAGE_RECORDS;
-      await writeBundledCollection(PAGE_RECORDS_COLLECTION, bundledRecords);
+      await writeBundledCollection(
+        PAGE_RECORDS_COLLECTION,
+        bundledRecords.map((r: PageRecord) => encryptPageRecordForCloud(r))
+      );
     }
 
     // 5. Group Records
@@ -406,22 +428,28 @@ export async function seedCloudFirestoreIfEmpty(): Promise<void> {
       await writeBundledCollection(GROUP_RECORDS_COLLECTION, BUNDLED_BACKUP_DATA.groupRecords);
     }
 
-    // 6. Shared Accounts
+    // 6. Shared Accounts (Mã hóa password & 2FA)
     const sharedSnapshot = await getDocs(collection(db, SHARED_ACCOUNTS_COLLECTION));
     if (sharedSnapshot.empty) {
       const bundledShared = Array.isArray(BUNDLED_BACKUP_DATA?.sharedAccounts) && BUNDLED_BACKUP_DATA.sharedAccounts.length > 0
         ? BUNDLED_BACKUP_DATA.sharedAccounts
         : INITIAL_SHARED_ACCOUNTS;
-      await writeBundledCollection(SHARED_ACCOUNTS_COLLECTION, bundledShared);
+      await writeBundledCollection(
+        SHARED_ACCOUNTS_COLLECTION,
+        bundledShared.map((s: SharedAccount) => encryptSharedAccountForCloud(s))
+      );
     }
 
-    // 7. Proxies
+    // 7. Proxies (Mã hóa password & fullProxy)
     const proxiesSnapshot = await getDocs(collection(db, PROXIES_COLLECTION));
     if (proxiesSnapshot.empty) {
       const bundledProxies = Array.isArray(BUNDLED_BACKUP_DATA?.proxies) && BUNDLED_BACKUP_DATA.proxies.length > 0
         ? BUNDLED_BACKUP_DATA.proxies
         : INITIAL_PROXIES;
-      await writeBundledCollection(PROXIES_COLLECTION, bundledProxies);
+      await writeBundledCollection(
+        PROXIES_COLLECTION,
+        bundledProxies.map((p: ProxyItem) => encryptProxyForCloud(p))
+      );
     }
 
     // 8. Monthly Finances
@@ -444,7 +472,8 @@ export function subscribeToPageRecords(
     (snapshot) => {
       const list: PageRecord[] = [];
       snapshot.forEach((d) => {
-        list.push({ id: d.id, ...d.data() } as PageRecord);
+        const raw = { id: d.id, ...d.data() } as PageRecord;
+        list.push(decryptPageRecordFromCloud(raw));
       });
       onData(list);
     },
@@ -464,7 +493,8 @@ export function subscribeToVias(
     (snapshot) => {
       const list: FullViaItem[] = [];
       snapshot.forEach((d) => {
-        list.push({ id: d.id, ...d.data() } as FullViaItem);
+        const raw = { id: d.id, ...d.data() } as FullViaItem;
+        list.push(decryptViaFromCloud(raw));
       });
       onData(list);
     },
@@ -546,7 +576,8 @@ export function subscribeToSharedAccounts(
     (snapshot) => {
       const list: SharedAccount[] = [];
       snapshot.forEach((d) => {
-        list.push({ id: d.id, ...d.data() } as SharedAccount);
+        const raw = { id: d.id, ...d.data() } as SharedAccount;
+        list.push(decryptSharedAccountFromCloud(raw));
       });
       onData(list);
     },
@@ -562,7 +593,8 @@ export async function getCloudSharedAccounts(): Promise<SharedAccount[]> {
     const snapshot = await getDocs(collection(db, SHARED_ACCOUNTS_COLLECTION));
     const list: SharedAccount[] = [];
     snapshot.forEach((d) => {
-      list.push({ id: d.id, ...d.data() } as SharedAccount);
+      const raw = { id: d.id, ...d.data() } as SharedAccount;
+      list.push(decryptSharedAccountFromCloud(raw));
     });
     return list;
   } catch (error) {
@@ -614,7 +646,8 @@ export function subscribeToProxies(
     (snapshot) => {
       const list: ProxyItem[] = [];
       snapshot.forEach((d) => {
-        list.push({ id: d.id, ...d.data() } as ProxyItem);
+        const raw = { id: d.id, ...d.data() } as ProxyItem;
+        list.push(decryptProxyFromCloud(raw));
       });
       onData(list);
     },
@@ -630,7 +663,8 @@ export async function getCloudProxies(): Promise<ProxyItem[]> {
     const snapshot = await getDocs(collection(db, PROXIES_COLLECTION));
     const list: ProxyItem[] = [];
     snapshot.forEach((d) => {
-      list.push({ id: d.id, ...d.data() } as ProxyItem);
+      const raw = { id: d.id, ...d.data() } as ProxyItem;
+      list.push(decryptProxyFromCloud(raw));
     });
     return list;
   } catch (error) {
@@ -680,14 +714,16 @@ export async function getCloudMonthlyFinances(): Promise<MonthlyFinanceRecord[]>
 
 // 6. Direct Cloud Firestore Operations (Create, Update, Delete)
 
-// --- Page Records ---
+// --- Page Records (Tự động mã hóa trường nhạy cảm fullVia trước khi ghi lên Cloud) ---
 export async function setCloudPageRecord(record: PageRecord): Promise<void> {
   const path = `${PAGE_RECORDS_COLLECTION}/${record.id}`;
   try {
-    const cleanRecord = {
-      ...record,
-      bmNote: getCleanBmName(record.bmNote),
-    };
+    const cleanRecord = sanitizeForFirestore(
+      encryptPageRecordForCloud({
+        ...record,
+        bmNote: getCleanBmName(record.bmNote),
+      })
+    );
     await setDoc(doc(db, PAGE_RECORDS_COLLECTION, record.id), cleanRecord);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
@@ -697,10 +733,11 @@ export async function setCloudPageRecord(record: PageRecord): Promise<void> {
 export async function updateCloudPageRecord(id: string, updates: Partial<PageRecord>): Promise<void> {
   const path = `${PAGE_RECORDS_COLLECTION}/${id}`;
   try {
-    const cleanUpdates =
+    const baseUpdates =
       updates.bmNote !== undefined
         ? { ...updates, bmNote: getCleanBmName(updates.bmNote) }
         : updates;
+    const cleanUpdates = sanitizeForFirestore(encryptPartialPageRecordForCloud(baseUpdates, id));
     await updateDoc(doc(db, PAGE_RECORDS_COLLECTION, id), cleanUpdates as DocumentData);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
@@ -724,10 +761,12 @@ export async function batchSaveCloudPageRecords(records: PageRecord[]): Promise<
       const chunk = records.slice(i, i + chunkSize);
       const batch = writeBatch(db);
       chunk.forEach((rec) => {
-        const cleanRec = {
-          ...rec,
-          bmNote: getCleanBmName(rec.bmNote),
-        };
+        const cleanRec = sanitizeForFirestore(
+          encryptPageRecordForCloud({
+            ...rec,
+            bmNote: getCleanBmName(rec.bmNote),
+          })
+        );
         batch.set(doc(db, PAGE_RECORDS_COLLECTION, rec.id), cleanRec);
       });
       await batch.commit();
@@ -754,11 +793,12 @@ export async function batchDeleteCloudPageRecords(recordIds: string[]): Promise<
   }
 }
 
-// --- Vias ---
+// --- Vias (Tự động mã hóa ENCv2 toàn bộ Pass, 2FA, Mail, PassMail, RawFullVia trước khi lưu lên Cloud) ---
 export async function setCloudVia(via: FullViaItem): Promise<void> {
   const path = `${VIAS_COLLECTION}/${via.id}`;
   try {
-    await setDoc(doc(db, VIAS_COLLECTION, via.id), via);
+    const encryptedVia = sanitizeForFirestore(encryptViaForCloud(via));
+    await setDoc(doc(db, VIAS_COLLECTION, via.id), encryptedVia);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }
@@ -767,7 +807,8 @@ export async function setCloudVia(via: FullViaItem): Promise<void> {
 export async function updateCloudVia(id: string, updates: Partial<FullViaItem>): Promise<void> {
   const path = `${VIAS_COLLECTION}/${id}`;
   try {
-    await updateDoc(doc(db, VIAS_COLLECTION, id), updates as DocumentData);
+    const encryptedUpdates = sanitizeForFirestore(encryptPartialViaForCloud(updates, id));
+    await updateDoc(doc(db, VIAS_COLLECTION, id), encryptedUpdates as DocumentData);
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -790,7 +831,8 @@ export async function batchSaveCloudVias(vias: FullViaItem[]): Promise<void> {
       const chunk = vias.slice(i, i + chunkSize);
       const batch = writeBatch(db);
       chunk.forEach((via) => {
-        batch.set(doc(db, VIAS_COLLECTION, via.id), via);
+        const encryptedVia = sanitizeForFirestore(encryptViaForCloud(via));
+        batch.set(doc(db, VIAS_COLLECTION, via.id), encryptedVia);
       });
       await batch.commit();
     }
@@ -878,11 +920,11 @@ export async function deleteCloudAccount(id: string): Promise<void> {
   }
 }
 
-// --- Shared Accounts ---
+// --- Shared Accounts (Tự động mã hóa password & twoFa) ---
 export async function setCloudSharedAccount(account: SharedAccount): Promise<void> {
   const path = `${SHARED_ACCOUNTS_COLLECTION}/${account.id}`;
   try {
-    const clean = sanitizeForFirestore(account);
+    const clean = sanitizeForFirestore(encryptSharedAccountForCloud(account));
     await setDoc(doc(db, SHARED_ACCOUNTS_COLLECTION, account.id), clean);
     console.log(`[Firestore] Đã lưu thành công tài khoản web dùng chung: ${account.websiteName}`);
   } catch (error) {
@@ -894,7 +936,7 @@ export async function setCloudSharedAccount(account: SharedAccount): Promise<voi
 export async function updateCloudSharedAccount(id: string, updates: Partial<SharedAccount>): Promise<void> {
   const path = `${SHARED_ACCOUNTS_COLLECTION}/${id}`;
   try {
-    const clean = sanitizeForFirestore(updates);
+    const clean = sanitizeForFirestore(encryptPartialSharedAccountForCloud(updates, id));
     await updateDoc(doc(db, SHARED_ACCOUNTS_COLLECTION, id), clean as DocumentData);
     console.log(`[Firestore] Đã cập nhật tài khoản web dùng chung ID: ${id}`);
   } catch (error) {
@@ -922,7 +964,7 @@ export async function batchSaveCloudSharedAccounts(accounts: SharedAccount[]): P
       const chunk = accounts.slice(i, i + chunkSize);
       const batch = writeBatch(db);
       chunk.forEach((acc) => {
-        const clean = sanitizeForFirestore(acc);
+        const clean = sanitizeForFirestore(encryptSharedAccountForCloud(acc));
         batch.set(doc(db, SHARED_ACCOUNTS_COLLECTION, acc.id), clean);
       });
       await batch.commit();
@@ -1056,11 +1098,11 @@ export async function clearAllCloudGroupRecords(): Promise<void> {
   }
 }
 
-// --- Proxy Operations ---
+// --- Proxy Operations (Tự động mã hóa password & fullProxy) ---
 export async function setCloudProxy(proxy: ProxyItem): Promise<void> {
   const path = `${PROXIES_COLLECTION}/${proxy.id}`;
   try {
-    const clean = sanitizeForFirestore(proxy);
+    const clean = sanitizeForFirestore(encryptProxyForCloud(proxy));
     await setDoc(doc(db, PROXIES_COLLECTION, proxy.id), clean);
     console.log(`[Firestore] Đã lưu proxy: ${proxy.ip}:${proxy.port}`);
   } catch (error) {
@@ -1072,7 +1114,7 @@ export async function setCloudProxy(proxy: ProxyItem): Promise<void> {
 export async function updateCloudProxy(id: string, updates: Partial<ProxyItem>): Promise<void> {
   const path = `${PROXIES_COLLECTION}/${id}`;
   try {
-    const clean = sanitizeForFirestore(updates);
+    const clean = sanitizeForFirestore(encryptPartialProxyForCloud(updates, id));
     await updateDoc(doc(db, PROXIES_COLLECTION, id), clean as DocumentData);
     console.log(`[Firestore] Đã cập nhật proxy ID: ${id}`);
   } catch (error) {
@@ -1100,7 +1142,7 @@ export async function batchSaveCloudProxies(proxies: ProxyItem[]): Promise<void>
       const chunk = proxies.slice(i, i + chunkSize);
       const batch = writeBatch(db);
       chunk.forEach((prx) => {
-        const clean = sanitizeForFirestore(prx);
+        const clean = sanitizeForFirestore(encryptProxyForCloud(prx));
         batch.set(doc(db, PROXIES_COLLECTION, prx.id), clean);
       });
       await batch.commit();
@@ -1242,12 +1284,12 @@ export async function resetCloudFirestoreToDefaults(): Promise<void> {
       const chunk = INITIAL_PAGE_RECORDS.slice(i, i + chunkRecs);
       const batch = writeBatch(db);
       chunk.forEach((rec) => {
-        batch.set(doc(db, PAGE_RECORDS_COLLECTION, rec.id), rec);
+        batch.set(doc(db, PAGE_RECORDS_COLLECTION, rec.id), sanitizeForFirestore(encryptPageRecordForCloud(rec)));
       });
       await batch.commit();
     }
 
-    // 2. Clear old vias & seed defaults
+    // 2. Clear old vias & seed defaults (encrypted)
     const viaSnap = await getDocs(collection(db, VIAS_COLLECTION));
     const viaBatch = writeBatch(db);
     viaSnap.docs.forEach((d) => viaBatch.delete(d.ref));
@@ -1255,7 +1297,9 @@ export async function resetCloudFirestoreToDefaults(): Promise<void> {
 
     const initialVias = getInitialFullViaItems();
     const newViaBatch = writeBatch(db);
-    initialVias.forEach((v) => newViaBatch.set(doc(db, VIAS_COLLECTION, v.id), v));
+    initialVias.forEach((v) =>
+      newViaBatch.set(doc(db, VIAS_COLLECTION, v.id), sanitizeForFirestore(encryptViaForCloud(v)))
+    );
     await newViaBatch.commit();
 
     // 3. Clear old accounts & seed defaults
@@ -1278,7 +1322,7 @@ export async function resetCloudFirestoreToDefaults(): Promise<void> {
       adminEmail: DEFAULT_ADMIN_SETTINGS.adminEmail,
     });
 
-    // 5. Clear old shared accounts & seed defaults
+    // 5. Clear old shared accounts & seed defaults (encrypted)
     const sharedSnap = await getDocs(collection(db, SHARED_ACCOUNTS_COLLECTION));
     const sharedBatch = writeBatch(db);
     sharedSnap.docs.forEach((d) => sharedBatch.delete(d.ref));
@@ -1286,7 +1330,10 @@ export async function resetCloudFirestoreToDefaults(): Promise<void> {
 
     const newSharedBatch = writeBatch(db);
     INITIAL_SHARED_ACCOUNTS.forEach((s) =>
-      newSharedBatch.set(doc(db, SHARED_ACCOUNTS_COLLECTION, s.id), sanitizeForFirestore(s))
+      newSharedBatch.set(
+        doc(db, SHARED_ACCOUNTS_COLLECTION, s.id),
+        sanitizeForFirestore(encryptSharedAccountForCloud(s))
+      )
     );
     await newSharedBatch.commit();
 
@@ -1461,11 +1508,27 @@ export async function pushBackupToExternalFirebase(
     }
   };
 
-  await writeCollectionBatch(PAGE_RECORDS_COLLECTION, backupData.pageRecords || [], 'Fanpage');
-  await writeCollectionBatch(VIAS_COLLECTION, backupData.vias || [], 'Full Via');
+  await writeCollectionBatch(
+    PAGE_RECORDS_COLLECTION,
+    (backupData.pageRecords || []).map((r: PageRecord) => encryptPageRecordForCloud(r)),
+    'Fanpage'
+  );
+  await writeCollectionBatch(
+    VIAS_COLLECTION,
+    (backupData.vias || []).map((v: FullViaItem) => encryptViaForCloud(v)),
+    'Full Via'
+  );
   await writeCollectionBatch(GROUP_RECORDS_COLLECTION, backupData.groupRecords || [], 'Group');
-  await writeCollectionBatch(PROXIES_COLLECTION, backupData.proxies || [], 'Proxy');
-  await writeCollectionBatch(SHARED_ACCOUNTS_COLLECTION, backupData.sharedAccounts || [], 'Web Chung');
+  await writeCollectionBatch(
+    PROXIES_COLLECTION,
+    (backupData.proxies || []).map((p: ProxyItem) => encryptProxyForCloud(p)),
+    'Proxy'
+  );
+  await writeCollectionBatch(
+    SHARED_ACCOUNTS_COLLECTION,
+    (backupData.sharedAccounts || []).map((s: SharedAccount) => encryptSharedAccountForCloud(s)),
+    'Web Chung'
+  );
   await writeCollectionBatch(MONTHLY_FINANCES_COLLECTION, backupData.monthlyFinances || [], 'Doanh Thu');
   await writeCollectionBatch(IMAGE_TASKS_COLLECTION, backupData.imageTasks || [], 'Làm Ảnh');
   await writeCollectionBatch(ACCOUNTS_COLLECTION, backupData.accounts || [], 'Nhân Viên & Tài Khoản');
@@ -1578,8 +1641,130 @@ export async function wipeLegacyDefaultFirebaseDatabase(
 }
 
 /**
- * Bộ quy tắc bảo mật chuẩn Firestore Rules v2 khóa độc quyền cho cualokhachsan@gmail.com
- * Dùng để dán vào tab Rules trên Firebase Console của mail cualokhachsan@gmail.com sau khi chuyển dữ liệu
+ * Nâng cấp & Mã hóa toàn bộ dữ liệu nhạy cảm đang còn ở dạng bản rõ (Plaintext) trên Cloud Firestore
+ * sang chuẩn Ciphertext ENCv2 chống đánh cắp CSDL tuyệt đối (Kho Full Via, Page.fullVia, Web Chung, Proxy).
+ */
+export async function encryptAllPlaintextViasOnCloud(
+  onProgress?: (msg: string) => void
+): Promise<{
+  encryptedViasCount: number;
+  encryptedPagesCount: number;
+  encryptedSharedCount: number;
+  encryptedProxiesCount: number;
+  totalViasOnCloud: number;
+}> {
+  let encryptedViasCount = 0;
+  let encryptedPagesCount = 0;
+  let encryptedSharedCount = 0;
+  let encryptedProxiesCount = 0;
+
+  // 1. Quét và mã hóa toàn bộ bảng vias trên Cloud
+  onProgress?.('Đang kiểm tra và mã hóa kho Full Via trên Cloud Firestore...');
+  const viaSnap = await getDocs(collection(db, VIAS_COLLECTION));
+  const totalViasOnCloud = viaSnap.size;
+  const plaintextVias: FullViaItem[] = [];
+
+  viaSnap.forEach((d) => {
+    const raw = { id: d.id, ...d.data() } as FullViaItem;
+    if (!isRawViaEncryptedOnCloud(raw) || !raw.isEncrypted) {
+      plaintextVias.push(decryptViaFromCloud(raw));
+    }
+  });
+
+  if (plaintextVias.length > 0) {
+    const chunkSize = 350;
+    for (let i = 0; i < plaintextVias.length; i += chunkSize) {
+      const chunk = plaintextVias.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((v) => {
+        const encrypted = sanitizeForFirestore(encryptViaForCloud(v));
+        batch.set(doc(db, VIAS_COLLECTION, v.id), encrypted);
+      });
+      await batch.commit();
+      encryptedViasCount += chunk.length;
+    }
+  }
+
+  // 2. Quét và mã hóa trường fullVia trong pageRecords
+  onProgress?.('Đang kiểm tra và mã hóa chuỗi Via đính kèm trong Bảng Fanpage...');
+  const pageSnap = await getDocs(collection(db, PAGE_RECORDS_COLLECTION));
+  const plaintextPages: PageRecord[] = [];
+  pageSnap.forEach((d) => {
+    const raw = { id: d.id, ...d.data() } as PageRecord;
+    if (raw.fullVia && raw.fullVia.trim() !== '' && !isVaultEncryptedString(raw.fullVia)) {
+      plaintextPages.push(decryptPageRecordFromCloud(raw));
+    }
+  });
+
+  if (plaintextPages.length > 0) {
+    const chunkSize = 350;
+    for (let i = 0; i < plaintextPages.length; i += chunkSize) {
+      const chunk = plaintextPages.slice(i, i + chunkSize);
+      const batch = writeBatch(db);
+      chunk.forEach((p) => {
+        const encrypted = sanitizeForFirestore(encryptPageRecordForCloud(p));
+        batch.set(doc(db, PAGE_RECORDS_COLLECTION, p.id), encrypted);
+      });
+      await batch.commit();
+      encryptedPagesCount += chunk.length;
+    }
+  }
+
+  // 3. Quét và mã hóa Shared Accounts
+  onProgress?.('Đang kiểm tra và mã hóa mật khẩu Bảng Web Dùng Chung...');
+  const sharedSnap = await getDocs(collection(db, SHARED_ACCOUNTS_COLLECTION));
+  const plaintextShared: SharedAccount[] = [];
+  sharedSnap.forEach((d) => {
+    const raw = { id: d.id, ...d.data() } as SharedAccount;
+    const passPlain = Boolean(raw.password?.trim()) && !isVaultEncryptedString(raw.password);
+    const twoFaPlain = Boolean(raw.twoFa?.trim()) && !isVaultEncryptedString(raw.twoFa);
+    if (passPlain || twoFaPlain) {
+      plaintextShared.push(decryptSharedAccountFromCloud(raw));
+    }
+  });
+
+  if (plaintextShared.length > 0) {
+    const batch = writeBatch(db);
+    plaintextShared.forEach((s) => {
+      batch.set(doc(db, SHARED_ACCOUNTS_COLLECTION, s.id), sanitizeForFirestore(encryptSharedAccountForCloud(s)));
+    });
+    await batch.commit();
+    encryptedSharedCount = plaintextShared.length;
+  }
+
+  // 4. Quét và mã hóa Proxies
+  onProgress?.('Đang kiểm tra và mã hóa thông tin xác thực Bảng Proxy...');
+  const proxySnap = await getDocs(collection(db, PROXIES_COLLECTION));
+  const plaintextProxies: ProxyItem[] = [];
+  proxySnap.forEach((d) => {
+    const raw = { id: d.id, ...d.data() } as ProxyItem;
+    const passPlain = Boolean(raw.password?.trim()) && !isVaultEncryptedString(raw.password);
+    const fullPlain = Boolean(raw.fullProxy?.trim()) && !isVaultEncryptedString(raw.fullProxy);
+    if (passPlain || fullPlain) {
+      plaintextProxies.push(decryptProxyFromCloud(raw));
+    }
+  });
+
+  if (plaintextProxies.length > 0) {
+    const batch = writeBatch(db);
+    plaintextProxies.forEach((p) => {
+      batch.set(doc(db, PROXIES_COLLECTION, p.id), sanitizeForFirestore(encryptProxyForCloud(p)));
+    });
+    await batch.commit();
+    encryptedProxiesCount = plaintextProxies.length;
+  }
+
+  return {
+    encryptedViasCount,
+    encryptedPagesCount,
+    encryptedSharedCount,
+    encryptedProxiesCount,
+    totalViasOnCloud,
+  };
+}
+
+/**
+ * Bộ quy tắc bảo mật chuẩn Firestore Rules v2 khóa độc quyền cho cualokhachsan@gmail.com & myphuong2295@gmail.com
  */
 export const HARDENED_FIRESTORE_RULES_V2 = `rules_version = '2';
 service cloud.firestore {
@@ -1600,17 +1785,19 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // Super Admin độc quyền: cualokhachsan@gmail.com (Chống giả mạo với email_verified == true)
     function isSuperAdmin() {
       return isSignedIn() &&
         request.auth.token.email_verified == true &&
-        request.auth.token.email.lower() == 'cualokhachsan@gmail.com';
+        (request.auth.token.email.lower() == 'cualokhachsan@gmail.com' ||
+         request.auth.token.email.lower() == 'myphuong2295@gmail.com');
     }
 
     function isProtectedMasterAdminDoc(docId, existingData) {
       return docId == 'admin' ||
         docId == 'account-admin' ||
-        ('email' in existingData && existingData.email is string && existingData.email.lower() == 'cualokhachsan@gmail.com');
+        ('email' in existingData && existingData.email is string &&
+         (existingData.email.lower() == 'cualokhachsan@gmail.com' ||
+          existingData.email.lower() == 'myphuong2295@gmail.com'));
     }
 
     match /pageRecords/{recordId} {
@@ -1627,7 +1814,9 @@ service cloud.firestore {
       allow read: if true;
       allow create: if isValidId(accountId) &&
         (request.resource.data.role == 'staff' ||
-         (request.resource.data.role == 'admin' && request.resource.data.email.lower() == 'cualokhachsan@gmail.com') ||
+         (request.resource.data.role == 'admin' &&
+          (request.resource.data.email.lower() == 'cualokhachsan@gmail.com' ||
+           request.resource.data.email.lower() == 'myphuong2295@gmail.com')) ||
          isSuperAdmin());
       allow update: if isValidId(accountId) &&
         (request.resource.data.role == resource.data.role || isSuperAdmin()) &&
@@ -1639,8 +1828,14 @@ service cloud.firestore {
     match /settings/{settingId} {
       allow read: if true;
       allow create, update: if isValidId(settingId) &&
-        (!('adminEmail' in request.resource.data) || request.resource.data.adminEmail.lower() == 'cualokhachsan@gmail.com' || isSuperAdmin()) &&
-        (!('ownerEmail' in request.resource.data) || request.resource.data.ownerEmail.lower() == 'cualokhachsan@gmail.com' || isSuperAdmin());
+        (!('adminEmail' in request.resource.data) ||
+         request.resource.data.adminEmail.lower() == 'cualokhachsan@gmail.com' ||
+         request.resource.data.adminEmail.lower() == 'myphuong2295@gmail.com' ||
+         isSuperAdmin()) &&
+        (!('ownerEmail' in request.resource.data) ||
+         request.resource.data.ownerEmail.lower() == 'cualokhachsan@gmail.com' ||
+         request.resource.data.ownerEmail.lower() == 'myphuong2295@gmail.com' ||
+         isSuperAdmin());
       allow delete: if isValidId(settingId) && isSuperAdmin();
     }
 
@@ -1670,3 +1865,4 @@ service cloud.firestore {
     }
   }
 }`;
+
