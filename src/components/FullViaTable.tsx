@@ -143,7 +143,23 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   }, [currentUser.role, adminPin, currentUserPin]);
 
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'error' | 'checkpoint' | 'fixed' | 'pending_page' | 'has_page' | 'no_page'>('all');
+  const [statusFilter, setStatusFilter] = useState<
+    | 'all'
+    | 'active'
+    | 'error'
+    | 'checkpoint'
+    | 'fixed'
+    | 'pending_page'
+    | 'has_page'
+    | 'no_page'
+    | 'all_group'
+    | 'group_them_moi'
+    | 'group_admin_them'
+    | 'group_co_tu_dau'
+    | 'group_can_them'
+    | 'has_group'
+    | 'group_chua_gan'
+  >('all');
   const [adminReportFilter, setAdminReportFilter] = useState<'all' | ViaAdminReportStatus>('all');
   const [selectedStaffFilter, setSelectedStaffFilter] = useState<string>(
     currentUser.role === 'staff'
@@ -244,6 +260,33 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     return map;
   }, [allGroupRecords]);
 
+  // Helper: Phân loại ghi chú Group của Nick Via
+  const getViaGroupNoteFlags = (via: FullViaItem) => {
+    const noteLower = `${via.note || ''} ${via.sharedNote || ''}`.toLowerCase();
+    const isThemMoiGroup = noteLower.includes('thêm mới để thêm group');
+    const isAdminThemGroup =
+      noteLower.includes('admin đã thêm group') || noteLower.includes('admin thêm group');
+    const isCoGroupTuDau =
+      noteLower.includes('có group từ đầu') || noteLower.includes('đã có group');
+    const isCanThemGroup =
+      noteLower.includes('cần thêm group') || noteLower.includes('cần join group');
+    const hasGroupNote =
+      isThemMoiGroup ||
+      isAdminThemGroup ||
+      isCoGroupTuDau ||
+      isCanThemGroup ||
+      noteLower.includes('group') ||
+      via.pageUpdateStatus === 'for_group';
+
+    return {
+      isThemMoiGroup,
+      isAdminThemGroup,
+      isCoGroupTuDau,
+      isCanThemGroup,
+      hasGroupNote,
+    };
+  };
+
   // List of all distinct staff names (excluding Admin Waiting Pool which gets its own prominent tab)
   const distinctStaffNames = useMemo(() => {
     if (currentUser.role === 'staff') {
@@ -271,31 +314,41 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     return list;
   }, [availableStaffNames, strictlyGuardedVias, currentUser]);
 
-  // Statistics for Admin Waiting Pool (Kho Chờ Admin: bao gồm Via trống & Via + Page cầm)
+  // Statistics for Admin Waiting Pool (Kho Chờ Admin: bao gồm Via trống, Via + Page cầm & Via Group)
   const waitingPoolStats = useMemo(() => {
     let total = 0;
     let emptyVias = 0;
     let viasWithPages = 0;
     let totalPages = 0;
+    let viasForGroup = 0;
+    let totalGroups = 0;
 
     strictlyGuardedVias.forEach((v) => {
       if (isAdminWaitingPool(v.staffName) || !v.staffName?.trim()) {
         total++;
         const uidClean = v.uid?.trim().toLowerCase() || '';
         const pages = uidClean ? pagesPerViaUid.get(uidClean) || [] : [];
+        const groups = uidClean ? groupsPerViaUid.get(normalizeUidKey(uidClean)) || [] : [];
+        const gFlags = getViaGroupNoteFlags(v);
+
         if (pages.length > 0) {
           viasWithPages++;
           totalPages += pages.length;
-        } else {
+        }
+        if (gFlags.hasGroupNote || groups.length > 0) {
+          viasForGroup++;
+          totalGroups += groups.length;
+        }
+        if (pages.length === 0 && !gFlags.hasGroupNote && groups.length === 0) {
           emptyVias++;
         }
       }
     });
 
-    return { total, emptyVias, viasWithPages, totalPages };
-  }, [strictlyGuardedVias, pagesPerViaUid]);
+    return { total, emptyVias, viasWithPages, totalPages, viasForGroup, totalGroups };
+  }, [strictlyGuardedVias, pagesPerViaUid, groupsPerViaUid]);
 
-  // Statistics per staff for quick badges (including how many Vias hold pages, total Pages held, and newly transferred Vias)
+  // Statistics per staff for quick badges (including Page and Group stats)
   const staffStats = useMemo(() => {
     const stats: Record<
       string,
@@ -306,6 +359,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         dead: number;
         viasWithPages: number;
         totalPages: number;
+        viasForGroup: number;
+        totalGroups: number;
         pendingNew: number;
       }
     > = {};
@@ -317,6 +372,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         dead: 0,
         viasWithPages: 0,
         totalPages: 0,
+        viasForGroup: 0,
+        totalGroups: 0,
         pendingNew: 0,
       };
     });
@@ -332,6 +389,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           dead: 0,
           viasWithPages: 0,
           totalPages: 0,
+          viasForGroup: 0,
+          totalGroups: 0,
           pendingNew: 0,
         };
       }
@@ -342,9 +401,16 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
       const uidClean = v.uid?.trim().toLowerCase() || '';
       const pages = uidClean ? pagesPerViaUid.get(uidClean) || [] : [];
+      const groups = uidClean ? groupsPerViaUid.get(normalizeUidKey(uidClean)) || [] : [];
+      const gFlags = getViaGroupNoteFlags(v);
+
       if (pages.length > 0) {
         stats[name].viasWithPages++;
         stats[name].totalPages += pages.length;
+      }
+      if (gFlags.hasGroupNote || groups.length > 0) {
+        stats[name].viasForGroup++;
+        stats[name].totalGroups += groups.length;
       }
       const isPending = Boolean(
         v.isNewlyTransferred ||
@@ -358,7 +424,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     });
 
     return stats;
-  }, [distinctStaffNames, strictlyGuardedVias, pagesPerViaUid]);
+  }, [distinctStaffNames, strictlyGuardedVias, pagesPerViaUid, groupsPerViaUid]);
 
   // Visual theme helper per staff
   const getStaffTheme = (staffName: string) => {
@@ -532,6 +598,53 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     };
   }, [currentBaseVias, pagesPerViaUid]);
 
+  // 🟣 THỐNG KÊ MỤC GROUP CHO VIA TRONG PHẠM VI HIỆN TẠI (Thêm mới để thêm Group, Admin đã thêm Group, Có Group từ đầu, Cần thêm Group, Đang cầm Group)
+  const groupViaStatsInScope = useMemo(() => {
+    let totalGroupVias = 0;
+    let themMoiGroup = 0;
+    let adminThemGroup = 0;
+    let coGroupTuDau = 0;
+    let canThemGroup = 0;
+    let hasGroupInTable2 = 0;
+    let totalGroupsInTable2 = 0;
+    let chuaGanGroup = 0;
+
+    currentBaseVias.forEach((v) => {
+      const uidKey = normalizeUidKey(v.uid);
+      const assignedGroups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
+      const flags = getViaGroupNoteFlags(v);
+
+      if (flags.isThemMoiGroup) themMoiGroup++;
+      if (flags.isAdminThemGroup) adminThemGroup++;
+      if (flags.isCoGroupTuDau) coGroupTuDau++;
+      if (flags.isCanThemGroup) canThemGroup++;
+
+      if (assignedGroups.length > 0) {
+        hasGroupInTable2++;
+        totalGroupsInTable2 += assignedGroups.length;
+      }
+
+      if (flags.hasGroupNote || assignedGroups.length > 0) {
+        totalGroupVias++;
+      }
+
+      if (flags.hasGroupNote && assignedGroups.length === 0) {
+        chuaGanGroup++;
+      }
+    });
+
+    return {
+      totalGroupVias,
+      themMoiGroup,
+      adminThemGroup,
+      coGroupTuDau,
+      canThemGroup,
+      hasGroupInTable2,
+      totalGroupsInTable2,
+      chuaGanGroup,
+    };
+  }, [currentBaseVias, groupsPerViaUid]);
+
   // Đếm nick Chưa có Page (Trắng/Trống)
   const noPageCountInScope = useMemo(() => {
     return currentBaseVias.filter((v) => {
@@ -607,6 +720,31 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         const uid = v.uid?.trim();
         const pages = uid ? (pagesPerViaUid.get(uid) || pagesPerViaUid.get(uid.toLowerCase()) || []) : [];
         return !isViaPendingPageUpdate(v) && !isViaPageUpdated(v, pages.length);
+      });
+    } else if (statusFilter === 'all_group') {
+      list = list.filter((v) => {
+        const uidKey = normalizeUidKey(v.uid);
+        const groups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
+        return getViaGroupNoteFlags(v).hasGroupNote || groups.length > 0;
+      });
+    } else if (statusFilter === 'group_them_moi') {
+      list = list.filter((v) => getViaGroupNoteFlags(v).isThemMoiGroup);
+    } else if (statusFilter === 'group_admin_them') {
+      list = list.filter((v) => getViaGroupNoteFlags(v).isAdminThemGroup);
+    } else if (statusFilter === 'group_co_tu_dau') {
+      list = list.filter((v) => getViaGroupNoteFlags(v).isCoGroupTuDau);
+    } else if (statusFilter === 'group_can_them') {
+      list = list.filter((v) => getViaGroupNoteFlags(v).isCanThemGroup);
+    } else if (statusFilter === 'has_group') {
+      list = list.filter((v) => {
+        const uidKey = normalizeUidKey(v.uid);
+        return Boolean(uidKey && (groupsPerViaUid.get(uidKey) || []).length > 0);
+      });
+    } else if (statusFilter === 'group_chua_gan') {
+      list = list.filter((v) => {
+        const uidKey = normalizeUidKey(v.uid);
+        const groups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
+        return getViaGroupNoteFlags(v).hasGroupNote && groups.length === 0;
       });
     }
 
@@ -1809,16 +1947,33 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             )}
 
             <div className="flex items-center justify-between gap-1 flex-wrap">
-              {assignedPages.length > 0 ? (
-                <span
-                  className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded truncate"
-                  title={`Via đang cầm ${assignedPages.length} Fanpage`}
-                >
-                  📗 Cầm {assignedPages.length} Page
-                </span>
-              ) : (
-                <span className="text-[10px] text-slate-400 italic">⚪ 0 Page</span>
-              )}
+              <div className="flex items-center gap-1 flex-wrap">
+                {assignedPages.length > 0 ? (
+                  <span
+                    className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded truncate"
+                    title={`Via đang cầm ${assignedPages.length} Fanpage`}
+                  >
+                    📗 Cầm {assignedPages.length} Page
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-slate-400 italic">⚪ 0 Page</span>
+                )}
+                {assignedGroups.length > 0 ? (
+                  <span
+                    className="text-[10px] font-extrabold text-purple-900 bg-purple-50 border border-purple-200 px-1.5 py-0.2 rounded truncate"
+                    title={`Via đang cầm ${assignedGroups.length} dòng Group ở Bảng 2`}
+                  >
+                    🟣 Cầm {assignedGroups.length} Group
+                  </span>
+                ) : getViaGroupNoteFlags(via).hasGroupNote ? (
+                  <span
+                    className="text-[10px] font-bold text-purple-800 bg-purple-50/80 border border-purple-200 px-1.5 py-0.2 rounded truncate"
+                    title="Via thuộc mục Thêm mới để thêm Group"
+                  >
+                    🟣 Via Group
+                  </span>
+                ) : null}
+              </div>
 
               <div className="flex items-center space-x-1">
                 {currentUser.role === 'admin' &&
@@ -1868,7 +2023,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           </div>
         </td>
 
-        {/* 6. PAGE ĐANG CẦM (HIỂN THỊ RÕ SỐ LƯỢNG 1, 2, 3, 4... PAGE VIA ĐÓ CẦM & DANH SÁCH PAGE) */}
+        {/* 6. PAGE / GROUP ĐANG CẦM (HIỂN THỊ RÕ SỐ LƯỢNG PAGE & TRẠNG THÁI GROUP VIA CẦM) */}
         <td
           className={`py-2 px-2 border-r transition-all text-center ${
             isRowError
@@ -1879,6 +2034,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               ? 'border-rose-300 bg-rose-50/95 ring-1 ring-inset ring-rose-300'
               : isUpdatedPage || assignedPages.length > 0
               ? 'border-emerald-300 bg-emerald-50/90'
+              : getViaGroupNoteFlags(via).hasGroupNote || assignedGroups.length > 0
+              ? 'border-purple-300 bg-purple-50/70'
               : 'border-slate-200'
           }`}
         >
@@ -2089,6 +2246,48 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 </div>
               </>
             )}
+
+            {/* 🟣 HIỂN THỊ TRẠNG THÁI MỤC GROUP CỦA VIA (Thêm mới để thêm Group, Admin đã thêm Group, Có Group từ đầu, Cần thêm Group & Group đang cầm) */}
+            {(() => {
+              const gFlags = getViaGroupNoteFlags(via);
+              if (!gFlags.hasGroupNote && assignedGroups.length === 0) return null;
+              return (
+                <div className="w-full pt-1 border-t border-purple-200/80 flex flex-col gap-0.5">
+                  <div className="flex items-center justify-between gap-1 flex-wrap">
+                    {gFlags.isThemMoiGroup ? (
+                      <span className="px-1.5 py-0.2 rounded bg-purple-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                        🟣 Thêm mới để thêm Group
+                      </span>
+                    ) : gFlags.isAdminThemGroup ? (
+                      <span className="px-1.5 py-0.2 rounded bg-purple-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                        🟣 Admin đã thêm Group
+                      </span>
+                    ) : gFlags.isCoGroupTuDau ? (
+                      <span className="px-1.5 py-0.2 rounded bg-indigo-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                        🔵 Có Group từ đầu
+                      </span>
+                    ) : gFlags.isCanThemGroup ? (
+                      <span className="px-1.5 py-0.2 rounded bg-amber-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                        🟠 Cần thêm Group
+                      </span>
+                    ) : gFlags.hasGroupNote ? (
+                      <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 font-bold text-[10px] truncate">
+                        🟣 Mục Group
+                      </span>
+                    ) : null}
+
+                    {assignedGroups.length > 0 && (
+                      <span
+                        className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-950 border border-purple-300 font-black text-[10px] shrink-0"
+                        title={assignedGroups.map((g) => g.groupName).join(', ')}
+                      >
+                        👥 {assignedGroups.length} Nhóm
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </td>
 
@@ -2656,6 +2855,11 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 }`}>
                   📗 {allRecords.filter((r) => Boolean(r.viaUid?.trim())).length} Page
                 </span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                  selectedStaffFilter === 'all' ? 'bg-purple-500 text-white' : 'bg-purple-50 text-purple-900 border border-purple-200'
+                }`}>
+                  🟣 {(allGroupRecords || []).filter((g) => Boolean(g.uid?.trim())).length} Group
+                </span>
               </button>
 
               {/* 📦 TAB KHO CHỜ CỦA ADMIN (CHƯA NHÂN VIÊN NÀO DÙNG - BAO GỒM VIA & VIA + PAGE CẦM) */}
@@ -2670,7 +2874,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white border-amber-700 shadow-sm ring-2 ring-amber-300/60'
                     : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-400 shadow-2xs'
                 }`}
-                title={`Kho Chờ Của Admin (Chưa nhân viên nào dùng): ${waitingPoolStats.total} Nick Via (${waitingPoolStats.emptyVias} Via trống + ${waitingPoolStats.viasWithPages} Via đang cầm ${waitingPoolStats.totalPages} Page)`}
+                title={`Kho Chờ Của Admin (Chưa nhân viên nào dùng): ${waitingPoolStats.total} Nick Via (${waitingPoolStats.emptyVias} Via trống + ${waitingPoolStats.viasWithPages} Via đang cầm ${waitingPoolStats.totalPages} Page + ${waitingPoolStats.viasForGroup} Via mục Group)`}
               >
                 <Archive className={`w-3.5 h-3.5 ${isAdminWaitingPool(selectedStaffFilter) ? 'text-white' : 'text-amber-700'}`} />
                 <span>📦 Kho Chờ Admin</span>
@@ -2688,12 +2892,31 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 }`}>
                   📗 {waitingPoolStats.totalPages} Page
                 </span>
+                {waitingPoolStats.viasForGroup > 0 && (
+                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                    isAdminWaitingPool(selectedStaffFilter)
+                      ? 'bg-purple-200 text-purple-950'
+                      : 'bg-purple-100 text-purple-900 border border-purple-300'
+                  }`}>
+                    🟣 {waitingPoolStats.viasForGroup} Via Group
+                  </span>
+                )}
               </button>
 
               {/* Individual Staff Tabs */}
               {distinctStaffNames.map((name) => {
                 const theme = getStaffTheme(name);
-                const stats = staffStats[name] || { total: 0, active: 0, checkpoint: 0, dead: 0, viasWithPages: 0, totalPages: 0 };
+                const stats = staffStats[name] || {
+                  total: 0,
+                  active: 0,
+                  checkpoint: 0,
+                  dead: 0,
+                  viasWithPages: 0,
+                  totalPages: 0,
+                  viasForGroup: 0,
+                  totalGroups: 0,
+                  pendingNew: 0,
+                };
                 const isSelected = selectedStaffFilter.trim().toLowerCase() === name.trim().toLowerCase();
 
                 return (
@@ -2707,7 +2930,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
                       isSelected ? theme.activeTab : theme.inactiveTab
                     }`}
-                    title={`Nhân viên ${name}: ${stats.total} Nick Via (${stats.viasWithPages} Via có Page - Tổng cộng đang cầm ${stats.totalPages} Fanpage)`}
+                    title={`Nhân viên ${name}: ${stats.total} Nick Via (${stats.viasWithPages} Via có Page - cầm ${stats.totalPages} Fanpage • ${stats.viasForGroup} Via mục Group - cầm ${stats.totalGroups} Group)`}
                   >
                     <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : theme.dot}`} />
                     <span>{name}</span>
@@ -2721,6 +2944,13 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                         isSelected ? 'bg-emerald-400 text-slate-950' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                       }`}>
                         📗 {stats.totalPages} Page
+                      </span>
+                    )}
+                    {stats.viasForGroup > 0 && (
+                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                        isSelected ? 'bg-purple-200 text-purple-950' : 'bg-purple-100 text-purple-900 border border-purple-300'
+                      }`}>
+                        🟣 {stats.viasForGroup} Via Group
                       </span>
                     )}
                     {stats.pendingNew > 0 && (
@@ -2805,9 +3035,21 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     >
                       📗 Via + Page cầm: {waitingPoolStats.viasWithPages} Via (Đang cầm {waitingPoolStats.totalPages} Page)
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter(statusFilter === 'all_group' ? 'all' : 'all_group')}
+                      className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold border cursor-pointer transition-all ${
+                        statusFilter === 'all_group'
+                          ? 'bg-purple-700 text-white border-purple-800 ring-2 ring-purple-300'
+                          : 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700'
+                      }`}
+                      title="Bấm để lọc xem các Via mục Group trong Kho Chờ"
+                    >
+                      🟣 Via mục Group: {waitingPoolStats.viasForGroup} Via ({waitingPoolStats.totalGroups} Group)
+                    </button>
                   </div>
                   <p className="text-[11px] text-amber-900 mt-1">
-                    Nơi lưu trữ dự phòng các <strong>Nick Via trống</strong> và <strong>Via + Toàn bộ Page cầm</strong> chưa giao cho nhân viên nào. Khi cần giao cho ai, chọn nhân viên ở cột <strong>NHÂN VIÊN</strong> hoặc bấm <strong>Giao Via + Page Cho NV</strong>.
+                    Nơi lưu trữ dự phòng các <strong>Nick Via trống</strong>, <strong>Via mục Group</strong> và <strong>Via + Toàn bộ Page cầm</strong> chưa giao cho nhân viên nào. Khi cần giao cho ai, chọn nhân viên ở cột <strong>NHÂN VIÊN</strong> hoặc bấm <strong>Giao Via + Page Cho NV</strong>.
                   </p>
                 </div>
               </div>
@@ -2850,12 +3092,15 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             <UserCheck className="w-4 h-4 text-emerald-700" />
             <span>Tài khoản Full Via bàn giao cho: <strong className="uppercase">{currentUser.name}</strong></span>
           </div>
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center flex-wrap gap-2">
             <span className="font-bold bg-white text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full text-[11px]">
               {scopedVias.length} Nick Via
             </span>
             <span className="font-extrabold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
               📗 Đang cầm {totalPagesInScope} Fanpage ({multiPageViasCountInScope} Via cầm ≥ 2 Page)
+            </span>
+            <span className="font-extrabold bg-purple-600 text-white px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
+              🟣 Mục Group: {groupViaStatsInScope.totalGroupVias} Via (Đang cầm {groupViaStatsInScope.totalGroupsInTable2} Group)
             </span>
           </div>
         </div>
@@ -2930,6 +3175,200 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           </div>
         </div>
       )}
+
+      {/* 🟣 THANH THỐNG KÊ & LỌC NHANH CHO MỤC GROUP CỦA VIA (THÊM MỚI ĐỂ THÊM GROUP, ADMIN ĐÃ THÊM GROUP, CÓ GROUP TỪ ĐẦU, CẦN THÊM GROUP) */}
+      <div className="bg-gradient-to-r from-purple-50/90 via-indigo-50/70 to-purple-50/90 border-b border-purple-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+        <div className="flex items-center flex-wrap gap-1.5">
+          <span className="text-[11px] font-black text-purple-950 uppercase tracking-wider mr-1 flex items-center gap-1">
+            <span>🟣 Thống Kê Group (Mục Via):</span>
+          </span>
+
+          {/* Tổng Via Mục Group */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'all_group' ? 'all' : 'all_group')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
+              statusFilter === 'all_group'
+                ? 'bg-purple-700 text-white border-purple-800 shadow-xs ring-2 ring-purple-300'
+                : 'bg-white text-purple-950 border-purple-300 hover:bg-purple-100 shadow-2xs'
+            }`}
+            title="Lọc toàn bộ các nick Via có ghi chú mục Group hoặc đang cầm Group ở Bảng 2"
+          >
+            <span>📊 Tổng Via Mục Group:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'all_group' ? 'bg-white/25 text-white' : 'bg-purple-100 text-purple-900'
+              }`}
+            >
+              {groupViaStatsInScope.totalGroupVias} Via
+            </span>
+          </button>
+
+          {/* 1. Thêm mới để thêm Group */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'group_them_moi' ? 'all' : 'group_them_moi')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              statusFilter === 'group_them_moi'
+                ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-300'
+                : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
+            }`}
+            title="Lọc các nick có ghi chú: Thêm mới để thêm Group"
+          >
+            <span>🟣 Thêm mới để thêm Group:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'group_them_moi' ? 'bg-white/25 text-white' : 'bg-purple-100 text-purple-900'
+              }`}
+            >
+              {groupViaStatsInScope.themMoiGroup}
+            </span>
+          </button>
+
+          {/* 2. Admin đã thêm Group */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'group_admin_them' ? 'all' : 'group_admin_them')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              statusFilter === 'group_admin_them'
+                ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-300'
+                : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
+            }`}
+            title="Lọc các nick có ghi chú: Admin đã thêm Group"
+          >
+            <span>🟣 Admin đã thêm Group:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'group_admin_them' ? 'bg-white/25 text-white' : 'bg-purple-100 text-purple-900'
+              }`}
+            >
+              {groupViaStatsInScope.adminThemGroup}
+            </span>
+          </button>
+
+          {/* 3. Có Group từ đầu */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'group_co_tu_dau' ? 'all' : 'group_co_tu_dau')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              statusFilter === 'group_co_tu_dau'
+                ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs ring-2 ring-indigo-300'
+                : 'bg-white text-indigo-900 border-indigo-300 hover:bg-indigo-100'
+            }`}
+            title="Lọc các nick có ghi chú: Có Group từ đầu"
+          >
+            <span>🔵 Có Group từ đầu:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'group_co_tu_dau' ? 'bg-white/25 text-white' : 'bg-indigo-100 text-indigo-900'
+              }`}
+            >
+              {groupViaStatsInScope.coGroupTuDau}
+            </span>
+          </button>
+
+          {/* 4. Cần thêm Group */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'group_can_them' ? 'all' : 'group_can_them')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              statusFilter === 'group_can_them'
+                ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-300'
+                : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-100'
+            }`}
+            title="Lọc các nick có ghi chú: Cần thêm Group"
+          >
+            <span>🟠 Cần thêm Group:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'group_can_them' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-900'
+              }`}
+            >
+              {groupViaStatsInScope.canThemGroup}
+            </span>
+          </button>
+
+          {/* 5. Đang cầm Group (Bảng 2) */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'has_group' ? 'all' : 'has_group')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              statusFilter === 'has_group'
+                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300'
+                : 'bg-white text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+            }`}
+            title="Lọc các nick Via hiện đang gắn với các nhóm bên Bảng 2 (Quản Lý Group)"
+          >
+            <span>👥 Đang cầm Group (Bảng 2):</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'has_group' ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-900'
+              }`}
+            >
+              {groupViaStatsInScope.hasGroupInTable2} Via ({groupViaStatsInScope.totalGroupsInTable2} nhóm)
+            </span>
+          </button>
+
+          {/* 6. Chưa gắn vào Bảng Group */}
+          <button
+            type="button"
+            onClick={() => setStatusFilter(statusFilter === 'group_chua_gan' ? 'all' : 'group_chua_gan')}
+            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
+              statusFilter === 'group_chua_gan'
+                ? 'bg-slate-800 text-white border-slate-900 shadow-xs ring-2 ring-slate-300'
+                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+            }`}
+            title="Lọc các nick đã đánh dấu mục Group nhưng chưa gắn vào nhóm nào ở Bảng 2"
+          >
+            <span>⏳ Chưa gắn vào Bảng Group:</span>
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                statusFilter === 'group_chua_gan' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-800'
+              }`}
+            >
+              {groupViaStatsInScope.chuaGanGroup}
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {statusFilter.includes('group') && (
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all')}
+              className="px-2 py-1 rounded-lg text-[11px] font-bold bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 cursor-pointer"
+            >
+              ✕ Bỏ lọc Group
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              const targetGroupVias = statusFilter.includes('group')
+                ? scopedVias
+                : currentBaseVias.filter((v) => {
+                    const uidKey = normalizeUidKey(v.uid);
+                    const groups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
+                    return getViaGroupNoteFlags(v).hasGroupNote || groups.length > 0;
+                  });
+              const uids = targetGroupVias.map((v) => v.uid?.trim()).filter(Boolean);
+              if (uids.length === 0) {
+                setCopyToastMessage('⚠️ Hiện chưa có UID nào thuộc mục Via Group để sao chép!');
+                setTimeout(() => setCopyToastMessage(null), 2500);
+                return;
+              }
+              navigator.clipboard.writeText(uids.join('\n'));
+              setCopyToastMessage(`📋 Đã copy ${uids.length} UID thuộc mục Via Group vào clipboard!`);
+              setTimeout(() => setCopyToastMessage(null), 3000);
+            }}
+            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-purple-600 hover:bg-purple-700 text-white shadow-2xs cursor-pointer transition-colors"
+            title="Sao chép toàn bộ UID thuộc mục Group (mỗi UID 1 dòng) để dán nhanh sang Bảng Group"
+          >
+            <Copy className="w-3 h-3" />
+            <span>Copy UID Via Group ({statusFilter.includes('group') ? scopedVias.length : groupViaStatsInScope.totalGroupVias})</span>
+          </button>
+        </div>
+      </div>
 
       {/* Unified Filter Toolbar */}
       <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs">
@@ -3072,6 +3511,18 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               title="Lọc các nick đang cầm Page (Màu xanh)"
             >
               🟢 Có Page ({hasPageCountInScope} Via / {totalPagesInScope} Page)
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter('all_group')}
+              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
+                statusFilter === 'all_group'
+                  ? 'bg-purple-600 text-white shadow-2xs'
+                  : 'text-purple-800 hover:bg-purple-50'
+              }`}
+              title="Lọc các nick thuộc mục Group (Thêm mới để thêm Group / Đang cầm Group)"
+            >
+              🟣 Via Group ({groupViaStatsInScope.totalGroupVias} Via / {groupViaStatsInScope.totalGroupsInTable2} Group)
             </button>
             <button
               type="button"
@@ -3996,10 +4447,36 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   </div>
 
                   {/* Khối 2: Chọn nhanh Ghi chú Phần Thêm Mới Để Thêm Group */}
-                  <div className="p-2 rounded-lg bg-purple-50/70 border border-purple-200 space-y-1">
-                    <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wider block">
-                      🟣 Chọn nhanh ghi chú Thêm Mới Để Thêm Group:
-                    </span>
+                  <div className="p-2 rounded-lg bg-purple-50/70 border border-purple-200 space-y-1.5">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wider block">
+                        🟣 Chọn nhanh ghi chú Thêm Mới Để Thêm Group:
+                      </span>
+                      <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-purple-600 text-white shadow-2xs shrink-0">
+                        📊 Tổng Via Group: {groupViaStatsInScope.totalGroupVias} nick
+                      </span>
+                    </div>
+
+                    {/* Bảng thống kê mini cho mục Via Group */}
+                    <div className="grid grid-cols-2 gap-1 bg-white/90 p-1.5 rounded-md border border-purple-200 text-[10px]">
+                      <div className="flex items-center justify-between px-1.5 py-0.5 rounded bg-purple-50 border border-purple-100">
+                        <span className="font-semibold text-purple-800 truncate">🟣 Thêm mới Group:</span>
+                        <span className="font-black text-purple-900 ml-1">{groupViaStatsInScope.themMoiGroup}</span>
+                      </div>
+                      <div className="flex items-center justify-between px-1.5 py-0.5 rounded bg-fuchsia-50 border border-fuchsia-100">
+                        <span className="font-semibold text-fuchsia-800 truncate">🟣 Admin thêm Group:</span>
+                        <span className="font-black text-fuchsia-900 ml-1">{groupViaStatsInScope.adminThemGroup}</span>
+                      </div>
+                      <div className="flex items-center justify-between px-1.5 py-0.5 rounded bg-indigo-50 border border-indigo-100">
+                        <span className="font-semibold text-indigo-800 truncate">🔵 Có Group từ đầu:</span>
+                        <span className="font-black text-indigo-900 ml-1">{groupViaStatsInScope.coGroupTuDau}</span>
+                      </div>
+                      <div className="flex items-center justify-between px-1.5 py-0.5 rounded bg-amber-50 border border-amber-100">
+                        <span className="font-semibold text-amber-800 truncate">🟠 Cần thêm Group:</span>
+                        <span className="font-black text-amber-900 ml-1">{groupViaStatsInScope.canThemGroup}</span>
+                      </div>
+                    </div>
+
                     <div className="flex flex-wrap gap-1">
                       <button
                         type="button"
@@ -4010,13 +4487,22 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                             note: 'Thêm mới để thêm Group',
                           }))
                         }
-                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center gap-1 ${
                           modalForm.note.toLowerCase().includes('thêm mới để thêm group')
                             ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
                             : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
                         }`}
                       >
-                        🟣 Thêm mới để thêm Group
+                        <span>🟣 Thêm mới để thêm Group</span>
+                        <span
+                          className={`px-1 py-0.2 rounded-full text-[9px] font-extrabold ${
+                            modalForm.note.toLowerCase().includes('thêm mới để thêm group')
+                              ? 'bg-purple-800 text-purple-100'
+                              : 'bg-purple-100 text-purple-800'
+                          }`}
+                        >
+                          {groupViaStatsInScope.themMoiGroup}
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -4027,13 +4513,22 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                             note: 'Admin đã thêm Group',
                           }))
                         }
-                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center gap-1 ${
                           modalForm.note.toLowerCase().includes('admin đã thêm group')
                             ? 'bg-purple-600 text-white border-purple-700 shadow-2xs'
                             : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
                         }`}
                       >
-                        🟣 Admin đã thêm Group
+                        <span>🟣 Admin đã thêm Group</span>
+                        <span
+                          className={`px-1 py-0.2 rounded-full text-[9px] font-extrabold ${
+                            modalForm.note.toLowerCase().includes('admin đã thêm group')
+                              ? 'bg-purple-800 text-purple-100'
+                              : 'bg-purple-100 text-purple-800'
+                          }`}
+                        >
+                          {groupViaStatsInScope.adminThemGroup}
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -4044,13 +4539,22 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                             note: 'Có Group từ đầu',
                           }))
                         }
-                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center gap-1 ${
                           modalForm.note.toLowerCase().includes('có group từ đầu')
                             ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
                             : 'bg-white text-indigo-800 border-indigo-300 hover:bg-indigo-100'
                         }`}
                       >
-                        🔵 Có Group từ đầu
+                        <span>🔵 Có Group từ đầu</span>
+                        <span
+                          className={`px-1 py-0.2 rounded-full text-[9px] font-extrabold ${
+                            modalForm.note.toLowerCase().includes('có group từ đầu')
+                              ? 'bg-indigo-800 text-indigo-100'
+                              : 'bg-indigo-100 text-indigo-800'
+                          }`}
+                        >
+                          {groupViaStatsInScope.coGroupTuDau}
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -4061,13 +4565,22 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                             note: 'Cần thêm Group',
                           }))
                         }
-                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer ${
+                        className={`px-2 py-1 rounded text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center gap-1 ${
                           modalForm.note.toLowerCase().includes('cần thêm group')
                             ? 'bg-amber-600 text-white border-amber-700 shadow-2xs'
                             : 'bg-white text-amber-800 border-amber-300 hover:bg-amber-100'
                         }`}
                       >
-                        🟠 Cần thêm Group
+                        <span>🟠 Cần thêm Group</span>
+                        <span
+                          className={`px-1 py-0.2 rounded-full text-[9px] font-extrabold ${
+                            modalForm.note.toLowerCase().includes('cần thêm group')
+                              ? 'bg-amber-800 text-amber-100'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}
+                        >
+                          {groupViaStatsInScope.canThemGroup}
+                        </span>
                       </button>
                     </div>
                   </div>

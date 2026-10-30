@@ -232,6 +232,47 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
     return Array.from(set);
   }, [allDuplicateRows]);
 
+  // Thống kê số lượng Via mục Group hiện có trong Kho Via (Bảng 4)
+  const existingGroupViaStats = useMemo(() => {
+    let totalGroupVias = 0;
+    let themMoiGroup = 0;
+    let adminThemGroup = 0;
+    let coGroupTuDau = 0;
+    let canThemGroup = 0;
+
+    existingVias.forEach((v) => {
+      const noteLower = `${v.note || ''} ${v.sharedNote || ''}`.toLowerCase();
+      const isThemMoi = noteLower.includes('thêm mới để thêm group');
+      const isAdminThem =
+        noteLower.includes('admin đã thêm group') || noteLower.includes('admin thêm group');
+      const isCoTuDau =
+        noteLower.includes('có group từ đầu') || noteLower.includes('đã có group');
+      const isCanThem =
+        noteLower.includes('cần thêm group') || noteLower.includes('cần join group');
+      const isAnyGroup =
+        isThemMoi ||
+        isAdminThem ||
+        isCoTuDau ||
+        isCanThem ||
+        noteLower.includes('group') ||
+        v.pageUpdateStatus === 'for_group';
+
+      if (isAnyGroup) totalGroupVias++;
+      if (isThemMoi) themMoiGroup++;
+      if (isAdminThem) adminThemGroup++;
+      if (isCoTuDau) coGroupTuDau++;
+      if (isCanThem) canThemGroup++;
+    });
+
+    return {
+      totalGroupVias,
+      themMoiGroup,
+      adminThemGroup,
+      coGroupTuDau,
+      canThemGroup,
+    };
+  }, [existingVias]);
+
   // Rows to display based on active filter tab
   const filteredDisplayRows = useMemo(() => {
     switch (previewFilter) {
@@ -872,11 +913,48 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                   </div>
                 </div>
 
-                {/* NHÓM 2: GHI CHÚ CHO PHẦN THÊM MỚI ĐỂ THÊM GROUP */}
-                <div className="p-2 rounded-lg bg-purple-50/70 border border-purple-200">
-                  <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wider block mb-1">
-                    🟣 Chọn Nhanh Ghi Chú — Phần Thêm Mới Để Thêm Group:
-                  </span>
+                {/* NHÓM 2: GHI CHÚ CHO PHẦN THÊM MỚI ĐỂ THÊM GROUP + THỐNG KÊ MỤC VIA GROUP */}
+                <div className="p-2.5 rounded-xl bg-purple-50/80 border border-purple-200 space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-1">
+                    <span className="text-[10px] font-extrabold text-purple-900 uppercase tracking-wider">
+                      🟣 Chọn Nhanh Ghi Chú — Phần Thêm Mới Để Thêm Group:
+                    </span>
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-600 text-white shadow-2xs"
+                      title="Tổng số nick Via đang có ghi chú mục Group trong Kho Via (Bảng 4)"
+                    >
+                      📊 Tổng Via Group: {existingGroupViaStats.totalGroupVias} nick
+                    </span>
+                  </div>
+
+                  {/* Bảng thống kê mini cho mục Group của Via */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1 bg-white/90 p-1.5 rounded-lg border border-purple-200/80 text-[10px]">
+                    <div className="px-1.5 py-1 rounded bg-purple-50 border border-purple-100 flex flex-col">
+                      <span className="text-purple-700 font-semibold truncate">🟣 Thêm mới Group</span>
+                      <span className="font-black text-purple-950 text-xs">
+                        {existingGroupViaStats.themMoiGroup} <span className="text-[9px] font-normal">via</span>
+                      </span>
+                    </div>
+                    <div className="px-1.5 py-1 rounded bg-purple-50 border border-purple-100 flex flex-col">
+                      <span className="text-purple-700 font-semibold truncate">🟣 Admin thêm Group</span>
+                      <span className="font-black text-purple-950 text-xs">
+                        {existingGroupViaStats.adminThemGroup} <span className="text-[9px] font-normal">via</span>
+                      </span>
+                    </div>
+                    <div className="px-1.5 py-1 rounded bg-indigo-50 border border-indigo-100 flex flex-col">
+                      <span className="text-indigo-700 font-semibold truncate">🔵 Có Group từ đầu</span>
+                      <span className="font-black text-indigo-950 text-xs">
+                        {existingGroupViaStats.coGroupTuDau} <span className="text-[9px] font-normal">via</span>
+                      </span>
+                    </div>
+                    <div className="px-1.5 py-1 rounded bg-amber-50 border border-amber-100 flex flex-col">
+                      <span className="text-amber-800 font-semibold truncate">🟠 Cần thêm Group</span>
+                      <span className="font-black text-amber-950 text-xs">
+                        {existingGroupViaStats.canThemGroup} <span className="text-[9px] font-normal">via</span>
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="flex flex-wrap gap-1">
                     {/* Nút 1: Thêm mới để thêm Group */}
                     <button
@@ -916,6 +994,15 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       title="Ghi chú nick thêm mới dùng để thêm Group / làm Group"
                     >
                       <span>🟣 Thêm mới để thêm Group</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          batchNote.toLowerCase().includes('thêm mới để thêm group')
+                            ? 'bg-white/25 text-white'
+                            : 'bg-purple-100 text-purple-800'
+                        }`}
+                      >
+                        {existingGroupViaStats.themMoiGroup}
+                      </span>
                     </button>
 
                     {/* Nút 2: Admin đã thêm Group */}
@@ -956,6 +1043,15 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       title="Admin đã thêm Group cho nhân viên biết"
                     >
                       <span>🟣 Admin đã thêm Group</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          batchNote.toLowerCase().includes('admin đã thêm group')
+                            ? 'bg-white/25 text-white'
+                            : 'bg-purple-100 text-purple-800'
+                        }`}
+                      >
+                        {existingGroupViaStats.adminThemGroup}
+                      </span>
                     </button>
 
                     {/* Nút 3: Có Group từ đầu */}
@@ -997,6 +1093,16 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       title="Nick đã có sẵn Group từ đầu"
                     >
                       <span>🔵 Có Group từ đầu</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          pageStatusOption === 'has_group' ||
+                          batchNote.toLowerCase().includes('có group từ đầu')
+                            ? 'bg-white/25 text-white'
+                            : 'bg-indigo-100 text-indigo-800'
+                        }`}
+                      >
+                        {existingGroupViaStats.coGroupTuDau}
+                      </span>
                     </button>
 
                     {/* Nút 4: Cần thêm Group */}
@@ -1037,6 +1143,15 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
                       title="Nick cần Join / Thêm Group"
                     >
                       <span>🟠 Cần thêm Group</span>
+                      <span
+                        className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
+                          batchNote.toLowerCase().includes('cần thêm group')
+                            ? 'bg-white/25 text-white'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {existingGroupViaStats.canThemGroup}
+                      </span>
                     </button>
                   </div>
                 </div>
