@@ -3831,29 +3831,16 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                           {formatCurrencyVND(salaryByDays)}
                         </td>
 
-                        {/* Doanh thu tiền về & Thưởng KPI 5% - 10% (Kèm % View nhân viên làm ra) */}
+                        {/* Doanh thu tiền về & Thưởng KPI 5% - 10% (Chỉ hiện số View và tiền KPI nhân viên nhận được) */}
                         <td className="py-2.5 px-3 text-right font-mono">
                           <div className="font-black text-emerald-700">
                             +{formatCurrencyVND(item.kpiBonus || 0)}
                           </div>
-                          {item.staffViews && item.totalSystemViews ? (
-                            <div className="text-[10px] text-emerald-700 font-bold space-y-0.5">
-                              <div>
-                                View NV: {item.staffViews.toLocaleString('vi-VN')} /{' '}
-                                {item.totalSystemViews.toLocaleString('vi-VN')} (
-                                {(item.staffViewPercent ?? (item.staffViews / item.totalSystemViews) * 100).toFixed(2)}%)
-                              </div>
-                              <div className="text-emerald-600 font-semibold">
-                                DT NV: {formatCurrencyVND(item.revenueGenerated || 0)} ({item.kpiRate ?? 5}%)
-                              </div>
+                          {item.staffViews ? (
+                            <div className="text-[10px] text-indigo-700 font-bold">
+                              👁️ Số View: {item.staffViews.toLocaleString('vi-VN')}
                             </div>
-                          ) : item.revenueGenerated ? (
-                            <div className="text-[10px] text-emerald-600 font-semibold">
-                              Doanh thu: {formatCurrencyVND(item.revenueGenerated)} ({item.kpiRate ?? 5}%)
-                            </div>
-                          ) : (
-                            <div className="text-[10px] text-slate-400">KPI cứng</div>
-                          )}
+                          ) : null}
                         </td>
 
                         {/* Hỗ trợ tiền mạng, điện cho nhân viên làm online (Yêu cầu 5: cộng vào lương) */}

@@ -1549,37 +1549,18 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
 
               {isVisibleToStaff && staffSalaryItem ? (
                 <>
-                  <div className="text-xl sm:text-2xl font-black text-emerald-800 font-mono">
-                    {formatVND(staffSalaryItem.revenueGenerated || 0)}
+                  <div className="text-xl sm:text-2xl font-black text-emerald-700 font-mono">
+                    +{formatVND(staffSalaryItem.kpiBonus || 0)}
                   </div>
-                  <div className="text-[11px] text-slate-500 mt-1 space-y-0.5">
-                    <div>
-                      Thưởng KPI:{' '}
-                      <strong className="text-emerald-700 font-mono font-black">
-                        +{formatVND(staffSalaryItem.kpiBonus || 0)}
-                      </strong>{' '}
-                      ({staffSalaryItem.kpiRate ?? 5}%)
+                  <div className="text-[11px] text-slate-500 mt-1.5 space-y-1">
+                    <div className="text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1 inline-flex items-center space-x-1.5">
+                      <span>👁️ Số View:</span>
+                      <strong className="font-mono text-indigo-900">
+                        {Number(staffSalaryItem.staffViews || 0).toLocaleString('vi-VN')}
+                      </strong>
                     </div>
-                    {Boolean(staffSalaryItem.staffViews && staffSalaryItem.totalSystemViews) && (
-                      <div className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-0.5 inline-block">
-                        👁️ View NV: {Number(staffSalaryItem.staffViews).toLocaleString('vi-VN')} /{' '}
-                        {Number(staffSalaryItem.totalSystemViews).toLocaleString('vi-VN')} (
-                        {staffSalaryItem.staffViewPercent ??
-                          Number(
-                            (
-                              (Number(staffSalaryItem.staffViews) /
-                                Number(staffSalaryItem.totalSystemViews)) *
-                              100
-                            ).toFixed(2)
-                          )}
-                        % tổng view)
-                      </div>
-                    )}
-                    <div
-                      className="truncate text-slate-400"
-                      title={staffSalaryItem.revenueSourceName}
-                    >
-                      Nguồn: {staffSalaryItem.revenueSourceName || 'Doanh số phụ trách'}
+                    <div className="text-[11px] text-slate-500 font-medium">
+                      Tiền thưởng KPI nhân viên nhận được
                     </div>
                   </div>
                 </>
@@ -1714,38 +1695,13 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                   <div className="space-y-0.5">
                     <span className="font-black text-emerald-950 flex items-center space-x-1.5">
                       <Percent className="w-3.5 h-3.5 text-emerald-600" />
-                      <span>
-                        3. Thưởng KPI Doanh Thu ({staffSalaryItem.kpiRate ?? 5}% trên Doanh thu{' '}
-                        {formatVND(staffSalaryItem.revenueGenerated || 0)})
-                      </span>
+                      <span>3. Thưởng KPI Doanh Thu</span>
                     </span>
-                    {Boolean(staffSalaryItem.staffViews && staffSalaryItem.totalSystemViews) && (
-                      <span className="text-[11px] text-indigo-800 font-semibold block">
-                        👁️ Theo sản lượng View: View NV{' '}
-                        <strong>{Number(staffSalaryItem.staffViews).toLocaleString('vi-VN')}</strong> / Tổng
-                        View{' '}
-                        <strong>
-                          {Number(staffSalaryItem.totalSystemViews).toLocaleString('vi-VN')}
-                        </strong>{' '}
-                        ({' '}
-                        <strong>
-                          {staffSalaryItem.staffViewPercent ??
-                            Number(
-                              (
-                                (Number(staffSalaryItem.staffViews) /
-                                  Number(staffSalaryItem.totalSystemViews)) *
-                                100
-                              ).toFixed(2)
-                            )}
-                          %
-                        </strong>{' '}
-                        tổng view • Công thức: View NV × {staffSalaryItem.kpiRate ?? 5}/100 ÷ Tổng View × Tổng
-                        tiền {formatVND(staffSalaryItem.totalSystemViewRevenue || 0)})
-                      </span>
-                    )}
-                    <span className="text-[11px] text-emerald-700 block">
-                      Nguồn doanh thu:{' '}
-                      {staffSalaryItem.revenueSourceName || 'Doanh thu nhân viên mang về'}
+                    <span className="text-[11px] text-indigo-800 font-semibold block">
+                      👁️ Số View đạt được:{' '}
+                      <strong>
+                        {Number(staffSalaryItem.staffViews || 0).toLocaleString('vi-VN')} view
+                      </strong>
                     </span>
                   </div>
                   <span className="font-mono font-black text-emerald-700">
