@@ -771,11 +771,15 @@ export interface StaffSalaryItem {
   bankAccountNumber?: string; // Số tài khoản ngân hàng (VD: 0389123456789)
   bankAccountHolder?: string; // Tên chủ tài khoản (VD: NGUYEN VAN A)
 
-  // 4. Thưởng KPI tiền về doanh thu do nhân viên đó làm được (5%, 10%)
-  revenueGenerated?: number; // Doanh thu tiền về nhân viên đó mang lại (VNĐ)
+  // 4. Thưởng KPI tiền về doanh thu do nhân viên đó làm được (5%, 10%) & Tính theo % View
+  totalSystemViews?: number; // Tổng số view toàn hệ thống / tổng view tháng
+  totalSystemViewRevenue?: number; // Số tiền doanh thu tương đương với tổng số view đó (VNĐ)
+  staffViews?: number; // Số view nhân viên làm ra
+  staffViewPercent?: number; // % số view nhân viên làm ra = (staffViews / totalSystemViews) * 100
+  revenueGenerated?: number; // Doanh thu tiền về nhân viên đó mang lại (VNĐ) = totalSystemViewRevenue * (staffViews / totalSystemViews)
   revenueSourceName?: string; // Nguồn/dự án/khách hàng mang tiền về (tùy chọn)
   kpiRate?: number; // Tỷ lệ thưởng KPI doanh thu % (5%, 10% hoặc tùy chỉnh)
-  kpiBonus: number; // Tiền thưởng KPI doanh thu = (revenueGenerated * kpiRate / 100)
+  kpiBonus: number; // Tiền thưởng KPI doanh thu = Doanh thu * view nhân viên * (5/100) / tổng số view (hoặc revenueGenerated * kpiRate / 100)
   otherBonus?: number; // Thưởng chuyên cần, thưởng thêm khác (nếu có)
 
   // 4b. Hỗ trợ tiền mạng, điện cho nhân viên làm Online (Yêu cầu 5: cộng vào lương thực nhận cho NV online)

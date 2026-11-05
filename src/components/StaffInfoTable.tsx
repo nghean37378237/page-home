@@ -1558,8 +1558,23 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
                       <strong className="text-emerald-700 font-mono font-black">
                         +{formatVND(staffSalaryItem.kpiBonus || 0)}
                       </strong>{' '}
-                      ({staffSalaryItem.kpiRate ?? 10}%)
+                      ({staffSalaryItem.kpiRate ?? 5}%)
                     </div>
+                    {Boolean(staffSalaryItem.staffViews && staffSalaryItem.totalSystemViews) && (
+                      <div className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2 py-0.5 inline-block">
+                        👁️ View NV: {Number(staffSalaryItem.staffViews).toLocaleString('vi-VN')} /{' '}
+                        {Number(staffSalaryItem.totalSystemViews).toLocaleString('vi-VN')} (
+                        {staffSalaryItem.staffViewPercent ??
+                          Number(
+                            (
+                              (Number(staffSalaryItem.staffViews) /
+                                Number(staffSalaryItem.totalSystemViews)) *
+                              100
+                            ).toFixed(2)
+                          )}
+                        % tổng view)
+                      </div>
+                    )}
                     <div
                       className="truncate text-slate-400"
                       title={staffSalaryItem.revenueSourceName}
@@ -1696,14 +1711,38 @@ export const StaffInfoTable: React.FC<StaffInfoTableProps> = ({
 
                 {/* 3. Doanh thu & Thưởng KPI */}
                 <div className="flex items-center justify-between p-3 bg-emerald-50/60 rounded-2xl border border-emerald-200/80">
-                  <div>
+                  <div className="space-y-0.5">
                     <span className="font-black text-emerald-950 flex items-center space-x-1.5">
                       <Percent className="w-3.5 h-3.5 text-emerald-600" />
                       <span>
-                        3. Thưởng KPI Doanh Thu ({staffSalaryItem.kpiRate ?? 10}% trên Doanh thu{' '}
+                        3. Thưởng KPI Doanh Thu ({staffSalaryItem.kpiRate ?? 5}% trên Doanh thu{' '}
                         {formatVND(staffSalaryItem.revenueGenerated || 0)})
                       </span>
                     </span>
+                    {Boolean(staffSalaryItem.staffViews && staffSalaryItem.totalSystemViews) && (
+                      <span className="text-[11px] text-indigo-800 font-semibold block">
+                        👁️ Theo sản lượng View: View NV{' '}
+                        <strong>{Number(staffSalaryItem.staffViews).toLocaleString('vi-VN')}</strong> / Tổng
+                        View{' '}
+                        <strong>
+                          {Number(staffSalaryItem.totalSystemViews).toLocaleString('vi-VN')}
+                        </strong>{' '}
+                        ({' '}
+                        <strong>
+                          {staffSalaryItem.staffViewPercent ??
+                            Number(
+                              (
+                                (Number(staffSalaryItem.staffViews) /
+                                  Number(staffSalaryItem.totalSystemViews)) *
+                                100
+                              ).toFixed(2)
+                            )}
+                          %
+                        </strong>{' '}
+                        tổng view • Công thức: View NV × {staffSalaryItem.kpiRate ?? 5}/100 ÷ Tổng View × Tổng
+                        tiền {formatVND(staffSalaryItem.totalSystemViewRevenue || 0)})
+                      </span>
+                    )}
                     <span className="text-[11px] text-emerald-700 block">
                       Nguồn doanh thu:{' '}
                       {staffSalaryItem.revenueSourceName || 'Doanh thu nhân viên mang về'}

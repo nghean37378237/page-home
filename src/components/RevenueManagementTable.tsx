@@ -212,10 +212,13 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
   const [salaryBankName, setSalaryBankName] = useState('');
   const [salaryBankAccountNumber, setSalaryBankAccountNumber] = useState('');
   const [salaryBankAccountHolder, setSalaryBankAccountHolder] = useState('');
-  // Thưởng KPI tiền về theo doanh thu nguồn làm được (5% hoặc 10%)
+  // Thưởng KPI tiền về theo doanh thu nguồn làm được (5% hoặc 10%) & Tính theo % Số View
+  const [salaryTotalViewsInput, setSalaryTotalViewsInput] = useState('');
+  const [salaryTotalViewRevenueInput, setSalaryTotalViewRevenueInput] = useState('');
+  const [salaryStaffViewsInput, setSalaryStaffViewsInput] = useState('');
   const [salaryRevenueGeneratedInput, setSalaryRevenueGeneratedInput] = useState('');
   const [salaryRevenueSourceName, setSalaryRevenueSourceName] = useState('');
-  const [salaryKpiRate, setSalaryKpiRate] = useState<number>(10); // Mặc định 10%
+  const [salaryKpiRate, setSalaryKpiRate] = useState<number>(5); // Mặc định 5% theo công thức view nhân viên * 5/100 / tổng số view
   // Hỗ trợ tiền mạng, điện cho nhân viên làm online (Yêu cầu 5: cộng vào lương thực nhận cho NV online)
   const [salaryIsOnlineStaff, setSalaryIsOnlineStaff] = useState(false);
   const [salaryOnlineSupportInput, setSalaryOnlineSupportInput] = useState('0');
@@ -968,9 +971,24 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryBankName('');
     setSalaryBankAccountNumber('');
     setSalaryBankAccountHolder('');
+    // Tự động lấy Tổng số view & Tổng tiền doanh thu tương đương đã nhập trong tháng (nếu có) để Admin không phải gõ lại
+    const existingWithViews = (activeMonthRecord.salaryItems || []).find(
+      (s) => (s.totalSystemViews && s.totalSystemViews > 0) || (s.totalSystemViewRevenue && s.totalSystemViewRevenue > 0)
+    );
+    setSalaryTotalViewsInput(
+      existingWithViews?.totalSystemViews ? String(existingWithViews.totalSystemViews) : ''
+    );
+    setSalaryTotalViewRevenueInput(
+      existingWithViews?.totalSystemViewRevenue
+        ? String(existingWithViews.totalSystemViewRevenue)
+        : computedTotalRevenue > 0
+        ? String(computedTotalRevenue)
+        : ''
+    );
+    setSalaryStaffViewsInput('');
     setSalaryRevenueGeneratedInput('');
     setSalaryRevenueSourceName('');
-    setSalaryKpiRate(10);
+    setSalaryKpiRate(5);
     setSalaryIsOnlineStaff(false);
     setSalaryOnlineSupportInput('0');
     setSalaryOtherBonusInput('0');
@@ -1001,9 +1019,28 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     setSalaryBankName(item.bankName || '');
     setSalaryBankAccountNumber(item.bankAccountNumber || '');
     setSalaryBankAccountHolder(item.bankAccountHolder || '');
+
+    const existingWithViews = (activeMonthRecord.salaryItems || []).find(
+      (s) => (s.totalSystemViews && s.totalSystemViews > 0) || (s.totalSystemViewRevenue && s.totalSystemViewRevenue > 0)
+    );
+    setSalaryTotalViewsInput(
+      item.totalSystemViews
+        ? String(item.totalSystemViews)
+        : existingWithViews?.totalSystemViews
+        ? String(existingWithViews.totalSystemViews)
+        : ''
+    );
+    setSalaryTotalViewRevenueInput(
+      item.totalSystemViewRevenue
+        ? String(item.totalSystemViewRevenue)
+        : existingWithViews?.totalSystemViewRevenue
+        ? String(existingWithViews.totalSystemViewRevenue)
+        : ''
+    );
+    setSalaryStaffViewsInput(item.staffViews ? String(item.staffViews) : '');
     setSalaryRevenueGeneratedInput(item.revenueGenerated ? String(item.revenueGenerated) : '');
     setSalaryRevenueSourceName(item.revenueSourceName || '');
-    setSalaryKpiRate(item.kpiRate ?? 10);
+    setSalaryKpiRate(item.kpiRate ?? 5);
     setSalaryIsOnlineStaff(Boolean(item.isOnlineStaff));
     setSalaryOnlineSupportInput(item.onlineSupportAllowance ? String(item.onlineSupportAllowance) : '0');
     setSalaryOtherBonusInput(String(item.otherBonus || 0));
@@ -1028,9 +1065,28 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     // Lương theo ngày công thực tế
     const salaryByDays = Math.round((chosenBase / stdDays) * actualDays);
 
-    // Thưởng KPI tiền về (5% hoặc 10% doanh thu nhân viên đó làm được)
-    const revGen = parseNumberInput(salaryRevenueGeneratedInput);
-    const kpiBonusAmount = Math.round(revGen * (salaryKpiRate / 100));
+    // Tính theo % Số View nhân viên làm ra:
+    // Công thức: Doanh thu thưởng KPI = Tương đương số tiền doanh thu * (view nhân viên * (kpiRate/100) / tổng số view)
+    const totalViews = parseNumberInput(salaryTotalViewsInput);
+    const totalViewRevenue = parseNumberInput(salaryTotalViewRevenueInput);
+    const staffViews = parseNumberInput(salaryStaffViewsInput);
+    const manualRevGen = parseNumberInput(salaryRevenueGeneratedInput);
+
+    const hasViewMode = totalViews > 0 && staffViews > 0;
+    const staffViewPercent = hasViewMode ? (staffViews / totalViews) * 100 : 0;
+    // Hệ số (view nhân viên * 5/100 / tổng số view)
+    const viewKpiFactor = hasViewMode ? (staffViews * (salaryKpiRate / 100)) / totalViews : 0;
+
+    // Nếu Admin nhập Tổng view + Số view NV + Số tiền tương đương doanh thu (hoặc nhập số tiền ở ô Doanh thu)
+    const effectivePoolRevenue = totalViewRevenue > 0 ? totalViewRevenue : manualRevGen;
+
+    const revGen = hasViewMode
+      ? Math.round((effectivePoolRevenue * staffViews) / totalViews)
+      : manualRevGen;
+
+    const kpiBonusAmount = hasViewMode
+      ? Math.round((effectivePoolRevenue * staffViews * (salaryKpiRate / 100)) / totalViews)
+      : Math.round(revGen * (salaryKpiRate / 100));
 
     // Phụ cấp hỗ trợ mạng, điện cho nhân viên làm online (Yêu cầu 5: cộng vào lương thực nhận cho NV online)
     const onlineSupportAmount = parseNumberInput(salaryOnlineSupportInput);
@@ -1045,6 +1101,12 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       stdDays,
       actualDays,
       salaryByDays,
+      totalViews,
+      totalViewRevenue: effectivePoolRevenue,
+      staffViews,
+      hasViewMode,
+      staffViewPercent,
+      viewKpiFactor,
       revGen,
       kpiBonusAmount,
       onlineSupportAmount,
@@ -1058,6 +1120,9 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
     salaryOfficialInput,
     salaryStandardDays,
     salaryActualDaysInput,
+    salaryTotalViewsInput,
+    salaryTotalViewRevenueInput,
+    salaryStaffViewsInput,
     salaryRevenueGeneratedInput,
     salaryKpiRate,
     salaryOnlineSupportInput,
@@ -1078,6 +1143,10 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
       stdDays,
       actualDays,
       salaryByDays,
+      totalViews,
+      totalViewRevenue,
+      staffViews,
+      staffViewPercent,
       revGen,
       kpiBonusAmount,
       onlineSupportAmount,
@@ -1114,6 +1183,10 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
               bankName: salaryBankName.trim(),
               bankAccountNumber: salaryBankAccountNumber.trim(),
               bankAccountHolder: salaryBankAccountHolder.trim().toUpperCase(),
+              totalSystemViews: totalViews > 0 ? totalViews : undefined,
+              totalSystemViewRevenue: totalViewRevenue > 0 ? totalViewRevenue : undefined,
+              staffViews: staffViews > 0 ? staffViews : undefined,
+              staffViewPercent: staffViewPercent > 0 ? Number(staffViewPercent.toFixed(4)) : undefined,
               revenueGenerated: revGen,
               revenueSourceName: salaryRevenueSourceName.trim(),
               kpiRate: salaryKpiRate,
@@ -1149,6 +1222,10 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
         bankName: salaryBankName.trim(),
         bankAccountNumber: salaryBankAccountNumber.trim(),
         bankAccountHolder: salaryBankAccountHolder.trim().toUpperCase(),
+        totalSystemViews: totalViews > 0 ? totalViews : undefined,
+        totalSystemViewRevenue: totalViewRevenue > 0 ? totalViewRevenue : undefined,
+        staffViews: staffViews > 0 ? staffViews : undefined,
+        staffViewPercent: staffViewPercent > 0 ? Number(staffViewPercent.toFixed(4)) : undefined,
         revenueGenerated: revGen,
         revenueSourceName: salaryRevenueSourceName.trim(),
         kpiRate: salaryKpiRate,
@@ -3754,14 +3831,25 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                           {formatCurrencyVND(salaryByDays)}
                         </td>
 
-                        {/* Doanh thu tiền về & Thưởng KPI 5% - 10% (Cột mới yêu cầu) */}
+                        {/* Doanh thu tiền về & Thưởng KPI 5% - 10% (Kèm % View nhân viên làm ra) */}
                         <td className="py-2.5 px-3 text-right font-mono">
                           <div className="font-black text-emerald-700">
                             +{formatCurrencyVND(item.kpiBonus || 0)}
                           </div>
-                          {item.revenueGenerated ? (
+                          {item.staffViews && item.totalSystemViews ? (
+                            <div className="text-[10px] text-emerald-700 font-bold space-y-0.5">
+                              <div>
+                                View NV: {item.staffViews.toLocaleString('vi-VN')} /{' '}
+                                {item.totalSystemViews.toLocaleString('vi-VN')} (
+                                {(item.staffViewPercent ?? (item.staffViews / item.totalSystemViews) * 100).toFixed(2)}%)
+                              </div>
+                              <div className="text-emerald-600 font-semibold">
+                                DT NV: {formatCurrencyVND(item.revenueGenerated || 0)} ({item.kpiRate ?? 5}%)
+                              </div>
+                            </div>
+                          ) : item.revenueGenerated ? (
                             <div className="text-[10px] text-emerald-600 font-semibold">
-                              Doanh thu: {formatCurrencyVND(item.revenueGenerated)} ({item.kpiRate ?? 10}%)
+                              Doanh thu: {formatCurrencyVND(item.revenueGenerated)} ({item.kpiRate ?? 5}%)
                             </div>
                           ) : (
                             <div className="text-[10px] text-slate-400">KPI cứng</div>
@@ -5125,18 +5213,188 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                 </div>
               </div>
 
-              {/* Thưởng KPI tiền về doanh thu do nguồn nhân viên đó làm (5% hoặc 10%) */}
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+              {/* Thưởng KPI tiền về doanh thu & Tính theo % Số View nhân viên làm ra */}
+              <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-xl space-y-3">
                 <div className="text-xs font-black text-emerald-900 flex items-center justify-between">
                   <span className="flex items-center space-x-1.5">
                     <Percent className="w-3.5 h-3.5 text-emerald-600" />
                     <span>Thưởng KPI Doanh Thu Tiền Về (5% hoặc 10%)</span>
                   </span>
-                  <span className="text-emerald-700 font-mono font-black">
+                  <span className="text-emerald-700 font-mono font-black text-sm">
                     +{formatCurrencyVND(previewSalaryCalculation.kpiBonusAmount)}
                   </span>
                 </div>
 
+                {/* Khối 1: Nhập Tổng số View, Tương đương số tiền doanh thu & Số View nhân viên làm ra */}
+                <div className="p-2.5 bg-white/90 border border-emerald-200 rounded-xl space-y-2.5 shadow-2xs">
+                  <div className="flex flex-wrap items-center justify-between gap-1">
+                    <span className="text-[10.5px] font-extrabold text-emerald-950 uppercase tracking-tight">
+                      📊 Tính % Doanh Thu Theo Số View Nhân Viên Làm Ra:
+                    </span>
+                    <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md border border-emerald-200">
+                      Công thức: Doanh thu × View NV × ({salaryKpiRate}/100) ÷ Tổng số view
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {/* 1. Tổng số view */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-700 mb-1">
+                        1. Tổng Số View (Toàn Hệ Thống):
+                      </label>
+                      <input
+                        type="text"
+                        value={salaryTotalViewsInput}
+                        onChange={(e) => {
+                          const nextTotalViewsStr = e.target.value;
+                          setSalaryTotalViewsInput(nextTotalViewsStr);
+                          const tViews = parseNumberInput(nextTotalViewsStr);
+                          const tRev = parseNumberInput(salaryTotalViewRevenueInput);
+                          const sViews = parseNumberInput(salaryStaffViewsInput);
+                          if (tViews > 0 && tRev > 0 && sViews > 0) {
+                            setSalaryRevenueGeneratedInput(String(Math.round((tRev * sViews) / tViews)));
+                          }
+                        }}
+                        placeholder="VD: 10000000"
+                        className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs font-black text-slate-900 font-mono focus:border-emerald-600 focus:outline-hidden"
+                      />
+                      {parseNumberInput(salaryTotalViewsInput) > 0 && (
+                        <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
+                          = {parseNumberInput(salaryTotalViewsInput).toLocaleString('vi-VN')} view
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 2. Tương đương số tiền với doanh thu đó */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[10px] font-bold text-slate-700">
+                          2. Tương Đương Số Tiền Doanh Thu:
+                        </label>
+                        {computedTotalRevenue > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const revStr = String(computedTotalRevenue);
+                              setSalaryTotalViewRevenueInput(revStr);
+                              const tViews = parseNumberInput(salaryTotalViewsInput);
+                              const sViews = parseNumberInput(salaryStaffViewsInput);
+                              if (tViews > 0 && sViews > 0) {
+                                setSalaryRevenueGeneratedInput(
+                                  String(Math.round((computedTotalRevenue * sViews) / tViews))
+                                );
+                              }
+                            }}
+                            className="text-[9.5px] font-extrabold text-indigo-700 hover:underline cursor-pointer"
+                            title="Lấy tổng doanh thu của tháng hiện tại"
+                          >
+                            Lấy tổng thu tháng
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        value={salaryTotalViewRevenueInput}
+                        onChange={(e) => {
+                          const nextTotalRevStr = e.target.value;
+                          setSalaryTotalViewRevenueInput(nextTotalRevStr);
+                          const tViews = parseNumberInput(salaryTotalViewsInput);
+                          const tRev = parseNumberInput(nextTotalRevStr);
+                          const sViews = parseNumberInput(salaryStaffViewsInput);
+                          if (tViews > 0 && tRev > 0 && sViews > 0) {
+                            setSalaryRevenueGeneratedInput(String(Math.round((tRev * sViews) / tViews)));
+                          }
+                        }}
+                        placeholder="VD: 100000000"
+                        className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs font-black text-emerald-900 font-mono focus:border-emerald-600 focus:outline-hidden"
+                      />
+                      {parseNumberInput(salaryTotalViewRevenueInput) > 0 && (
+                        <span className="text-[10px] text-emerald-700 font-mono block mt-0.5">
+                          = {formatCurrencyVND(parseNumberInput(salaryTotalViewRevenueInput))}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 3. Số view nhân viên làm ra */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-emerald-900 mb-1">
+                        3. Số View Nhân Viên Làm Ra:
+                      </label>
+                      <input
+                        type="text"
+                        value={salaryStaffViewsInput}
+                        onChange={(e) => {
+                          const nextStaffViewsStr = e.target.value;
+                          setSalaryStaffViewsInput(nextStaffViewsStr);
+                          const tViews = parseNumberInput(salaryTotalViewsInput);
+                          const tRev = parseNumberInput(salaryTotalViewRevenueInput);
+                          const sViews = parseNumberInput(nextStaffViewsStr);
+                          if (tViews > 0 && tRev > 0 && sViews >= 0) {
+                            setSalaryRevenueGeneratedInput(String(Math.round((tRev * sViews) / tViews)));
+                          }
+                        }}
+                        placeholder="VD: 2500000"
+                        className="w-full px-2.5 py-1.5 bg-emerald-50/60 border-2 border-emerald-500 rounded-lg text-xs font-black text-emerald-950 font-mono focus:border-emerald-700 focus:outline-hidden"
+                      />
+                      {parseNumberInput(salaryStaffViewsInput) > 0 && (
+                        <span className="text-[10px] text-emerald-800 font-mono font-bold block mt-0.5">
+                          = {parseNumberInput(salaryStaffViewsInput).toLocaleString('vi-VN')} view
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Hiển thị kết quả tính % số view nhân viên làm ra & công thức Doanh thu = view nhân viên * 5/100 / tổng số view */}
+                  {previewSalaryCalculation.hasViewMode && (
+                    <div className="p-2.5 bg-emerald-100/80 border border-emerald-300 rounded-lg text-[11px] text-emerald-950 space-y-1">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          • <strong>% Số view nhân viên làm ra</strong> (
+                          {previewSalaryCalculation.staffViews.toLocaleString('vi-VN')} ÷{' '}
+                          {previewSalaryCalculation.totalViews.toLocaleString('vi-VN')}):
+                        </span>
+                        <span className="font-mono font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-300">
+                          {previewSalaryCalculation.staffViewPercent.toFixed(2)}% tổng view
+                        </span>
+                      </div>
+
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span>
+                          • <strong>Hệ số hưởng ({salaryKpiRate}%)</strong> = View NV × {salaryKpiRate}/100 ÷ Tổng số view:
+                        </span>
+                        <span className="font-mono font-black text-indigo-800 bg-white px-2 py-0.5 rounded border border-indigo-200">
+                          {(previewSalaryCalculation.viewKpiFactor * 100).toFixed(4)}% tổng doanh thu
+                        </span>
+                      </div>
+
+                      {previewSalaryCalculation.totalViewRevenue > 0 && (
+                        <>
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5 border-t border-emerald-200/80">
+                            <span>
+                              • <strong>Doanh thu tương ứng số view NV làm ra</strong>:
+                            </span>
+                            <span className="font-mono font-bold text-emerald-900">
+                              {formatCurrencyVND(previewSalaryCalculation.revGen)}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span>
+                              • <strong>Tiền thưởng KPI nhận được</strong> (
+                              {formatCurrencyVND(previewSalaryCalculation.totalViewRevenue)} ×{' '}
+                              {previewSalaryCalculation.staffViews.toLocaleString('vi-VN')} × {salaryKpiRate}/100 ÷{' '}
+                              {previewSalaryCalculation.totalViews.toLocaleString('vi-VN')}):
+                            </span>
+                            <span className="font-mono font-black text-sm text-emerald-700 bg-white px-2 py-0.5 rounded border border-emerald-400 shadow-2xs">
+                              +{formatCurrencyVND(previewSalaryCalculation.kpiBonusAmount)}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Khối 2: Doanh thu tiền về NV làm được (Tự nhảy từ View hoặc nhập tay trực tiếp) & Tỷ lệ thưởng KPI */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <div>
                     <label className="block text-[10px] font-bold text-emerald-800 mb-1">
@@ -5144,14 +5402,21 @@ export const RevenueManagementTable: React.FC<RevenueManagementTableProps> = ({
                     </label>
                     <input
                       type="text"
-                      value={salaryRevenueGeneratedInput}
-                      onChange={(e) => setSalaryRevenueGeneratedInput(e.target.value)}
-                      placeholder="30000000"
+                      value={
+                        previewSalaryCalculation.hasViewMode && previewSalaryCalculation.totalViewRevenue > 0
+                          ? String(previewSalaryCalculation.revGen)
+                          : salaryRevenueGeneratedInput
+                      }
+                      onChange={(e) => {
+                        setSalaryRevenueGeneratedInput(e.target.value);
+                      }}
+                      placeholder="2000000"
                       className="w-full px-2.5 py-1.5 bg-white border border-emerald-300 rounded-lg text-xs font-black text-emerald-900 font-mono"
                     />
-                    {parseNumberInput(salaryRevenueGeneratedInput) > 0 && (
-                      <span className="text-[10px] text-emerald-700 block mt-0.5">
-                        = {formatCurrencyVND(parseNumberInput(salaryRevenueGeneratedInput))}
+                    {previewSalaryCalculation.revGen > 0 && (
+                      <span className="text-[10px] text-emerald-700 block mt-0.5 font-mono">
+                        = {formatCurrencyVND(previewSalaryCalculation.revGen)}
+                        {previewSalaryCalculation.hasViewMode ? ' (Tự động tính theo % View NV)' : ''}
                       </span>
                     )}
                   </div>
