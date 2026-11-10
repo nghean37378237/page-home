@@ -1013,15 +1013,29 @@ export default function App() {
         currentUser.role === 'admin'
           ? viaList
           : viaList.filter((v) => v.staffName.trim().toLowerCase() === currentUser.name.trim().toLowerCase())
-      ).filter(
-        (v) =>
-          !isAdminWaitingPool(v.staffName) &&
-          Boolean(
-            v.isNewlyTransferred ||
-              v.pageUpdateStatus === 'pending' ||
-              (v.hasAdminAssignedPage && v.pageUpdateStatus !== 'updated')
-          )
-      ).length,
+      ).filter((v) => {
+        if (isAdminWaitingPool(v.staffName)) return false;
+        const vUidKey = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+        const hasHeldPages = Boolean(
+          vUidKey && records.some((r) => normalizeViaUidKey(r.viaUid) === vUidKey)
+        );
+        const hasGroupInList = Boolean(
+          vUidKey && groupRecords.some((g) => normalizeViaUidKey(g.uid) === vUidKey)
+        );
+        const noteLower = `${v.note || ''} ${v.sharedNote || ''}`.toLowerCase();
+        const isGroupVia =
+          hasGroupInList ||
+          v.groupJoinStatus === 'da_jon' ||
+          v.pageUpdateStatus === 'for_group' ||
+          v.pageUpdateStatus === 'not_joined_group' ||
+          noteLower.includes('group');
+        if (!hasHeldPages && isGroupVia) return false;
+        return Boolean(
+          v.isNewlyTransferred ||
+            v.pageUpdateStatus === 'pending' ||
+            (v.hasAdminAssignedPage && v.pageUpdateStatus !== 'updated')
+        );
+      }).length,
       unit: 'Via',
       activeClass: 'bg-indigo-700 text-white shadow-xs ring-2 ring-indigo-500/25',
       activeNumClass: 'bg-white/20 text-white',
@@ -3858,7 +3872,31 @@ export default function App() {
       if (!entry.rawFullVia && r.fullVia) entry.rawFullVia = r.fullVia;
     });
 
-    if (reportedByUid.size === 0 && pageHoldingViasByUid.size === 0) return;
+    // Tập hợp các UID đã Jon Group và có trong danh sách Bảng Group
+    const joinedGroupUids = new Set<string>();
+    groupRecords.forEach((g) => {
+      const lower = normalizeViaUidKey(g.uid);
+      if (!lower || deletedViaUidsRef.current.has(lower)) return;
+      const isNotJoined =
+        g.joinStatus === 'Chưa' ||
+        g.adminJoinReport === 'Chưa Jont' ||
+        g.adminJoinReport === 'Không tìm thấy';
+      const isPending =
+        !isNotJoined &&
+        g.joinStatus === 'Jon chờ duyệt' &&
+        g.adminJoinReport !== 'Đã Duyệt';
+      if (!isNotJoined && !isPending) {
+        joinedGroupUids.add(lower);
+      }
+    });
+
+    if (
+      reportedByUid.size === 0 &&
+      pageHoldingViasByUid.size === 0 &&
+      joinedGroupUids.size === 0
+    ) {
+      return;
+    }
 
     const viasToUpsert: FullViaItem[] = [];
     const existingViaMap = new Map<string, FullViaItem>();
@@ -3969,6 +4007,45 @@ export default function App() {
         pageUpdateStatus: 'updated',
         hasAdminAssignedPage: true,
       });
+    });
+
+    // Tự động đồng bộ các Via đã Jon Group và có trong danh sách Bảng Group:
+    // Chuyển sang Đã Jon Group ('da_jon') và bỏ trạng thái Mới giao Via nếu không cầm Page
+    joinedGroupUids.forEach((uidLower) => {
+      if (deletedViaUidsRef.current.has(uidLower)) return;
+      if (viasToUpsert.some((v) => normalizeViaUidKey(v.uid) === uidLower)) {
+        return;
+      }
+      const existing = existingViaMap.get(uidLower);
+      if (!existing) return;
+      const hasHeldPages = pageHoldingViasByUid.has(uidLower);
+      const needsGroupJoinSync = existing.groupJoinStatus !== 'da_jon';
+      const needsClearNewVia =
+        !hasHeldPages &&
+        Boolean(
+          existing.isNewlyTransferred ||
+            existing.pageUpdateStatus === 'pending' ||
+            existing.pageUpdateStatus === 'not_joined_group' ||
+            existing.hasAdminAssignedPage
+        );
+      if (needsGroupJoinSync || needsClearNewVia) {
+        const currentNote = (existing.note || '').trim();
+        const nextNote =
+          currentNote.toLowerCase() === 'via chưa jon group' ? 'Đã Jon Group' : currentNote;
+        viasToUpsert.push({
+          ...existing,
+          groupJoinStatus: 'da_jon',
+          note: nextNote,
+          sharedNote: nextNote,
+          ...(!hasHeldPages
+            ? {
+                isNewlyTransferred: false,
+                hasAdminAssignedPage: false,
+                pageUpdateStatus: 'for_group' as const,
+              }
+            : {}),
+        });
+      }
     });
 
     if (viasToUpsert.length > 0) {

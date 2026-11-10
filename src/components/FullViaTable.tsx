@@ -333,29 +333,31 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
     });
 
     const explicit = via.groupJoinStatus;
+    const hasJoinedGroupInList =
+      assignedGroups.length > 0 && joinedCount > 0 && notJoinedCount === 0;
 
-    // Nick Via được tính là "Chưa Jon Group" trong mục Group khi:
-    // 1. Được chọn trực tiếp trạng thái "Chưa Jon Group" (groupJoinStatus === 'chua_jon' hoặc ghi chú 'Chưa Jon Group')
-    // 2. Hoặc có dòng trong Bảng Group nhưng trạng thái bên Bảng Group là 'Chưa' / 'Chưa Jont' / 'Không tìm thấy'
-    // 3. Hoặc có ghi chú mục Group nhưng chưa gắn/jon vào nhóm nào (assignedGroups.length === 0)
+    // Nick Via được tính là "Chưa Jon Group" trong mục Group khi chưa có trong danh sách Đã Jon của Bảng Group:
     const isChuaJonGroup =
-      explicit === 'chua_jon' ||
-      gFlags.isChuaJonNote ||
-      (explicit !== 'da_jon' &&
-        explicit !== 'cho_duyet' &&
-        ((assignedGroups.length > 0 && notJoinedCount > 0) ||
-          (assignedGroups.length === 0 && gFlags.hasGroupNote)));
+      !hasJoinedGroupInList &&
+      (explicit === 'chua_jon' ||
+        gFlags.isChuaJonNote ||
+        (explicit !== 'da_jon' &&
+          explicit !== 'cho_duyet' &&
+          ((assignedGroups.length > 0 && notJoinedCount > 0) ||
+            (assignedGroups.length === 0 && gFlags.hasGroupNote))));
 
     const isChoDuyetGroup =
+      !hasJoinedGroupInList &&
       !isChuaJonGroup &&
       (explicit === 'cho_duyet' ||
         (assignedGroups.length > 0 && pendingCount > 0 && joinedCount === 0));
 
     const isDaJonGroup =
-      !isChuaJonGroup &&
-      !isChoDuyetGroup &&
-      (explicit === 'da_jon' ||
-        (assignedGroups.length > 0 && joinedCount > 0));
+      hasJoinedGroupInList ||
+      (!isChuaJonGroup &&
+        !isChoDuyetGroup &&
+        (explicit === 'da_jon' ||
+          (assignedGroups.length > 0 && joinedCount > 0)));
 
     // Ngoài ra: Nick hoàn toàn chưa có Group nào (0 Group) hoặc đang ở trạng thái Chưa Jon Group
     const isZeroOrNotJoinedGroup = assignedGroups.length === 0 || isChuaJonGroup;
@@ -506,12 +508,17 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         stats[name].viasForGroup++;
         stats[name].totalGroups += groups.length;
       }
-      const isPending = Boolean(
-        v.isNewlyTransferred ||
-          v.pageUpdateStatus === 'pending' ||
-          (v.hasAdminAssignedPage && v.pageUpdateStatus !== 'updated') ||
-          pages.some((p) => p.isNewlyTransferred)
-      );
+      const isGroupOnlyVia =
+        pages.length === 0 &&
+        (groups.length > 0 || gFlags.hasGroupNote || v.groupJoinStatus === 'da_jon');
+      const isPending =
+        !isGroupOnlyVia &&
+        Boolean(
+          v.isNewlyTransferred ||
+            v.pageUpdateStatus === 'pending' ||
+            (v.hasAdminAssignedPage && v.pageUpdateStatus !== 'updated') ||
+            pages.some((p) => p.isNewlyTransferred)
+        );
       if (isPending && !isAdminWaitingPool(name)) {
         stats[name].pendingNew++;
       }
@@ -571,10 +578,19 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   };
 
   // Helper: Admin đã chuyển Via / thêm Page mới cho nhân viên (Màu Đỏ để báo nhân viên có Via & Page mới)
+  // Lưu ý: Nếu Via nằm trong mục Group / đã có danh sách Group và không cầm Page nào thì bỏ Mới giao Via
   const isViaPendingPageUpdate = (via: FullViaItem): boolean => {
     if (isAdminWaitingPool(via.staffName)) return false;
     const uidLower = via.uid?.trim().toLowerCase() || '';
     const heldPages = uidLower ? pagesPerViaUid.get(uidLower) || [] : [];
+    const gJoin = getViaGroupJoinSummary(via);
+    const gFlags = getViaGroupNoteFlags(via);
+    if (
+      heldPages.length === 0 &&
+      (gJoin.assignedGroups.length > 0 || gJoin.isDaJonGroup || gFlags.hasGroupNote)
+    ) {
+      return false;
+    }
     return Boolean(
       via.isNewlyTransferred ||
       via.pageUpdateStatus === 'pending' ||
@@ -1837,27 +1853,20 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 if (assignedGroups.length > 0) {
                   return (
                     <>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleSetViaGroupJoinStatus(
-                            via,
-                            gJoin.isChuaJonGroup ? 'da_jon' : 'chua_jon'
-                          )
-                        }
-                        className={`font-extrabold text-[9.5px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 cursor-pointer transition-colors ${
+                      <span
+                        className={`font-extrabold text-[9.5px] px-1.5 py-0.2 rounded shadow-2xs shrink-0 ${
                           gJoin.isChuaJonGroup
-                            ? 'bg-orange-100 hover:bg-orange-200 text-orange-950 border border-orange-400'
+                            ? 'bg-orange-100 text-orange-950 border border-orange-400'
                             : gJoin.isChoDuyetGroup
-                            ? 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-400'
-                            : 'bg-purple-100 hover:bg-purple-200 text-purple-900 border border-purple-300'
+                            ? 'bg-amber-100 text-amber-950 border border-amber-400'
+                            : 'bg-purple-100 text-purple-900 border border-purple-300'
                         }`}
-                        title={`Nick Via này có ${assignedGroups.length} dòng Group trong Bảng Group (${assignedGroups
+                        title={`Nick Via này đang ở trong ${assignedGroups.length} Group (${assignedGroups
                           .map((g) => `${g.groupName || 'Nhóm'}: ${g.joinStatus || 'Đã Jon'}`)
-                          .join(' | ')}). Bấm để đổi nhanh trạng thái: Chưa Jon Group ⇄ Đã Jon Group.`}
+                          .join(' | ')})`}
                       >
                         🟣 {assignedGroups.length} Group
-                      </button>
+                      </span>
                       {gJoin.isChuaJonGroup && (
                         <button
                           type="button"
@@ -2501,7 +2510,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   </div>
                 )}
               </>
-            ) : (
+            ) : assignedGroups.length > 0 || getViaGroupNoteFlags(via).hasGroupNote ? null : (
               <>
                 {/* ⚪ Chưa có page */}
                 <div className="flex items-center justify-between gap-1 w-full">
@@ -2548,99 +2557,132 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               </>
             )}
 
-            {/* 🟣 HIỂN THỊ TRẠNG THÁI MỤC GROUP CỦA VIA (Thêm mới để thêm Group, Admin đã thêm Group, Có Group từ đầu, Cần thêm Group, Chưa Jon Group & Group đang cầm) */}
+            {/* 🟣 HIỂN THỊ TRẠNG THÁI MỤC GROUP CỦA VIA */}
             {(() => {
               const gFlags = getViaGroupNoteFlags(via);
               const gJoin = getViaGroupJoinSummary(via);
               if (!gFlags.hasGroupNote && assignedGroups.length === 0 && !gJoin.isChuaJonGroup) {
                 return null;
               }
+              const isJoinedWithList = assignedGroups.length > 0 && gJoin.isDaJonGroup;
               return (
-                <div className="w-full pt-1 border-t border-purple-200/80 flex flex-col gap-1">
-                  <div className="flex items-center justify-between gap-1 flex-wrap">
-                    {gFlags.isThemMoiGroup ? (
-                      <span className="px-1.5 py-0.2 rounded bg-purple-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
-                        🟣 Thêm mới để thêm Group
-                      </span>
-                    ) : gFlags.isAdminThemGroup ? (
-                      <span className="px-1.5 py-0.2 rounded bg-purple-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
-                        🟣 Admin đã thêm Group
-                      </span>
-                    ) : gFlags.isCoGroupTuDau ? (
-                      <span className="px-1.5 py-0.2 rounded bg-indigo-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
-                        🔵 Có Group từ đầu
-                      </span>
-                    ) : gFlags.isCanThemGroup ? (
-                      <span className="px-1.5 py-0.2 rounded bg-amber-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
-                        🟠 Cần thêm Group
-                      </span>
-                    ) : gJoin.isChuaJonGroup ? (
-                      <span className="px-1.5 py-0.2 rounded bg-orange-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
-                        🟠 Via chưa Jon Group
-                      </span>
-                    ) : gFlags.hasGroupNote ? (
-                      <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 font-bold text-[10px] truncate">
-                        🟣 Mục Group
-                      </span>
-                    ) : null}
+                <div
+                  className={`w-full ${
+                    assignedPages.length > 0 ? 'pt-1 border-t border-purple-200/80' : ''
+                  } flex flex-col gap-1`}
+                >
+                  {/* Nếu đã Jon và có danh sách Group trong Bảng 2: chỉ hiện số nhóm + danh sách nhóm đã Jon, bỏ nút chuyển Đã Jon Group */}
+                  {isJoinedWithList ? (
+                    <div className="w-full bg-white/95 border border-purple-200/90 rounded px-1.5 py-1 text-left space-y-0.5 shadow-2xs">
+                      <div className="flex items-center justify-between text-[10px] font-extrabold text-purple-900 border-b border-purple-100 pb-0.5 mb-0.5">
+                        <span>👥 Đã Jon {assignedGroups.length} Nhóm:</span>
+                        {onAddPageForVia && assignedPages.length === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => onAddPageForVia(via.uid, via.staffName)}
+                            className="px-1 py-0.2 text-[9px] text-slate-600 hover:text-indigo-700 bg-slate-50 hover:bg-indigo-50 border border-slate-200 rounded cursor-pointer font-bold"
+                            title="Thêm Page cho Via này"
+                          >
+                            +Page
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-16 overflow-y-auto space-y-0.5 pr-0.5">
+                        {assignedGroups.map((g, gIdx) => (
+                          <div
+                            key={g.id}
+                            className="text-[10px] flex items-center justify-between gap-1 font-semibold text-slate-800"
+                            title={`${g.groupName || 'Nhóm'} (${g.joinStatus || 'Đã Jon'})`}
+                          >
+                            <span className="truncate">
+                              {assignedGroups.length > 1 ? `${gIdx + 1}. ` : ''}
+                              {g.groupName || `Nhóm ${gIdx + 1}`}
+                            </span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center justify-between gap-1 flex-wrap">
+                        {gFlags.isThemMoiGroup ? (
+                          <span className="px-1.5 py-0.2 rounded bg-purple-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                            🟣 Thêm mới để thêm Group
+                          </span>
+                        ) : gFlags.isAdminThemGroup ? (
+                          <span className="px-1.5 py-0.2 rounded bg-purple-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                            🟣 Admin đã thêm Group
+                          </span>
+                        ) : gFlags.isCoGroupTuDau ? (
+                          <span className="px-1.5 py-0.2 rounded bg-indigo-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                            🔵 Có Group từ đầu
+                          </span>
+                        ) : gFlags.isCanThemGroup ? (
+                          <span className="px-1.5 py-0.2 rounded bg-amber-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                            🟠 Cần thêm Group
+                          </span>
+                        ) : gJoin.isChuaJonGroup ? (
+                          <span className="px-1.5 py-0.2 rounded bg-orange-600 text-white font-extrabold text-[10px] shadow-2xs truncate">
+                            🟠 Via chưa Jon Group
+                          </span>
+                        ) : gFlags.hasGroupNote ? (
+                          <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-900 border border-purple-300 font-bold text-[10px] truncate">
+                            🟣 Mục Group
+                          </span>
+                        ) : null}
 
-                    {assignedGroups.length > 0 && (
-                      <span
-                        className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-950 border border-purple-300 font-black text-[10px] shrink-0"
-                        title={assignedGroups.map((g) => g.groupName).join(', ')}
-                      >
-                        👥 {assignedGroups.length} Nhóm
-                      </span>
-                    )}
-                  </div>
+                        {assignedGroups.length > 0 && (
+                          <span
+                            className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-950 border border-purple-300 font-black text-[10px] shrink-0"
+                            title={assignedGroups.map((g) => g.groupName).join(', ')}
+                          >
+                            👥 {assignedGroups.length} Nhóm
+                          </span>
+                        )}
+                      </div>
 
-                  {/* Trạng thái Jon Group (Chưa Jon / Chờ duyệt / Đã Jon) */}
-                  <div className="flex items-center justify-between gap-1 w-full">
-                    {gJoin.isChuaJonGroup ? (
-                      <span
-                        className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-950 border border-orange-400 font-extrabold text-[10px] truncate"
-                        title="Nick Via chưa Jon Group (Đồng bộ từ Bảng Group hoặc đánh dấu tại Bảng Via)"
-                      >
-                        🟠 Chưa Jon Group {assignedGroups.length > 0 ? `(${gJoin.notJoinedCount || assignedGroups.length}/${assignedGroups.length})` : ''}
-                      </span>
-                    ) : gJoin.isChoDuyetGroup ? (
-                      <span
-                        className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-950 border border-amber-400 font-extrabold text-[10px] truncate"
-                        title="Nick Via đang chờ duyệt vào Group"
-                      >
-                        ⏳ Jon chờ duyệt ({assignedGroups.length})
-                      </span>
-                    ) : (
-                      <span
-                        className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-950 border border-emerald-400 font-extrabold text-[10px] truncate"
-                        title="Nick Via đã Jon Group"
-                      >
-                        🟢 Đã Jon Group ({assignedGroups.length || 1})
-                      </span>
-                    )}
+                      {/* Trạng thái Jon Group khi chưa Jon hoặc đang chờ duyệt */}
+                      <div className="flex items-center justify-between gap-1 w-full">
+                        {gJoin.isChuaJonGroup ? (
+                          <span
+                            className="px-1.5 py-0.5 rounded bg-orange-100 text-orange-950 border border-orange-400 font-extrabold text-[10px] truncate"
+                            title="Nick Via chưa Jon Group"
+                          >
+                            🟠 Chưa Jon Group{' '}
+                            {assignedGroups.length > 0
+                              ? `(${gJoin.notJoinedCount || assignedGroups.length}/${assignedGroups.length})`
+                              : ''}
+                          </span>
+                        ) : gJoin.isChoDuyetGroup ? (
+                          <span
+                            className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-950 border border-amber-400 font-extrabold text-[10px] truncate"
+                            title="Nick Via đang chờ duyệt vào Group"
+                          >
+                            ⏳ Jon chờ duyệt ({assignedGroups.length})
+                          </span>
+                        ) : (
+                          <span
+                            className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-950 border border-emerald-400 font-extrabold text-[10px] truncate"
+                            title="Nick Via đã Jon Group"
+                          >
+                            🟢 Đã Jon Group ({assignedGroups.length || 1})
+                          </span>
+                        )}
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleSetViaGroupJoinStatus(
-                          via,
-                          gJoin.isChuaJonGroup ? 'da_jon' : 'chua_jon'
-                        )
-                      }
-                      className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold border cursor-pointer shrink-0 transition-colors ${
-                        gJoin.isChuaJonGroup
-                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
-                          : 'bg-orange-50 hover:bg-orange-100 text-orange-900 border-orange-300'
-                      }`}
-                      title={
-                        gJoin.isChuaJonGroup
-                          ? 'Bấm để xác nhận Via đã Jon Group'
-                          : 'Bấm để đánh dấu Via chưa Jon Group'
-                      }
-                    >
-                      {gJoin.isChuaJonGroup ? '✓ Báo Đã Jon' : 'Đặt Chưa Jon'}
-                    </button>
-                  </div>
+                        {gJoin.isChuaJonGroup && (
+                          <button
+                            type="button"
+                            onClick={() => handleSetViaGroupJoinStatus(via, 'da_jon')}
+                            className="px-1.5 py-0.5 rounded text-[9.5px] font-bold border cursor-pointer shrink-0 transition-colors bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
+                            title="Bấm để xác nhận Via đã Jon Group"
+                          >
+                            ✓ Báo Đã Jon
+                          </button>
+                        )}
+                      </div>
+                    </>
+                  )}
                 </div>
               );
             })()}
@@ -2700,22 +2742,28 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               <option value="error">🔴 Lỗi (Đỏ)</option>
               <option value="checkpoint">🟠 Checkpoint</option>
               <option value="dead">🪦 Bị Die</option>
-              <optgroup label="── Trạng Thái Group ──">
-                <option value="group_chua_jon">🟠 Chưa Jon Group</option>
-                <option value="group_cho_duyet">⏳ Jon chờ duyệt Group</option>
-                <option value="group_da_jon">🟣 Đã Jon Group</option>
-              </optgroup>
+              {!(assignedGroups.length > 0 && getViaGroupJoinSummary(via).isDaJonGroup) && (
+                <optgroup label="── Trạng Thái Group ──">
+                  <option value="group_chua_jon">🟠 Chưa Jon Group</option>
+                  <option value="group_cho_duyet">⏳ Jon chờ duyệt Group</option>
+                  <option value="group_da_jon">🟣 Đã Jon Group</option>
+                </optgroup>
+              )}
             </select>
 
-            {/* Ô chọn nhanh Trạng Thái Jon Group trực tiếp tại cột Trạng Thái */}
+            {/* Ô chọn nhanh Trạng Thái Jon Group trực tiếp tại cột Trạng Thái (Chỉ hiện khi Via chưa Jon / chưa có danh sách đã Jon trong Bảng Group) */}
             {(() => {
               const gJoin = getViaGroupJoinSummary(via);
+              if (assignedGroups.length > 0 && gJoin.isDaJonGroup) {
+                return null;
+              }
+              if (!gJoin.isChuaJonGroup && !gJoin.isChoDuyetGroup) {
+                return null;
+              }
               const selectValue = gJoin.isChuaJonGroup
                 ? 'chua_jon'
                 : gJoin.isChoDuyetGroup
                 ? 'cho_duyet'
-                : gJoin.isDaJonGroup
-                ? 'da_jon'
                 : 'none';
               return (
                 <select
@@ -2729,8 +2777,6 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       ? 'bg-orange-500 text-white border-orange-600 ring-1 ring-orange-300'
                       : selectValue === 'cho_duyet'
                       ? 'bg-amber-100 text-amber-950 border-amber-400'
-                      : selectValue === 'da_jon'
-                      ? 'bg-purple-100 text-purple-950 border-purple-300'
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-orange-300'
                   }`}
                   title="Cập nhật trạng thái Jon Group của Via (Đồng bộ 2 chiều với Bảng Group)"
