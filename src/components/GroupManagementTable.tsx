@@ -892,16 +892,18 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
     }
   };
 
-  // Update Admin Join Report (Đã Duyệt, Chưa Jont, Không tìm thấy) for a single row
+  // Update Admin Join Report (Đã Duyệt, Chưa Jont, Không tìm thấy) for a single row (cho phép cả Admin và Nhân viên chọn)
   const handleUpdateAdminJoinReport = async (id: string, newReport: GroupAdminJoinReport) => {
     await onUpdateRecord(id, { adminJoinReport: newReport });
     triggerCopyFeedback(
       `admin-rep-${id}`,
-      newReport ? `📢 Admin đã báo: "${newReport}" cho nhân viên!` : `Đã xóa báo cáo Admin`
+      newReport
+        ? `📢 Đã cập nhật mục Admin Báo: "${newReport}"!`
+        : `Đã xóa trạng thái mục Admin Báo`
     );
   };
 
-  // Batch update Admin Join Report for selected rows
+  // Batch update Admin Join Report for selected rows (cho phép cả Admin và Nhân viên chọn)
   const handleBatchUpdateAdminJoinReport = async (newReport: GroupAdminJoinReport) => {
     if (selectedIds.size === 0) return;
     try {
@@ -921,11 +923,11 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
       triggerCopyFeedback(
         'batch-admin-rep',
         newReport
-          ? `📢 Admin đã báo "${newReport}" cho ${selectedIds.size} UID!`
-          : `Đã xóa báo cáo Admin cho ${selectedIds.size} UID!`
+          ? `📢 Đã cập nhật mục Admin Báo "${newReport}" cho ${selectedIds.size} UID!`
+          : `Đã xóa trạng thái Admin Báo cho ${selectedIds.size} UID!`
       );
     } catch (err) {
-      console.error('Lỗi cập nhật báo cáo Admin hàng loạt:', err);
+      console.error('Lỗi cập nhật báo cáo hàng loạt:', err);
     }
   };
 
@@ -2170,29 +2172,27 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
               <span>🔄 Update Via ({selectedIds.size} dòng)</span>
             </button>
 
-            {/* Batch assign Admin Join Report (Admin only) */}
-            {isAdmin && (
-              <div className="relative inline-flex items-center">
-                <select
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    if (val) {
-                      handleBatchUpdateAdminJoinReport(val === '__CLEAR__' ? '' : (val as GroupAdminJoinReport));
-                      e.target.value = '';
-                    }
-                  }}
-                  defaultValue=""
-                  className="px-2.5 py-1.5 bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-400/60 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
-                  title="Admin báo hàng loạt cho nhân viên biết (Đã Duyệt / Chưa Jont / Không tìm thấy)"
-                >
-                  <option value="" disabled>📢 Admin Báo ({selectedIds.size})</option>
-                  <option value="Đã Duyệt">✅ Đã Duyệt</option>
-                  <option value="Chưa Jont">⚠️ Chưa Jont</option>
-                  <option value="Không tìm thấy">❌ Không tìm thấy</option>
-                  <option value="__CLEAR__">⚪ Xóa báo cáo</option>
-                </select>
-              </div>
-            )}
+            {/* Batch assign Admin Join Report (Cho cả Admin & Nhân viên chọn) */}
+            <div className="relative inline-flex items-center">
+              <select
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val) {
+                    handleBatchUpdateAdminJoinReport(val === '__CLEAR__' ? '' : (val as GroupAdminJoinReport));
+                    e.target.value = '';
+                  }
+                }}
+                defaultValue=""
+                className="px-2.5 py-1.5 bg-indigo-950/90 hover:bg-indigo-900 border border-indigo-400/60 text-white rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                title="Cập nhật hàng loạt cột Admin Báo (Đã Duyệt / Chưa Jont / Không tìm thấy)"
+              >
+                <option value="" disabled>📢 Admin Báo ({selectedIds.size})</option>
+                <option value="Đã Duyệt">✅ Đã Duyệt</option>
+                <option value="Chưa Jont">⚠️ Chưa Jont</option>
+                <option value="Không tìm thấy">❌ Không tìm thấy</option>
+                <option value="__CLEAR__">⚪ Xóa báo cáo</option>
+              </select>
+            </div>
 
             {/* Batch assign interaction status */}
             <div className="relative inline-flex items-center">
@@ -2773,59 +2773,34 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                                 </div>
                               </td>
 
-                              {/* Cột ADMIN BÁO (Ngay sau cột Trạng Thái): Đã Duyệt, Chưa Jont, Không tìm thấy */}
+                              {/* Cột ADMIN BÁO (Ngay sau cột Trạng Thái): Cho phép cả Nhân viên và Admin chọn Đã Duyệt, Chưa Jont, Không tìm thấy */}
                               <td className="py-2.5 px-3">
-                                {isAdmin ? (
-                                  <div className="relative inline-flex items-center">
-                                    <select
-                                      value={row.adminJoinReport || ''}
-                                      onChange={(e) =>
-                                        handleUpdateAdminJoinReport(
-                                          row.id,
-                                          e.target.value as GroupAdminJoinReport
-                                        )
-                                      }
-                                      className={`text-[11px] font-extrabold rounded-lg px-2.5 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-indigo-500 shadow-2xs ${
-                                        row.adminJoinReport === 'Đã Duyệt'
-                                          ? 'bg-emerald-100 text-emerald-900 border-emerald-400 hover:bg-emerald-200 ring-1 ring-emerald-400/50'
-                                          : row.adminJoinReport === 'Chưa Jont'
-                                          ? 'bg-amber-100 text-amber-950 border-amber-400 hover:bg-amber-200 ring-1 ring-amber-400/50'
-                                          : row.adminJoinReport === 'Không tìm thấy'
-                                          ? 'bg-rose-100 text-rose-900 border-rose-400 hover:bg-rose-200 ring-1 ring-rose-400/50'
-                                          : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 font-semibold'
-                                      }`}
-                                      title="Admin báo cho nhân viên biết: Đã Duyệt / Chưa Jont / Không tìm thấy"
-                                    >
-                                      <option value="">- Admin báo -</option>
-                                      <option value="Đã Duyệt">✅ Đã Duyệt</option>
-                                      <option value="Chưa Jont">⚠️ Chưa Jont</option>
-                                      <option value="Không tìm thấy">❌ Không tìm thấy</option>
-                                    </select>
-                                  </div>
-                                ) : (
-                                  <span
-                                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-extrabold border shadow-2xs whitespace-nowrap ${
+                                <div className="relative inline-flex items-center">
+                                  <select
+                                    value={row.adminJoinReport || ''}
+                                    onChange={(e) =>
+                                      handleUpdateAdminJoinReport(
+                                        row.id,
+                                        e.target.value as GroupAdminJoinReport
+                                      )
+                                    }
+                                    className={`text-[11px] font-extrabold rounded-lg px-2.5 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-indigo-500 shadow-2xs ${
                                       row.adminJoinReport === 'Đã Duyệt'
-                                        ? 'bg-emerald-100 text-emerald-900 border-emerald-400 ring-1 ring-emerald-400/40'
+                                        ? 'bg-emerald-100 text-emerald-900 border-emerald-400 hover:bg-emerald-200 ring-1 ring-emerald-400/50'
                                         : row.adminJoinReport === 'Chưa Jont'
-                                        ? 'bg-amber-100 text-amber-950 border-amber-400 ring-1 ring-amber-400/40'
+                                        ? 'bg-amber-100 text-amber-950 border-amber-400 hover:bg-amber-200 ring-1 ring-amber-400/50'
                                         : row.adminJoinReport === 'Không tìm thấy'
-                                        ? 'bg-rose-100 text-rose-900 border-rose-400 ring-1 ring-rose-400/40'
-                                        : 'bg-slate-50 text-slate-400 border-slate-200 font-medium'
+                                        ? 'bg-rose-100 text-rose-900 border-rose-400 hover:bg-rose-200 ring-1 ring-rose-400/50'
+                                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 font-semibold'
                                     }`}
-                                    title="Thông báo của Admin cho nhân viên biết"
+                                    title="Chọn trạng thái báo cáo: Đã Duyệt / Chưa Jont / Không tìm thấy (Cả Nhân viên và Admin đều có thể chọn)"
                                   >
-                                    <span>
-                                      {row.adminJoinReport === 'Đã Duyệt'
-                                        ? '✅ Đã Duyệt'
-                                        : row.adminJoinReport === 'Chưa Jont'
-                                        ? '⚠️ Chưa Jont'
-                                        : row.adminJoinReport === 'Không tìm thấy'
-                                        ? '❌ Không tìm thấy'
-                                        : '- Chưa báo -'}
-                                    </span>
-                                  </span>
-                                )}
+                                    <option value="">- Admin báo -</option>
+                                    <option value="Đã Duyệt">✅ Đã Duyệt</option>
+                                    <option value="Chưa Jont">⚠️ Chưa Jont</option>
+                                    <option value="Không tìm thấy">❌ Không tìm thấy</option>
+                                  </select>
+                                </div>
                               </td>
 
                               {/* Cột Tương Tác: Đang lên tương tác, Có tương tác, Tương tác ổn, Tương tác vừa, Không có tương tác */}
@@ -3249,59 +3224,34 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         </div>
                       </td>
 
-                      {/* Cột ADMIN BÁO trong Flat View (Ngay sau cột Trạng Thái): Đã Duyệt, Chưa Jont, Không tìm thấy */}
+                      {/* Cột ADMIN BÁO trong Flat View (Ngay sau cột Trạng Thái): Cho phép cả Nhân viên và Admin chọn Đã Duyệt, Chưa Jont, Không tìm thấy */}
                       <td className="py-2.5 px-3">
-                        {isAdmin ? (
-                          <div className="relative inline-flex items-center">
-                            <select
-                              value={r.adminJoinReport || ''}
-                              onChange={(e) =>
-                                handleUpdateAdminJoinReport(
-                                  r.id,
-                                  e.target.value as GroupAdminJoinReport
-                                )
-                              }
-                              className={`text-[11px] font-extrabold rounded-lg px-2.5 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-indigo-500 shadow-2xs ${
-                                r.adminJoinReport === 'Đã Duyệt'
-                                  ? 'bg-emerald-100 text-emerald-900 border-emerald-400 hover:bg-emerald-200 ring-1 ring-emerald-400/50'
-                                  : r.adminJoinReport === 'Chưa Jont'
-                                  ? 'bg-amber-100 text-amber-950 border-amber-400 hover:bg-amber-200 ring-1 ring-amber-400/50'
-                                  : r.adminJoinReport === 'Không tìm thấy'
-                                  ? 'bg-rose-100 text-rose-900 border-rose-400 hover:bg-rose-200 ring-1 ring-rose-400/50'
-                                  : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 font-semibold'
-                              }`}
-                              title="Admin báo cho nhân viên biết: Đã Duyệt / Chưa Jont / Không tìm thấy"
-                            >
-                              <option value="">- Admin báo -</option>
-                              <option value="Đã Duyệt">✅ Đã Duyệt</option>
-                              <option value="Chưa Jont">⚠️ Chưa Jont</option>
-                              <option value="Không tìm thấy">❌ Không tìm thấy</option>
-                            </select>
-                          </div>
-                        ) : (
-                          <span
-                            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-extrabold border shadow-2xs whitespace-nowrap ${
+                        <div className="relative inline-flex items-center">
+                          <select
+                            value={r.adminJoinReport || ''}
+                            onChange={(e) =>
+                              handleUpdateAdminJoinReport(
+                                r.id,
+                                e.target.value as GroupAdminJoinReport
+                              )
+                            }
+                            className={`text-[11px] font-extrabold rounded-lg px-2.5 py-1 border transition-all cursor-pointer focus:ring-2 focus:ring-indigo-500 shadow-2xs ${
                               r.adminJoinReport === 'Đã Duyệt'
-                                ? 'bg-emerald-100 text-emerald-900 border-emerald-400 ring-1 ring-emerald-400/40'
+                                ? 'bg-emerald-100 text-emerald-900 border-emerald-400 hover:bg-emerald-200 ring-1 ring-emerald-400/50'
                                 : r.adminJoinReport === 'Chưa Jont'
-                                ? 'bg-amber-100 text-amber-950 border-amber-400 ring-1 ring-amber-400/40'
+                                ? 'bg-amber-100 text-amber-950 border-amber-400 hover:bg-amber-200 ring-1 ring-amber-400/50'
                                 : r.adminJoinReport === 'Không tìm thấy'
-                                ? 'bg-rose-100 text-rose-900 border-rose-400 ring-1 ring-rose-400/40'
-                                : 'bg-slate-50 text-slate-400 border-slate-200 font-medium'
+                                ? 'bg-rose-100 text-rose-900 border-rose-400 hover:bg-rose-200 ring-1 ring-rose-400/50'
+                                : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 font-semibold'
                             }`}
-                            title="Thông báo của Admin cho nhân viên biết"
+                            title="Chọn trạng thái báo cáo: Đã Duyệt / Chưa Jont / Không tìm thấy (Cả Nhân viên và Admin đều có thể chọn)"
                           >
-                            <span>
-                              {r.adminJoinReport === 'Đã Duyệt'
-                                ? '✅ Đã Duyệt'
-                                : r.adminJoinReport === 'Chưa Jont'
-                                ? '⚠️ Chưa Jont'
-                                : r.adminJoinReport === 'Không tìm thấy'
-                                ? '❌ Không tìm thấy'
-                                : '- Chưa báo -'}
-                            </span>
-                          </span>
-                        )}
+                            <option value="">- Admin báo -</option>
+                            <option value="Đã Duyệt">✅ Đã Duyệt</option>
+                            <option value="Chưa Jont">⚠️ Chưa Jont</option>
+                            <option value="Không tìm thấy">❌ Không tìm thấy</option>
+                          </select>
+                        </div>
                       </td>
 
                       {/* Cột Tương Tác trong Flat View */}
@@ -3660,47 +3610,43 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
             </button>
           </div>
 
-          {/* Quick Batch Admin Báo Assignment (Admin only) */}
-          {isAdmin && (
-            <>
-              <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
-              <div className="flex items-center space-x-1 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800">
-                <span className="text-[11px] text-slate-400 font-semibold pr-1">Admin Báo:</span>
-                <button
-                  type="button"
-                  onClick={() => handleBatchUpdateAdminJoinReport('Đã Duyệt')}
-                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer transition-colors shadow-2xs"
-                  title="Admin báo Đã Duyệt cho các UID đã chọn"
-                >
-                  Đã Duyệt
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleBatchUpdateAdminJoinReport('Chưa Jont')}
-                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-500 text-white hover:bg-amber-400 cursor-pointer transition-colors shadow-2xs"
-                  title="Admin báo Chưa Jont cho các UID đã chọn"
-                >
-                  Chưa Jont
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleBatchUpdateAdminJoinReport('Không tìm thấy')}
-                  className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-600 text-white hover:bg-rose-500 cursor-pointer transition-colors shadow-2xs"
-                  title="Admin báo Không tìm thấy cho các UID đã chọn"
-                >
-                  Không tìm thấy
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleBatchUpdateAdminJoinReport('')}
-                  className="px-1.5 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-800 text-slate-400 hover:text-white cursor-pointer transition-colors"
-                  title="Xóa báo cáo Admin cho các UID đã chọn"
-                >
-                  Xóa
-                </button>
-              </div>
-            </>
-          )}
+          {/* Quick Batch Admin Báo Assignment (Cho phép cả Admin và Nhân viên chọn) */}
+          <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
+          <div className="flex items-center space-x-1 bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-800">
+            <span className="text-[11px] text-slate-400 font-semibold pr-1">Admin Báo:</span>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateAdminJoinReport('Đã Duyệt')}
+              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer transition-colors shadow-2xs"
+              title="Báo Đã Duyệt cho các UID đã chọn"
+            >
+              Đã Duyệt
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateAdminJoinReport('Chưa Jont')}
+              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-amber-500 text-white hover:bg-amber-400 cursor-pointer transition-colors shadow-2xs"
+              title="Báo Chưa Jont cho các UID đã chọn"
+            >
+              Chưa Jont
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateAdminJoinReport('Không tìm thấy')}
+              className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-600 text-white hover:bg-rose-500 cursor-pointer transition-colors shadow-2xs"
+              title="Báo Không tìm thấy cho các UID đã chọn"
+            >
+              Không tìm thấy
+            </button>
+            <button
+              type="button"
+              onClick={() => handleBatchUpdateAdminJoinReport('')}
+              className="px-1.5 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-800 text-slate-400 hover:text-white cursor-pointer transition-colors"
+              title="Xóa báo cáo cho các UID đã chọn"
+            >
+              Xóa
+            </button>
+          </div>
 
           <div className="h-4 w-px bg-slate-700 hidden sm:block"></div>
 
