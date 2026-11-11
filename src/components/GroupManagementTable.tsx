@@ -213,6 +213,121 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
   } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Admin: Đổi Tên & Link Nhóm modal state
+  const [groupInfoEditTarget, setGroupInfoEditTarget] = useState<{
+    groupId: string;
+    oldGroupName: string;
+    oldGroupLink: string;
+    recordIds: string[];
+    count: number;
+    singleRowId?: string;
+  } | null>(null);
+  const [editGroupNameInput, setEditGroupNameInput] = useState('');
+  const [editGroupLinkInput, setEditGroupLinkInput] = useState('');
+  const [applyGroupInfoToAllRows, setApplyGroupInfoToAllRows] = useState(true);
+  const [isSavingGroupInfo, setIsSavingGroupInfo] = useState(false);
+
+  // All unique groups across records for quick group selection
+  const allUniqueGroups = useMemo(() => {
+    const map = new Map<string, { groupId: string; groupName: string; groupLink: string }>();
+    records.forEach((r) => {
+      const nameKey = (r.groupName || '').trim().toLowerCase();
+      if (nameKey && !map.has(nameKey)) {
+        map.set(nameKey, {
+          groupId: r.groupId || `group-${nameKey}`,
+          groupName: r.groupName.trim(),
+          groupLink: (r.groupLink || '').trim(),
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [records]);
+
+  const openGroupInfoEditModal = (
+    target: { groupId: string; groupName: string; groupLink: string; rows?: GroupRecord[] },
+    singleRowId?: string
+  ) => {
+    const gid = (target.groupId || '').trim();
+    const gname = (target.groupName || '').trim().toLowerCase();
+    const matchedRows = records.filter((r) => {
+      if (gid && r.groupId === gid) return true;
+      if (gname && (r.groupName || '').trim().toLowerCase() === gname) return true;
+      return false;
+    });
+    const rowIds = matchedRows.length > 0
+      ? matchedRows.map((r) => r.id)
+      : (target.rows || []).map((r) => r.id);
+
+    setGroupInfoEditTarget({
+      groupId: target.groupId || `group-${Date.now()}`,
+      oldGroupName: target.groupName || '',
+      oldGroupLink: target.groupLink || '',
+      recordIds: rowIds,
+      count: rowIds.length,
+      singleRowId,
+    });
+    setEditGroupNameInput(target.groupName || '');
+    setEditGroupLinkInput(target.groupLink || '');
+    setApplyGroupInfoToAllRows(true);
+  };
+
+  const handleSaveGroupInfoEdit = async () => {
+    if (!groupInfoEditTarget) return;
+    const cleanName = editGroupNameInput.trim();
+    const cleanLink = editGroupLinkInput.trim();
+    if (!cleanName) return;
+
+    setIsSavingGroupInfo(true);
+    try {
+      const targetRowIds =
+        !applyGroupInfoToAllRows && groupInfoEditTarget.singleRowId
+          ? new Set([groupInfoEditTarget.singleRowId])
+          : new Set(groupInfoEditTarget.recordIds);
+
+      const matchedExisting = allUniqueGroups.find(
+        (g) => g.groupName.toLowerCase() === cleanName.toLowerCase()
+      );
+      const nextGroupId =
+        !applyGroupInfoToAllRows && groupInfoEditTarget.singleRowId
+          ? matchedExisting?.groupId || `group-${Date.now()}`
+          : matchedExisting?.groupId || groupInfoEditTarget.groupId || `group-${Date.now()}`;
+
+      const updatedAt = new Date().toLocaleDateString('vi-VN');
+      const updatedList = records
+        .filter((r) => targetRowIds.has(r.id))
+        .map((r) => ({
+          ...r,
+          groupId: nextGroupId,
+          groupName: cleanName,
+          groupLink: cleanLink,
+          updatedAt,
+        }));
+
+      if (onAddBatchRecords && updatedList.length > 0) {
+        await onAddBatchRecords(updatedList);
+      } else {
+        for (const item of updatedList) {
+          await onUpdateRecord(item.id, {
+            groupId: nextGroupId,
+            groupName: cleanName,
+            groupLink: cleanLink,
+            updatedAt,
+          });
+        }
+      }
+
+      setGroupInfoEditTarget(null);
+      triggerCopyFeedback(
+        `edit-grp-${nextGroupId}`,
+        `✅ Đã đổi tên & link nhóm thành "${cleanName}" (${updatedList.length} dòng)!`
+      );
+    } catch (err) {
+      console.error('Lỗi cập nhật tên và link nhóm:', err);
+    } finally {
+      setIsSavingGroupInfo(false);
+    }
+  };
+
   // Collect all known staff across the application and existing groups
   const allKnownStaff = useMemo(() => {
     const set = new Set<string>();
@@ -2334,9 +2449,22 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
 
                       {/* Group Name & Link */}
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-sm font-black text-red-600 uppercase tracking-tight flex items-center space-x-1.5">
-                          <span>{group.groupName}</span>
-                        </span>
+                        <div className="inline-flex items-center space-x-1.5">
+                          <span className="text-sm font-black text-red-600 uppercase tracking-tight">
+                            {group.groupName}
+                          </span>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => openGroupInfoEditModal(group)}
+                              className="inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
+                              title="Admin: Đổi Tên Nhóm & Link Nhóm khác cho toàn bộ nhóm này"
+                            >
+                              <Edit2 className="w-2.5 h-2.5" />
+                              <span>Sửa tên/link</span>
+                            </button>
+                          )}
+                        </div>
 
                         {/* Ô chọn ghi chú & màu mức độ tương tác cho cả nhóm */}
                         <div className="flex flex-wrap items-center gap-1.5">
@@ -2443,18 +2571,42 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                           </div>
                         </div>
 
-                        {group.groupLink && (
-                          <a
-                            href={group.groupLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-semibold transition-colors border border-blue-200"
-                            title="Mở link nhóm Facebook trên tab mới"
-                          >
-                            <LinkIcon className="w-3 h-3" />
-                            <span className="max-w-[200px] truncate">{group.groupLink}</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
+                        {group.groupLink ? (
+                          <div className="inline-flex items-center space-x-1">
+                            <a
+                              href={group.groupLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-semibold transition-colors border border-blue-200"
+                              title="Mở link nhóm Facebook trên tab mới"
+                            >
+                              <LinkIcon className="w-3 h-3" />
+                              <span className="max-w-[200px] truncate">{group.groupLink}</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </a>
+                            {isAdmin && (
+                              <button
+                                type="button"
+                                onClick={() => openGroupInfoEditModal(group)}
+                                className="p-1 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors cursor-pointer"
+                                title="Đổi Link Nhóm & Tên Nhóm"
+                              >
+                                <Edit2 className="w-2.5 h-2.5" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() => openGroupInfoEditModal(group)}
+                              className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 text-[11px] font-bold border border-blue-200 border-dashed transition-colors cursor-pointer"
+                              title="Thêm hoặc đổi Link Nhóm Facebook"
+                            >
+                              <LinkIcon className="w-3 h-3" />
+                              <span>+ Thêm Link Nhóm</span>
+                            </button>
+                          )
                         )}
 
                         <span className="text-[11px] font-bold text-slate-500 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-2xs">
@@ -2554,6 +2706,19 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                         <RefreshCw className="w-3.5 h-3.5 text-emerald-600" />
                         <span>Đổi Via Nhóm</span>
                       </button>
+
+                      {/* Admin: Đổi Tên & Link Nhóm */}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => openGroupInfoEditModal(group)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                          title="Đổi Tên Nhóm và Link Nhóm Facebook cho toàn bộ nhóm này"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-amber-700" />
+                          <span>Đổi Tên & Link Nhóm</span>
+                        </button>
+                      )}
 
                       {/* Batch add UIDs to this group */}
                       <button
@@ -3307,25 +3472,65 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                       </td>
 
                       <td className="py-2.5 px-3">
-                        {r.groupLink ? (
-                          <a
-                            href={r.groupLink}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center space-x-1 text-blue-600 hover:underline text-xs max-w-[200px] truncate"
-                          >
-                            <LinkIcon className="w-3 h-3 shrink-0" />
-                            <span className="truncate">{r.groupLink}</span>
-                            <ExternalLink className="w-2.5 h-2.5 shrink-0" />
-                          </a>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        )}
+                        <div className="flex items-center space-x-1.5">
+                          {r.groupLink ? (
+                            <a
+                              href={r.groupLink}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center space-x-1 text-blue-600 hover:underline text-xs max-w-[200px] truncate"
+                            >
+                              <LinkIcon className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{r.groupLink}</span>
+                              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                            </a>
+                          ) : (
+                            <span className="text-slate-400">-</span>
+                          )}
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openGroupInfoEditModal(
+                                  {
+                                    groupId: r.groupId,
+                                    groupName: r.groupName,
+                                    groupLink: r.groupLink,
+                                  },
+                                  r.id
+                                )
+                              }
+                              className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors cursor-pointer"
+                              title="Admin: Đổi Tên Nhóm & Link Nhóm"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
                       </td>
 
                       <td className="py-2.5 px-3">
                         <div className="flex items-center space-x-1.5">
                           <span className="font-bold text-red-600">{r.groupName}</span>
+                          {isAdmin && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openGroupInfoEditModal(
+                                  {
+                                    groupId: r.groupId,
+                                    groupName: r.groupName,
+                                    groupLink: r.groupLink,
+                                  },
+                                  r.id
+                                )
+                              }
+                              className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors cursor-pointer"
+                              title="Admin: Đổi Tên Nhóm & Link Nhóm"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                          )}
                           {r.interactionStatus === 'Đang lên tương tác' && (
                             <span className="inline-block w-2 h-2 rounded-full bg-sky-500 shrink-0 animate-pulse" title="Đang lên tương tác" />
                           )}
@@ -4298,6 +4503,164 @@ export const GroupManagementTable: React.FC<GroupManagementTableProps> = ({
                   <>
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Xác Nhận Xóa</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Admin: Đổi Tên Nhóm & Link Nhóm Facebook */}
+      {groupInfoEditTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl border border-red-200 overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-red-600 via-rose-600 to-amber-600 text-white px-5 py-4 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center font-bold">
+                  <Edit2 className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold leading-tight">
+                    Đổi Tên Nhóm & Link Nhóm Facebook
+                  </h3>
+                  <p className="text-[11px] text-red-100">
+                    Đang sửa nhóm: {groupInfoEditTarget.oldGroupName} ({groupInfoEditTarget.count} Nick Via)
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => !isSavingGroupInfo && setGroupInfoEditTarget(null)}
+                className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4">
+              {/* Quick select from other existing groups if Admin wants to merge/move */}
+              {allUniqueGroups.length > 1 && (
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-600">
+                    Chọn nhanh từ nhóm có sẵn (nếu muốn gộp/chuyển sang nhóm đã có):
+                  </label>
+                  <select
+                    value={
+                      allUniqueGroups.some((g) => g.groupName === editGroupNameInput)
+                        ? editGroupNameInput
+                        : ''
+                    }
+                    onChange={(e) => {
+                      const found = allUniqueGroups.find((g) => g.groupName === e.target.value);
+                      if (found) {
+                        setEditGroupNameInput(found.groupName);
+                        setEditGroupLinkInput(found.groupLink);
+                      }
+                    }}
+                    className="w-full px-3 py-1.5 text-xs font-bold text-red-700 bg-white border border-slate-300 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-red-500 cursor-pointer"
+                  >
+                    <option value="">-- Hoặc tự nhập Tên Nhóm & Link Nhóm mới bên dưới --</option>
+                    {allUniqueGroups.map((g) => (
+                      <option key={g.groupId} value={g.groupName}>
+                        {g.groupName} {g.groupLink ? `(${g.groupLink})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Tên Nhóm Facebook Mới (Cột E) <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Nhập tên nhóm mới..."
+                    value={editGroupNameInput}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      // Hỗ trợ dán nhanh: Tên Nhóm | Link Nhóm
+                      if (val.includes('|') && val.includes('http')) {
+                        const parts = val.split('|').map((s) => s.trim());
+                        const linkPart = parts.find((p) => p.startsWith('http'));
+                        const namePart = parts.find((p) => !p.startsWith('http'));
+                        if (namePart) setEditGroupNameInput(namePart);
+                        if (linkPart) setEditGroupLinkInput(linkPart);
+                      } else {
+                        setEditGroupNameInput(val);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-xs font-bold text-red-700 border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Link Nhóm Facebook Mới (Cột D)
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="url"
+                      placeholder="https://www.facebook.com/groups/..."
+                      value={editGroupLinkInput}
+                      onChange={(e) => setEditGroupLinkInput(e.target.value)}
+                      className="w-full pl-8 pr-3 py-2 text-xs font-medium text-blue-700 border border-slate-300 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 bg-white"
+                    />
+                    <LinkIcon className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  </div>
+                </div>
+
+                {groupInfoEditTarget.singleRowId && groupInfoEditTarget.count > 1 && (
+                  <label className="flex items-start space-x-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={applyGroupInfoToAllRows}
+                      onChange={(e) => setApplyGroupInfoToAllRows(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded-sm text-red-600 focus:ring-red-500"
+                    />
+                    <div className="text-xs">
+                      <span className="font-bold text-amber-950">
+                        Áp dụng đổi Tên & Link cho toàn bộ {groupInfoEditTarget.count} dòng thuộc nhóm "{groupInfoEditTarget.oldGroupName}"
+                      </span>
+                      <p className="text-[11px] text-amber-800">
+                        Bỏ tích nếu chỉ muốn đổi riêng cho 1 dòng đang chọn
+                      </p>
+                    </div>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 px-5 py-3.5 border-t border-slate-200 flex items-center justify-end space-x-2.5">
+              <button
+                type="button"
+                disabled={isSavingGroupInfo}
+                onClick={() => setGroupInfoEditTarget(null)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 hover:bg-slate-200/60 rounded-xl transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Hủy Bỏ
+              </button>
+              <button
+                type="button"
+                disabled={isSavingGroupInfo || !editGroupNameInput.trim()}
+                onClick={handleSaveGroupInfoEdit}
+                className="inline-flex items-center space-x-1.5 px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 rounded-xl shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSavingGroupInfo ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Đang Lưu...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Lưu Tên & Link Nhóm Mới</span>
                   </>
                 )}
               </button>

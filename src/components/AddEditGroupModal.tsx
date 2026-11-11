@@ -280,6 +280,20 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
     return items;
   }, [batchRawText, batchDefaultNote, batchDefaultHighlighted]);
 
+  const [applyGroupChangeToAll, setApplyGroupChangeToAll] = useState(true);
+
+  // Count how many rows belong to initialRecord's current group
+  const siblingGroupRows = useMemo(() => {
+    if (!initialRecord) return [];
+    const initGid = (initialRecord.groupId || '').trim();
+    const initGname = (initialRecord.groupName || '').trim().toLowerCase();
+    return allRecords.filter((r) => {
+      if (initGid && r.groupId === initGid) return true;
+      if (initGname && (r.groupName || '').trim().toLowerCase() === initGname) return true;
+      return false;
+    });
+  }, [allRecords, initialRecord]);
+
   if (!isOpen) return null;
 
   const handleSelectExistingGroup = (selectedGroupName: string) => {
@@ -307,11 +321,16 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
     const matchedExisting = existingGroups.find(
       (g) => g.groupName.toLowerCase() === cleanGroupName.toLowerCase()
     );
-    const resolvedGroupId =
-      initialRecord?.groupId ||
-      presetGroup?.groupId ||
-      matchedExisting?.groupId ||
-      `group-${Date.now()}`;
+    const isGroupIdentityChanged =
+      Boolean(initialRecord) &&
+      (cleanGroupName.toLowerCase() !== (initialRecord?.groupName || '').trim().toLowerCase() ||
+        cleanGroupLink !== (initialRecord?.groupLink || '').trim());
+
+    const resolvedGroupId = isEditing
+      ? isGroupIdentityChanged && !applyGroupChangeToAll
+        ? matchedExisting?.groupId || `group-${Date.now()}`
+        : matchedExisting?.groupId || initialRecord?.groupId || `group-${Date.now()}`
+      : presetGroup?.groupId || matchedExisting?.groupId || `group-${Date.now()}`;
 
     setIsSubmitting(true);
     try {
@@ -358,7 +377,29 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
           await onSupplementVia(cleanUid, builtVia, effectiveStaff);
         }
 
-        await onSave(recordToSave);
+        // Nếu đang chỉnh sửa 1 dòng mà Admin đổi Tên Nhóm / Link Nhóm và tích chọn áp dụng cho cả nhóm
+        if (
+          isEditing &&
+          isGroupIdentityChanged &&
+          applyGroupChangeToAll &&
+          siblingGroupRows.length > 1 &&
+          onSaveBatch
+        ) {
+          const updatedBatch = siblingGroupRows.map((row) =>
+            row.id === recordToSave.id
+              ? recordToSave
+              : {
+                  ...row,
+                  groupId: resolvedGroupId,
+                  groupName: cleanGroupName,
+                  groupLink: cleanGroupLink,
+                  updatedAt: new Date().toLocaleDateString('vi-VN'),
+                }
+          );
+          await onSaveBatch(updatedBatch);
+        } else {
+          await onSave(recordToSave);
+        }
         onClose();
       } else {
         // Batch mode: add multiple UIDs into this single group
@@ -491,7 +532,7 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                 </label>
 
                 {/* Quick Select Existing Group dropdown */}
-                {existingGroups.length > 0 && !isEditing && (
+                {existingGroups.length > 0 && (!isEditing || isAdmin) && (
                   <div className="flex items-center space-x-1.5 text-[11px] text-slate-600">
                     <span className="font-semibold">Chọn nhanh nhóm có sẵn ({existingGroups.length}):</span>
                     <select
@@ -543,6 +584,28 @@ export const AddEditGroupModal: React.FC<AddEditGroupModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {isEditing &&
+                siblingGroupRows.length > 1 &&
+                (groupName.trim().toLowerCase() !== (initialRecord?.groupName || '').trim().toLowerCase() ||
+                  groupLink.trim() !== (initialRecord?.groupLink || '').trim()) && (
+                  <label className="flex items-start space-x-2 p-2.5 rounded-lg bg-white border border-red-200 cursor-pointer select-none mt-1">
+                    <input
+                      type="checkbox"
+                      checked={applyGroupChangeToAll}
+                      onChange={(e) => setApplyGroupChangeToAll(e.target.checked)}
+                      className="mt-0.5 w-4 h-4 rounded-sm text-red-600 focus:ring-red-500"
+                    />
+                    <div className="text-xs">
+                      <span className="font-bold text-red-800">
+                        Đổi Tên Nhóm & Link Nhóm mới này cho toàn bộ {siblingGroupRows.length} Nick Via trong nhóm "{initialRecord?.groupName}"
+                      </span>
+                      <p className="text-[11px] text-slate-500">
+                        Bỏ tích nếu bạn chỉ muốn chuyển riêng 1 dòng Nick Via này sang nhóm khác
+                      </p>
+                    </div>
+                  </label>
+                )}
             </div>
 
             {/* Section 2: Thông tin Nick Via (Single Mode vs Batch Mode) */}
