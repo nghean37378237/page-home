@@ -3176,53 +3176,49 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
         </div>
       </div>
 
-      {/* Table Header Section */}
-      <div className="p-4 sm:p-5 border-b border-slate-200 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          {/* Left info */}
-          <div className="flex items-start space-x-3">
-            <div className="p-2.5 bg-indigo-500/20 rounded-xl border border-indigo-400/30 shrink-0 mt-0.5">
-              <Key className="w-6 h-6 text-indigo-300" />
+      {/* 1. HEADER CHÍNH: Tiêu đề & Cụm Công Cụ Thao Tác Nhanh */}
+      <div className="px-4 py-3 border-b border-slate-800 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-3">
+          {/* Bên trái: Tiêu đề & Thông tin tổng quan */}
+          <div className="flex items-center space-x-3 min-w-0">
+            <div className="p-2 bg-indigo-500/20 rounded-xl border border-indigo-400/30 shrink-0">
+              <Key className="w-5 h-5 text-indigo-300" />
             </div>
-            <div>
-              <div className="flex items-center flex-wrap gap-2">
-                <h2 className="text-base sm:text-lg font-black tracking-tight text-white flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center flex-wrap gap-x-2.5 gap-y-1">
+                <h2 className="text-sm sm:text-base font-black tracking-tight text-white whitespace-nowrap">
                   BẢNG QUẢN LÝ FULL VIA (UID | PASS | 2FA)
                 </h2>
-                <span className="bg-emerald-500/30 text-emerald-300 font-extrabold px-2.5 py-0.5 rounded-full text-xs border border-emerald-400/30">
-                  {scopedVias.length} Nick
-                </span>
-                {currentUser.role === 'admin' ? (
-                  <span className="bg-amber-500/20 text-amber-300 font-bold px-2 py-0.5 rounded-full text-[11px] border border-amber-400/30 flex items-center gap-1">
-                    <Shield className="w-3 h-3 text-amber-400" /> Toàn Quyền Admin
+                <div className="flex items-center gap-1.5 text-xs text-slate-300 font-medium tabular-nums">
+                  <span className="text-emerald-300 font-bold">{scopedVias.length} Nick hiển thị</span>
+                  <span aria-hidden="true" className="text-slate-500">·</span>
+                  <span>Tổng kho: <strong className="text-white">{strictlyGuardedVias.length}</strong></span>
+                  <span aria-hidden="true" className="text-slate-500">·</span>
+                  <span className="text-amber-300 font-semibold">
+                    {currentUser.role === 'admin' ? 'Toàn quyền Admin' : `NV: ${currentUser.name}`}
                   </span>
-                ) : (
-                  <span className="bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full text-[11px] border border-emerald-400/30 flex items-center gap-1">
-                    <Users className="w-3 h-3 text-emerald-400" /> Chỉ Xem Của: {currentUser.name}
-                  </span>
-                )}
+                </div>
               </div>
-              <p className="text-xs text-slate-300 mt-1 max-w-2xl">
-                Quản lý tập trung UID, Mật khẩu, 2FA/OTP live, phân quyền nhân viên và tình trạng Fanpage.
+              <p className="text-[11px] text-slate-400 mt-0.5 truncate">
+                Quản lý tập trung UID, Mật khẩu, 2FA/OTP live, phân quyền nhân viên và tình trạng Fanpage & Group.
               </p>
             </div>
           </div>
 
-          {/* Right Action buttons */}
-          <div className="flex items-center flex-wrap gap-2 shrink-0">
-            {/* Primary Action 1: Add single */}
+          {/* Bên phải: Chia 2 nhóm nút khoa học (Nhóm Nhập/Thêm & Nhóm Công Cụ/Xuất) */}
+          <div className="flex items-center flex-wrap gap-1.5 shrink-0">
+            {/* Nhóm 1: Thêm & Nhập dữ liệu */}
             <button
               type="button"
               id="btn-add-single-via"
               onClick={handleOpenAddModal}
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-xl shadow-md transition-all cursor-pointer"
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 rounded-lg shadow-xs transition-all cursor-pointer whitespace-nowrap"
               title="Thêm 1 nick Full Via mới"
             >
-              <Plus className="w-4 h-4 text-white" />
+              <Plus className="w-3.5 h-3.5 text-white" />
               <span>+ Thêm 1 Nick</span>
             </button>
 
-            {/* Primary Action 2: Bulk import */}
             <button
               type="button"
               id="btn-bulk-import-via"
@@ -3235,22 +3231,46 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     : undefined
                 )
               }
-              className="inline-flex items-center space-x-1.5 px-3.5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-xl shadow-md transition-all cursor-pointer"
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 rounded-lg shadow-xs transition-all cursor-pointer whitespace-nowrap"
               title="Nhập hàng loạt nick UID|PASS|2FA từ Excel hoặc dán danh sách"
             >
-              <FileSpreadsheet className="w-4 h-4" />
+              <FileSpreadsheet className="w-3.5 h-3.5" />
               <span>+ Nhập Hàng Loạt (Excel)</span>
             </button>
 
-            {/* Secondary Action: Copy all UIDs */}
+            {onFetchPagesForVia && (
+              <button
+                type="button"
+                id="btn-fetch-pages-top-via-table"
+                onClick={() =>
+                  onFetchPagesForVia(
+                    '',
+                    currentUser.role === 'staff'
+                      ? currentUser.name
+                      : selectedStaffFilter !== 'all'
+                      ? selectedStaffFilter
+                      : ''
+                  )
+                }
+                className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-bold text-blue-200 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/30 rounded-lg transition-all cursor-pointer whitespace-nowrap"
+                title="Lấy Tên & Link Page từ Via và điền tự động vào Bảng Fanpage"
+              >
+                <Zap className="w-3.5 h-3.5 text-blue-400" />
+                <span>Quét Page</span>
+              </button>
+            )}
+
+            <div className="hidden sm:block h-5 w-px bg-white/15 mx-1" />
+
+            {/* Nhóm 2: Sao chép, Ẩn/Hiện bảo mật & Xuất file */}
             <button
               type="button"
               id="btn-copy-all-uids"
               onClick={handleCopyAllUids}
-              className={`inline-flex items-center space-x-1 px-3 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer border ${
+              className={`inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-bold rounded-lg transition-all cursor-pointer border whitespace-nowrap tabular-nums ${
                 copiedKey === 'copy-all-uids'
-                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs'
-                  : 'bg-white/10 hover:bg-white/20 text-white border-white/20'
+                  ? 'bg-emerald-600 text-white border-emerald-500'
+                  : 'bg-white/10 hover:bg-white/20 text-white border-white/15'
               }`}
               title="Sao chép toàn bộ UID đang hiển thị (1 UID / dòng)"
             >
@@ -3267,107 +3287,93 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               )}
             </button>
 
-            {/* Nút Xóa Toàn Bộ Via Đã Chọn trên Header */}
-            <button
-              type="button"
-              id="btn-bulk-delete-header"
-              onClick={handlePromptBulkDelete}
-              className={`inline-flex items-center space-x-1.5 px-3 py-2 text-xs font-bold rounded-xl transition-all cursor-pointer border ${
-                selectedCount > 0
-                  ? 'bg-rose-600 hover:bg-rose-500 text-white border-rose-500 shadow-md ring-2 ring-rose-400/50'
-                  : 'bg-white/10 hover:bg-white/20 text-rose-300 border-rose-400/30'
-              }`}
-              title={
-                selectedCount > 0
-                  ? `Xóa toàn bộ ${selectedCount} via đã chọn khỏi hệ thống`
-                  : 'Tick chọn các nick via cần xóa trong bảng rồi bấm nút này'
-              }
-            >
-              <Trash2 className="w-4 h-4 text-rose-300" />
-              <span>Xóa Via Đã Chọn {selectedCount > 0 ? `(${selectedCount})` : ''}</span>
-            </button>
-
-            {/* Toggle Passwords */}
             <button
               type="button"
               onClick={() => setShowAllPasswords(!showAllPasswords)}
-              className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
+              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/15 transition-colors cursor-pointer whitespace-nowrap"
               title={showAllPasswords ? 'Ẩn tất cả mật khẩu' : 'Hiện tất cả mật khẩu (tự tắt sau 30s)'}
             >
               {showAllPasswords ? <EyeOff className="w-3.5 h-3.5 text-amber-300" /> : <Eye className="w-3.5 h-3.5 text-slate-300" />}
-              <span className="hidden sm:inline">{showAllPasswords ? 'Ẩn Pass' : 'Hiện Pass'}</span>
+              <span>{showAllPasswords ? 'Ẩn Pass' : 'Hiện Pass'}</span>
             </button>
 
-            {/* Toggle 2FA */}
             <button
               type="button"
               onClick={() => setShowAll2Fa(!showAll2Fa)}
-              className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
+              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/15 transition-colors cursor-pointer whitespace-nowrap"
               title={showAll2Fa ? 'Ẩn tất cả mã 2FA' : 'Hiện tất cả mã 2FA (tự tắt sau 30s)'}
             >
               {showAll2Fa ? <EyeOff className="w-3.5 h-3.5 text-emerald-300" /> : <Eye className="w-3.5 h-3.5 text-slate-300" />}
-              <span className="hidden sm:inline">{showAll2Fa ? 'Ẩn 2FA' : 'Hiện 2FA'}</span>
+              <span>{showAll2Fa ? 'Ẩn 2FA' : 'Hiện 2FA'}</span>
             </button>
 
-            {/* Tải Mẫu Excel */}
             <button
               type="button"
               id="btn-download-via-excel-template"
               onClick={() => downloadViaExcelTemplate('xlsx')}
-              className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-emerald-300 rounded-xl border border-white/20 transition-colors cursor-pointer"
+              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 text-emerald-300 rounded-lg border border-white/15 transition-colors cursor-pointer whitespace-nowrap"
               title="Tải file Excel mẫu (.xlsx)"
             >
               <FileSpreadsheet className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Mẫu Excel</span>
+              <span>Mẫu Excel</span>
             </button>
 
-            {/* Export CSV */}
             <button
               type="button"
               onClick={handleRequestExportCSV}
-              className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-colors cursor-pointer"
+              className="inline-flex items-center space-x-1 px-2.5 py-1.5 text-xs font-semibold bg-white/10 hover:bg-white/20 text-white rounded-lg border border-white/15 transition-colors cursor-pointer whitespace-nowrap"
               title="Xuất bảng Full Via ra CSV (Yêu cầu mã PIN)"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Xuất CSV</span>
+              <span>Xuất CSV</span>
             </button>
-
-            {/* Quét Page từ Via nếu có callback */}
-            {onFetchPagesForVia && (
-              <button
-                type="button"
-                id="btn-fetch-pages-top-via-table"
-                onClick={() =>
-                  onFetchPagesForVia(
-                    '',
-                    currentUser.role === 'staff'
-                      ? currentUser.name
-                      : selectedStaffFilter !== 'all'
-                      ? selectedStaffFilter
-                      : ''
-                  )
-                }
-                className="inline-flex items-center space-x-1 px-2.5 py-2 text-xs font-bold text-blue-200 bg-blue-500/20 hover:bg-blue-500/30 border border-blue-400/30 rounded-xl transition-all cursor-pointer"
-                title="Lấy Tên & Link Page từ Via và điền tự động vào Bảng Fanpage"
-              >
-                <Zap className="w-3.5 h-3.5 text-blue-400" />
-                <span className="hidden sm:inline">Quét Page</span>
-              </button>
-            )}
           </div>
         </div>
       </div>
 
-      {/* 🌟 THANH TAB LỌC THEO TỪNG NHÂN VIÊN & KHO CHỜ ADMIN (DÀNH CHO ADMIN) */}
+      {/* 2. KHU VỰC PHÂN LOẠI NHÂN VIÊN & KHO CHỜ ADMIN (Bố cục lưới phẳng gọn gàng, không thanh cuộn ngang) */}
       {currentUser.role === 'admin' ? (
         <>
-          <div className="bg-slate-100 border-b border-slate-200 px-4 py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
-            <div className="flex items-center space-x-1.5 overflow-x-auto py-1 scrollbar-thin">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1 flex items-center gap-1">
+          <div className="bg-slate-100/90 border-b border-slate-200 px-4 py-2.5 text-xs space-y-2">
+            {/* Hàng tiêu đề phân loại + Nút điều phối kho */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-600">
                 <Users className="w-3.5 h-3.5 text-indigo-600" />
-                <span>Phân loại:</span>
-              </span>
+                <span>PHÂN LOẠI THEO NHÂN VIÊN & KHO CHỜ:</span>
+              </div>
 
+              <div className="flex items-center flex-wrap gap-1.5">
+                {onTransferViaPages && (
+                  <button
+                    type="button"
+                    onClick={() => onTransferViaPages('')}
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                    title="Chuyển Via / Via + Page vào Kho Chờ Admin hoặc cấp từ Kho Chờ sang cho Nhân viên dùng"
+                  >
+                    <ArrowRightLeft className="w-3 h-3" />
+                    <span>Chuyển Kho Chờ ⇄ Nhân Viên</span>
+                  </button>
+                )}
+                {selectedStaffFilter === 'all' && (
+                  <button
+                    type="button"
+                    onClick={() => setIsGroupedByStaff(!isGroupedByStaff)}
+                    className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors cursor-pointer whitespace-nowrap ${
+                      isGroupedByStaff
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs font-bold'
+                        : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                    }`}
+                    title="Nhóm các dòng theo Kho Chờ Admin và từng Nhân viên"
+                  >
+                    <Layers className="w-3 h-3" />
+                    <span>{isGroupedByStaff ? 'Đang gộp nhóm NV' : 'Gộp nhóm theo NV'}</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Danh sách Tab Nhân Viên (Flex-wrap gọn gàng trên màn hình, không thanh cuộn ngang) */}
+            <div className="flex flex-wrap items-center gap-1.5">
               {/* Tab Tất Cả */}
               <button
                 type="button"
@@ -3375,72 +3381,70 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                   setSelectedStaffFilter('all');
                   onSyncStaffFilter?.('all');
                 }}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer whitespace-nowrap tabular-nums ${
                   selectedStaffFilter === 'all'
                     ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
                     : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
                 }`}
               >
                 <span>Tất Cả</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                  selectedStaffFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                  selectedStaffFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-800'
                 }`}>
                   {strictlyGuardedVias.length} Via
                 </span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                  selectedStaffFilter === 'all' ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                <span className={`text-[10px] font-semibold ${
+                  selectedStaffFilter === 'all' ? 'text-emerald-300' : 'text-emerald-700'
                 }`}>
-                  📗 {allRecords.filter((r) => Boolean(r.viaUid?.trim())).length} Page
+                  {allRecords.filter((r) => Boolean(r.viaUid?.trim())).length}P
                 </span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                  selectedStaffFilter === 'all' ? 'bg-purple-500 text-white' : 'bg-purple-50 text-purple-900 border border-purple-200'
+                <span className={`text-[10px] font-semibold ${
+                  selectedStaffFilter === 'all' ? 'text-purple-300' : 'text-purple-700'
                 }`}>
-                  🟣 {(allGroupRecords || []).filter((g) => Boolean(g.uid?.trim())).length} Group
+                  {(allGroupRecords || []).filter((g) => Boolean(g.uid?.trim())).length}G
                 </span>
               </button>
 
-              {/* 📦 TAB KHO CHỜ CỦA ADMIN (CHƯA NHÂN VIÊN NÀO DÙNG - BAO GỒM VIA & VIA + PAGE CẦM) */}
+              {/* Tab Kho Chờ Admin */}
               <button
                 type="button"
                 onClick={() => {
                   setSelectedStaffFilter(ADMIN_WAITING_POOL);
                   onSyncStaffFilter?.(ADMIN_WAITING_POOL);
                 }}
-                className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-extrabold border-2 transition-all cursor-pointer shrink-0 ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-extrabold border transition-all cursor-pointer whitespace-nowrap tabular-nums ${
                   isAdminWaitingPool(selectedStaffFilter)
-                    ? 'bg-gradient-to-r from-amber-600 to-orange-600 text-white border-amber-700 shadow-sm ring-2 ring-amber-300/60'
-                    : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-400 shadow-2xs'
+                    ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-300/60'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-300'
                 }`}
                 title={`Kho Chờ Của Admin (Chưa nhân viên nào dùng): ${waitingPoolStats.total} Nick Via (${waitingPoolStats.emptyVias} Via trống + ${waitingPoolStats.viasWithPages} Via đang cầm ${waitingPoolStats.totalPages} Page + ${waitingPoolStats.viasForGroup} Via mục Group)`}
               >
                 <Archive className={`w-3.5 h-3.5 ${isAdminWaitingPool(selectedStaffFilter) ? 'text-white' : 'text-amber-700'}`} />
-                <span>📦 Kho Chờ Admin</span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
+                <span>Kho Chờ Admin</span>
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${
                   isAdminWaitingPool(selectedStaffFilter)
                     ? 'bg-black/25 text-white'
                     : 'bg-white text-amber-950 border border-amber-300'
                 }`}>
                   {waitingPoolStats.total} Via
                 </span>
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                  isAdminWaitingPool(selectedStaffFilter)
-                    ? 'bg-emerald-400 text-slate-950'
-                    : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                }`}>
-                  📗 {waitingPoolStats.totalPages} Page
-                </span>
-                {waitingPoolStats.viasForGroup > 0 && (
-                  <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                    isAdminWaitingPool(selectedStaffFilter)
-                      ? 'bg-purple-200 text-purple-950'
-                      : 'bg-purple-100 text-purple-900 border border-purple-300'
+                {waitingPoolStats.totalPages > 0 && (
+                  <span className={`text-[10px] font-bold ${
+                    isAdminWaitingPool(selectedStaffFilter) ? 'text-emerald-200' : 'text-emerald-800'
                   }`}>
-                    🟣 {waitingPoolStats.viasForGroup} Via Group
+                    {waitingPoolStats.totalPages}P
+                  </span>
+                )}
+                {waitingPoolStats.viasForGroup > 0 && (
+                  <span className={`text-[10px] font-bold ${
+                    isAdminWaitingPool(selectedStaffFilter) ? 'text-purple-200' : 'text-purple-800'
+                  }`}>
+                    {waitingPoolStats.viasForGroup}G
                   </span>
                 )}
               </button>
 
-              {/* Individual Staff Tabs */}
+              {/* Các Tab Từng Nhân Viên */}
               {distinctStaffNames.map((name) => {
                 const theme = getStaffTheme(name);
                 const stats = staffStats[name] || {
@@ -3464,158 +3468,113 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                       setSelectedStaffFilter(name);
                       onSyncStaffFilter?.(name);
                     }}
-                    className={`inline-flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer shrink-0 ${
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all cursor-pointer whitespace-nowrap tabular-nums ${
                       isSelected ? theme.activeTab : theme.inactiveTab
                     }`}
-                    title={`Nhân viên ${name}: ${stats.total} Nick Via (${stats.viasWithPages} Via có Page - cầm ${stats.totalPages} Fanpage • ${stats.viasForGroup} Via mục Group - cầm ${stats.totalGroups} Group)`}
+                    title={`Nhân viên ${name}: ${stats.total} Nick Via (${stats.viasWithPages} Via cầm ${stats.totalPages} Fanpage • ${stats.viasForGroup} Via mục Group cầm ${stats.totalGroups} Group)`}
                   >
-                    <div className={`w-2 h-2 rounded-full ${isSelected ? 'bg-white' : theme.dot}`} />
                     <span>{name}</span>
-                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                      isSelected ? 'bg-black/25 text-white' : 'bg-white text-slate-800'
+                    <span className={`px-1.5 py-0.2 rounded text-[10px] font-extrabold ${
+                      isSelected ? 'bg-black/25 text-white' : 'bg-white/90 text-slate-800'
                     }`}>
                       {stats.total} Via
                     </span>
                     {stats.totalPages > 0 && (
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                        isSelected ? 'bg-emerald-400 text-slate-950' : 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                      <span className={`text-[10px] font-bold ${
+                        isSelected ? 'text-emerald-200' : 'text-emerald-800'
                       }`}>
-                        📗 {stats.totalPages} Page
+                        {stats.totalPages}P
                       </span>
                     )}
                     {stats.viasForGroup > 0 && (
-                      <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
-                        isSelected ? 'bg-purple-200 text-purple-950' : 'bg-purple-100 text-purple-900 border border-purple-300'
+                      <span className={`text-[10px] font-bold ${
+                        isSelected ? 'text-purple-200' : 'text-purple-800'
                       }`}>
-                        🟣 {stats.viasForGroup} Via Group
+                        {stats.viasForGroup}G
                       </span>
                     )}
                     {stats.pendingNew > 0 && (
                       <span
-                        className="px-1.5 py-0.2 rounded-full text-[10px] font-black bg-rose-600 text-white shadow-2xs animate-pulse"
-                        title={`Nhân viên ${name} có ${stats.pendingNew} Via & Page mới được chuyển giao (Đánh dấu đỏ)`}
+                        className="px-1.5 py-0.2 rounded text-[10px] font-black bg-rose-600 text-white"
+                        title={`Nhân viên ${name} có ${stats.pendingNew} Via & Page mới được chuyển giao`}
                       >
-                        🔴 {stats.pendingNew} mới
+                        +{stats.pendingNew} mới
                       </span>
                     )}
                   </button>
                 );
               })}
             </div>
-
-            <div className="flex items-center space-x-2 shrink-0">
-              {onTransferViaPages && (
-                <button
-                  type="button"
-                  onClick={() => onTransferViaPages('')}
-                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-2xs transition-colors cursor-pointer"
-                  title="Chuyển Via / Via + Page vào Kho Chờ Admin hoặc cấp từ Kho Chờ sang cho Nhân viên dùng"
-                >
-                  <ArrowRightLeft className="w-3.5 h-3.5" />
-                  <span>Chuyển Kho Chờ ⇄ Nhân Viên</span>
-                </button>
-              )}
-              {selectedStaffFilter === 'all' && (
-                <button
-                  type="button"
-                  onClick={() => setIsGroupedByStaff(!isGroupedByStaff)}
-                  className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
-                    isGroupedByStaff
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs font-bold'
-                      : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                  }`}
-                  title="Nhóm các dòng theo Kho Chờ Admin và từng Nhân viên"
-                >
-                  <Layers className="w-3.5 h-3.5" />
-                  <span>{isGroupedByStaff ? 'Đang phân nhóm NV' : 'Phân nhóm theo NV'}</span>
-                </button>
-              )}
-            </div>
           </div>
 
           {/* 📦 BANNER CHI TIẾT KHI ADMIN ĐANG MỞ KHO CHỜ ADMIN */}
           {isAdminWaitingPool(selectedStaffFilter) && (
-            <div className="bg-gradient-to-r from-amber-50 via-orange-50/80 to-amber-50 border-b-2 border-amber-300 px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-start space-x-3">
-                <div className="p-2 bg-amber-500 text-white rounded-xl shadow-xs shrink-0 mt-0.5">
-                  <Archive className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center flex-wrap gap-2">
-                    <h3 className="font-black text-amber-950 text-sm uppercase tracking-tight">
-                      📦 KHO CHỜ CỦA ADMIN (CHƯA NHÂN VIÊN NÀO DÙNG)
-                    </h3>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-200/80 text-amber-950 border border-amber-400">
-                      Tổng: {waitingPoolStats.total} Nick Via
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setStatusFilter(statusFilter === 'no_page' ? 'all' : 'no_page')}
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold border cursor-pointer transition-all ${
-                        statusFilter === 'no_page'
-                          ? 'bg-slate-800 text-white border-slate-900 ring-2 ring-slate-400'
-                          : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-100'
-                      }`}
-                      title="Bấm để lọc xem các Via trống (chưa cầm Page) trong Kho Chờ"
-                    >
-                      ⚪ Via trống: {waitingPoolStats.emptyVias} Via
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStatusFilter(statusFilter === 'has_page' ? 'all' : 'has_page')}
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold border cursor-pointer transition-all ${
-                        statusFilter === 'has_page'
-                          ? 'bg-emerald-700 text-white border-emerald-800 ring-2 ring-emerald-300'
-                          : 'bg-emerald-600 text-white border-emerald-700 hover:bg-emerald-700'
-                      }`}
-                      title="Bấm để lọc xem các Via + Page đang cầm trong Kho Chờ"
-                    >
-                      📗 Via + Page cầm: {waitingPoolStats.viasWithPages} Via (Đang cầm {waitingPoolStats.totalPages} Page)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStatusFilter(statusFilter === 'all_group' ? 'all' : 'all_group')}
-                      className={`px-2 py-0.5 rounded-full text-[11px] font-extrabold border cursor-pointer transition-all ${
-                        statusFilter === 'all_group'
-                          ? 'bg-purple-700 text-white border-purple-800 ring-2 ring-purple-300'
-                          : 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700'
-                      }`}
-                      title="Bấm để lọc xem các Via mục Group trong Kho Chờ"
-                    >
-                      🟣 Via mục Group: {waitingPoolStats.viasForGroup} Via ({waitingPoolStats.totalGroups} Group)
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-amber-900 mt-1">
-                    Nơi lưu trữ dự phòng các <strong>Nick Via trống</strong>, <strong>Via mục Group</strong> và <strong>Via + Toàn bộ Page cầm</strong> chưa giao cho nhân viên nào. Khi cần giao cho ai, chọn nhân viên ở cột <strong>NHÂN VIÊN</strong> hoặc bấm <strong>Giao Via + Page Cho NV</strong>.
-                  </p>
-                </div>
+            <div className="bg-amber-50/90 border-b border-amber-300 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div className="flex items-center flex-wrap gap-2">
+                <span className="font-black text-amber-950 text-xs flex items-center gap-1.5">
+                  <Archive className="w-4 h-4 text-amber-700" />
+                  <span>KHO CHỜ ADMIN ({waitingPoolStats.total} Via):</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'no_page' ? 'all' : 'no_page')}
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-bold border cursor-pointer transition-all ${
+                    statusFilter === 'no_page'
+                      ? 'bg-slate-800 text-white border-slate-900'
+                      : 'bg-white text-slate-800 border-slate-300 hover:bg-slate-100'
+                  }`}
+                >
+                  Via trống: {waitingPoolStats.emptyVias}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'has_page' ? 'all' : 'has_page')}
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-bold border cursor-pointer transition-all ${
+                    statusFilter === 'has_page'
+                      ? 'bg-emerald-700 text-white border-emerald-800'
+                      : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+                  }`}
+                >
+                  Via cầm Page: {waitingPoolStats.viasWithPages} ({waitingPoolStats.totalPages} Page)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusFilter(statusFilter === 'all_group' ? 'all' : 'all_group')}
+                  className={`px-2 py-0.5 rounded-md text-[11px] font-bold border cursor-pointer transition-all ${
+                    statusFilter === 'all_group'
+                      ? 'bg-purple-700 text-white border-purple-800'
+                      : 'bg-white text-purple-800 border-purple-300 hover:bg-purple-50'
+                  }`}
+                >
+                  Via mục Group: {waitingPoolStats.viasForGroup} ({waitingPoolStats.totalGroups} Group)
+                </button>
               </div>
 
-              <div className="flex items-center flex-wrap gap-2 shrink-0">
+              <div className="flex items-center flex-wrap gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => handleOpenAddModalForStaff(ADMIN_WAITING_POOL)}
-                  className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-white hover:bg-amber-100 text-amber-950 border border-amber-400 shadow-2xs cursor-pointer transition-colors"
+                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-white hover:bg-amber-100 text-amber-950 border border-amber-400 cursor-pointer transition-colors"
                 >
-                  <Plus className="w-3.5 h-3.5 text-amber-700" />
-                  <span>+ Thêm 1 Via Vào Kho Chờ</span>
+                  <Plus className="w-3 h-3 text-amber-700" />
+                  <span>+ Thêm 1 Via</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => onOpenBulkImport(ADMIN_WAITING_POOL)}
-                  className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white shadow-2xs cursor-pointer transition-colors"
+                  className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold bg-amber-600 hover:bg-amber-700 text-white cursor-pointer transition-colors"
                 >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>📥 Nhập Hàng Loạt Vào Kho Chờ</span>
+                  <FileSpreadsheet className="w-3 h-3" />
+                  <span>Nhập Hàng Loạt</span>
                 </button>
                 {onTransferViaPages && (
                   <button
                     type="button"
                     onClick={() => onTransferViaPages('')}
-                    className="inline-flex items-center space-x-1 px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer transition-colors"
+                    className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer transition-colors"
                   >
-                    <ArrowRightLeft className="w-3.5 h-3.5" />
-                    <span>👤 Giao Via / Via + Page Cho Nhân Viên Dùng</span>
+                    <ArrowRightLeft className="w-3 h-3" />
+                    <span>Giao Cho Nhân Viên</span>
                   </button>
                 )}
               </div>
@@ -3629,48 +3588,44 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
             <UserCheck className="w-4 h-4 text-emerald-700" />
             <span>Tài khoản Full Via bàn giao cho: <strong className="uppercase">{currentUser.name}</strong></span>
           </div>
-          <div className="flex items-center flex-wrap gap-2">
-            <span className="font-bold bg-white text-emerald-900 border border-emerald-300 px-2.5 py-0.5 rounded-full text-[11px]">
-              {scopedVias.length} Nick Via
-            </span>
-            <span className="font-extrabold bg-emerald-600 text-white px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
-              📗 Đang cầm {totalPagesInScope} Fanpage ({multiPageViasCountInScope} Via cầm ≥ 2 Page)
-            </span>
-            <span className="font-extrabold bg-purple-600 text-white px-2.5 py-0.5 rounded-full text-[11px] shadow-2xs">
-              🟣 Mục Group: {groupViaStatsInScope.totalGroupVias} Via (Đang cầm {groupViaStatsInScope.totalGroupsInTable2} Group)
-            </span>
+          <div className="flex items-center flex-wrap gap-3 text-xs tabular-nums">
+            <span>Tổng: <strong>{scopedVias.length} Via</strong></span>
+            <span aria-hidden="true">·</span>
+            <span className="text-emerald-800">Đang cầm: <strong>{totalPagesInScope} Fanpage</strong> ({multiPageViasCountInScope} Via ≥ 2 Page)</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-purple-800">Mục Group: <strong>{groupViaStatsInScope.totalGroupVias} Via</strong> ({groupViaStatsInScope.totalGroupsInTable2} Group)</span>
           </div>
         </div>
       )}
 
-      {/* 🔴 BANNER ĐỎ BÁO NHÂN VIÊN CÓ VIA VÀ PAGE MỚI BÀN GIAO */}
+      {/* 3. BANNER ĐỎ BÁO NHÂN VIÊN CÓ VIA VÀ PAGE MỚI BÀN GIAO */}
       {pendingPageCountInScope > 0 && (
-        <div className="bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white px-4 py-2.5 border-b border-rose-800 shadow-sm flex flex-wrap items-center justify-between gap-2.5 text-xs">
+        <div className="bg-gradient-to-r from-rose-600 via-red-600 to-rose-700 text-white px-4 py-2 border-b border-rose-800 flex flex-wrap items-center justify-between gap-2 text-xs">
           <div className="flex items-center flex-wrap gap-2">
-            <span className="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-white text-rose-700 font-black text-[11px] shadow-2xs animate-pulse">
-              <AlertCircle className="w-3.5 h-3.5 text-rose-600 fill-rose-100" />
-              <span>🔴 CÓ {pendingPageCountInScope} VIA & PAGE MỚI NHẬN!</span>
+            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-white text-rose-700 font-black text-[11px]">
+              <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+              <span>CÓ {pendingPageCountInScope} VIA & PAGE MỚI NHẬN</span>
             </span>
-            <span className="font-semibold text-rose-50">
+            <span className="font-medium text-rose-50">
               {currentUser.role === 'staff'
-                ? `Bạn vừa được chuyển giao ${pendingPageCountInScope} Nick Via & Page mới (được tô đỏ trong bảng để dễ nhận biết).`
-                : `Đang có ${pendingPageCountInScope} Nick Via & Page mới chuyển giao cho nhân viên (đang đánh dấu đỏ chờ nhân viên nhận).`}
+                ? `Bạn vừa được chuyển giao ${pendingPageCountInScope} Nick Via & Page mới (được tô đỏ trong bảng).`
+                : `Đang có ${pendingPageCountInScope} Nick Via & Page mới chuyển giao cho nhân viên (chờ nhân viên xác nhận).`}
             </span>
           </div>
 
-          <div className="flex items-center flex-wrap gap-2">
+          <div className="flex items-center flex-wrap gap-1.5">
             <button
               type="button"
               onClick={() => setStatusFilter(statusFilter === 'pending_page' ? 'all' : 'pending_page')}
-              className={`px-2.5 py-1 rounded-lg font-extrabold text-[11px] border transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg font-bold text-[11px] border transition-all cursor-pointer ${
                 statusFilter === 'pending_page'
-                  ? 'bg-amber-300 text-slate-950 border-amber-400 shadow-2xs'
+                  ? 'bg-amber-300 text-slate-950 border-amber-400'
                   : 'bg-rose-800/80 hover:bg-rose-900 text-white border-rose-400/60'
               }`}
             >
               {statusFilter === 'pending_page'
-                ? '✕ Bỏ lọc Via & Page mới'
-                : `🔍 Lọc riêng ${pendingPageCountInScope} Via mới`}
+                ? '✕ Bỏ lọc Via mới'
+                : `Lọc riêng ${pendingPageCountInScope} Via mới`}
             </button>
 
             <button
@@ -3703,461 +3658,59 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 );
                 setTimeout(() => setCopyToastMessage(null), 3000);
               }}
-              className="px-3 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-black text-[11px] border border-emerald-400 shadow-2xs transition-colors cursor-pointer flex items-center space-x-1"
-              title="Xác nhận đã nhận tất cả các Via & Page mới (Chuyển từ màu đỏ sang màu xanh)"
+              className="px-2.5 py-1 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-[11px] border border-emerald-400 transition-colors cursor-pointer flex items-center space-x-1"
             >
               <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>✓ Đã nhận tất cả ({pendingPageCountInScope} Via)</span>
+              <span>Đã nhận tất cả ({pendingPageCountInScope} Via)</span>
             </button>
           </div>
         </div>
       )}
 
-      {/* 🟣 THANH THỐNG KÊ & LỌC NHANH CHO MỤC GROUP CỦA VIA (CHƯA JON GROUP, ĐÃ JON GROUP, THÊM MỚI ĐỂ THÊM GROUP, ADMIN ĐÃ THÊM GROUP, CÓ GROUP TỪ ĐẦU, CẦN THÊM GROUP) */}
-      <div className="bg-gradient-to-r from-purple-50/90 via-indigo-50/70 to-purple-50/90 border-b border-purple-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs">
-        <div className="flex items-center flex-wrap gap-1.5">
-          <span className="text-[11px] font-black text-purple-950 uppercase tracking-wider mr-1 flex items-center gap-1">
-            <span>🟣 Thống Kê Group (Mục Via):</span>
-          </span>
+      {/* 4. BẢNG ĐIỀU KHIỂN TRUNG TÂM: TÌM KIẾM + BỘ LỌC TRẠNG THÁI + THỐNG KÊ GROUP (Bố cục 3 tầng phẳng, gọn gàng, khoa học) */}
+      <div className="bg-white border-b border-slate-200 divide-y divide-slate-200/80 text-xs">
+        {/* TẦNG 1: Tìm Kiếm UID + Lọc Báo Admin + Lọc Ghi Chú Group + Thao Tác Hàng Loạt (1 Hàng Ngang Chuẩn) */}
+        <div className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 bg-slate-50/70">
+          {/* Cụm Trái: Ô Tìm Kiếm & Các Dropdown Lọc Chuyên Sâu */}
+          <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[260px]">
+            <div className="relative min-w-[240px] sm:min-w-[300px] max-w-md flex-1">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2 pointer-events-none" />
+              <textarea
+                rows={
+                  searchQuery.includes('\n')
+                    ? Math.min(searchQuery.split(/\r?\n/).filter((l) => l.trim()).length, 5)
+                    : 1
+                }
+                placeholder="Tìm 1 hoặc dán hàng loạt UID (1 UID/dòng), Pass, 2FA, NV..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-8 pr-16 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono resize-y leading-snug"
+                title="Có thể dán nhiều UID cùng lúc (mỗi UID 1 dòng) để lọc hàng loạt"
+              />
+              {searchQuery && (
+                <div className="absolute right-1.5 top-1.5 flex items-center space-x-1">
+                  {searchQuery.split(/\r?\n/).filter((l) => l.trim()).length > 1 && (
+                    <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-[10px] font-extrabold font-sans">
+                      {searchQuery.split(/\r?\n/).filter((l) => l.trim()).length} UID
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    className="p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer bg-white/90 rounded"
+                    title="Xóa tìm kiếm"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
 
-          {/* Tổng Via Mục Group */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'all_group' ? 'all' : 'all_group')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
-              statusFilter === 'all_group'
-                ? 'bg-purple-700 text-white border-purple-800 shadow-xs ring-2 ring-purple-300'
-                : 'bg-white text-purple-950 border-purple-300 hover:bg-purple-100 shadow-2xs'
-            }`}
-            title="Lọc toàn bộ các nick Via có ghi chú mục Group hoặc đang cầm Group ở Bảng 2"
-          >
-            <span>📊 Tổng Via Mục Group:</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'all_group' ? 'bg-white/25 text-white' : 'bg-purple-100 text-purple-900'
-              }`}
-            >
-              {groupViaStatsInScope.totalGroupVias} Via
-            </span>
-          </button>
-
-          {/* 🟠 Via Chưa Jon Group (Nổi bật theo yêu cầu) */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'group_chua_jon' ? 'all' : 'group_chua_jon')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-black border transition-all cursor-pointer ${
-              statusFilter === 'group_chua_jon'
-                ? 'bg-orange-600 text-white border-orange-700 shadow-xs ring-2 ring-orange-300'
-                : 'bg-orange-50 text-orange-950 border-orange-400 hover:bg-orange-100 shadow-2xs'
-            }`}
-            title={`Lọc các nick Via Chưa Jon Group (${groupViaStatsInScope.chuaJonInTable2} nick có Group ở Bảng 2 nhưng trạng thái Chưa Jon/Chưa Jont + ${groupViaStatsInScope.chuaGanGroup} nick mục Group chưa gắn nhóm)`}
-          >
-            <span>🟠 Via Chưa Jon Group:</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'group_chua_jon' ? 'bg-white/25 text-white' : 'bg-orange-600 text-white'
-              }`}
-            >
-              {groupViaStatsInScope.chuaJonGroupTotal} Via
-            </span>
-          </button>
-
-          {/* ⏳ Via Jon Chờ Duyệt */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'group_cho_duyet' ? 'all' : 'group_cho_duyet')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'group_cho_duyet'
-                ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-300'
-                : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-100'
-            }`}
-            title="Lọc các nick Via đang ở trạng thái Jon chờ duyệt"
-          >
-            <span>⏳ Jon chờ duyệt:</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'group_cho_duyet' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-900'
-              }`}
-            >
-              {groupViaStatsInScope.choDuyetGroup} Via
-            </span>
-          </button>
-
-          {/* 🟢 Via Đã Jon Group */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'group_da_jon' ? 'all' : 'group_da_jon')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'group_da_jon'
-                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-2 ring-emerald-300'
-                : 'bg-white text-emerald-900 border-emerald-300 hover:bg-emerald-100'
-            }`}
-            title="Lọc các nick Via đã Jon Group thành công"
-          >
-            <span>🟢 Đã Jon Group:</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'group_da_jon' ? 'bg-white/25 text-white' : 'bg-emerald-100 text-emerald-900'
-              }`}
-            >
-              {groupViaStatsInScope.daJonGroup} Via ({groupViaStatsInScope.totalGroupsInTable2} nhóm)
-            </span>
-          </button>
-
-          {/* 1. Thêm mới để thêm Group */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'group_them_moi' ? 'all' : 'group_them_moi')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'group_them_moi'
-                ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-300'
-                : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
-            }`}
-            title="Lọc các nick có ghi chú: Thêm mới để thêm Group"
-          >
-            <span>🟣 Thêm mới để thêm Group:</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'group_them_moi' ? 'bg-white/25 text-white' : 'bg-purple-100 text-purple-900'
-              }`}
-            >
-              {groupViaStatsInScope.themMoiGroup}
-            </span>
-          </button>
-
-          {/* 2. Admin đã thêm Group */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'group_admin_them' ? 'all' : 'group_admin_them')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'group_admin_them'
-                ? 'bg-purple-600 text-white border-purple-700 shadow-xs ring-2 ring-purple-300'
-                : 'bg-white text-purple-900 border-purple-300 hover:bg-purple-100'
-            }`}
-            title="Lọc các nick có ghi chú: Admin đã thêm Group"
-          >
-            <span>🟣 Admin đã thêm Group:</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'group_admin_them' ? 'bg-white/25 text-white' : 'bg-purple-100 text-purple-900'
-              }`}
-            >
-              {groupViaStatsInScope.adminThemGroup}
-            </span>
-          </button>
-
-          {/* 3. Có Group từ đầu */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'group_co_tu_dau' ? 'all' : 'group_co_tu_dau')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'group_co_tu_dau'
-                ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs ring-2 ring-indigo-300'
-                : 'bg-white text-indigo-900 border-indigo-300 hover:bg-indigo-100'
-            }`}
-            title="Lọc các nick có ghi chú: Có Group từ đầu"
-          >
-            <span>🔵 Có Group từ đầu:</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'group_co_tu_dau' ? 'bg-white/25 text-white' : 'bg-indigo-100 text-indigo-900'
-              }`}
-            >
-              {groupViaStatsInScope.coGroupTuDau}
-            </span>
-          </button>
-
-          {/* 4. Cần thêm Group */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'group_can_them' ? 'all' : 'group_can_them')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'group_can_them'
-                ? 'bg-amber-600 text-white border-amber-700 shadow-xs ring-2 ring-amber-300'
-                : 'bg-white text-amber-900 border-amber-300 hover:bg-amber-100'
-            }`}
-            title="Lọc các nick có ghi chú: Cần thêm Group"
-          >
-            <span>🟠 Cần thêm Group:</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'group_can_them' ? 'bg-white/25 text-white' : 'bg-amber-100 text-amber-900'
-              }`}
-            >
-              {groupViaStatsInScope.canThemGroup}
-            </span>
-          </button>
-
-          {/* 5. Toàn kho chưa có Group (0 Group) */}
-          <button
-            type="button"
-            onClick={() => setStatusFilter(statusFilter === 'no_group_at_all' ? 'all' : 'no_group_at_all')}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition-all cursor-pointer ${
-              statusFilter === 'no_group_at_all'
-                ? 'bg-slate-800 text-white border-slate-900 shadow-xs ring-2 ring-slate-300'
-                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
-            }`}
-            title="Lọc toàn bộ các nick trong kho chưa có Group nào (0 Group) hoặc đang ở trạng thái Chưa Jon Group"
-          >
-            <span>⚪ Chưa Jon / 0 Group (Toàn kho):</span>
-            <span
-              className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-                statusFilter === 'no_group_at_all' ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-800'
-              }`}
-            >
-              {groupViaStatsInScope.zeroGroupCount} Via
-            </span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          {(statusFilter.includes('group') || statusFilter === 'no_group_at_all') && (
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all')}
-              className="px-2 py-1 rounded-lg text-[11px] font-bold bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300 cursor-pointer"
-            >
-              ✕ Bỏ lọc Group
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              const targetNotJoined = currentBaseVias.filter(
-                (v) => getViaGroupJoinSummary(v).isChuaJonGroup
-              );
-              const uids = targetNotJoined.map((v) => v.uid?.trim()).filter(Boolean);
-              if (uids.length === 0) {
-                setCopyToastMessage('⚠️ Hiện không có UID nào ở trạng thái Via Chưa Jon Group!');
-                setTimeout(() => setCopyToastMessage(null), 2500);
-                return;
-              }
-              navigator.clipboard.writeText(uids.join('\n'));
-              setCopyToastMessage(`📋 Đã copy ${uids.length} UID Via Chưa Jon Group vào clipboard!`);
-              setTimeout(() => setCopyToastMessage(null), 3000);
-            }}
-            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-orange-600 hover:bg-orange-700 text-white shadow-2xs cursor-pointer transition-colors"
-            title="Sao chép toàn bộ UID của các Via Chưa Jon Group (mỗi UID 1 dòng)"
-          >
-            <Copy className="w-3 h-3" />
-            <span>Copy UID Chưa Jon ({groupViaStatsInScope.chuaJonGroupTotal})</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const targetGroupVias = statusFilter.includes('group')
-                ? scopedVias
-                : currentBaseVias.filter((v) => {
-                    const uidKey = normalizeUidKey(v.uid);
-                    const groups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
-                    return getViaGroupNoteFlags(v).hasGroupNote || groups.length > 0;
-                  });
-              const uids = targetGroupVias.map((v) => v.uid?.trim()).filter(Boolean);
-              if (uids.length === 0) {
-                setCopyToastMessage('⚠️ Hiện chưa có UID nào thuộc mục Via Group để sao chép!');
-                setTimeout(() => setCopyToastMessage(null), 2500);
-                return;
-              }
-              navigator.clipboard.writeText(uids.join('\n'));
-              setCopyToastMessage(`📋 Đã copy ${uids.length} UID thuộc mục Via Group vào clipboard!`);
-              setTimeout(() => setCopyToastMessage(null), 3000);
-            }}
-            className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-purple-600 hover:bg-purple-700 text-white shadow-2xs cursor-pointer transition-colors"
-            title="Sao chép toàn bộ UID thuộc mục Group (mỗi UID 1 dòng) để dán nhanh sang Bảng Group"
-          >
-            <Copy className="w-3 h-3" />
-            <span>Copy UID Via Group ({statusFilter.includes('group') ? scopedVias.length : groupViaStatsInScope.totalGroupVias})</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Unified Filter Toolbar */}
-      <div className="bg-slate-50 border-b border-slate-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5 text-xs">
-        <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[280px]">
-          {/* Search Input (Supports Bulk Multi-line UID Search - 1 UID per line) */}
-          <div className="relative min-w-[230px] sm:min-w-[280px] max-w-md flex-1">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5 pointer-events-none" />
-            <textarea
-              rows={
-                searchQuery.includes('\n')
-                  ? Math.min(searchQuery.split(/\r?\n/).filter((l) => l.trim()).length, 5)
-                  : 1
-              }
-              placeholder="Tìm 1 hoặc dán hàng loạt UID (mỗi UID 1 dòng), Pass, 2FA, NV..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-16 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 font-mono resize-y leading-snug"
-              title="Có thể dán nhiều UID cùng lúc (mỗi UID 1 dòng) để lọc hàng loạt"
-            />
-            {searchQuery && (
-              <div className="absolute right-1.5 top-1.5 flex items-center space-x-1">
-                {searchQuery.split(/\r?\n/).filter((l) => l.trim()).length > 1 && (
-                  <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-[10px] font-extrabold font-sans">
-                    {searchQuery.split(/\r?\n/).filter((l) => l.trim()).length} UID
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="p-0.5 text-slate-400 hover:text-slate-600 cursor-pointer bg-white/90 rounded"
-                  title="Xóa tìm kiếm"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Quick Status Filter Tabs (Sleek Pills) */}
-          <div className="flex items-center space-x-1 bg-white p-0.5 rounded-lg border border-slate-200 shadow-2xs overflow-x-auto scrollbar-none">
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all')}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'all'
-                  ? 'bg-slate-800 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              Tất cả ({currentBaseVias.length})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('active')}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'active'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-emerald-700 hover:bg-emerald-50'
-              }`}
-            >
-              🟢 Live ({activeCountInScope})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('error')}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'error'
-                  ? 'bg-red-600 text-white shadow-2xs'
-                  : errorCountInScope > 0
-                  ? 'text-red-700 font-black hover:bg-red-50'
-                  : 'text-slate-500 hover:bg-slate-100'
-              }`}
-            >
-              🔴 Lỗi ({errorCountInScope})
-            </button>
-            <button
-              type="button"
-              onClick={() =>
-                setAdminReportFilter((prev) => (prev === 'VHH' ? 'all' : 'VHH'))
-              }
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                adminReportFilter === 'VHH'
-                  ? 'bg-rose-600 text-white shadow-2xs ring-1 ring-rose-300'
-                  : adminReportCounts.VHH > 0
-                  ? 'bg-rose-50 text-rose-700 font-black hover:bg-rose-100 border border-rose-200'
-                  : 'text-slate-500 hover:bg-slate-100'
-              }`}
-              title="Lọc nhanh các nick bị VHH (Đồng bộ từ Bảng Group & Báo Admin)"
-            >
-              🔴 VHH ({adminReportCounts.VHH})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('fixed')}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'fixed'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : fixedCountInScope > 0
-                  ? 'text-emerald-800 font-black hover:bg-emerald-50'
-                  : 'text-slate-500 hover:bg-slate-100'
-              }`}
-            >
-              ❇️ Đã sửa ({fixedCountInScope})
-            </button>
-            {checkpointCountInScope > 0 && (
-              <button
-                type="button"
-                onClick={() => setStatusFilter('checkpoint')}
-                className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                  statusFilter === 'checkpoint'
-                    ? 'bg-amber-600 text-white shadow-2xs'
-                    : 'text-amber-700 hover:bg-amber-50'
-                }`}
-              >
-                🟠 CP ({checkpointCountInScope})
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setStatusFilter('pending_page')}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'pending_page'
-                  ? 'bg-rose-600 text-white shadow-2xs'
-                  : pendingPageCountInScope > 0
-                  ? 'text-rose-700 font-black hover:bg-rose-50'
-                  : 'text-slate-500 hover:bg-slate-100'
-              }`}
-              title="Lọc các nick Via & Page mới chuyển giao cho nhân viên (Màu đỏ để NV biết)"
-            >
-              🔴 Via & Page mới ({pendingPageCountInScope})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('has_page')}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'has_page'
-                  ? 'bg-emerald-600 text-white shadow-2xs'
-                  : 'text-emerald-700 hover:bg-emerald-50'
-              }`}
-              title="Lọc các nick đang cầm Page (Màu xanh)"
-            >
-              🟢 Có Page ({hasPageCountInScope} Via / {totalPagesInScope} Page)
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('all_group')}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'all_group'
-                  ? 'bg-purple-600 text-white shadow-2xs'
-                  : 'text-purple-800 hover:bg-purple-50'
-              }`}
-              title="Lọc các nick thuộc mục Group (Thêm mới để thêm Group / Đang cầm Group)"
-            >
-              🟣 Via Group ({groupViaStatsInScope.totalGroupVias} Via / {groupViaStatsInScope.totalGroupsInTable2} Group)
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter(statusFilter === 'group_chua_jon' ? 'all' : 'group_chua_jon')}
-              className={`px-2 py-1 rounded text-[11px] font-extrabold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'group_chua_jon'
-                  ? 'bg-orange-600 text-white shadow-2xs ring-1 ring-orange-300'
-                  : groupViaStatsInScope.chuaJonGroupTotal > 0
-                  ? 'bg-orange-50 text-orange-800 border border-orange-300 hover:bg-orange-100'
-                  : 'text-orange-700 hover:bg-orange-50'
-              }`}
-              title="Lọc các nick Via chưa Jon Group (Có Group nhưng Chưa Jon / Chưa Jont hoặc đã đánh dấu Chưa Jon Group)"
-            >
-              🟠 Chưa Jon Group ({groupViaStatsInScope.chuaJonGroupTotal})
-            </button>
-            <button
-              type="button"
-              onClick={() => setStatusFilter('no_page')}
-              className={`px-2 py-1 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap ${
-                statusFilter === 'no_page'
-                  ? 'bg-slate-600 text-white shadow-2xs'
-                  : 'text-slate-500 hover:bg-slate-100'
-              }`}
-            >
-              ⚪ Chưa page ({noPageCountInScope})
-            </button>
-          </div>
-
-          {/* Báo Admin Filter Dropdown (Gọn gàng thay vì cả một thanh dài) */}
-          <div className="flex items-center space-x-1">
+            {/* Dropdown 1: Lọc theo Báo Admin */}
             <select
               value={adminReportFilter}
               onChange={(e) => setAdminReportFilter(e.target.value as any)}
-              className={`px-2.5 py-1.5 border rounded-lg text-xs font-bold cursor-pointer focus:outline-hidden transition-colors ${
+              className={`px-2.5 py-1.5 border rounded-lg text-xs font-bold cursor-pointer focus:outline-hidden transition-colors shrink-0 ${
                 adminReportFilter !== 'all'
                   ? 'bg-amber-100 text-amber-900 border-amber-400 ring-1 ring-amber-300'
                   : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'
@@ -4175,113 +3728,371 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
               <option value="Email code">✉️ Báo: Email code ({adminReportCounts['Email code']})</option>
               <option value="None">⚪ Chưa báo Admin ({adminReportCounts.None})</option>
             </select>
+
+            {/* Dropdown 2: Lọc theo phân loại Ghi Chú Group (Gom gọn 5 loại ghi chú Group phụ vào 1 menu thả xuống) */}
+            <select
+              value={
+                ['group_them_moi', 'group_admin_them', 'group_co_tu_dau', 'group_can_them', 'no_group_at_all'].includes(
+                  statusFilter
+                )
+                  ? statusFilter
+                  : ''
+              }
+              onChange={(e) => setStatusFilter((e.target.value || 'all') as any)}
+              className={`px-2.5 py-1.5 border rounded-lg text-xs font-bold cursor-pointer focus:outline-hidden transition-colors shrink-0 ${
+                ['group_them_moi', 'group_admin_them', 'group_co_tu_dau', 'group_can_them', 'no_group_at_all'].includes(
+                  statusFilter
+                )
+                  ? 'bg-purple-100 text-purple-900 border-purple-400 ring-1 ring-purple-300'
+                  : 'bg-white text-slate-700 border-slate-300 hover:border-slate-400'
+              }`}
+              title="Lọc chi tiết theo loại ghi chú Group của Via"
+            >
+              <option value="">🟣 Phân loại ghi chú Group: Tất cả</option>
+              <option value="group_them_moi">🟣 Thêm mới để thêm Group ({groupViaStatsInScope.themMoiGroup})</option>
+              <option value="group_admin_them">🟣 Admin đã thêm Group ({groupViaStatsInScope.adminThemGroup})</option>
+              <option value="group_co_tu_dau">🔵 Có Group từ đầu ({groupViaStatsInScope.coGroupTuDau})</option>
+              <option value="group_can_them">🟠 Cần thêm Group ({groupViaStatsInScope.canThemGroup})</option>
+              <option value="no_group_at_all">⚪ Chưa Jon / 0 Group toàn kho ({groupViaStatsInScope.zeroGroupCount})</option>
+            </select>
+          </div>
+
+          {/* Cụm Phải: Chọn tất cả, Xóa đã chọn, Giao NV & Bộ đếm Hiển thị */}
+          <div className="flex items-center flex-wrap gap-1.5 text-slate-600 text-[11px] shrink-0">
+            <button
+              type="button"
+              id="btn-toggle-select-all"
+              onClick={handleSelectAll}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                isAllSelected
+                  ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-bold'
+                  : selectedCount > 0
+                  ? 'bg-slate-100 text-slate-700 border-slate-300 font-bold'
+                  : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
+              }`}
+            >
+              <CheckSquare className="w-3.5 h-3.5" />
+              <span>{isAllSelected ? 'Bỏ chọn' : selectedCount > 0 ? `Chọn hết (${scopedVias.length})` : 'Chọn tất cả'}</span>
+            </button>
+
+            <button
+              type="button"
+              id="btn-bulk-delete-toolbar"
+              onClick={handlePromptBulkDelete}
+              className={`inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                selectedCount > 0
+                  ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-xs'
+                  : 'bg-white hover:bg-rose-50 text-rose-600 border-rose-200'
+              }`}
+              title={
+                selectedCount > 0
+                  ? `Xóa toàn bộ ${selectedCount} via đã chọn trên hệ thống`
+                  : 'Tick chọn các nick via cần xóa trong bảng rồi bấm nút này'
+              }
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{selectedCount > 0 ? `Xóa đã chọn (${selectedCount})` : 'Xóa đã chọn'}</span>
+            </button>
+
+            {selectedCount > 0 && (
+              <>
+                {currentUser.role === 'admin' && (
+                  <>
+                    {!isAdminWaitingPool(selectedStaffFilter) && (
+                      <button
+                        type="button"
+                        onClick={() => handleBatchTransferViasToStaff(ADMIN_WAITING_POOL)}
+                        className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-amber-500 bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold cursor-pointer whitespace-nowrap"
+                        title="Chuyển toàn bộ các Via đã chọn kèm tất cả Fanpage đang cầm vào Kho Chờ Admin"
+                      >
+                        <Archive className="w-3.5 h-3.5" />
+                        <span>Cất {selectedCount} Via vào Kho Chờ</span>
+                      </button>
+                    )}
+
+                    <select
+                      onChange={(e) => {
+                        if (!e.target.value) return;
+                        handleBatchTransferViasToStaff(e.target.value);
+                        e.target.value = '';
+                      }}
+                      defaultValue=""
+                      className="px-2.5 py-1.5 rounded-lg border border-emerald-400 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold cursor-pointer"
+                    >
+                      <option value="" disabled>
+                        👤 Giao {selectedCount} Via + Page cho NV...
+                      </option>
+                      <option value={ADMIN_WAITING_POOL} className="bg-amber-50 text-amber-950 font-black">
+                        📦 Đưa vào: {ADMIN_WAITING_POOL} (Chưa NV dùng)
+                      </option>
+                      {distinctStaffNames.map((name) => (
+                        <option key={name} value={name} className="bg-white text-slate-900 font-bold">
+                          → Giao cho NV: {name}
+                        </option>
+                      ))}
+                    </select>
+                  </>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleCopySelectedUids}
+                  className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold cursor-pointer whitespace-nowrap"
+                >
+                  <Copy className="w-3 h-3 text-indigo-600" />
+                  <span>Copy {selectedCount} UID</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCopySelectedFullVia}
+                  className="hidden md:inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold cursor-pointer whitespace-nowrap"
+                >
+                  <Copy className="w-3 h-3 text-emerald-600" />
+                  <span>Copy Full Via ({selectedCount})</span>
+                </button>
+              </>
+            )}
+
+            <span className="pl-1 text-slate-500 whitespace-nowrap tabular-nums">
+              Hiển thị: <strong className="text-slate-900">{scopedVias.length}</strong>/{strictlyGuardedVias.length} Via (Cầm <strong className="text-emerald-700">{totalPagesInScope} Page</strong>)
+            </span>
           </div>
         </div>
 
-        <div className="flex items-center flex-wrap gap-2 text-slate-500 text-[11px] shrink-0">
-          {/* Select all toggle button */}
-          <button
-            type="button"
-            id="btn-toggle-select-all"
-            onClick={handleSelectAll}
-            className={`inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border font-semibold transition-colors cursor-pointer ${
-              isAllSelected
-                ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-bold'
-                : selectedCount > 0
-                ? 'bg-slate-100 text-slate-700 border-slate-300 font-bold'
-                : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-            }`}
-          >
-            <CheckSquare className="w-3.5 h-3.5" />
-            <span>{isAllSelected ? 'Bỏ chọn' : selectedCount > 0 ? `Chọn hết (${scopedVias.length})` : 'Chọn tất cả'}</span>
-          </button>
-
-          {/* Nút Xóa Toàn Bộ Via Đã Chọn Trên Toolbar */}
-          <button
-            type="button"
-            id="btn-bulk-delete-toolbar"
-            onClick={handlePromptBulkDelete}
-            className={`inline-flex items-center space-x-1 px-3 py-1.5 rounded-lg border text-xs font-bold transition-all cursor-pointer shadow-2xs ${
-              selectedCount > 0
-                ? 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600 shadow-sm animate-pulse'
-                : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 hover:border-rose-300'
-            }`}
-            title={
-              selectedCount > 0
-                ? `Xóa toàn bộ ${selectedCount} via đã chọn trên hệ thống`
-                : 'Tick chọn các nick via cần xóa trong bảng rồi bấm nút này'
-            }
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>{selectedCount > 0 ? `Xóa toàn bộ ${selectedCount} via đã chọn` : 'Xóa toàn bộ via đã chọn'}</span>
-          </button>
-
-          {selectedCount > 0 && (
-            <>
-              {currentUser.role === 'admin' && (
-                <>
-                  {!isAdminWaitingPool(selectedStaffFilter) && (
-                    <button
-                      type="button"
-                      onClick={() => handleBatchTransferViasToStaff(ADMIN_WAITING_POOL)}
-                      className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-amber-500 bg-amber-500 hover:bg-amber-600 text-white text-xs font-extrabold cursor-pointer shadow-2xs"
-                      title="Chuyển toàn bộ các Via đã chọn kèm tất cả Fanpage đang cầm vào Kho Chờ Admin (Chưa nhân viên nào dùng)"
-                    >
-                      <Archive className="w-3.5 h-3.5" />
-                      <span>📦 Cất {selectedCount} Via + Page Vào Kho Chờ</span>
-                    </button>
-                  )}
-
-                  <select
-                    onChange={(e) => {
-                      if (!e.target.value) return;
-                      handleBatchTransferViasToStaff(e.target.value);
-                      e.target.value = '';
-                    }}
-                    defaultValue=""
-                    className="px-2.5 py-1.5 rounded-lg border border-emerald-400 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold cursor-pointer shadow-2xs"
-                    title="Chuyển toàn bộ các Via đã chọn kèm tất cả Fanpage của các Via đó sang nhân viên khác hoặc vào Kho Chờ Admin"
-                  >
-                    <option value="" disabled>
-                      👤 Giao {selectedCount} Via + Page cho NV...
-                    </option>
-                    <option value={ADMIN_WAITING_POOL} className="bg-amber-50 text-amber-950 font-black">
-                      📦 Đưa vào: {ADMIN_WAITING_POOL} (Chưa NV dùng)
-                    </option>
-                    {distinctStaffNames.map((name) => (
-                      <option key={name} value={name} className="bg-white text-slate-900 font-bold">
-                        → Giao cho NV: {name}
-                      </option>
-                    ))}
-                  </select>
-                </>
-              )}
-
+        {/* TẦNG 2: Thanh Lọc Nhanh Trạng Thái Via, Page & Group (Tất cả nằm gọn gàng, phân tách rõ cụm Page và cụm Group) */}
+        <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-2 bg-white">
+          {/* Cụm Trái: Các tab trạng thái Via & Page */}
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="text-[11px] font-bold text-slate-500 mr-1">Trạng thái:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setStatusFilter('all');
+                setAdminReportFilter('all');
+              }}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'all' && adminReportFilter === 'all'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              Tất cả ({currentBaseVias.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'active' ? 'all' : 'active')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'active'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              }`}
+            >
+              Live ({activeCountInScope})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'error' ? 'all' : 'error')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'error'
+                  ? 'bg-red-600 text-white shadow-2xs'
+                  : errorCountInScope > 0
+                  ? 'bg-red-50 text-red-700 font-extrabold hover:bg-red-100'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Lỗi ({errorCountInScope})
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminReportFilter((prev) => (prev === 'VHH' ? 'all' : 'VHH'))}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                adminReportFilter === 'VHH'
+                  ? 'bg-rose-600 text-white shadow-2xs'
+                  : adminReportCounts.VHH > 0
+                  ? 'bg-rose-50 text-rose-700 font-extrabold hover:bg-rose-100'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              VHH ({adminReportCounts.VHH})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'fixed' ? 'all' : 'fixed')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'fixed'
+                  ? 'bg-teal-600 text-white shadow-2xs'
+                  : fixedCountInScope > 0
+                  ? 'bg-teal-50 text-teal-800 font-extrabold hover:bg-teal-100'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Đã sửa ({fixedCountInScope})
+            </button>
+            {checkpointCountInScope > 0 && (
               <button
                 type="button"
-                onClick={handleCopySelectedUids}
-                className="inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 text-xs font-bold cursor-pointer"
-                title="Sao chép UID của các nick đã chọn"
+                onClick={() => setStatusFilter(statusFilter === 'checkpoint' ? 'all' : 'checkpoint')}
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                  statusFilter === 'checkpoint'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                }`}
               >
-                <Copy className="w-3 h-3 text-indigo-600" />
-                <span>Copy {selectedCount} UID</span>
+                CP ({checkpointCountInScope})
               </button>
+            )}
 
-              <button
-                type="button"
-                onClick={handleCopySelectedFullVia}
-                className="hidden md:inline-flex items-center space-x-1 px-2.5 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 text-xs font-bold cursor-pointer"
-                title="Sao chép Full Via (UID|PASS|2FA) của các nick đã chọn"
-              >
-                <Copy className="w-3 h-3 text-emerald-600" />
-                <span>Copy Full Via ({selectedCount})</span>
-              </button>
-            </>
-          )}
+            <div className="h-4 w-px bg-slate-300 mx-1" />
 
-          <span>
-            Hiển thị: <strong className="text-slate-800">{scopedVias.length}</strong> / {strictlyGuardedVias.length} Via (Đang cầm <strong className="text-emerald-700">{totalPagesInScope} Page</strong>)
-          </span>
+            {/* Cụm lọc theo Page */}
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'pending_page' ? 'all' : 'pending_page')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'pending_page'
+                  ? 'bg-rose-600 text-white shadow-2xs'
+                  : pendingPageCountInScope > 0
+                  ? 'bg-rose-50 text-rose-700 font-extrabold border border-rose-200 hover:bg-rose-100'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Via & Page mới ({pendingPageCountInScope})
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'has_page' ? 'all' : 'has_page')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'has_page'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+              }`}
+            >
+              Có Page ({hasPageCountInScope} Via / {totalPagesInScope}P)
+            </button>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'no_page' ? 'all' : 'no_page')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'no_page'
+                  ? 'bg-slate-700 text-white shadow-2xs'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              Chưa Page ({noPageCountInScope})
+            </button>
+          </div>
+
+          {/* Cụm Phải: Thống kê & Lọc nhanh Mục Group + Copy UID Group (Gọn trên 1 hàng) */}
+          <div className="flex flex-wrap items-center gap-1 bg-purple-50/70 px-2.5 py-1 rounded-lg border border-purple-200/80">
+            <span className="text-[11px] font-extrabold text-purple-900 mr-0.5">Mục Group:</span>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'all_group' ? 'all' : 'all_group')}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'all_group'
+                  ? 'bg-purple-700 text-white shadow-2xs'
+                  : 'bg-white text-purple-900 border border-purple-200 hover:bg-purple-100'
+              }`}
+              title="Lọc toàn bộ các nick Via thuộc mục Group hoặc đang cầm Group"
+            >
+              Tổng Group ({groupViaStatsInScope.totalGroupVias})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'group_chua_jon' ? 'all' : 'group_chua_jon')}
+              className={`px-2 py-0.5 rounded text-[11px] font-extrabold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'group_chua_jon'
+                  ? 'bg-orange-600 text-white shadow-2xs'
+                  : groupViaStatsInScope.chuaJonGroupTotal > 0
+                  ? 'bg-orange-100 text-orange-900 border border-orange-300 hover:bg-orange-200'
+                  : 'bg-white text-orange-800 border border-orange-200 hover:bg-orange-50'
+              }`}
+              title="Lọc các nick Via Chưa Jon Group"
+            >
+              Chưa Jon ({groupViaStatsInScope.chuaJonGroupTotal})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'group_cho_duyet' ? 'all' : 'group_cho_duyet')}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'group_cho_duyet'
+                  ? 'bg-amber-500 text-white shadow-2xs'
+                  : 'bg-white text-amber-900 border border-amber-200 hover:bg-amber-50'
+              }`}
+              title="Lọc các nick Via đang ở trạng thái Jon chờ duyệt"
+            >
+              Chờ duyệt ({groupViaStatsInScope.choDuyetGroup})
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setStatusFilter(statusFilter === 'group_da_jon' ? 'all' : 'group_da_jon')}
+              className={`px-2 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap tabular-nums ${
+                statusFilter === 'group_da_jon'
+                  ? 'bg-emerald-600 text-white shadow-2xs'
+                  : 'bg-white text-emerald-900 border border-emerald-200 hover:bg-emerald-50'
+              }`}
+              title="Lọc các nick Via đã Jon Group thành công"
+            >
+              Đã Jon ({groupViaStatsInScope.daJonGroup} Via / {groupViaStatsInScope.totalGroupsInTable2}G)
+            </button>
+
+            <div className="h-3.5 w-px bg-purple-200 mx-0.5" />
+
+            <button
+              type="button"
+              onClick={() => {
+                const targetNotJoined = currentBaseVias.filter(
+                  (v) => getViaGroupJoinSummary(v).isChuaJonGroup
+                );
+                const uids = targetNotJoined.map((v) => v.uid?.trim()).filter(Boolean);
+                if (uids.length === 0) {
+                  setCopyToastMessage('⚠️ Hiện không có UID nào ở trạng thái Via Chưa Jon Group!');
+                  setTimeout(() => setCopyToastMessage(null), 2500);
+                  return;
+                }
+                navigator.clipboard.writeText(uids.join('\n'));
+                setCopyToastMessage(`📋 Đã copy ${uids.length} UID Via Chưa Jon Group vào clipboard!`);
+                setTimeout(() => setCopyToastMessage(null), 3000);
+              }}
+              className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-extrabold bg-orange-600 hover:bg-orange-700 text-white cursor-pointer transition-colors whitespace-nowrap tabular-nums"
+              title="Sao chép toàn bộ UID của các Via Chưa Jon Group (mỗi UID 1 dòng)"
+            >
+              <Copy className="w-2.5 h-2.5" />
+              <span>Copy Chưa Jon ({groupViaStatsInScope.chuaJonGroupTotal})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                const targetGroupVias = statusFilter.includes('group')
+                  ? scopedVias
+                  : currentBaseVias.filter((v) => {
+                      const uidKey = normalizeUidKey(v.uid);
+                      const groups = uidKey ? groupsPerViaUid.get(uidKey) || [] : [];
+                      return getViaGroupNoteFlags(v).hasGroupNote || groups.length > 0;
+                    });
+                const uids = targetGroupVias.map((v) => v.uid?.trim()).filter(Boolean);
+                if (uids.length === 0) {
+                  setCopyToastMessage('⚠️ Hiện chưa có UID nào thuộc mục Via Group để sao chép!');
+                  setTimeout(() => setCopyToastMessage(null), 2500);
+                  return;
+                }
+                navigator.clipboard.writeText(uids.join('\n'));
+                setCopyToastMessage(`📋 Đã copy ${uids.length} UID thuộc mục Via Group vào clipboard!`);
+                setTimeout(() => setCopyToastMessage(null), 3000);
+              }}
+              className="inline-flex items-center space-x-1 px-2 py-0.5 rounded text-[10px] font-extrabold bg-purple-600 hover:bg-purple-700 text-white cursor-pointer transition-colors whitespace-nowrap tabular-nums"
+              title="Sao chép toàn bộ UID thuộc mục Group (mỗi UID 1 dòng)"
+            >
+              <Copy className="w-2.5 h-2.5" />
+              <span>Copy UID Group ({statusFilter.includes('group') ? scopedVias.length : groupViaStatsInScope.totalGroupVias})</span>
+            </button>
+          </div>
         </div>
       </div>
 
