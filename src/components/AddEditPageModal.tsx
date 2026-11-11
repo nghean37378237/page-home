@@ -136,27 +136,38 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
     >();
 
     relevantFullVias.forEach((v) => {
-      const uid = (v.uid || '').split('|')[0].trim();
-      if (!uid) return;
+      const uid = (v.uid || v.rawFullVia || '').split('|')[0].trim();
+      const key = uid.toLowerCase();
+      if (!key) return;
       const parsed = parseFullVia(v.rawFullVia);
-      map.set(uid, {
-        viaUid: uid,
-        staffName: v.staffName,
-        pages: [],
-        pass: v.pass || parsed?.pass || '',
-        twoFa: v.twoFa || parsed?.twoFa || '',
-        email: v.email || parsed?.email || '',
-        emailPass: v.emailPass || parsed?.emailPass || '',
-        rawFullVia: v.rawFullVia || '',
-      });
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, {
+          viaUid: uid,
+          staffName: v.staffName,
+          pages: [],
+          pass: v.pass || parsed?.pass || '',
+          twoFa: v.twoFa || parsed?.twoFa || '',
+          email: v.email || parsed?.email || '',
+          emailPass: v.emailPass || parsed?.emailPass || '',
+          rawFullVia: v.rawFullVia || '',
+        });
+      } else {
+        if (!existing.pass && (v.pass || parsed?.pass)) existing.pass = v.pass || parsed?.pass || '';
+        if (!existing.twoFa && (v.twoFa || parsed?.twoFa)) existing.twoFa = v.twoFa || parsed?.twoFa || '';
+        if (!existing.email && (v.email || parsed?.email)) existing.email = v.email || parsed?.email || '';
+        if (!existing.emailPass && (v.emailPass || parsed?.emailPass)) existing.emailPass = v.emailPass || parsed?.emailPass || '';
+        if (!existing.rawFullVia && v.rawFullVia) existing.rawFullVia = v.rawFullVia;
+      }
     });
 
     relevantRecords.forEach((r) => {
-      const uid = r.viaUid.trim();
-      if (!uid) return;
+      const uid = (r.viaUid || '').split('|')[0].trim();
+      const key = uid.toLowerCase();
+      if (!key) return;
       const parsed = parseFullVia(r.fullVia);
-      if (!map.has(uid)) {
-        map.set(uid, {
+      if (!map.has(key)) {
+        map.set(key, {
           viaUid: uid,
           staffName: r.staffName,
           pages: [],
@@ -167,14 +178,14 @@ export const AddEditPageModal: React.FC<AddEditPageModalProps> = ({
           rawFullVia: r.fullVia || '',
         });
       } else {
-        const entry = map.get(uid)!;
+        const entry = map.get(key)!;
         if (!entry.pass && parsed?.pass) entry.pass = parsed.pass;
         if (!entry.twoFa && parsed?.twoFa) entry.twoFa = parsed.twoFa;
         if (!entry.email && parsed?.email) entry.email = parsed.email;
         if (!entry.emailPass && parsed?.emailPass) entry.emailPass = parsed.emailPass;
         if (!entry.rawFullVia && r.fullVia) entry.rawFullVia = r.fullVia;
       }
-      map.get(uid)!.pages.push(r.pageName);
+      map.get(key)!.pages.push(r.pageName);
     });
 
     return Array.from(map.values()).sort((a, b) => b.pages.length - a.pages.length);

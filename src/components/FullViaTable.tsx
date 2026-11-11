@@ -97,15 +97,57 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   onFetchPagesForVia,
   onAcknowledgeNewTransfer,
 }) => {
-  // LAYER 1: STRICT SCOPING GATE
+  // LAYER 1: STRICT SCOPING GATE + UID DEDUPLICATION
   // Ensures that regardless of any code bugs upstream, Staff can NEVER access other users' data
+  // and every UID in Full Via is 100% unique (1 UID = 1 dòng duy nhất)
   const strictlyGuardedVias = useMemo(() => {
     if (!viaList || !Array.isArray(viaList)) return [];
     if (!currentUser.isAuthenticated || currentUser.id === 'guest') return [];
-    if (currentUser.role === 'admin') return viaList;
+
+    // Gộp & khử trùng lặp tuyệt đối theo UID chuẩn hóa trước khi hiển thị
+    const uniqueByUidMap = new Map<string, FullViaItem>();
+    viaList.forEach((v) => {
+      const uidKey = normalizeUidKey(v.uid) || normalizeUidKey(v.rawFullVia) || v.id;
+      if (!uidKey) return;
+      const cleanUid = (v.uid || v.rawFullVia || '').split('|')[0].trim();
+      const existing = uniqueByUidMap.get(uidKey);
+      if (!existing) {
+        uniqueByUidMap.set(uidKey, cleanUid ? { ...v, uid: cleanUid } : v);
+      } else {
+        const existingIsSync = (existing.id || '').startsWith('via-sync-');
+        const incomingIsSync = (v.id || '').startsWith('via-sync-');
+        const primary = existingIsSync && !incomingIsSync ? v : existing;
+        const secondary = primary === v ? existing : v;
+        uniqueByUidMap.set(uidKey, {
+          ...primary,
+          uid: cleanUid || primary.uid,
+          pass: primary.pass?.trim() || secondary.pass?.trim() || '',
+          twoFa: primary.twoFa?.trim() || secondary.twoFa?.trim() || '',
+          email: primary.email?.trim() || secondary.email?.trim() || '',
+          emailPass: primary.emailPass?.trim() || secondary.emailPass?.trim() || '',
+          extraInfo: primary.extraInfo?.trim() || secondary.extraInfo?.trim() || '',
+          rawFullVia:
+            primary.rawFullVia && primary.rawFullVia.split('|').filter(Boolean).length >= 2
+              ? primary.rawFullVia
+              : secondary.rawFullVia || primary.rawFullVia,
+          staffName:
+            primary.staffName?.trim() &&
+            primary.staffName.trim() !== 'Chưa gán' &&
+            !isAdminWaitingPool(primary.staffName)
+              ? primary.staffName
+              : secondary.staffName?.trim() || primary.staffName,
+          note: primary.note?.trim() || secondary.note?.trim() || '',
+          sharedNote: primary.sharedNote?.trim() || secondary.sharedNote?.trim() || '',
+        });
+      }
+    });
+
+    const deduplicatedList = Array.from(uniqueByUidMap.values());
+
+    if (currentUser.role === 'admin') return deduplicatedList;
     if (currentUser.role === 'staff') {
       const myName = currentUser.name.trim().toLowerCase();
-      return viaList.filter((v) => v.staffName && v.staffName.trim().toLowerCase() === myName);
+      return deduplicatedList.filter((v) => v.staffName && v.staffName.trim().toLowerCase() === myName);
     }
     return [];
   }, [viaList, currentUser]);
@@ -1093,7 +1135,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
   const getSelectedViasForDelete = () => {
     const inScope = scopedVias.filter((v) => selectedViaIds.has(v.id));
     if (inScope.length > 0) return inScope;
-    return viaList.filter((v) => selectedViaIds.has(v.id));
+    return strictlyGuardedVias.filter((v) => selectedViaIds.has(v.id));
   };
 
   const handlePromptBulkDelete = () => {
@@ -1586,10 +1628,14 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
 
   // Check if UID in single add modal is duplicate
   const duplicateViaInModal = useMemo(() => {
-    const trimmed = modalForm.uid.trim();
-    if (!trimmed || trimmed.length < 4) return null;
-    if (editingVia && editingVia.uid.trim() === trimmed) return null;
-    return strictlyGuardedVias.find((v) => v.uid.trim() === trimmed && v.id !== editingVia?.id) || null;
+    const normTarget = normalizeUidKey(modalForm.uid);
+    if (!normTarget || normTarget.length < 4) return null;
+    if (editingVia && normalizeUidKey(editingVia.uid) === normTarget) return null;
+    return (
+      strictlyGuardedVias.find(
+        (v) => normalizeUidKey(v.uid) === normTarget && v.id !== editingVia?.id
+      ) || null
+    );
   }, [modalForm.uid, editingVia, strictlyGuardedVias]);
 
   // Save modal form
@@ -3339,7 +3385,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
                   selectedStaffFilter === 'all' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
                 }`}>
-                  {viaList.length} Via
+                  {strictlyGuardedVias.length} Via
                 </span>
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-extrabold ${
                   selectedStaffFilter === 'all' ? 'bg-emerald-500 text-white' : 'bg-emerald-50 text-emerald-800 border border-emerald-200'
@@ -4234,7 +4280,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
           )}
 
           <span>
-            Hiển thị: <strong className="text-slate-800">{scopedVias.length}</strong> / {viaList.length} Via (Đang cầm <strong className="text-emerald-700">{totalPagesInScope} Page</strong>)
+            Hiển thị: <strong className="text-slate-800">{scopedVias.length}</strong> / {strictlyGuardedVias.length} Via (Đang cầm <strong className="text-emerald-700">{totalPagesInScope} Page</strong>)
           </span>
         </div>
       </div>

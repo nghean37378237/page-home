@@ -139,6 +139,165 @@ function normalizeViaUidKey(raw?: string): string {
   return raw.split('|')[0].trim().toLowerCase();
 }
 
+// Helper gộp & khử trùng lặp tuyệt đối theo UID: Đảm bảo 1 UID chỉ tồn tại duy nhất 1 bản ghi trong Full Via
+function deduplicateAndMergeViasByUid(rawVias: FullViaItem[]): {
+  uniqueVias: FullViaItem[];
+  mergedPrimariesToSave: FullViaItem[];
+  duplicateIdsToDelete: string[];
+} {
+  const groupsByUid = new Map<string, FullViaItem[]>();
+  const noUidItems: FullViaItem[] = [];
+
+  rawVias.forEach((v) => {
+    const uidKey = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+    if (!uidKey) {
+      noUidItems.push(v);
+      return;
+    }
+    const bucket = groupsByUid.get(uidKey);
+    if (bucket) {
+      bucket.push(v);
+    } else {
+      groupsByUid.set(uidKey, [v]);
+    }
+  });
+
+  const uniqueVias: FullViaItem[] = [];
+  const mergedPrimariesToSave: FullViaItem[] = [];
+  const duplicateIdsToDelete: string[] = [];
+
+  groupsByUid.forEach((items) => {
+    if (items.length === 1) {
+      const single = items[0];
+      const cleanUid = (single.uid || single.rawFullVia || '').split('|')[0].trim();
+      if (cleanUid && single.uid !== cleanUid) {
+        const cleanedSingle = { ...single, uid: cleanUid };
+        uniqueVias.push(cleanedSingle);
+        mergedPrimariesToSave.push(cleanedSingle);
+      } else {
+        uniqueVias.push(single);
+      }
+      return;
+    }
+
+    // Sắp xếp ưu tiên bản ghi gốc (không phải via-sync-) và bản ghi có đầy đủ thông tin Pass / 2FA / Mail / Nhân viên
+    const sorted = [...items].sort((a, b) => {
+      const aIsSync = (a.id || '').startsWith('via-sync-') ? 0 : 1;
+      const bIsSync = (b.id || '').startsWith('via-sync-') ? 0 : 1;
+      if (aIsSync !== bIsSync) return bIsSync - aIsSync;
+
+      const score = (v: FullViaItem) =>
+        (v.pass?.trim() ? 4 : 0) +
+        (v.twoFa?.trim() ? 4 : 0) +
+        (v.email?.trim() ? 2 : 0) +
+        (v.emailPass?.trim() ? 1 : 0) +
+        (v.rawFullVia && v.rawFullVia.includes('|') ? 2 : 0) +
+        (v.staffName?.trim() && v.staffName.trim() !== 'Chưa gán' && !isAdminWaitingPool(v.staffName) ? 2 : 0) +
+        (v.note?.trim() ? 1 : 0);
+      return score(b) - score(a);
+    });
+
+    const primary = sorted[0];
+    const cleanUid = (primary.uid || primary.rawFullVia || '').split('|')[0].trim();
+
+    let bestPass = '';
+    let bestTwoFa = '';
+    let bestEmail = '';
+    let bestEmailPass = '';
+    let bestExtra = '';
+    let bestStaff = primary.staffName || '';
+    let bestNote = primary.note || '';
+    let bestSharedNote = primary.sharedNote || '';
+    let bestReportStatus = primary.adminReportStatus;
+    let bestGroupJoinStatus = primary.groupJoinStatus;
+    let bestPageUpdateStatus = primary.pageUpdateStatus;
+    let hasAdminAssignedPage = Boolean(primary.hasAdminAssignedPage);
+
+    sorted.forEach((item) => {
+      const parsed = parseFullVia(item.rawFullVia);
+      if (!bestPass) bestPass = item.pass?.trim() || parsed?.pass?.trim() || '';
+      if (!bestTwoFa) bestTwoFa = item.twoFa?.trim() || parsed?.twoFa?.trim() || '';
+      if (!bestEmail) bestEmail = item.email?.trim() || parsed?.email?.trim() || '';
+      if (!bestEmailPass) bestEmailPass = item.emailPass?.trim() || parsed?.emailPass?.trim() || '';
+      if (!bestExtra) {
+        bestExtra =
+          item.extraInfo?.trim() ||
+          (parsed?.extra && parsed.extra.length > 0 ? parsed.extra.join('|') : '') ||
+          '';
+      }
+      if (
+        (!bestStaff || bestStaff === 'Chưa gán' || isAdminWaitingPool(bestStaff)) &&
+        item.staffName?.trim() &&
+        item.staffName.trim() !== 'Chưa gán' &&
+        !isAdminWaitingPool(item.staffName)
+      ) {
+        bestStaff = item.staffName.trim();
+      }
+      if (!bestNote && item.note?.trim()) bestNote = item.note.trim();
+      if (!bestSharedNote && item.sharedNote?.trim()) bestSharedNote = item.sharedNote.trim();
+      if ((!bestReportStatus || bestReportStatus === 'None') && item.adminReportStatus && item.adminReportStatus !== 'None') {
+        bestReportStatus = item.adminReportStatus;
+      }
+      if (item.groupJoinStatus === 'da_jon') {
+        bestGroupJoinStatus = 'da_jon';
+      } else if (!bestGroupJoinStatus && item.groupJoinStatus) {
+        bestGroupJoinStatus = item.groupJoinStatus;
+      }
+      if (item.pageUpdateStatus === 'updated') {
+        bestPageUpdateStatus = 'updated';
+      } else if (!bestPageUpdateStatus || bestPageUpdateStatus === 'none') {
+        if (item.pageUpdateStatus && item.pageUpdateStatus !== 'none') {
+          bestPageUpdateStatus = item.pageUpdateStatus;
+        }
+      }
+      if (item.hasAdminAssignedPage) {
+        hasAdminAssignedPage = true;
+      }
+    });
+
+    const mergedRaw = buildFullViaString({
+      uid: cleanUid,
+      pass: bestPass,
+      twoFa: bestTwoFa,
+      email: bestEmail,
+      emailPass: bestEmailPass,
+      extra: bestExtra,
+    });
+
+    const mergedPrimary: FullViaItem = {
+      ...primary,
+      uid: cleanUid,
+      pass: bestPass,
+      twoFa: bestTwoFa,
+      ...(bestEmail ? { email: bestEmail } : {}),
+      ...(bestEmailPass ? { emailPass: bestEmailPass } : {}),
+      ...(bestExtra ? { extraInfo: bestExtra } : {}),
+      rawFullVia: mergedRaw,
+      staffName: bestStaff,
+      note: bestNote,
+      sharedNote: bestSharedNote || bestNote,
+      ...(bestReportStatus ? { adminReportStatus: bestReportStatus } : {}),
+      ...(bestGroupJoinStatus ? { groupJoinStatus: bestGroupJoinStatus } : {}),
+      ...(bestPageUpdateStatus ? { pageUpdateStatus: bestPageUpdateStatus } : {}),
+      hasAdminAssignedPage,
+    };
+
+    uniqueVias.push(mergedPrimary);
+    mergedPrimariesToSave.push(mergedPrimary);
+    sorted.slice(1).forEach((dup) => {
+      if (dup.id && dup.id !== mergedPrimary.id) {
+        duplicateIdsToDelete.push(dup.id);
+      }
+    });
+  });
+
+  return {
+    uniqueVias: [...uniqueVias, ...noUidItems],
+    mergedPrimariesToSave,
+    duplicateIdsToDelete,
+  };
+}
+
 const DELETED_VIA_UIDS_STORAGE_KEY = 'mmo_deleted_via_uids_v1';
 
 function loadLocalDeletedViaUids(): string[] {
@@ -182,6 +341,7 @@ export default function App() {
   const [customStaffList, setCustomStaffList] = useState<string[]>([]);
   const [deletedViaUids, setDeletedViaUids] = useState<string[]>(() => loadLocalDeletedViaUids());
   const deletedViaUidsRef = useRef<Set<string>>(new Set(loadLocalDeletedViaUids()));
+  const viasLoadedRef = useRef<boolean>(false);
   const [adminSettings, setAdminSettings] = useState<AdminSecuritySettings>(DEFAULT_ADMIN_SETTINGS);
   
   // Current active session in browser tab (sessionStorage, not local persistent storage)
@@ -426,6 +586,7 @@ export default function App() {
   useEffect(() => {
     if (!currentUser.isAuthenticated || currentUser.id === 'guest') {
       // Zero-out ALL sensitive data arrays from RAM if not authenticated
+      viasLoadedRef.current = false;
       setRecords([]);
       setViaList([]);
       setSharedAccounts([]);
@@ -517,7 +678,9 @@ export default function App() {
 
         // 2. Listen to live full vias (passwords, 2FA, raw strings)
         unsubVias = subscribeToVias((cloudVias) => {
+          viasLoadedRef.current = true;
           const deletedSet = deletedViaUidsRef.current;
+          let activeVias = cloudVias;
           if (deletedSet.size > 0) {
             const staleToPurge = cloudVias.filter((v) => {
               const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
@@ -526,14 +689,26 @@ export default function App() {
             if (staleToPurge.length > 0 && currentUser.role === 'admin') {
               batchDeleteCloudVias(staleToPurge.map((v) => v.id)).catch(() => {});
             }
-            const activeVias = cloudVias.filter((v) => {
+            activeVias = cloudVias.filter((v) => {
               const uLower = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
               return !uLower || !deletedSet.has(uLower);
             });
-            setViaList(sanitizeViasForRoleMemory(activeVias));
-            return;
           }
-          setViaList(sanitizeViasForRoleMemory(cloudVias));
+
+          // Tự động gộp & khử trùng lặp UID: Đảm bảo mỗi UID là duy nhất (100% không trùng lặp)
+          const { uniqueVias, mergedPrimariesToSave, duplicateIdsToDelete } =
+            deduplicateAndMergeViasByUid(activeVias);
+
+          setViaList(sanitizeViasForRoleMemory(uniqueVias));
+
+          if (currentUser.role === 'admin') {
+            if (mergedPrimariesToSave.length > 0) {
+              batchSaveCloudVias(mergedPrimariesToSave).catch(() => {});
+            }
+            if (duplicateIdsToDelete.length > 0) {
+              batchDeleteCloudVias(duplicateIdsToDelete).catch(() => {});
+            }
+          }
         });
 
         // 3. Listen to live shared website accounts
@@ -3116,9 +3291,11 @@ export default function App() {
     }
   };
 
-  // Full Via CRUD in Cloud Firestore
+  // Full Via CRUD in Cloud Firestore (Đảm bảo UID luôn duy nhất, tự động gộp nếu trùng UID)
   const handleAddVia = async (newVia: FullViaItem) => {
     const addedUidLower = normalizeViaUidKey(newVia.uid) || normalizeViaUidKey(newVia.rawFullVia);
+    const cleanUid = (newVia.uid || newVia.rawFullVia || '').split('|')[0].trim();
+
     if (addedUidLower && deletedViaUidsRef.current.has(addedUidLower)) {
       deletedViaUidsRef.current.delete(addedUidLower);
       const nextDeleted = Array.from(deletedViaUidsRef.current);
@@ -3127,12 +3304,46 @@ export default function App() {
       saveCloudSettings({ deletedViaUids: nextDeleted }).catch(() => {});
     }
 
-    setViaList((prev) => [...prev.filter((v) => v.id !== newVia.id), newVia]);
-    await setCloudVia(newVia);
+    const existingSameUid = viaList.filter(
+      (v) => (normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia)) === addedUidLower
+    );
 
-    const fullStr = newVia.rawFullVia || `${newVia.uid}|${newVia.pass}|${newVia.twoFa}`;
+    let targetViaToSave: FullViaItem = { ...newVia, uid: cleanUid || newVia.uid.trim() };
+    const duplicateIdsToRemove: string[] = [];
+
+    if (existingSameUid.length > 0) {
+      const { uniqueVias, duplicateIdsToDelete } = deduplicateAndMergeViasByUid([
+        ...existingSameUid,
+        targetViaToSave,
+      ]);
+      if (uniqueVias[0]) {
+        targetViaToSave = {
+          ...uniqueVias[0],
+          id: existingSameUid[0].id,
+        };
+      }
+      duplicateIdsToDelete.forEach((id) => {
+        if (id !== targetViaToSave.id) duplicateIdsToRemove.push(id);
+      });
+    }
+
+    setViaList((prev) => [
+      ...prev.filter(
+        (v) =>
+          v.id !== targetViaToSave.id &&
+          (normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia)) !== addedUidLower
+      ),
+      targetViaToSave,
+    ]);
+    await setCloudVia(targetViaToSave);
+    if (duplicateIdsToRemove.length > 0) {
+      await batchDeleteCloudVias(duplicateIdsToRemove);
+    }
+
+    const fullStr =
+      targetViaToSave.rawFullVia || `${targetViaToSave.uid}|${targetViaToSave.pass}|${targetViaToSave.twoFa}`;
     const matching = records
-      .filter((r) => r.viaUid.trim() === newVia.uid.trim())
+      .filter((r) => normalizeViaUidKey(r.viaUid) === addedUidLower)
       .map((r) => ({ ...r, fullVia: fullStr, viaTransferStatus: 'completed' as const }));
 
     if (matching.length > 0) {
@@ -3250,14 +3461,31 @@ export default function App() {
         viaSharedNote: finalVia.sharedNote || finalVia.note || r.viaSharedNote,
       }));
 
+    // Khử trùng lặp nếu có bản ghi khác trùng cùng UID với finalVia
+    const duplicateSameUidIds = viaList
+      .filter(
+        (v) =>
+          v.id !== finalVia.id &&
+          Boolean(cleanUidLower) &&
+          (normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia)) === cleanUidLower
+      )
+      .map((v) => v.id);
+
     // Cập nhật state React đồng bộ ngay lập tức cho cả Via và Page (trước khi await)
-    setViaList((prev) => prev.map((v) => (v.id === finalVia.id ? finalVia : v)));
+    setViaList((prev) =>
+      prev
+        .filter((v) => !duplicateSameUidIds.includes(v.id))
+        .map((v) => (v.id === finalVia.id ? finalVia : v))
+    );
     if (matching.length > 0) {
       const updatedMap = new Map(matching.map((m) => [m.id, m]));
       setRecords((prev) => prev.map((r) => updatedMap.get(r.id) || r));
     }
 
     await setCloudVia(finalVia);
+    if (duplicateSameUidIds.length > 0) {
+      await batchDeleteCloudVias(duplicateSameUidIds);
+    }
     if (matching.length > 0) {
       await batchSaveCloudPageRecords(matching);
     }
@@ -3786,7 +4014,13 @@ export default function App() {
 
   // Tự động đồng bộ các dòng Page & Group đã chọn VHH / 282 / 956 / Hạn Chế từ trước sang Quản Trị Via (Full Via)
   useEffect(() => {
-    if (!currentUser.isAuthenticated || (groupRecords.length === 0 && records.length === 0)) return;
+    if (
+      !currentUser.isAuthenticated ||
+      !viasLoadedRef.current ||
+      (groupRecords.length === 0 && records.length === 0)
+    ) {
+      return;
+    }
 
     const reportedByUid = new Map<
       string,
@@ -3901,7 +4135,10 @@ export default function App() {
     const viasToUpsert: FullViaItem[] = [];
     const existingViaMap = new Map<string, FullViaItem>();
     viaList.forEach((v) => {
-      if (v.uid) existingViaMap.set(v.uid.trim().toLowerCase(), v);
+      const key = normalizeViaUidKey(v.uid) || normalizeViaUidKey(v.rawFullVia);
+      if (key && !existingViaMap.has(key)) {
+        existingViaMap.set(key, v);
+      }
     });
 
     reportedByUid.forEach((info, uidLower) => {
@@ -4333,14 +4570,22 @@ export default function App() {
       saveCloudSettings({ deletedViaUids: nextDeleted }).catch(() => {});
     }
 
-    // Merge logic
+    // Merge logic (chuẩn hóa UID bằng normalizeViaUidKey để tuyệt đối không tạo trùng UID)
     const existingMap = new Map<string, FullViaItem>();
-    viaList.forEach((item) => existingMap.set(item.uid.trim(), item));
+    viaList.forEach((item) => {
+      const k = normalizeViaUidKey(item.uid) || normalizeViaUidKey(item.rawFullVia);
+      if (k && !existingMap.has(k)) {
+        existingMap.set(k, item);
+      }
+    });
 
-    const finalViasToSave: FullViaItem[] = [];
+    const finalViasToSaveMap = new Map<string, FullViaItem>();
 
     secureVias.forEach((incoming) => {
-      const uidKey = incoming.uid.trim();
+      const uidKey = normalizeViaUidKey(incoming.uid) || normalizeViaUidKey(incoming.rawFullVia);
+      const cleanUid = (incoming.uid || incoming.rawFullVia || '').split('|')[0].trim();
+      if (!uidKey || !cleanUid) return;
+
       if (existingMap.has(uidKey)) {
         const old = existingMap.get(uidKey)!;
         if (
@@ -4364,7 +4609,7 @@ export default function App() {
             (parsedOld?.extra && parsedOld.extra.length > 0 ? parsedOld.extra.join('|') : '') ||
             '';
           const mergedRaw = buildFullViaString({
-            uid: old.uid,
+            uid: cleanUid,
             pass: mergedPass,
             twoFa: mergedTwoFa,
             email: mergedEmail,
@@ -4373,6 +4618,7 @@ export default function App() {
           });
           const merged: FullViaItem = {
             ...old,
+            uid: cleanUid,
             pass: mergedPass,
             twoFa: mergedTwoFa,
             ...(mergedEmail ? { email: mergedEmail } : {}),
@@ -4389,26 +4635,31 @@ export default function App() {
             pageAssignedAt: incoming.pageAssignedAt || old.pageAssignedAt,
           };
           existingMap.set(uidKey, merged);
-          finalViasToSave.push(merged);
+          finalViasToSaveMap.set(uidKey, merged);
         }
       } else {
-        existingMap.set(uidKey, incoming);
-        finalViasToSave.push(incoming);
+        const cleanIncoming: FullViaItem = { ...incoming, uid: cleanUid };
+        existingMap.set(uidKey, cleanIncoming);
+        finalViasToSaveMap.set(uidKey, cleanIncoming);
       }
     });
 
+    const finalViasToSave = Array.from(finalViasToSaveMap.values());
     if (finalViasToSave.length > 0) {
       await batchSaveCloudVias(finalViasToSave);
     }
 
     // Sync to page records
     const incomingMap = new Map<string, FullViaItem>();
-    newVias.forEach((v) => incomingMap.set(v.uid.trim(), v));
+    finalViasToSave.forEach((v) => {
+      const k = normalizeViaUidKey(v.uid);
+      if (k) incomingMap.set(k, v);
+    });
 
     const recsToUpdate = records
-      .filter((r) => incomingMap.has(r.viaUid.trim()))
+      .filter((r) => incomingMap.has(normalizeViaUidKey(r.viaUid)))
       .map((r) => {
-        const match = incomingMap.get(r.viaUid.trim())!;
+        const match = incomingMap.get(normalizeViaUidKey(r.viaUid))!;
         return {
           ...r,
           fullVia: match.rawFullVia || `${match.uid}|${match.pass}|${match.twoFa}`,

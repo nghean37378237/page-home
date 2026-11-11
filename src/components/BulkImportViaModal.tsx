@@ -96,21 +96,22 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
     }
   }, [presetStaff, availableStaffNames, currentUser, isOpen]);
 
-  // Build existing map of UIDs
+  // Build existing map of UIDs (normalized key: lowercase pure UID)
   const existingViaMap = useMemo(() => {
     const map = new Map<string, FullViaItem>();
     existingVias.forEach((v) => {
-      const u = v.uid?.trim();
-      if (u) map.set(u, v);
+      const u = (v.uid || v.rawFullVia || '').split('|')[0].trim().toLowerCase();
+      if (u && !map.has(u)) map.set(u, v);
     });
     // Fallback for existingUids if existingVias is empty
     if (map.size === 0 && existingUids.length > 0) {
       existingUids.forEach((u) => {
-        const trimmed = u.trim();
-        if (trimmed) {
-          map.set(trimmed, {
-            id: trimmed,
-            uid: trimmed,
+        const clean = u.split('|')[0].trim();
+        const key = clean.toLowerCase();
+        if (key && !map.has(key)) {
+          map.set(key, {
+            id: clean,
+            uid: clean,
             pass: '',
             twoFa: '',
             staffName: 'Đã có trong hệ thống',
@@ -126,7 +127,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
     if (!inputText.trim()) return [];
 
     const lines = inputText.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-    const seenUidsInBatch = new Map<string, number>(); // uid -> first line index seen
+    const seenUidsInBatch = new Map<string, number>(); // normalized uid -> first line index seen
 
     return lines.map((line, idx) => {
       // Strip out known staff names first if any token matches availableStaffNames
@@ -162,7 +163,8 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
       });
 
       const parsed = parseSupplementalViaInput(nonStaffTokens.join('|'));
-      const uid = parsed.uid || nonStaffTokens[0]?.trim() || '';
+      const uid = (parsed.uid || nonStaffTokens[0]?.trim() || '').split('|')[0].trim();
+      const uidNormKey = uid.toLowerCase();
       const pass = parsed.pass || '';
       const twoFa = parsed.twoFa || '';
       const email = parsed.email || '';
@@ -171,18 +173,18 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
       const isValid = uid.length >= 4 && Boolean(pass || twoFa || email);
 
       // Check duplicate against existing database
-      const duplicateInDb = existingViaMap.get(uid);
+      const duplicateInDb = uidNormKey ? existingViaMap.get(uidNormKey) : undefined;
       const isDuplicateInDb = Boolean(duplicateInDb);
 
       // Check duplicate within the batch
       let isDuplicateInBatch = false;
       let duplicateBatchIndex: number | undefined;
-      if (uid) {
-        if (seenUidsInBatch.has(uid)) {
+      if (uidNormKey) {
+        if (seenUidsInBatch.has(uidNormKey)) {
           isDuplicateInBatch = true;
-          duplicateBatchIndex = seenUidsInBatch.get(uid);
+          duplicateBatchIndex = seenUidsInBatch.get(uidNormKey);
         } else {
-          seenUidsInBatch.set(uid, idx + 1);
+          seenUidsInBatch.set(uidNormKey, idx + 1);
         }
       }
 
