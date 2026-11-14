@@ -22,6 +22,8 @@ import {
   publishStoryToMoviesHd4k,
   uploadMediaToMoviesHd4k,
   generateStoryArticleWithAi,
+  publishLinkedNpChapterOnMoviesHd4k,
+  linkChaptersContentOnMoviesHd4k,
 } from './src/server/moviesHd4kService';
 
 function resolveServerPort(): number {
@@ -579,6 +581,62 @@ async function startServer() {
           existingImages: Array.isArray(body.existingImages) ? body.existingImages : undefined,
         });
         res.json(result);
+        return;
+      }
+
+      if (action === 'publish_chapter') {
+        const postType = body.postType === 'posts' ? 'posts' : 'np_story';
+        if (postType === 'posts') {
+          const publishedPost = await publishStoryToMoviesHd4k({
+            postId: body.chapterPostId ? Number(body.chapterPostId) : undefined,
+            postType: 'posts',
+            title: String(body.chapterHeading || body.storyTitle || ''),
+            content: String(body.contentHtml || ''),
+            excerpt: body.excerpt ? String(body.excerpt) : '',
+            slug: body.slug ? String(body.slug) : undefined,
+            status: body.status || 'publish',
+            categories: Array.isArray(body.categories) ? body.categories.map(Number) : [12],
+            tags: Array.isArray(body.tags) ? body.tags.map(String) : undefined,
+            employeeCode: body.employeeCode ? String(body.employeeCode) : undefined,
+            featuredMediaId: body.featuredMediaId ? Number(body.featuredMediaId) : undefined,
+          });
+          res.json({
+            ok: true,
+            chapterNumber: Number(body.chapterNumber || 2),
+            postId: publishedPost.postId,
+            title: String(body.chapterHeading || ''),
+            link: publishedPost.link,
+            trackingLink: publishedPost.trackingLink,
+            status: publishedPost.status,
+          });
+          return;
+        }
+        const chapterRes = await publishLinkedNpChapterOnMoviesHd4k({
+          chapterPostId: body.chapterPostId ? Number(body.chapterPostId) : undefined,
+          storyId: Number(body.storyId),
+          chapterNumber: Number(body.chapterNumber || 2),
+          storyTitle: String(body.storyTitle || ''),
+          chapterHeading: String(body.chapterHeading || ''),
+          slug: body.slug ? String(body.slug) : undefined,
+          contentHtml: String(body.contentHtml || ''),
+          excerpt: body.excerpt ? String(body.excerpt) : undefined,
+          status: body.status || 'publish',
+          featuredMediaId: body.featuredMediaId ? Number(body.featuredMediaId) : undefined,
+          featuredImageUrl: body.featuredImageUrl ? String(body.featuredImageUrl) : undefined,
+          employeeCode: body.employeeCode ? String(body.employeeCode) : undefined,
+        });
+        res.json(chapterRes);
+        return;
+      }
+
+      if (action === 'link_chapters') {
+        const linked = await linkChaptersContentOnMoviesHd4k({
+          postType: body.postType === 'posts' ? 'posts' : 'np_story',
+          language: body.language === 'vi' ? 'vi' : 'en',
+          featuredMediaId: body.featuredMediaId ? Number(body.featuredMediaId) : undefined,
+          chapters: Array.isArray(body.chapters) ? body.chapters : [],
+        });
+        res.json(linked);
         return;
       }
 

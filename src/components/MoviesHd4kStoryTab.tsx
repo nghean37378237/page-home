@@ -74,6 +74,18 @@ interface StoryImageCandidate {
   isExternal?: boolean;
 }
 
+interface StoryChapterItem {
+  chapterNumber: number;
+  heading: string;
+  slug: string;
+  contentHtml: string;
+  excerpt: string;
+  wordCount: number;
+  isMainContent: boolean;
+  publishedPostId?: number;
+  publishedLink?: string;
+}
+
 interface LocalStoryDraft {
   id: string;
   title: string;
@@ -86,6 +98,7 @@ interface LocalStoryDraft {
   employeeCode: string;
   storyStyle: StoryStyleKey;
   language: 'en' | 'vi';
+  chapters?: StoryChapterItem[];
   updatedAt: string;
 }
 
@@ -140,6 +153,24 @@ function slugifyStoryText(input: string): string {
 
 function stripTagsPlain(html: string): string {
   return (html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function countPlainWords(html: string): number {
+  const plain = stripTagsPlain(html);
+  return plain ? plain.split(/\s+/).filter(Boolean).length : 0;
+}
+
+function applySharedCoverToChapterHtml(html: string, imageUrl: string, altText: string): string {
+  const withoutOldShared = String(html || '')
+    .replace(/<figure\b[^>]*class=["'][^"']*story-shared-cover[^"']*["'][^>]*>[\s\S]*?<\/figure>\s*/gi, '')
+    .trim();
+  if (!imageUrl || imageUrl.startsWith('data:')) {
+    return withoutOldShared;
+  }
+  const safeUrl = imageUrl.replace(/"/g, '&quot;');
+  const safeAlt = (altText || 'Story cover').replace(/"/g, '&quot;');
+  const figure = `<figure class="wp-block-image size-large story-shared-cover"><img src="${safeUrl}" alt="${safeAlt}" /></figure>`;
+  return withoutOldShared ? `${figure}\n\n${withoutOldShared}` : figure;
 }
 
 async function parseJsonSafe(res: Response): Promise<any> {
@@ -241,20 +272,27 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
   const [aiKeyword, setAiKeyword] = useState('');
   const [storyStyle, setStoryStyle] = useState<StoryStyleKey>('emotional_drama');
   const [storyPov, setStoryPov] = useState<StoryPovKey>('third_person');
-  const [chapterCount, setChapterCount] = useState<number>(5);
+  const [chapterCount, setChapterCount] = useState<number>(4);
   const [aiLanguage, setAiLanguage] = useState<'en' | 'vi'>('en');
   const [aiLoading, setAiLoading] = useState(false);
   const [extractingSource, setExtractingSource] = useState(false);
   const [searchingImages, setSearchingImages] = useState(false);
 
+  // Multi-chapter state (Chapter 1 = Main Story, Chapters 2..N = Linked Chapters, ~500 words each)
+  const [storyChapters, setStoryChapters] = useState<StoryChapterItem[]>([]);
+  const [activeChapterIndex, setActiveChapterIndex] = useState<number>(0);
+  const [previewAllChapters, setPreviewAllChapters] = useState<boolean>(false);
+
   // Publishing & feedback
   const [publishing, setPublishing] = useState(false);
+  const [publishProgress, setPublishProgress] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [publishedResult, setPublishedResult] = useState<{
     postId?: number;
     link?: string;
     trackingLink?: string;
     status?: string;
+    chapters?: { chapterNumber: number; heading: string; postId: number; link: string; trackingLink: string }[];
   } | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -369,14 +407,159 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     } catch {}
   };
 
+  const syncSharedCoverImageAcrossChapters = useCallback(
+    (nextImageUrl: string, altTitle?: string) => {
+      const effectiveAlt = altTitle || title || 'Story cover';
+      setContent((prev) => applySharedCoverToChapterHtml(prev, nextImageUrl, effectiveAlt));
+      setStoryChapters((prev) =>
+        prev.map((ch) => {
+          const updatedHtml = applySharedCoverToChapterHtml(ch.contentHtml, nextImageUrl, effectiveAlt);
+          return {
+            ...ch,
+            contentHtml: updatedHtml,
+            wordCount: countPlainWords(updatedHtml),
+          };
+        })
+      );
+    },
+    [title]
+  );
+
+  const handleUpdateActiveContent = useCallback(
+    (nextHtml: string) => {
+      setContent(nextHtml);
+      setStoryChapters((prev) => {
+        if (prev.length === 0 || activeChapterIndex < 0 || activeChapterIndex >= prev.length) {
+          return prev;
+        }
+        return prev.map((ch, idx) =>
+          idx === activeChapterIndex
+            ? { ...ch, contentHtml: nextHtml, wordCount: countPlainWords(nextHtml) }
+            : ch
+        );
+      });
+    },
+    [activeChapterIndex]
+  );
+
+  const handleUpdateActiveChapterHeading = useCallback(
+    (nextHeading: string) => {
+      setStoryChapters((prev) =>
+        prev.map((ch, idx) =>
+          idx === activeChapterIndex ? { ...ch, heading: nextHeading } : ch
+        )
+      );
+    },
+    [activeChapterIndex]
+  );
+
+  const handleSelectChapterTab = useCallback(
+    (idx: number) => {
+      setPreviewAllChapters(false);
+      setActiveChapterIndex(idx);
+      const target = storyChapters[idx];
+      if (target) {
+        setContent(target.contentHtml);
+      }
+    },
+    [storyChapters]
+  );
+
+  const handleAddChapterTab = useCallback(() => {
+    const nextNum = storyChapters.length === 0 ? 2 : storyChapters.length + 1;
+    const baseSlug = slug || slugifyStoryText(title) || `story-${Date.now()}`;
+    const baseChapters: StoryChapterItem[] =
+      storyChapters.length > 0
+        ? storyChapters
+        : [
+            {
+              chapterNumber: 1,
+              heading:
+                aiLanguage === 'vi'
+                  ? 'Chương 1 (Nội dung chính)'
+                  : 'Chapter 1 (Main Story)',
+              slug: baseSlug,
+              contentHtml: content,
+              excerpt: excerpt || title,
+              wordCount: countPlainWords(content),
+              isMainContent: true,
+            },
+          ];
+
+    const newHeading =
+      aiLanguage === 'vi'
+        ? `Chương ${nextNum}: Diễn biến tiếp theo`
+        : `Chapter ${nextNum}: The Next Turning Point`;
+    const newHtml = applySharedCoverToChapterHtml(
+      `<h2>${newHeading}</h2>\n\n<p></p>`,
+      featuredImageUrl,
+      title
+    );
+    const nextChapter: StoryChapterItem = {
+      chapterNumber: nextNum,
+      heading: newHeading,
+      slug: `${baseSlug}-chuong-${nextNum}`,
+      contentHtml: newHtml,
+      excerpt: '',
+      wordCount: countPlainWords(newHtml),
+      isMainContent: false,
+    };
+    const nextList = [...baseChapters, nextChapter];
+    setStoryChapters(nextList);
+    setActiveChapterIndex(nextList.length - 1);
+    setPreviewAllChapters(false);
+    setContent(newHtml);
+  }, [storyChapters, slug, title, aiLanguage, content, excerpt, featuredImageUrl]);
+
   const wordStats = useMemo(() => {
-    const plain = stripTagsPlain(content);
-    const words = plain ? plain.split(/\s+/).filter(Boolean).length : 0;
+    if (storyChapters.length > 0) {
+      const activeCh = storyChapters[activeChapterIndex] || storyChapters[0];
+      const currentWords = countPlainWords(content);
+      const totalWords = storyChapters.reduce(
+        (sum, ch, idx) => sum + (idx === activeChapterIndex ? currentWords : ch.wordCount),
+        0
+      );
+      const minutes = Math.max(1, Math.round(totalWords / 200));
+      return {
+        words: currentWords,
+        totalWords,
+        chapters: storyChapters.length,
+        activeChapterNum: activeCh.chapterNumber,
+        images: featuredImageUrl ? 1 : 0,
+        minutes,
+      };
+    }
+    const words = countPlainWords(content);
     const chapters = (content.match(/<h[23]\b[^>]*>/gi) || []).length;
     const images = (content.match(/<img\b/gi) || []).length;
     const minutes = Math.max(1, Math.round(words / 200));
-    return { words, chapters, images, minutes };
-  }, [content]);
+    return {
+      words,
+      totalWords: words,
+      chapters,
+      activeChapterNum: 1,
+      images,
+      minutes,
+    };
+  }, [storyChapters, activeChapterIndex, content, featuredImageUrl]);
+
+  const combinedAllChaptersHtml = useMemo(() => {
+    if (storyChapters.length === 0) return content;
+    return storyChapters
+      .map((ch, idx) => {
+        const html = idx === activeChapterIndex ? content : ch.contentHtml;
+        const badge =
+          ch.chapterNumber === 1
+            ? `<p style="font-size:12px;font-weight:700;color:#4338ca;text-transform:uppercase;letter-spacing:0.04em;">★ Chương 1 — Nội dung chính (${
+                idx === activeChapterIndex ? countPlainWords(content) : ch.wordCount
+              } từ)</p>`
+            : `<p style="font-size:12px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:0.04em;">Chương ${ch.chapterNumber} — Liên kết tiếp theo (${
+                idx === activeChapterIndex ? countPlainWords(content) : ch.wordCount
+              } từ)</p>`;
+        return `${badge}\n${html}`;
+      })
+      .join('\n<hr style="margin:28px 0;border:none;border-top:2px dashed #cbd5e1;" />\n');
+  }, [storyChapters, activeChapterIndex, content]);
 
   const previewTrackingUrl = useMemo(() => {
     const base = siteUrl.replace(/\/+$/, '');
@@ -388,29 +571,20 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
   const insertHtmlSnippet = (before: string, after = '') => {
     const el = textareaRef.current;
     if (!el) {
-      setContent((prev) => `${prev}\n${before}${after}`);
+      handleUpdateActiveContent(`${content}\n${before}${after}`);
       return;
     }
     const start = el.selectionStart || 0;
     const end = el.selectionEnd || 0;
     const selected = content.slice(start, end);
     const nextVal = `${content.slice(0, start)}${before}${selected || (after ? 'Nội dung...' : '')}${after}${content.slice(end)}`;
-    setContent(nextVal);
+    handleUpdateActiveContent(nextVal);
     if (editorViewMode === 'preview') setEditorViewMode('split');
     setTimeout(() => {
       el.focus();
       const pos = start + before.length + (selected ? selected.length : 0);
       el.setSelectionRange(pos, pos);
     }, 10);
-  };
-
-  const handleInsertImageToStory = (url: string, alt?: string) => {
-    if (!url) return;
-    const fig = `\n<figure class="wp-block-image size-large"><img src="${url}" alt="${
-      alt || title || 'Story image'
-    }" /><figcaption>${alt || title || ''}</figcaption></figure>\n`;
-    setContent((prev) => `${prev}${fig}`);
-    setNotice({ type: 'info', message: 'Đã chèn ảnh minh họa vào cuối nội dung truyện.' });
   };
 
   const handleExtractSourceUrl = async () => {
@@ -565,24 +739,52 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         setAutoSlug(false);
         setSlug(data.slug);
       }
-      if (data.content) setContent(data.content);
       if (data.excerpt) setExcerpt(data.excerpt);
       if (Array.isArray(data.tags) && data.tags.length > 0) {
         setTagsInput(data.tags.join(', '));
       }
+
+      const chosenCoverUrl = data.featuredImageUrl || data.images?.[0]?.url || featuredImageUrl || '';
       if (Array.isArray(data.images) && data.images.length > 0) {
         setStoryImages(data.images);
-        if (!featuredImageUrl) {
-          setFeaturedImageUrl(data.images[0].url);
-          setFeaturedImageAlt(data.title || data.images[0].alt || '');
-        }
+      }
+      if (chosenCoverUrl) {
+        setFeaturedImageUrl(chosenCoverUrl);
+        setFeaturedImageBase64('');
+        setFeaturedMediaId(0);
+        setFeaturedImageAlt(data.title || '');
+      }
+
+      if (Array.isArray(data.chapters) && data.chapters.length > 0) {
+        const normalizedChapters: StoryChapterItem[] = data.chapters.map((ch: any, idx: number) => {
+          const chHtml = chosenCoverUrl
+            ? applySharedCoverToChapterHtml(String(ch.contentHtml || ''), chosenCoverUrl, data.title || '')
+            : String(ch.contentHtml || '');
+          return {
+            chapterNumber: Number(ch.chapterNumber || idx + 1),
+            heading: String(ch.heading || `Chương ${idx + 1}`),
+            slug: String(ch.slug || ''),
+            contentHtml: chHtml,
+            excerpt: String(ch.excerpt || ''),
+            wordCount: countPlainWords(chHtml),
+            isMainContent: Boolean(ch.isMainContent || idx === 0),
+          };
+        });
+        setStoryChapters(normalizedChapters);
+        setActiveChapterIndex(0);
+        setPreviewAllChapters(false);
+        setContent(normalizedChapters[0].contentHtml);
+      } else if (data.content) {
+        setStoryChapters([]);
+        setActiveChapterIndex(0);
+        setContent(data.content);
       }
 
       setNotice({
         type: data.warning ? 'info' : 'success',
         message: data.warning
           ? data.warning
-          : `Đã sáng tác xong truyện ${data.chapterCount} chương (${data.wordCount} từ · ~${data.readingMinutes} phút đọc) bằng Gemini Free Tier (${data.model}).`,
+          : `Đã sáng tác xong ${data.chapterCount} chương liên kết (mỗi chương ~500 từ · Chương 1 là Nội dung chính · dùng chung 1 ảnh đại diện) bằng Gemini Free Tier (${data.model}).`,
       });
     } catch (err: any) {
       setNotice({ type: 'error', message: err?.message || 'Lỗi khi viết truyện AI' });
@@ -620,8 +822,14 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         const data = await parseJsonSafe(res);
         if (res.ok && data?.ok && data.mediaId) {
           setFeaturedMediaId(Number(data.mediaId));
-          if (data.mediaUrl) setFeaturedImageUrl(data.mediaUrl);
-          setNotice({ type: 'success', message: `Đã tải ảnh bìa lên movieshd4k.com (#${data.mediaId}).` });
+          if (data.mediaUrl) {
+            setFeaturedImageUrl(data.mediaUrl);
+            syncSharedCoverImageAcrossChapters(data.mediaUrl, title || file.name);
+          }
+          setNotice({
+            type: 'success',
+            message: `Đã tải 1 ảnh đại diện duy nhất lên movieshd4k.com (#${data.mediaId}) và áp dụng chung cho tất cả chương.`,
+          });
         }
       } catch {
         // Fallback: upload on publish
@@ -638,14 +846,18 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
       setNotice({ type: 'error', message: 'Vui lòng nhập URL ảnh hợp lệ.' });
       return;
     }
-    const candidate: StoryImageCandidate = { url: u, alt: title || 'Story cover', isFeatured: !featuredImageUrl };
+    const candidate: StoryImageCandidate = { url: u, alt: title || 'Story cover', isFeatured: true };
     setStoryImages((prev) => (prev.some((p) => p.url === u) ? prev : [candidate, ...prev]));
-    if (!featuredImageUrl) {
-      setFeaturedImageUrl(u);
-      setFeaturedImageAlt(title || '');
-      setFeaturedMediaId(0);
-    }
+    setFeaturedImageUrl(u);
+    setFeaturedImageBase64('');
+    setFeaturedImageAlt(title || '');
+    setFeaturedMediaId(0);
+    syncSharedCoverImageAcrossChapters(u, title);
     setManualImageUrlInput('');
+    setNotice({
+      type: 'success',
+      message: 'Đã chọn 1 ảnh đại diện duy nhất áp dụng chung cho toàn bộ các chương.',
+    });
   };
 
   const handleSaveDraft = () => {
@@ -653,6 +865,11 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
       setNotice({ type: 'error', message: 'Cần có tiêu đề hoặc nội dung để lưu bản nháp.' });
       return;
     }
+    const syncedChapters = storyChapters.map((ch, idx) =>
+      idx === activeChapterIndex
+        ? { ...ch, contentHtml: content, wordCount: countPlainWords(content) }
+        : ch
+    );
     const draft: LocalStoryDraft = {
       id: `story-draft-${Date.now()}`,
       title: title.trim() || 'Truyện chưa đặt tên',
@@ -665,6 +882,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
       employeeCode: selectedEmployeeCode,
       storyStyle,
       language: aiLanguage,
+      chapters: syncedChapters.length > 0 ? syncedChapters : undefined,
       updatedAt: new Date().toLocaleString('vi-VN'),
     };
     const next = [draft, ...localDrafts].slice(0, 30);
@@ -677,7 +895,6 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     setTitle(draft.title);
     setSlug(draft.slug);
     setAutoSlug(false);
-    setContent(draft.content);
     setExcerpt(draft.excerpt);
     setTagsInput(draft.tags);
     setSelectedCategories(draft.categories.length > 0 ? draft.categories : [12]);
@@ -686,6 +903,16 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     setSelectedEmployeeCode(draft.employeeCode || defaultEmployeeCode);
     setStoryStyle(draft.storyStyle || 'emotional_drama');
     setAiLanguage(draft.language || 'en');
+    if (Array.isArray(draft.chapters) && draft.chapters.length > 0) {
+      setStoryChapters(draft.chapters);
+      setActiveChapterIndex(0);
+      setPreviewAllChapters(false);
+      setContent(draft.chapters[0].contentHtml);
+    } else {
+      setStoryChapters([]);
+      setActiveChapterIndex(0);
+      setContent(draft.content);
+    }
     setActiveSubTab('editor');
     setNotice({ type: 'info', message: `Đã nạp lại bản nháp "${draft.title}".` });
   };
@@ -696,6 +923,9 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     setTitle(post.title);
     setSlug(post.slug);
     setAutoSlug(false);
+    setStoryChapters([]);
+    setActiveChapterIndex(0);
+    setPreviewAllChapters(false);
     setContent(post.content);
     setExcerpt(post.excerpt);
     if (post.postType === 'posts') {
@@ -717,6 +947,9 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     setTitle('');
     setSlug('');
     setAutoSlug(true);
+    setStoryChapters([]);
+    setActiveChapterIndex(0);
+    setPreviewAllChapters(false);
     setContent('');
     setExcerpt('');
     setFeaturedMediaId(0);
@@ -724,6 +957,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     setFeaturedImageBase64('');
     setStoryImages([]);
     setPublishedResult(null);
+    setPublishProgress(null);
     setNotice(null);
   };
 
@@ -732,14 +966,24 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
       setNotice({ type: 'error', message: 'Vui lòng nhập tiêu đề truyện.' });
       return;
     }
-    if (!content.trim()) {
-      setNotice({ type: 'error', message: 'Nội dung truyện đang trống.' });
+
+    const activeSyncedChapters = storyChapters.map((ch, idx) =>
+      idx === activeChapterIndex
+        ? { ...ch, contentHtml: content, wordCount: countPlainWords(content) }
+        : ch
+    );
+    const hasMultiChapters = activeSyncedChapters.length >= 2 && targetConfig.targetMode !== 'webhook';
+    const mainChapterContent = hasMultiChapters ? activeSyncedChapters[0].contentHtml : content;
+
+    if (!mainChapterContent.trim()) {
+      setNotice({ type: 'error', message: 'Nội dung Chương 1 (Nội dung chính) đang trống.' });
       return;
     }
 
     setPublishing(true);
     setNotice(null);
     setPublishedResult(null);
+    setPublishProgress(null);
 
     try {
       const tags = tagsInput
@@ -747,7 +991,61 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         .map((t) => t.trim())
         .filter(Boolean);
 
-      const res = await fetch('/api/movieshd4k-publish', {
+      let sharedMediaId = featuredMediaId;
+      let sharedMediaUrl = featuredImageUrl;
+
+      // Bước 1: Upload 1 ảnh đại diện duy nhất lên movieshd4k.com để dùng chung cho tất cả chương
+      if (
+        targetConfig.targetMode !== 'webhook' &&
+        sharedMediaId <= 0 &&
+        (featuredImageBase64 || (featuredImageUrl && !featuredImageUrl.startsWith('data:')))
+      ) {
+        setPublishProgress('Bước 1/4: Đang tải 1 ảnh đại diện duy nhất lên movieshd4k.com...');
+        try {
+          const upRes = await fetch('/api/movieshd4k-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'upload_media',
+              base64Data: featuredImageBase64 || undefined,
+              imageUrl: !featuredImageBase64 ? featuredImageUrl : undefined,
+              altText: featuredImageAlt || title,
+              customWpUrl: targetConfig.targetMode === 'custom_wp' ? targetConfig.customWpUrl : undefined,
+              customWpUser: targetConfig.targetMode === 'custom_wp' ? targetConfig.customWpUser : undefined,
+              customWpAppPassword:
+                targetConfig.targetMode === 'custom_wp' ? targetConfig.customWpAppPassword : undefined,
+            }),
+          });
+          const upJson = await parseJsonSafe(upRes);
+          if (upRes.ok && upJson?.ok && upJson.mediaId) {
+            sharedMediaId = Number(upJson.mediaId);
+            sharedMediaUrl = upJson.mediaUrl || sharedMediaUrl;
+            setFeaturedMediaId(sharedMediaId);
+            if (sharedMediaUrl) {
+              setFeaturedImageUrl(sharedMediaUrl);
+              setFeaturedImageBase64('');
+              syncSharedCoverImageAcrossChapters(sharedMediaUrl, title);
+            }
+          }
+        } catch {
+          // Continue publishing even if external hotlink upload failed
+        }
+      }
+
+      // Đảm bảo nội dung tất cả chương đều mang đúng 1 ảnh đại diện duy nhất đó
+      const finalMainHtml =
+        sharedMediaUrl && !sharedMediaUrl.startsWith('data:')
+          ? applySharedCoverToChapterHtml(mainChapterContent, sharedMediaUrl, title)
+          : mainChapterContent;
+
+      // Bước 2: Đăng Chương 1 làm Nội dung chính (np_story hoặc posts)
+      setPublishProgress(
+        hasMultiChapters
+          ? 'Bước 2/4: Đang đăng Chương 1 (Nội dung chính của truyện)...'
+          : 'Đang đẩy bài truyện lên movieshd4k.com...'
+      );
+
+      const mainRes = await fetch('/api/movieshd4k-publish', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -755,7 +1053,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
           postId: editingPostId,
           postType,
           title: title.trim(),
-          content,
+          content: finalMainHtml,
           excerpt: excerpt.trim(),
           slug: slug.trim() || slugifyStoryText(title),
           status: publishStatus,
@@ -763,10 +1061,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
           genres: selectedGenres,
           tags,
           employeeCode: selectedEmployeeCode,
-          featuredMediaId: featuredMediaId || undefined,
-          featuredImageBase64: featuredImageBase64 || undefined,
-          featuredImageUrl:
-            featuredImageUrl && !featuredImageUrl.startsWith('data:') ? featuredImageUrl : undefined,
+          featuredMediaId: sharedMediaId || undefined,
           featuredImageAlt: featuredImageAlt || title,
           targetMode: targetConfig.targetMode,
           customWpUrl: targetConfig.customWpUrl,
@@ -777,24 +1072,145 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         }),
       });
 
-      const data = await parseJsonSafe(res);
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || 'Không thể đẩy truyện lên movieshd4k.com');
+      const mainData = await parseJsonSafe(mainRes);
+      if (!mainRes.ok || !mainData?.ok) {
+        throw new Error(mainData?.error || 'Không thể đăng Chương 1 lên movieshd4k.com');
+      }
+
+      const mainStoryId = Number(mainData.postId || 0);
+      const mainStoryLink = String(mainData.link || '');
+      const mainTrackingLink = String(mainData.trackingLink || mainStoryLink);
+      if (mainStoryId > 0) setEditingPostId(mainStoryId);
+
+      const publishedChaptersList: {
+        chapterNumber: number;
+        heading: string;
+        postId: number;
+        link: string;
+        trackingLink: string;
+        baseContentHtml: string;
+        isMainContent: boolean;
+      }[] = [
+        {
+          chapterNumber: 1,
+          heading: activeSyncedChapters[0]?.heading || 'Chương 1 (Nội dung chính)',
+          postId: mainStoryId,
+          link: mainStoryLink,
+          trackingLink: mainTrackingLink,
+          baseContentHtml: finalMainHtml,
+          isMainContent: true,
+        },
+      ];
+
+      // Bước 3: Đăng các chương tiếp theo (Chương 2..N) liên kết tới Chương 1 & dùng chung 1 Ảnh đại diện
+      if (hasMultiChapters && mainStoryId > 0) {
+        for (let i = 1; i < activeSyncedChapters.length; i++) {
+          const ch = activeSyncedChapters[i];
+          setPublishProgress(
+            `Bước 3/4: Đang đăng & gắn ảnh chung cho Chương ${ch.chapterNumber}/${activeSyncedChapters.length}...`
+          );
+          const chBaseHtml =
+            sharedMediaUrl && !sharedMediaUrl.startsWith('data:')
+              ? applySharedCoverToChapterHtml(ch.contentHtml, sharedMediaUrl, title)
+              : ch.contentHtml;
+
+          const chRes = await fetch('/api/movieshd4k-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'publish_chapter',
+              chapterPostId: ch.publishedPostId || undefined,
+              storyId: mainStoryId,
+              chapterNumber: ch.chapterNumber,
+              postType,
+              storyTitle: title.trim(),
+              chapterHeading: ch.heading,
+              slug: ch.slug || slugifyStoryText(`${title}-chuong-${ch.chapterNumber}`),
+              contentHtml: chBaseHtml,
+              excerpt: ch.excerpt || '',
+              status: publishStatus,
+              categories: selectedCategories.length > 0 ? selectedCategories : [12],
+              tags,
+              employeeCode: selectedEmployeeCode,
+              featuredMediaId: sharedMediaId || undefined,
+              featuredImageUrl: sharedMediaUrl || undefined,
+            }),
+          });
+          const chData = await parseJsonSafe(chRes);
+          if (!chRes.ok || !chData?.ok) {
+            throw new Error(chData?.error || `Lỗi khi đăng Chương ${ch.chapterNumber}`);
+          }
+          publishedChaptersList.push({
+            chapterNumber: ch.chapterNumber,
+            heading: ch.heading,
+            postId: Number(chData.postId),
+            link: String(chData.link || ''),
+            trackingLink: String(chData.trackingLink || chData.link || ''),
+            baseContentHtml: chBaseHtml,
+            isMainContent: false,
+          });
+        }
+
+        // Bước 4: Gắn liên kết giữa tất cả các chương (Mục lục + Chương trước/sau + Về Chương 1)
+        setPublishProgress('Bước 4/4: Đang liên kết tất cả các chương với nhau...');
+        const linkRes = await fetch('/api/movieshd4k-publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'link_chapters',
+            postType,
+            language: aiLanguage,
+            featuredMediaId: sharedMediaId || undefined,
+            chapters: publishedChaptersList.map((pc) => ({
+              chapterNumber: pc.chapterNumber,
+              postId: pc.postId,
+              heading: pc.heading,
+              link: pc.link,
+              baseContentHtml: pc.baseContentHtml,
+              isMainContent: pc.isMainContent,
+            })),
+          }),
+        });
+        await parseJsonSafe(linkRes).catch(() => null);
+
+        setStoryChapters((prev) =>
+          prev.map((ch) => {
+            const matched = publishedChaptersList.find((p) => p.chapterNumber === ch.chapterNumber);
+            return matched
+              ? { ...ch, publishedPostId: matched.postId, publishedLink: matched.link }
+              : ch;
+          })
+        );
       }
 
       setPublishedResult({
-        postId: data.postId,
-        link: data.link,
-        trackingLink: data.trackingLink || data.link,
-        status: data.status,
+        postId: mainStoryId,
+        link: mainStoryLink,
+        trackingLink: mainTrackingLink,
+        status: mainData.status,
+        chapters: publishedChaptersList.map((c) => ({
+          chapterNumber: c.chapterNumber,
+          heading: c.heading,
+          postId: c.postId,
+          link: c.link,
+          trackingLink: c.trackingLink,
+        })),
       });
-      if (data.postId) setEditingPostId(Number(data.postId));
-      setNotice({ type: 'success', message: data.message || 'Đã đẩy truyện lên movieshd4k.com!' });
+
+      setNotice({
+        type: 'success',
+        message: hasMultiChapters
+          ? `Đã xuất bản trọn bộ ${publishedChaptersList.length} chương liên kết (dùng chung 1 ảnh đại diện #${
+              sharedMediaId || 'URL'
+            }, Chương 1 là Nội dung chính) lên movieshd4k.com!`
+          : mainData.message || 'Đã đẩy truyện lên movieshd4k.com!',
+      });
       void loadRemoteData();
     } catch (err: any) {
       setNotice({ type: 'error', message: err?.message || 'Lỗi khi đăng truyện' });
     } finally {
       setPublishing(false);
+      setPublishProgress(null);
     }
   };
 
@@ -997,52 +1413,104 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         </div>
       )}
 
+      {publishing && publishProgress && (
+        <div className="bg-indigo-950 text-white rounded-xl px-4 py-3 border border-indigo-800 flex items-center gap-3">
+          <RefreshCw className="w-4 h-4 text-indigo-300 animate-spin shrink-0" />
+          <div className="text-xs font-semibold text-indigo-100">{publishProgress}</div>
+        </div>
+      )}
+
       {publishedResult && (
-        <div className="bg-emerald-950 text-white rounded-xl p-4 border border-emerald-800 flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-bold text-emerald-300">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>
-                Đã xuất bản thành công lên movieshd4k.com (ID #{publishedResult.postId || 'new'})
-              </span>
+        <div className="bg-emerald-950 text-white rounded-xl p-4 border border-emerald-800 space-y-3">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-sm font-bold text-emerald-300">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>
+                  {publishedResult.chapters && publishedResult.chapters.length > 1
+                    ? `Đã xuất bản trọn bộ ${publishedResult.chapters.length} chương liên kết lên movieshd4k.com (Chương 1 ID #${publishedResult.postId || 'new'})`
+                    : `Đã xuất bản thành công lên movieshd4k.com (ID #${publishedResult.postId || 'new'})`}
+                </span>
+              </div>
+              <div className="text-xs font-mono text-emerald-100 break-all">
+                Link Tracking NV (Chương 1 - Nội dung chính): {publishedResult.trackingLink}
+              </div>
             </div>
-            <div className="text-xs font-mono text-emerald-100 break-all">
-              Link Tracking NV: {publishedResult.trackingLink}
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {publishedResult.trackingLink && (
-              <button
-                type="button"
-                onClick={() => void handleCopyText(publishedResult.trackingLink!, 'pub_track')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold cursor-pointer whitespace-nowrap"
-              >
-                {copiedKey === 'pub_track' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copiedKey === 'pub_track' ? 'Đã chép' : 'Copy Link NV'}</span>
-              </button>
-            )}
-            {publishedResult.link && (
-              <>
-                <a
-                  href={publishedResult.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-bold whitespace-nowrap"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  <span>Xem Truyện Trên Web</span>
-                </a>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {publishedResult.trackingLink && (
                 <button
                   type="button"
-                  onClick={() => handleSendToImageStudio(publishedResult.link!)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                  onClick={() => void handleCopyText(publishedResult.trackingLink!, 'pub_track')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-600 text-xs font-semibold cursor-pointer whitespace-nowrap"
                 >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  <span>Sang B9 Làm Ảnh</span>
+                  {copiedKey === 'pub_track' ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedKey === 'pub_track' ? 'Đã chép' : 'Copy Link NV'}</span>
                 </button>
-              </>
-            )}
+              )}
+              {publishedResult.link && (
+                <>
+                  <a
+                    href={publishedResult.link}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white text-emerald-950 hover:bg-emerald-50 text-xs font-bold whitespace-nowrap"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Xem Truyện Trên Web</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={() => handleSendToImageStudio(publishedResult.link!)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold cursor-pointer whitespace-nowrap"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Sang B9 Làm Ảnh</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
+
+          {publishedResult.chapters && publishedResult.chapters.length > 1 && (
+            <div className="pt-2.5 border-t border-emerald-800/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {publishedResult.chapters.map((ch) => (
+                <div
+                  key={`${ch.chapterNumber}-${ch.postId}`}
+                  className="rounded-lg bg-emerald-900/60 border border-emerald-800 px-3 py-2 flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-emerald-200 truncate">
+                      {ch.chapterNumber === 1 ? '★ Chương 1 (Nội dung chính)' : `Chương ${ch.chapterNumber}`} · #{ch.postId}
+                    </div>
+                    <div className="text-[10px] font-mono text-emerald-100/80 truncate">
+                      {ch.heading}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {ch.link && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void handleCopyText(ch.trackingLink || ch.link, `ch_copy_${ch.chapterNumber}`)}
+                          className="px-2 py-1 rounded bg-emerald-800 hover:bg-emerald-700 text-[10px] font-semibold cursor-pointer"
+                        >
+                          {copiedKey === `ch_copy_${ch.chapterNumber}` ? 'Đã chép' : 'Copy'}
+                        </button>
+                        <a
+                          href={ch.link}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-2 py-1 rounded bg-white text-emerald-950 hover:bg-emerald-50 text-[10px] font-bold"
+                        >
+                          Mở
+                        </a>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1159,16 +1627,17 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
 
                   <div>
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                      Độ dài (Số chương)
+                      Số chương (~500 từ / chương)
                     </label>
                     <select
                       value={chapterCount}
                       onChange={(e) => setChapterCount(Number(e.target.value))}
                       className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white font-medium text-slate-800"
                     >
-                      <option value={4}>4 Chương (Ngắn gọn)</option>
-                      <option value={5}>5 Chương (Chuẩn đọc web)</option>
-                      <option value={6}>6 Chương (Truyện dài)</option>
+                      <option value={3}>3 Chương (~500 từ/chương)</option>
+                      <option value={4}>4 Chương (~500 từ/chương)</option>
+                      <option value={5}>5 Chương (~500 từ/chương · Chuẩn)</option>
+                      <option value={6}>6 Chương (~500 từ/chương)</option>
                     </select>
                   </div>
 
@@ -1227,8 +1696,26 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                     2. Trình Biên Tập Truyện {editingPostId ? `(#${editingPostId})` : ''}
                   </h3>
                   <div className="text-xs text-slate-600 font-medium tabular-nums">
-                    {wordStats.words} từ · {wordStats.chapters} chương · {wordStats.images} ảnh · ~
-                    {wordStats.minutes} phút đọc
+                    {storyChapters.length > 0 ? (
+                      <>
+                        Chương {wordStats.activeChapterNum}/{wordStats.chapters}:{' '}
+                        <span
+                          className={
+                            wordStats.words >= 420 && wordStats.words <= 650
+                              ? 'text-emerald-700 font-bold'
+                              : 'text-indigo-700 font-bold'
+                          }
+                        >
+                          {wordStats.words} từ
+                        </span>{' '}
+                        (~500 từ) · Tổng {wordStats.totalWords} từ · 1 ảnh chung · ~{wordStats.minutes} phút đọc
+                      </>
+                    ) : (
+                      <>
+                        {wordStats.words} từ · {wordStats.chapters} chương · {wordStats.images} ảnh · ~
+                        {wordStats.minutes} phút đọc
+                      </>
+                    )}
                   </div>
                 </div>
 
@@ -1316,6 +1803,86 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                   </div>
                 </div>
 
+                {/* THANH CHUYỂN CHƯƠNG (MỖI CHƯƠNG ~500 TỪ · CHƯƠNG 1 LÀ NỘI DUNG CHÍNH) */}
+                <div className="p-2.5 rounded-lg bg-indigo-50/70 border border-indigo-200 space-y-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[11px] font-bold text-indigo-950">
+                      Cấu trúc truyện theo chương (~500 từ/chương · Dùng chung 1 ảnh đại diện · Chương 1 là Nội dung chính)
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {storyChapters.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewAllChapters((prev) => !prev)}
+                          className={`px-2.5 py-1 rounded text-[11px] font-semibold cursor-pointer transition-colors ${
+                            previewAllChapters
+                              ? 'bg-indigo-700 text-white'
+                              : 'bg-white text-indigo-800 border border-indigo-200 hover:bg-indigo-100'
+                          }`}
+                        >
+                          {previewAllChapters ? 'Đang Xem Toàn Bộ Chương' : `Xem Toàn Bộ (${storyChapters.length} Chương)`}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleAddChapterTab}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-white hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-bold cursor-pointer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Thêm Chương</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {storyChapters.length > 0 && (
+                    <>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {storyChapters.map((ch, idx) => {
+                          const isCurrent = idx === activeChapterIndex && !previewAllChapters;
+                          const chWords = idx === activeChapterIndex ? countPlainWords(content) : ch.wordCount;
+                          return (
+                            <button
+                              key={`${ch.chapterNumber}-${idx}`}
+                              type="button"
+                              onClick={() => handleSelectChapterTab(idx)}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-semibold cursor-pointer transition-colors ${
+                                isCurrent
+                                  ? 'bg-indigo-600 text-white shadow-xs'
+                                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              <span>
+                                {ch.chapterNumber === 1 ? '★ Chương 1 (Chính)' : `Chương ${ch.chapterNumber}`}
+                              </span>
+                              <span
+                                className={`text-[10px] font-mono ${
+                                  isCurrent ? 'text-indigo-100' : 'text-slate-400'
+                                }`}
+                              >
+                                {chWords}t
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {!previewAllChapters && storyChapters[activeChapterIndex] && (
+                        <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                          <span className="text-[11px] font-semibold text-slate-600 whitespace-nowrap">
+                            Tên {storyChapters[activeChapterIndex].chapterNumber === 1 ? 'Chương 1 (Nội dung chính)' : `Chương ${storyChapters[activeChapterIndex].chapterNumber}`}:
+                          </span>
+                          <input
+                            type="text"
+                            value={storyChapters[activeChapterIndex].heading}
+                            onChange={(e) => handleUpdateActiveChapterHeading(e.target.value)}
+                            className="flex-1 min-w-[220px] px-2.5 py-1 text-xs font-semibold rounded border border-indigo-200 bg-white text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+
                 {/* Thanh công cụ định dạng truyện */}
                 <div className="flex flex-wrap items-center gap-1.5 py-1.5 px-2 bg-slate-50 rounded-lg border border-slate-200">
                   <button
@@ -1380,15 +1947,15 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                       ref={textareaRef}
                       rows={20}
                       value={content}
-                      onChange={(e) => setContent(e.target.value)}
-                      placeholder="Nội dung truyện HTML sẽ hiển thị ở đây sau khi AI sáng tác hoặc bạn tự nhập..."
+                      onChange={(e) => handleUpdateActiveContent(e.target.value)}
+                      placeholder="Nội dung chương truyện HTML sẽ hiển thị ở đây sau khi AI sáng tác hoặc bạn tự nhập..."
                       className="w-full px-3 py-2.5 text-xs font-mono leading-relaxed rounded-lg border border-slate-300 bg-slate-50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                     />
                   )}
 
                   {(editorViewMode === 'preview' || editorViewMode === 'split') && (
                     <div className="rounded-lg border border-slate-200 bg-[#fcfbf9] p-5 min-h-[420px] max-h-[680px] overflow-y-auto">
-                      {!content.trim() ? (
+                      {!content.trim() && !(previewAllChapters && combinedAllChaptersHtml.trim()) ? (
                         <div className="h-full min-h-[320px] flex flex-col items-center justify-center text-center text-slate-400">
                           <BookOpen className="w-10 h-10 mb-2 text-slate-300" />
                           <p className="text-sm font-semibold text-slate-500">
@@ -1413,11 +1980,16 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                                 alt={featuredImageAlt || title}
                                 className="w-full max-h-80 object-cover rounded-lg border border-slate-200"
                               />
+                              <p className="text-[11px] text-slate-500 text-center mt-1">
+                                Ảnh đại diện duy nhất (được gắn đồng bộ cho tất cả {Math.max(1, storyChapters.length)} chương)
+                              </p>
                             </div>
                           )}
                           <div
                             className="space-y-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:text-indigo-950 [&_h2]:mt-6 [&_h2]:mb-2 [&_h3]:text-base [&_h3]:font-bold [&_h3]:text-slate-900 [&_p]:text-[14.5px] [&_p]:leading-7 [&_blockquote]:border-l-4 [&_blockquote]:border-indigo-400 [&_blockquote]:pl-3 [&_blockquote]:italic [&_blockquote]:text-slate-700 [&_figure]:my-4 [&_img]:rounded-lg [&_img]:max-h-96 [&_img]:mx-auto [&_figcaption]:text-center [&_figcaption]:text-xs [&_figcaption]:text-slate-500 [&_figcaption]:mt-1"
-                            dangerouslySetInnerHTML={{ __html: content }}
+                            dangerouslySetInnerHTML={{
+                              __html: previewAllChapters ? combinedAllChaptersHtml : content,
+                            }}
                           />
                         </article>
                       )}
@@ -1456,15 +2028,15 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                   </div>
                 </div>
 
-                {/* Bộ sưu tập ảnh tìm được */}
+                {/* Bộ sưu tập ảnh tìm được — chọn 1 ảnh đại diện duy nhất chung toàn bộ chương */}
                 {storyImages.length > 0 && (
                   <div className="pt-2 border-t border-slate-200">
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-xs font-bold text-slate-800">
-                        Ảnh minh họa cho truyện ({storyImages.length})
+                        Kho ảnh gợi ý ({storyImages.length})
                       </span>
                       <span className="text-[11px] text-slate-500">
-                        Chọn Đặt Ảnh Bìa hoặc Chèn Vào Truyện
+                        Chọn 1 ảnh đại diện duy nhất dùng chung cho tất cả các chương
                       </span>
                     </div>
                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
@@ -1482,7 +2054,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                               alt={img.alt || 'Story'}
                               className="w-full h-24 object-cover"
                             />
-                            <div className="p-1.5 flex items-center justify-between gap-1">
+                            <div className="p-1.5">
                               <button
                                 type="button"
                                 onClick={() => {
@@ -1490,21 +2062,15 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                                   setFeaturedImageBase64('');
                                   setFeaturedMediaId(0);
                                   setFeaturedImageAlt(img.alt || title);
+                                  syncSharedCoverImageAcrossChapters(img.url, img.alt || title);
                                 }}
-                                className={`flex-1 py-1 rounded text-[10px] font-bold cursor-pointer ${
+                                className={`w-full py-1 rounded text-[10px] font-bold cursor-pointer ${
                                   isCover
                                     ? 'bg-indigo-600 text-white'
                                     : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
                                 }`}
                               >
-                                {isCover ? '✓ Ảnh Bìa' : 'Đặt Bìa'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleInsertImageToStory(img.url, img.alt)}
-                                className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold cursor-pointer"
-                              >
-                                + Chèn
+                                {isCover ? '✓ Ảnh Đại Diện Chung' : 'Chọn Làm Ảnh Chung'}
                               </button>
                             </div>
                           </div>
@@ -1638,13 +2204,22 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                   <Send className="w-3.5 h-3.5" />
                   <span>
                     {publishing
-                      ? 'Đang đẩy...'
+                      ? 'Đang xuất bản...'
                       : editingPostId
-                      ? 'Cập Nhật Truyện'
+                      ? storyChapters.length > 1
+                        ? `Cập Nhật ${storyChapters.length} Chương`
+                        : 'Cập Nhật Truyện'
+                      : storyChapters.length > 1
+                      ? `Đăng ${storyChapters.length} Chương Liên Kết`
                       : 'Đăng Lên Web'}
                   </span>
                 </button>
               </div>
+              {storyChapters.length > 1 && (
+                <p className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg px-2.5 py-1.5">
+                  Sẽ đăng Chương 1 làm <strong>Nội dung chính</strong>, đăng kèm {storyChapters.length - 1} chương liên kết tiếp theo và dùng chung <strong>1 ảnh đại diện duy nhất</strong>.
+                </p>
+              )}
             </div>
 
             {/* 2. Chuyên mục / Thể loại trên movieshd4k.com */}
@@ -1731,12 +2306,12 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
               )}
             </div>
 
-            {/* 3. Ảnh đại diện (Featured Cover) */}
+            {/* 3. Ảnh đại diện duy nhất (Dùng chung tất cả các chương) */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-1.5">
                   <ImageIcon className="w-4 h-4 text-indigo-600" />
-                  <span>Ảnh Bìa Truyện (Featured)</span>
+                  <span>Ảnh Đại Diện Duy Nhất (Tất Cả Chương)</span>
                 </h3>
                 {featuredMediaId > 0 && (
                   <span className="text-[11px] font-mono text-emerald-700 font-semibold">
@@ -1758,6 +2333,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                       setFeaturedImageUrl('');
                       setFeaturedImageBase64('');
                       setFeaturedMediaId(0);
+                      syncSharedCoverImageAcrossChapters('', title);
                     }}
                     className="absolute top-2 right-2 px-2 py-1 rounded bg-slate-900/75 text-white text-[10px] font-semibold hover:bg-slate-900 cursor-pointer"
                   >

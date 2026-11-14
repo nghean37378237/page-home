@@ -35,6 +35,7 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&#8217;/g, '’')
     .replace(/&#8220;/g, '“')
     .replace(/&#8221;/g, '”')
+    .replace(/&#8230;/g, '…')
     .replace(/&#038;/g, '&')
     .replace(/&#039;/g, "'")
     .replace(/&amp;/g, '&')
@@ -55,6 +56,11 @@ function escapeHtml(text: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
+}
+
+function countWords(textOrHtml: string): number {
+  const plain = stripHtmlTags(textOrHtml);
+  return plain ? plain.split(/\s+/).filter(Boolean).length : 0;
 }
 
 function slugifyStory(input: string): string {
@@ -92,7 +98,6 @@ async function attemptWpCookieLogin(
   username: string,
   password: string
 ): Promise<string> {
-  // Step 1: GET login page to collect initial cookies (e.g. wordpress_test_cookie)
   let seedCookie = 'wordpress_test_cookie=WP%20Cookie%20check';
   let formActionUrl = loginEndpoint;
   try {
@@ -142,7 +147,7 @@ async function attemptWpCookieLogin(
   });
 
   const rawCookies = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [];
-  const cookieHeader = rawCookies
+  return rawCookies
     .map((c) => c.split(';')[0])
     .filter(
       (c) =>
@@ -152,8 +157,6 @@ async function attemptWpCookieLogin(
         c.startsWith('wp-settings-')
     )
     .join('; ');
-
-  return cookieHeader;
 }
 
 export async function getMoviesHd4kSession(forceRefresh = false): Promise<MoviesWpAuthSession> {
@@ -277,7 +280,7 @@ export async function fetchMoviesHd4kInitData(): Promise<{
     : [];
 
   let wpUsers: { id: number; name: string; slug: string }[] = [];
-  let rawPosts: { item: any; postType: 'posts' | 'np_story' }[] = [];
+  const rawPosts: { item: any; postType: 'posts' | 'np_story' }[] = [];
 
   if (session) {
     const authHeaders = {
@@ -350,7 +353,6 @@ export async function fetchMoviesHd4kInitData(): Promise<{
   categories.forEach((c) => catNameById.set(c.id, c.name));
   const genreNameById = new Map<number, string>();
   genres.forEach((g) => genreNameById.set(g.id, g.name));
-
   const userNameById = new Map<number, string>();
   wpUsers.forEach((u) => userNameById.set(u.id, u.name));
 
@@ -373,8 +375,7 @@ export async function fetchMoviesHd4kInitData(): Promise<{
         (authorId === 1 ? 'admin' : `User #${authorId}`);
 
       const matchedEmp = WP_EMPLOYEE_AUTHOR_MAP.find(
-        (m) =>
-          m.wpUsername.toLowerCase() === String(embeddedAuthor?.slug || authorDisplay).toLowerCase()
+        (m) => m.wpUsername.toLowerCase() === String(embeddedAuthor?.slug || authorDisplay).toLowerCase()
       );
 
       return {
@@ -555,6 +556,16 @@ export type StoryStyleKey =
 
 export type StoryPovKey = 'third_person' | 'first_person';
 
+export interface StoryChapterPayload {
+  chapterNumber: number;
+  heading: string;
+  slug: string;
+  contentHtml: string;
+  excerpt: string;
+  wordCount: number;
+  isMainContent: boolean;
+}
+
 export interface StoryGenerateParams {
   topic: string;
   sourceUrl?: string;
@@ -593,115 +604,146 @@ const STORY_STYLE_DESCRIPTIONS: Record<StoryStyleKey, { vi: string; en: string }
   },
 };
 
-function interleaveStoryImages(
-  chapters: { heading: string; paragraphs: string[] }[],
-  images: { url: string; alt?: string }[],
-  storyTitle: string
-): string {
-  const usableImages = images
-    .map((im) => ({ url: String(im?.url || '').trim(), alt: String(im?.alt || storyTitle).trim() }))
-    .filter((im) => im.url.startsWith('http'));
-
-  const htmlParts: string[] = [];
-  let imgCursor = 0;
-
-  chapters.forEach((ch, idx) => {
-    htmlParts.push(`<h2>${escapeHtml(ch.heading)}</h2>`);
-    const paras = Array.isArray(ch.paragraphs) ? ch.paragraphs.filter((p) => p && p.trim()) : [];
-    paras.forEach((p, pIdx) => {
-      htmlParts.push(`<p>${escapeHtml(p.trim())}</p>`);
-      // Insert image cleanly after the opening/middle paragraph of key chapters
-      if (
-        pIdx === 0 &&
-        imgCursor < usableImages.length &&
-        (idx === 0 || idx < chapters.length)
-      ) {
-        const im = usableImages[imgCursor++];
-        htmlParts.push(
-          `<figure class="wp-block-image size-large"><img src="${escapeHtml(im.url)}" alt="${escapeHtml(
-            im.alt || storyTitle
-          )}" /><figcaption>${escapeHtml(im.alt || ch.heading)}</figcaption></figure>`
-        );
-      }
-    });
-    if (idx < chapters.length - 1) {
-      htmlParts.push(`<p style="text-align:center;opacity:0.6;">* * *</p>`);
-    }
+function buildSingleChapterHtml(params: {
+  heading: string;
+  paragraphs: string[];
+  sharedCoverImageUrl: string;
+  storyTitle: string;
+}): string {
+  const parts: string[] = [];
+  if (params.sharedCoverImageUrl && params.sharedCoverImageUrl.startsWith('http')) {
+    parts.push(
+      `<figure class="wp-block-image size-large story-shared-cover"><img src="${escapeHtml(
+        params.sharedCoverImageUrl
+      )}" alt="${escapeHtml(params.storyTitle)}" /></figure>`
+    );
+  }
+  parts.push(`<h2>${escapeHtml(params.heading)}</h2>`);
+  const cleanParas = params.paragraphs.map((p) => String(p || '').trim()).filter(Boolean);
+  cleanParas.forEach((p) => {
+    parts.push(`<p>${escapeHtml(p)}</p>`);
   });
-
-  return htmlParts.join('\n\n');
+  return parts.join('\n\n');
 }
 
-function buildFallbackStory(params: {
+function buildFallbackChapterParagraphs(params: {
+  title: string;
+  sourceText: string;
+  language: 'en' | 'vi';
+  chapterIndex: number;
+  totalChapters: number;
+  baseSlice: string[];
+}): string[] {
+  const isVi = params.language === 'vi';
+  const chNum = params.chapterIndex + 1;
+  const result: string[] = [];
+
+  if (params.baseSlice.length > 0) {
+    for (let i = 0; i < params.baseSlice.length; i += 2) {
+      result.push(params.baseSlice.slice(i, i + 2).join(' '));
+    }
+  }
+
+  const expansionPool = isVi
+    ? [
+        `Không khí trong căn phòng lúc ấy dường như lắng xuống hoàn toàn, chỉ còn tiếng đồng hồ tích tắc vang lên đều đặn như đếm ngược tới khoảnh khắc không ai kịp lường trước. Nhân vật chính khẽ siết chặt bàn tay, ánh mắt hướng về phía cửa sổ nơi những vệt nắng cuối ngày hắt lên từng đường nét căng thẳng trên gương mặt.`,
+        `“Nếu ngay lúc này chúng ta không nói hết sự thật, có lẽ cả đời sau cũng không còn cơ hội nào nữa,” giọng nói trầm xuống nhưng dứt khoát vang lên giữa khoảng lặng. Từng ký ức của những tháng ngày đã qua bất chợt ùa về, nối tiếp nhau như những thước phim quay chậm khiến người nghe không khỏi nghẹn lời.`,
+        `Bước ngoặt thực sự chỉ bắt đầu khi lá thư cũ cùng những chi tiết tưởng chừng rời rạc bỗng khớp lại với nhau thành một bức tranh hoàn chỉnh. Những người từng nghi ngờ giờ đây lặng người nhìn lại từng hành động âm thầm suốt bao năm trời mà trước nay họ vốn xem nhẹ.`,
+        `Bên ngoài hành lang, tiếng bước chân vội vã vọng lại mỗi lúc một gần, mang theo dự cảm về cuộc đối mặt không thể né tránh trong phần tiếp theo. Mọi lựa chọn lúc này đều đặt lên bàn cân giữa danh dự, tình thân và sự thật bị che giấu bấy lâu.`,
+        `Mỗi câu chữ, mỗi ánh nhìn trao nhau trong giây phút ấy đều trở thành mắt xích nối dài mạch truyện từ khởi đầu cho tới cao trào phía trước, để lại trong lòng người chứng kiến một khoảng lặng khó phai và câu hỏi lớn chưa có lời đáp trọn vẹn.`,
+      ]
+    : [
+        `The quiet inside the room felt heavy enough to hear the steady ticking of the wall clock, marking every second before the truth could no longer stay hidden. Resting a trembling hand near the doorframe, the main character looked back over years of silent sacrifice, realizing that every small choice had led directly to this unforgettable evening.`,
+        `“If we walk away without facing what really happened, none of us will ever find peace again,” a calm yet resolute voice broke through the silence. In that single heartbeat, fragments of forgotten conversations and quiet promises began weaving together, turning long-held doubts into undeniable clarity for everyone standing in the hallway.`,
+        `What had once looked like an ordinary misunderstanding now revealed deeper layers of loyalty, unspoken sorrow, and quiet courage beneath the surface. Every gesture carried weight, reminding those watching closely how easily appearances can deceive until the deciding moment arrives under bright lights and watchful eyes.`,
+        `Outside, hurried footsteps echoed along the corridor, carrying news that would reshape the next chapter of their lives forever. No one dared speak first as the tension rose, knowing full well that what came next would test every bond they had built together from the very beginning.`,
+        `Even as the dust began to settle around that pivotal scene, one lingering detail remained unresolved—pointing straight toward the next turning point of the story where hidden motives, heartfelt confessions, and unexpected revelations awaited just beyond the next closed door.`,
+      ];
+
+  let loopGuard = 0;
+  while (countWords(result.join(' ')) < 460 && loopGuard < 12) {
+    result.push(expansionPool[(loopGuard + chNum - 1) % expansionPool.length]);
+    loopGuard++;
+  }
+
+  return result;
+}
+
+function buildFallbackMultiChapterStory(params: {
   title: string;
   sourceText: string;
   language: 'en' | 'vi';
   chapterCount: number;
-  images: { url: string; alt?: string }[];
+  sharedCoverImageUrl: string;
 }): {
   title: string;
   slug: string;
   excerpt: string;
   tags: string[];
-  chapters: { heading: string; paragraphs: string[] }[];
-  html: string;
+  chapters: StoryChapterPayload[];
 } {
   const isVi = params.language === 'vi';
   const cleanText = (params.sourceText || '').replace(/\s+/g, ' ').trim();
   const sentences = cleanText
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
-    .filter((s) => s.length > 12);
+    .filter((s) => s.length > 10);
 
   const count = Math.max(3, Math.min(6, params.chapterCount || 4));
-  const chunkSize = Math.max(2, Math.ceil(sentences.length / count));
-  const chapters: { heading: string; paragraphs: string[] }[] = [];
+  const chunkSize = Math.max(1, Math.ceil(sentences.length / count));
+  const finalTitle = params.title || (isVi ? 'Câu chuyện đặc biệt hôm nay' : 'A Story Worth Remembering');
+  const baseSlug = slugifyStory(finalTitle) || `story-${Date.now()}`;
 
+  const chapters: StoryChapterPayload[] = [];
   for (let i = 0; i < count; i++) {
+    const chNum = i + 1;
+    const isMainContent = chNum === 1;
     const slice = sentences.slice(i * chunkSize, (i + 1) * chunkSize);
-    const headingPrefix = isVi ? `Chương ${i + 1}` : `Part ${i + 1}`;
-    const headingSub =
-      i === 0
-        ? isVi
-          ? 'Khởi đầu câu chuyện'
-          : 'Where Everything Began'
-        : i === count - 1
-        ? isVi
-          ? 'Sự thật và cái kết lắng đọng'
-          : 'The Quiet Truth at the End'
-        : isVi
-        ? `Bước ngoặt số ${i + 1}`
-        : `When Everything Changed`;
+    const heading = isVi
+      ? isMainContent
+        ? `Chương 1 (Nội dung chính): Khởi nguồn câu chuyện`
+        : chNum === count
+        ? `Chương ${chNum}: Sự thật hé lộ & cái kết lắng đọng`
+        : `Chương ${chNum}: Bước ngoặt nối tiếp`
+      : isMainContent
+      ? `Chapter 1 (Main Story): Where Everything Began`
+      : chNum === count
+      ? `Chapter ${chNum}: The Truth Revealed at Last`
+      : `Chapter ${chNum}: The Turning Point Continues`;
 
-    const paras: string[] = [];
-    if (slice.length > 0) {
-      for (let j = 0; j < slice.length; j += 2) {
-        paras.push(slice.slice(j, j + 2).join(' '));
-      }
-    } else {
-      paras.push(
-        isVi
-          ? `${params.title} bước vào khoảnh khắc quyết định khiến không khí trở nên lặng đi từng nhịp.`
-          : `At that moment, the silence around ${params.title} felt heavier than any spoken word.`
-      );
-    }
+    const paragraphs = buildFallbackChapterParagraphs({
+      title: finalTitle,
+      sourceText: cleanText,
+      language: params.language,
+      chapterIndex: i,
+      totalChapters: count,
+      baseSlice: slice,
+    });
+
+    const contentHtml = buildSingleChapterHtml({
+      heading,
+      paragraphs,
+      sharedCoverImageUrl: params.sharedCoverImageUrl,
+      storyTitle: finalTitle,
+    });
+
     chapters.push({
-      heading: `${headingPrefix}: ${headingSub}`,
-      paragraphs: paras,
+      chapterNumber: chNum,
+      heading,
+      slug: isMainContent ? baseSlug : `${baseSlug}-chuong-${chNum}`,
+      contentHtml,
+      excerpt: paragraphs[0]?.slice(0, 155) || finalTitle,
+      wordCount: countWords(contentHtml),
+      isMainContent,
     });
   }
 
-  const finalTitle = params.title || (isVi ? 'Câu chuyện đặc biệt hôm nay' : 'A Story Worth Remembering');
-  const excerpt = cleanText.slice(0, 155) || finalTitle;
-  const html = interleaveStoryImages(chapters, params.images, finalTitle);
-
   return {
     title: finalTitle,
-    slug: slugifyStory(finalTitle) || `story-${Date.now()}`,
-    excerpt,
-    tags: isVi ? ['Truyện hay', 'Câu chuyện', 'MoviesHD4K'] : ['Story', 'Drama', 'Featured Story'],
+    slug: baseSlug,
+    excerpt: cleanText.slice(0, 155) || chapters[0]?.excerpt || finalTitle,
+    tags: isVi ? ['Truyện hay', 'Truyện nhiều chương', 'MoviesHD4K'] : ['Story', 'Serial Story', 'MoviesHD4K'],
     chapters,
-    html,
   };
 }
 
@@ -715,6 +757,7 @@ export async function generateStoryArticleWithAi(params: StoryGenerateParams): P
   excerpt: string;
   tags: string[];
   content: string;
+  chapters: StoryChapterPayload[];
   wordCount: number;
   chapterCount: number;
   readingMinutes: number;
@@ -725,21 +768,20 @@ export async function generateStoryArticleWithAi(params: StoryGenerateParams): P
   const language: 'en' | 'vi' = params.language === 'vi' ? 'vi' : 'en';
   const storyStyle: StoryStyleKey = params.storyStyle || 'emotional_drama';
   const storyPov: StoryPovKey = params.storyPov || 'third_person';
-  const chapterCount = Math.max(3, Math.min(6, Number(params.chapterCount) || 5));
+  const chapterCount = Math.max(3, Math.min(6, Number(params.chapterCount) || 4));
 
   let sourceTitle = (params.existingTitle || '').trim();
   let sourceText = stripHtmlTags(params.existingContent || '');
-  let collectedImages: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] =
+  let candidateImages: { url: string; alt: string; isFeatured?: boolean; isExternal?: boolean }[] =
     Array.isArray(params.existingImages)
       ? params.existingImages.map((im, idx) => ({
           url: String(im.url || ''),
-          alt: String(im.alt || sourceTitle || params.topic || 'Story scene'),
+          alt: String(im.alt || sourceTitle || params.topic || 'Story cover'),
           isFeatured: Boolean(im.isFeatured || idx === 0),
           isExternal: Boolean(im.isExternal),
         }))
       : [];
 
-  // Scrape source URL if provided
   const cleanSourceUrl = (params.sourceUrl || '').trim();
   if (cleanSourceUrl && cleanSourceUrl.startsWith('http')) {
     try {
@@ -748,10 +790,10 @@ export async function generateStoryArticleWithAi(params: StoryGenerateParams): P
       if (scraped.articleText && scraped.articleText.length > sourceText.length) {
         sourceText = scraped.articleText;
       }
-      if (scraped.images && scraped.images.length > 0 && collectedImages.length === 0) {
-        collectedImages = scraped.images.slice(0, 8).map((im, idx) => ({
+      if (scraped.images && scraped.images.length > 0 && candidateImages.length === 0) {
+        candidateImages = scraped.images.slice(0, 6).map((im, idx) => ({
           url: im.url,
-          alt: im.alt || sourceTitle || 'Story scene',
+          alt: im.alt || sourceTitle || 'Story cover',
           isFeatured: idx === 0,
           isExternal: false,
         }));
@@ -759,8 +801,7 @@ export async function generateStoryArticleWithAi(params: StoryGenerateParams): P
     } catch {}
   }
 
-  // If still no images and topic/source available, try discovering related images
-  if (collectedImages.length === 0) {
+  if (candidateImages.length === 0) {
     try {
       const disc = await tryDiscoverSourceArticleImagesFromText(
         sourceTitle || params.topic,
@@ -768,7 +809,7 @@ export async function generateStoryArticleWithAi(params: StoryGenerateParams): P
         []
       );
       if (disc && disc.images.length > 0) {
-        collectedImages = disc.images.slice(0, 6).map((im, idx) => ({
+        candidateImages = disc.images.slice(0, 6).map((im, idx) => ({
           url: im.url,
           alt: im.alt || sourceTitle || params.topic,
           isFeatured: idx === 0,
@@ -778,40 +819,43 @@ export async function generateStoryArticleWithAi(params: StoryGenerateParams): P
     } catch {}
   }
 
-  if (collectedImages.length < 3 && (sourceTitle || params.topic)) {
+  if (candidateImages.length === 0 && (sourceTitle || params.topic)) {
     try {
       const ctx = analyzeArticleSubjectAndContext(
         sourceTitle || params.topic,
         sourceText || params.topic,
         params.topic,
-        collectedImages
+        candidateImages
       );
-      const exclude = new Set(collectedImages.map((i) => i.url.split('?')[0].toLowerCase()));
-      const extra = await searchExternalRelatedImages(
+      const ext = await searchExternalRelatedImages(
         ctx?.combinedSearchQuery || sourceTitle || params.topic,
-        Math.max(1, 5 - collectedImages.length),
-        exclude,
+        4,
+        new Set(),
         ctx
       );
-      if (extra.length > 0) {
-        collectedImages = [
-          ...collectedImages,
-          ...extra.map((im) => ({
-            url: im.url,
-            alt: im.alt || sourceTitle || params.topic,
-            isFeatured: false,
-            isExternal: true,
-          })),
-        ];
+      if (ext.length > 0) {
+        candidateImages = ext.slice(0, 4).map((im, idx) => ({
+          url: im.url,
+          alt: im.alt || sourceTitle || params.topic,
+          isFeatured: idx === 0,
+          isExternal: true,
+        }));
       }
     } catch {}
   }
 
+  // CHỈ CHỌN 1 ẢNH ĐẠI DIỆN DUY NHẤT ĐỂ DÙNG CHUNG CHO TẤT CẢ CÁC CHƯƠNG
+  const singleCoverUrl = candidateImages[0]?.url || '';
+  const singleCoverList = candidateImages.slice(0, 6).map((im, idx) => ({
+    ...im,
+    isFeatured: idx === 0,
+  }));
+
   const ai = createFreeGeminiClient();
   const promptInputText = [
-    params.topic ? `User Premise / Topic:\n${params.topic.trim()}` : '',
+    params.topic ? `User Premise / Story Core:\n${params.topic.trim()}` : '',
     sourceTitle ? `Original Reference Title:\n${sourceTitle}` : '',
-    sourceText ? `Reference Facts / Story Material:\n${sourceText.slice(0, 12000)}` : '',
+    sourceText ? `Reference Facts / Story Material:\n${sourceText.slice(0, 10000)}` : '',
     params.keyword ? `Focus Keyword: ${params.keyword}` : '',
     params.categoryName ? `Category: ${params.categoryName}` : '',
   ]
@@ -822,30 +866,26 @@ export async function generateStoryArticleWithAi(params: StoryGenerateParams): P
   const povInstruction =
     storyPov === 'first_person'
       ? language === 'vi'
-        ? 'Kể theo ngôi thứ nhất ("Tôi"), giọng văn tự sự chân thật, gần gũi.'
-        : 'Tell the story in immersive first-person ("I") voice with vivid personal reflection.'
+        ? 'Kể theo ngôi thứ nhất ("Tôi"), giọng văn tự sự giàu cảm xúc.'
+        : 'Tell the story in immersive first-person ("I") voice with vivid personal emotion.'
       : language === 'vi'
-      ? 'Kể theo ngôi thứ ba toàn tri, miêu tả sâu tâm lý nhân vật và khung cảnh.'
-      : 'Tell the story in cinematic third-person narrative with rich character perspective and dialogue.';
+      ? 'Kể theo ngôi thứ ba toàn tri, miêu tả sâu tâm lý nhân vật và bối cảnh điện ảnh.'
+      : 'Tell the story in cinematic third-person narrative with rich character depth and dialogue.';
 
   const systemInstruction =
     language === 'vi'
-      ? `Bạn là nhà văn kể chuyện điện ảnh chuyên viết truyện dài kỳ hấp dẫn cho website https://movieshd4k.com/.
-Nhiệm vụ: Chuyển hóa ý tưởng hoặc bài viết nguồn thành MỘT CÂU CHUYỆN HOÀN CHỈNH (viết dạng truyện kể có mở đầu, cao trào, hội thoại tự nhiên và cái kết đọng lại cảm xúc), TUYỆT ĐỐI KHÔNG viết kiểu tin tức khô khan hay liệt kê SEO.
-Yêu cầu:
-- Phong cách: ${styleGuide}
-- Góc nhìn: ${povInstruction}
-- Chia đúng ${chapterCount} chương/hồi (mỗi chương đặt tiêu đề gợi tò mò kiểu "Chương 1: ...").
-- Mỗi chương gồm 3 đến 5 đoạn văn ngắn gọn (mỗi đoạn khoảng 40-75 từ) dễ đọc trên điện thoại, xen kẽ câu thoại tự nhiên trong dấu ngoặc kép.
-- Giữ trung thực các nhân vật/tình tiết cốt lõi nếu có tài liệu nguồn, nhưng kể lại giàu hình ảnh, cảm xúc và nhịp điệu lôi cuốn.`
-      : `You are a master cinematic storyteller writing serialized narrative stories for https://movieshd4k.com/.
-Mission: Transform the user's premise or reference material into an ENGAGING FULL STORY written in immersive narrative prose (opening hook, rising conflict, natural character dialogue, emotional climax, and memorable ending) — NEVER write a dry news summary or robotic SEO listicle.
-Requirements:
-- Style: ${styleGuide}
-- Point of View: ${povInstruction}
-- Structure into exactly ${chapterCount} chapters/parts (e.g., "Part 1: ..." with intriguing chapter titles).
-- Each chapter must have 3 to 5 concise, binge-worthy paragraphs (40–75 words each) for effortless mobile reading, including natural spoken dialogue in quotation marks.
-- Preserve key real names/facts when source material is provided while bringing scenes alive visually and emotionally.`;
+      ? `Bạn là nhà văn viết truyện dài kỳ chuyên nghiệp cho website https://movieshd4k.com/.
+Nhiệm vụ: Sáng tác bộ truyện gồm đúng ${chapterCount} chương liên kết chặt chẽ với nhau:
+1. CHƯƠNG 1 LÀ NỘI DUNG CHÍNH (Main Story): Mở đầu cuốn hút, giới thiệu trọn vẹn nhân vật chính, bối cảnh, mâu thuẫn trung tâm của toàn bộ câu chuyện và kết chương bằng móc nối căng thẳng dẫn thẳng sang Chương 2.
+2. CÁC CHƯƠNG TIẾP THEO (Chương 2..${chapterCount}): Mỗi chương tiếp nối TRỰC TIẾP khoảnh khắc cuối của chương trước, đẩy cao kịch tính, hội thoại tự nhiên trong ngoặc kép, cảm xúc nhân vật và móc nối liền mạch sang chương sau cho đến cái kết lắng đọng ở chương cuối.
+3. ĐỘ DÀI BẮT BUỘC: MỖI CHƯƠNG phải viết dài TẦM 500 TỪ (từ 450 đến 580 từ cho MỖI CHƯƠNG — viết 6 đến 8 đoạn văn chi tiết, mỗi đoạn 65-95 từ). TUYỆT ĐỐI KHÔNG viết tóm tắt ngắn vài dòng.
+4. Phong cách: ${styleGuide}. Góc nhìn: ${povInstruction}.`
+      : `You are a professional serialized fiction author writing multi-chapter stories for https://movieshd4k.com/.
+Mission: Write a tightly connected ${chapterCount}-chapter story:
+1. CHAPTER 1 IS THE MAIN CONTENT (Nội dung chính): Hook the reader immediately, establish the central characters, main setting, core premise/conflict, and end on a vivid cliffhanger leading straight into Chapter 2.
+2. CHAPTERS 2..${chapterCount}: Each chapter continues DIRECTLY from the exact ending moment of the previous chapter so all chapters form one seamless, linked narrative arc through the emotional climax and finale.
+3. STRICT WORD COUNT REQUIREMENT: EVERY SINGLE CHAPTER MUST be around 500 words (450–580 words PER CHAPTER, composed of 6 to 8 rich narrative paragraphs of 65–95 words each including natural character dialogue). NEVER output short 100-word summaries.
+4. Style: ${styleGuide}. POV: ${povInstruction}.`;
 
   let usedGemini = false;
   let warning = '';
@@ -853,15 +893,15 @@ Requirements:
   let generatedSlug = slugifyStory(generatedTitle);
   let generatedExcerpt = '';
   let generatedTags: string[] = [];
-  let chapters: { heading: string; paragraphs: string[] }[] = [];
+  let chapters: StoryChapterPayload[] = [];
 
   if (ai) {
     try {
       const response = await ai.models.generateContent({
         model: STORY_AI_MODEL,
-        contents: `${promptInputText}\n\nWrite the complete ${chapterCount}-chapter story in ${
+        contents: `${promptInputText}\n\nWrite ${chapterCount} tightly linked chapters in ${
           language === 'vi' ? 'Vietnamese' : 'English'
-        } and return strictly valid JSON matching the schema.`,
+        }. Chapter 1 is the Main Story Content, and EACH of the ${chapterCount} chapters must be ~500 words (6-8 full paragraphs per chapter). Return strictly valid JSON matching the schema.`,
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -880,13 +920,15 @@ Requirements:
                 items: {
                   type: Type.OBJECT,
                   properties: {
+                    chapterNumber: { type: Type.INTEGER },
                     heading: { type: Type.STRING },
+                    summary: { type: Type.STRING },
                     paragraphs: {
                       type: Type.ARRAY,
                       items: { type: Type.STRING },
                     },
                   },
-                  required: ['heading', 'paragraphs'],
+                  required: ['chapterNumber', 'heading', 'paragraphs'],
                 },
               },
             },
@@ -905,47 +947,71 @@ Requirements:
           generatedTags = parsed.tags.map((t: any) => String(t).trim()).filter(Boolean).slice(0, 8);
         }
         if (Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
-          chapters = parsed.chapters.map((ch: any, idx: number) => ({
-            heading: String(ch.heading || (language === 'vi' ? `Chương ${idx + 1}` : `Part ${idx + 1}`)).trim(),
-            paragraphs: Array.isArray(ch.paragraphs)
+          const baseSlug = generatedSlug || slugifyStory(generatedTitle) || `story-${Date.now()}`;
+          chapters = parsed.chapters.map((ch: any, idx: number) => {
+            const chNum = idx + 1;
+            const isMain = chNum === 1;
+            const heading = String(
+              ch.heading ||
+                (language === 'vi'
+                  ? isMain
+                    ? 'Chương 1 (Nội dung chính)'
+                    : `Chương ${chNum}`
+                  : isMain
+                  ? 'Chapter 1 (Main Story)'
+                  : `Chapter ${chNum}`)
+            ).trim();
+            const paras = Array.isArray(ch.paragraphs)
               ? ch.paragraphs.map((p: any) => String(p).trim()).filter(Boolean)
-              : [],
-          }));
+              : [];
+            const contentHtml = buildSingleChapterHtml({
+              heading,
+              paragraphs: paras,
+              sharedCoverImageUrl: singleCoverUrl,
+              storyTitle: generatedTitle,
+            });
+            return {
+              chapterNumber: chNum,
+              heading,
+              slug: isMain ? baseSlug : `${baseSlug}-chuong-${chNum}`,
+              contentHtml,
+              excerpt: String(ch.summary || paras[0] || generatedTitle).slice(0, 160),
+              wordCount: countWords(contentHtml),
+              isMainContent: isMain,
+            };
+          });
           usedGemini = true;
         }
       }
     } catch (err: any) {
       const msg = String(err?.message || err || '');
-      warning = msg.includes('429') || msg.toLowerCase().includes('quota')
-        ? 'Gemini Free Tier đang chạm giới hạn lượt gọi tạm thời — đã dùng bộ dựng khung truyện dự phòng để bạn chỉnh sửa ngay.'
-        : `Không gọi được Gemini Free Tier (${msg.slice(0, 120)}) — đã tạo bản khung truyện dự phòng.`;
+      warning =
+        msg.includes('429') || msg.toLowerCase().includes('quota')
+          ? 'Gemini Free Tier đang chạm giới hạn lượt gọi tạm thời — đã dựng bộ chương ~500 từ/chương dự phòng để bạn chỉnh sửa ngay.'
+          : `Không gọi được Gemini Free Tier (${msg.slice(0, 120)}) — đã tạo bộ chương dự phòng.`;
     }
   } else {
     warning =
-      'Chưa phát hiện GEMINI_API_KEY trong môi trường máy chủ — đã tạo khung truyện cấu trúc sẵn từ nội dung đầu vào.';
+      'Chưa phát hiện GEMINI_API_KEY trên máy chủ — đã tạo bộ truyện nhiều chương (~500 từ/chương) dùng chung 1 ảnh đại diện để bạn chỉnh sửa hoặc thêm key để AI viết sâu hơn.';
   }
 
-  let finalHtml = '';
-  if (chapters.length > 0) {
-    finalHtml = interleaveStoryImages(chapters, collectedImages, generatedTitle);
-  } else {
-    const fallback = buildFallbackStory({
+  if (chapters.length === 0) {
+    const fallback = buildFallbackMultiChapterStory({
       title: generatedTitle,
       sourceText: sourceText || params.topic,
       language,
       chapterCount,
-      images: collectedImages,
+      sharedCoverImageUrl: singleCoverUrl,
     });
     generatedTitle = fallback.title;
     generatedSlug = fallback.slug;
     generatedExcerpt = fallback.excerpt;
     generatedTags = fallback.tags;
     chapters = fallback.chapters;
-    finalHtml = fallback.html;
   }
 
-  const plainWords = stripHtmlTags(finalHtml).split(/\s+/).filter(Boolean).length;
-  const readingMinutes = Math.max(1, Math.round(plainWords / 200));
+  const totalWords = chapters.reduce((acc, c) => acc + c.wordCount, 0);
+  const readingMinutes = Math.max(1, Math.round(totalWords / 200));
 
   return {
     ok: true,
@@ -954,15 +1020,279 @@ Requirements:
     ...(warning ? { warning } : {}),
     title: generatedTitle,
     slug: generatedSlug || slugifyStory(generatedTitle) || `story-${Date.now()}`,
-    excerpt: generatedExcerpt || stripHtmlTags(finalHtml).slice(0, 155),
+    excerpt: generatedExcerpt || chapters[0]?.excerpt || generatedTitle,
     tags: generatedTags,
-    content: finalHtml,
-    wordCount: plainWords,
+    content: chapters[0]?.contentHtml || '',
+    chapters,
+    wordCount: totalWords,
     chapterCount: chapters.length,
     readingMinutes,
-    featuredImageUrl: collectedImages[0]?.url || '',
-    images: collectedImages,
+    featuredImageUrl: singleCoverUrl,
+    images: singleCoverList,
     sourceUrl: cleanSourceUrl || undefined,
+  };
+}
+
+function extractHiddenInputValue(html: string, fieldName: string): string {
+  const escaped = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const m1 = html.match(new RegExp(`name=["']${escaped}["'][^>]*value=["']([^"']*)["']`, 'i'));
+  if (m1 && m1[1] !== undefined) return m1[1];
+  const m2 = html.match(new RegExp(`value=["']([^"']*)["'][^>]*name=["']${escaped}["']`, 'i'));
+  return m2 && m2[1] !== undefined ? m2[1] : '';
+}
+
+export async function publishLinkedNpChapterOnMoviesHd4k(params: {
+  chapterPostId?: number;
+  storyId: number;
+  chapterNumber: number;
+  storyTitle: string;
+  chapterHeading: string;
+  slug?: string;
+  contentHtml: string;
+  excerpt?: string;
+  status?: 'publish' | 'draft' | 'pending';
+  featuredMediaId?: number;
+  featuredImageUrl?: string;
+  employeeCode?: string;
+}): Promise<{
+  ok: boolean;
+  chapterNumber: number;
+  postId: number;
+  title: string;
+  link: string;
+  trackingLink: string;
+  status: string;
+}> {
+  let session = await getMoviesHd4kSession(false);
+
+  const openEditorUrl = params.chapterPostId
+    ? `${DEFAULT_MOVIES_SITE}/wp-admin/post.php?post=${params.chapterPostId}&action=edit`
+    : `${DEFAULT_MOVIES_SITE}/wp-admin/post-new.php?post_type=np_chapter`;
+
+  let editorRes = await fetch(openEditorUrl, {
+    headers: {
+      Cookie: session.cookieHeader,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0 Safari/537.36',
+    },
+  });
+
+  if (editorRes.url.includes('nghean3737') || editorRes.url.includes('wp-login')) {
+    session = await getMoviesHd4kSession(true);
+    editorRes = await fetch(openEditorUrl, {
+      headers: { Cookie: session.cookieHeader },
+    });
+  }
+
+  const editorHtml = await editorRes.text();
+  const postId = extractHiddenInputValue(editorHtml, 'post_ID') || String(params.chapterPostId || '');
+  const wpNonce = extractHiddenInputValue(editorHtml, '_wpnonce');
+  const npChapterNonce = extractHiddenInputValue(editorHtml, 'np_chapter_nonce');
+  const userId = extractHiddenInputValue(editorHtml, 'user_ID') || '1';
+  const originalStatus = extractHiddenInputValue(editorHtml, 'original_post_status') || 'auto-draft';
+
+  if (!postId || !wpNonce) {
+    throw new Error(`Không mở được trình tạo chương (np_chapter) trên ${DEFAULT_MOVIES_SITE}.`);
+  }
+
+  const chapterFullTitle = params.chapterHeading.trim()
+    ? `${params.chapterHeading.trim()}`
+    : `${params.storyTitle.trim()} - Chương ${params.chapterNumber}`;
+
+  const wpStatus = params.status === 'draft' ? 'draft' : 'publish';
+  const form = new URLSearchParams({
+    _wpnonce: wpNonce,
+    _wp_http_referer: params.chapterPostId
+      ? `/wp-admin/post.php?post=${postId}&action=edit`
+      : '/wp-admin/post-new.php?post_type=np_chapter',
+    user_ID: userId,
+    action: 'editpost',
+    originalaction: 'editpost',
+    post_author: userId,
+    post_type: 'np_chapter',
+    original_post_status: originalStatus,
+    post_ID: postId,
+    post_title: chapterFullTitle,
+    post_name: params.slug ? slugifyStory(params.slug) : slugifyStory(`${params.storyTitle}-chuong-${params.chapterNumber}`),
+    content: params.contentHtml,
+    excerpt: params.excerpt || '',
+    post_status: wpStatus,
+    ...(wpStatus === 'publish' ? { publish: 'Đăng' } : { save: 'Lưu nháp' }),
+    ...(npChapterNonce ? { np_chapter_nonce: npChapterNonce } : {}),
+    np_story_id: String(params.storyId),
+    np_chapter_number: String(params.chapterNumber),
+    _thumbnail_id: params.featuredMediaId && params.featuredMediaId > 0 ? String(params.featuredMediaId) : '-1',
+  });
+
+  const saveRes = await fetch(`${DEFAULT_MOVIES_SITE}/wp-admin/post.php`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Cookie: session.cookieHeader,
+      Origin: DEFAULT_MOVIES_SITE,
+      Referer: openEditorUrl,
+    },
+    body: form.toString(),
+    redirect: 'manual',
+  });
+
+  if (saveRes.status >= 400) {
+    const errTxt = await saveRes.text().catch(() => '');
+    throw new Error(`Không lưu được Chương ${params.chapterNumber} (${saveRes.status}): ${errTxt.slice(0, 160)}`);
+  }
+
+  let chapterLink = `${DEFAULT_MOVIES_SITE}/?post_type=np_chapter&p=${postId}`;
+  try {
+    const verifyRes = await fetch(
+      `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_chapter/${postId}?context=edit`,
+      {
+        headers: {
+          Cookie: session.cookieHeader,
+          'X-WP-Nonce': session.restNonce,
+          Accept: 'application/json',
+        },
+      }
+    );
+    if (verifyRes.ok) {
+      const chJson = (await verifyRes.json()) as any;
+      if (chJson?.link) chapterLink = String(chJson.link);
+    }
+  } catch {}
+
+  const empCode = (params.employeeCode || '').trim().toUpperCase();
+  const trackingLink = empCode
+    ? `${chapterLink}${chapterLink.includes('?') ? '&' : '?'}${empCode}`
+    : chapterLink;
+
+  return {
+    ok: true,
+    chapterNumber: params.chapterNumber,
+    postId: Number(postId),
+    title: chapterFullTitle,
+    link: chapterLink,
+    trackingLink,
+    status: wpStatus,
+  };
+}
+
+export function buildChapterNavigationFooterHtml(params: {
+  currentChapterNumber: number;
+  language: 'en' | 'vi';
+  chapters: { chapterNumber: number; heading: string; link: string; isMainContent?: boolean }[];
+}): string {
+  const isVi = params.language === 'vi';
+  const sorted = [...params.chapters].sort((a, b) => a.chapterNumber - b.chapterNumber);
+  const idx = sorted.findIndex((c) => c.chapterNumber === params.currentChapterNumber);
+  const prev = idx > 0 ? sorted[idx - 1] : null;
+  const next = idx >= 0 && idx < sorted.length - 1 ? sorted[idx + 1] : null;
+  const mainCh = sorted[0];
+
+  const navButtons: string[] = [];
+  if (prev) {
+    navButtons.push(
+      `<a href="${escapeHtml(prev.link)}" style="display:inline-block;padding:8px 14px;background:#f1f5f9;color:#0f172a;border-radius:6px;text-decoration:none;font-weight:600;">← ${
+        isVi ? `Chương ${prev.chapterNumber}` : `Chapter ${prev.chapterNumber}`
+      }</a>`
+    );
+  }
+  if (mainCh && params.currentChapterNumber !== mainCh.chapterNumber) {
+    navButtons.push(
+      `<a href="${escapeHtml(mainCh.link)}" style="display:inline-block;padding:8px 14px;background:#e0e7ff;color:#312e81;border-radius:6px;text-decoration:none;font-weight:700;">📖 ${
+        isVi ? 'Chương 1 (Nội dung chính)' : 'Chapter 1 (Main Story)'
+      }</a>`
+    );
+  }
+  if (next) {
+    navButtons.push(
+      `<a href="${escapeHtml(next.link)}" style="display:inline-block;padding:8px 16px;background:#4f46e5;color:#ffffff;border-radius:6px;text-decoration:none;font-weight:700;">${
+        isVi ? `Đọc tiếp Chương ${next.chapterNumber}` : `Next: Chapter ${next.chapterNumber}`
+      } →</a>`
+    );
+  }
+
+  const tocItems = sorted
+    .map((c) => {
+      const label = escapeHtml(c.heading);
+      if (c.chapterNumber === params.currentChapterNumber) {
+        return `<li><strong>${label} (${isVi ? 'Đang đọc' : 'Reading'})</strong></li>`;
+      }
+      return `<li><a href="${escapeHtml(c.link)}">${label}</a></li>`;
+    })
+    .join('\n');
+
+  return `<hr class="wp-block-separator" />
+<div class="story-chapter-navigation" style="margin:24px 0;padding:18px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
+  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:14px;">
+    ${navButtons.join('\n    ')}
+  </div>
+  <div style="font-weight:700;margin-bottom:8px;color:#1e293b;">
+    ${isVi ? 'Danh sách các chương liên kết:' : 'Connected Story Chapters:'}
+  </div>
+  <ul style="margin:0;padding-left:20px;line-height:1.8;">
+    ${tocItems}
+  </ul>
+</div>`;
+}
+
+export async function linkChaptersContentOnMoviesHd4k(params: {
+  postType: 'posts' | 'np_story';
+  language?: 'en' | 'vi';
+  featuredMediaId?: number;
+  chapters: {
+    chapterNumber: number;
+    postId: number;
+    heading: string;
+    link: string;
+    baseContentHtml: string;
+    isMainContent?: boolean;
+  }[];
+}): Promise<{ ok: boolean; updatedCount: number }> {
+  const session = await getMoviesHd4kSession(false);
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Accept: 'application/json',
+    Cookie: session.cookieHeader,
+    'X-WP-Nonce': session.restNonce,
+  };
+  const lang = params.language === 'vi' ? 'vi' : 'en';
+
+  const results = await Promise.all(
+    params.chapters.map(async (ch) => {
+      const cleanBase = ch.baseContentHtml.replace(
+        /<hr class="wp-block-separator" \/>\s*<div class="story-chapter-navigation"[\s\S]*$/i,
+        ''
+      );
+      const navFooter = buildChapterNavigationFooterHtml({
+        currentChapterNumber: ch.chapterNumber,
+        language: lang,
+        chapters: params.chapters,
+      });
+      const fullContent = `${cleanBase.trim()}\n\n${navFooter}`;
+      const collection =
+        params.postType === 'posts'
+          ? 'posts'
+          : ch.isMainContent || ch.chapterNumber === 1
+          ? 'np_story'
+          : 'np_chapter';
+
+      const bodyPayload: Record<string, any> = {
+        content: fullContent,
+      };
+      if (params.featuredMediaId && params.featuredMediaId > 0) {
+        bodyPayload.featured_media = params.featuredMediaId;
+      }
+
+      const r = await fetch(`${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/${collection}/${ch.postId}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(bodyPayload),
+      });
+      return r.ok;
+    })
+  );
+
+  return {
+    ok: true,
+    updatedCount: results.filter(Boolean).length,
   };
 }
 
@@ -991,6 +1321,8 @@ export async function publishStoryToMoviesHd4k(params: {
 }): Promise<{
   ok: boolean;
   postId?: number;
+  featuredMediaId?: number;
+  featuredImageUrl?: string;
   postType?: 'posts' | 'np_story';
   link?: string;
   trackingLink?: string;
@@ -1004,7 +1336,6 @@ export async function publishStoryToMoviesHd4k(params: {
     throw new Error('Nội dung truyện không được để trống');
   }
 
-  // Webhook mode
   if (params.targetMode === 'webhook' && params.webhookUrl?.trim()) {
     const res = await fetch(params.webhookUrl.trim(), {
       method: 'POST',
@@ -1050,8 +1381,8 @@ export async function publishStoryToMoviesHd4k(params: {
     ? params.customWpUrl!.trim().replace(/\/+$/, '')
     : DEFAULT_MOVIES_SITE;
 
-  // Upload featured media if needed
   let finalFeaturedMediaId = Number(params.featuredMediaId || 0);
+  let finalFeaturedImageUrl = params.featuredImageUrl || '';
   if (finalFeaturedMediaId <= 0 && (params.featuredImageBase64 || params.featuredImageUrl)) {
     try {
       const uploaded = await uploadMediaToMoviesHd4k({
@@ -1063,6 +1394,7 @@ export async function publishStoryToMoviesHd4k(params: {
         customWpAppPassword: useCustomBasic ? params.customWpAppPassword : undefined,
       });
       finalFeaturedMediaId = uploaded.mediaId;
+      if (uploaded.mediaUrl) finalFeaturedImageUrl = uploaded.mediaUrl;
     } catch (uploadErr) {
       console.warn('[moviesHd4kService] Featured image upload skipped:', uploadErr);
     }
@@ -1088,10 +1420,12 @@ export async function publishStoryToMoviesHd4k(params: {
 
   let headers = await buildHeaders(false);
 
-  // Resolve or create tag IDs if provided
+  const resolvedPostType: 'posts' | 'np_story' = params.postType === 'posts' ? 'posts' : 'np_story';
+  const restCollection = resolvedPostType === 'np_story' ? 'np_story' : 'posts';
+
   const tagIds: number[] = [];
-  if (Array.isArray(params.tags) && params.tags.length > 0) {
-    for (const rawTag of params.tags.slice(0, 6)) {
+  if (resolvedPostType === 'posts' && Array.isArray(params.tags) && params.tags.length > 0) {
+    for (const rawTag of params.tags.slice(0, 4)) {
       const tName = rawTag.trim();
       if (!tName) continue;
       try {
@@ -1122,9 +1456,6 @@ export async function publishStoryToMoviesHd4k(params: {
     }
   }
 
-  const resolvedPostType: 'posts' | 'np_story' = params.postType === 'posts' ? 'posts' : 'np_story';
-  const restCollection = resolvedPostType === 'np_story' ? 'np_story' : 'posts';
-
   const endpoint = params.postId
     ? `${targetSite}/wp-json/wp/v2/${restCollection}/${params.postId}`
     : `${targetSite}/wp-json/wp/v2/${restCollection}`;
@@ -1139,7 +1470,7 @@ export async function publishStoryToMoviesHd4k(params: {
     payloadBody.categories =
       Array.isArray(params.categories) && params.categories.length > 0
         ? params.categories
-        : [12]; // Default Story category
+        : [12];
     if (tagIds.length > 0) payloadBody.tags = tagIds;
   } else if (Array.isArray(params.genres) && params.genres.length > 0) {
     payloadBody.np_genre = params.genres;
@@ -1179,12 +1510,14 @@ export async function publishStoryToMoviesHd4k(params: {
   return {
     ok: true,
     postId: Number(createdPost.id),
+    featuredMediaId: finalFeaturedMediaId,
+    featuredImageUrl: finalFeaturedImageUrl,
     postType: resolvedPostType,
     link: postLink,
     trackingLink,
     status: String(createdPost.status || params.status || 'publish'),
     message: params.postId
-      ? `Đã cập nhật truyện #${createdPost.id} trên ${targetSite}!`
-      : `Đã đăng truyện mới #${createdPost.id} lên ${targetSite} thành công!`,
+      ? `Đã cập nhật Chương 1 (Nội dung chính) #${createdPost.id} trên ${targetSite}!`
+      : `Đã đăng Chương 1 (Nội dung chính) #${createdPost.id} lên ${targetSite} thành công!`,
   };
 }
