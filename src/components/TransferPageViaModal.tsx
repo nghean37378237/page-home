@@ -1655,8 +1655,8 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                         (u) => u.trim().toLowerCase() === v.uid.trim().toLowerCase()
                       );
                       const inWaitingPool = isAdminWaitingPool(v.staffName) || !v.staffName.trim();
-                      const doingPagesCount = v.pages.filter((p) => p.status !== 'Không làm').length;
-                      const notDoingPagesCount = v.pages.filter((p) => p.status === 'Không làm').length;
+                      const doingPagesCount = v.pages.filter((p) => p.progressStatus !== 'Không làm').length;
+                      const notDoingPagesCount = v.pages.filter((p) => p.progressStatus === 'Không làm').length;
 
                       return (
                         <label
@@ -1726,7 +1726,7 @@ export const TransferPageViaModal: React.FC<TransferPageViaModalProps> = ({
                                 <span
                                   key={p.id}
                                   className={`inline-flex items-center space-x-1 text-[10px] px-1.5 py-0.2 rounded border font-semibold ${
-                                    p.status === 'Không làm'
+                                    p.progressStatus === 'Không làm'
                                       ? 'bg-rose-50 text-rose-800 border-rose-200'
                                       : 'bg-white text-slate-800 border-slate-200 shadow-2xs'
                                   }`}

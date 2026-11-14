@@ -11,6 +11,7 @@ import {
   TAB_DEFINITIONS,
   DEFAULT_WP_EMPLOYEE_OPTIONS,
   resolveAccountWpEmployeeCode,
+  resolveAccountAllowedTabs,
 } from '../types';
 import {
   Users,

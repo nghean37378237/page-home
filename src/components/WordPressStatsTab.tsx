@@ -758,11 +758,11 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
         {
           code: viewerEmployeeCode,
           account: currentUser?.name || viewerEmployeeCode,
-          views: data?.empSummary?.views ?? data?.summary?.views ?? 0,
-          visitors: data?.empSummary?.visitors ?? data?.summary?.visitors ?? 0,
-          newVisitors: data?.empSummary?.newcomers ?? data?.summary?.newcomers ?? 0,
-          returningVisitors: data?.empSummary?.returning ?? data?.summary?.returning ?? 0,
-          online: data?.empRealtime?.online ?? data?.realtime?.online ?? 0,
+          views: data?.employeeSummary?.views ?? data?.summary?.views ?? 0,
+          visitors: data?.employeeSummary?.visitors ?? data?.summary?.visitors ?? 0,
+          newVisitors: data?.employeeSummary?.newcomers ?? data?.summary?.newcomers ?? 0,
+          returningVisitors: data?.employeeSummary?.returning ?? data?.summary?.returning ?? 0,
+          online: data?.employeeRealtime?.online ?? data?.realtime?.online ?? 0,
         },
       ];
     }
@@ -777,9 +777,9 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
     return allRows;
   }, [
     data?.employeeRanking?.rows,
-    data?.empSummary,
+    data?.employeeSummary,
     data?.summary,
-    data?.empRealtime,
+    data?.employeeRealtime,
     data?.realtime,
     activeDisplayCode,
     empDetailCode,
@@ -798,17 +798,17 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
       (r) => r.code.trim().toUpperCase() === codeToFind.trim().toUpperCase()
     );
     if (found) return found;
-    if (data?.empSummary) {
+    if (data?.employeeSummary) {
       const optLabel =
         allEmployeeOptions.find((o) => o.code === codeToFind)?.label || codeToFind;
       return {
         code: codeToFind,
         account: optLabel,
-        views: data.empSummary.views || 0,
-        visitors: data.empSummary.visitors || 0,
-        newVisitors: data.empSummary.newcomers || 0,
-        returningVisitors: data.empSummary.returning || 0,
-        online: data.empRealtime?.online ?? 0,
+        views: data.employeeSummary.views || 0,
+        visitors: data.employeeSummary.visitors || 0,
+        newVisitors: data.employeeSummary.newcomers || 0,
+        returningVisitors: data.employeeSummary.returning || 0,
+        online: data.employeeRealtime?.online ?? 0,
       };
     }
     return null;
@@ -817,8 +817,8 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
     empDetailCode,
     viewerEmployeeCode,
     data?.employeeRanking?.rows,
-    data?.empSummary,
-    data?.empRealtime,
+    data?.employeeSummary,
+    data?.employeeRealtime,
     allEmployeeOptions,
   ]);
 
@@ -1879,7 +1879,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
               )}
 
               {/* Ngược lại, khi đang chọn Toàn website mà có Mã nhân viên cá nhân thì hiện thêm Tổng hợp của Mã nhân viên đó */}
-              {scope === 'site' && activeDisplayCode && data?.empSummary && (
+              {scope === 'site' && activeDisplayCode && data?.employeeSummary && (
                 <div className="pt-3.5 border-t border-[#e5eaf1]">
                   <div className="flex items-center justify-between gap-2.5 flex-wrap mb-3">
                     <h4 className="m-0 text-[14px] font-bold text-[#2271b1]">
@@ -1895,7 +1895,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                         Lượt xem ({activeDisplayCode})
                       </span>
                       <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
-                        {fmt(data.empSummary.views)}
+                        {fmt(data.employeeSummary.views)}
                       </strong>
                     </div>
                     <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
@@ -1903,7 +1903,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                         Khách duy nhất ({activeDisplayCode})
                       </span>
                       <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
-                        {fmt(data.empSummary.visitors)}
+                        {fmt(data.employeeSummary.visitors)}
                       </strong>
                     </div>
                     <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
@@ -1911,7 +1911,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                         Khách mới ({activeDisplayCode})
                       </span>
                       <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
-                        {fmt(data.empSummary.newcomers)}
+                        {fmt(data.employeeSummary.newcomers)}
                       </strong>
                     </div>
                     <div className="flex flex-col gap-1.5 border border-[#dbeafe] rounded-[10px] px-4 py-3 bg-[#f8fbff]">
@@ -1919,7 +1919,7 @@ export const WordPressStatsTab: React.FC<WordPressStatsTabProps> = ({
                         Quay lại ({activeDisplayCode})
                       </span>
                       <strong className="text-[20px] tracking-[-0.4px] leading-[1.2] text-[#1e3a8a]">
-                        {fmt(data.empSummary.returning)}
+                        {fmt(data.employeeSummary.returning)}
                       </strong>
                     </div>
                   </div>

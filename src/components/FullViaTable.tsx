@@ -1661,13 +1661,13 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
       return;
     }
 
-    const rawFull = buildFullViaString(
-      trimmedUid,
-      trimmedPass,
-      trimmed2Fa,
-      trimmedEmail,
-      trimmedEmailPass
-    );
+    const rawFull = buildFullViaString({
+      uid: trimmedUid,
+      pass: trimmedPass,
+      twoFa: trimmed2Fa,
+      email: trimmedEmail,
+      emailPass: trimmedEmailPass,
+    });
     const isErr = modalForm.status === 'error' || modalForm.status === 'dead' || Boolean(modalForm.isError);
     const isFix = modalForm.status === 'fixed' || Boolean(modalForm.isFixed);
     const finalStatus = isFix ? 'fixed' : isErr ? (modalForm.status === 'dead' ? 'dead' : 'error') : modalForm.status;
@@ -2524,8 +2524,8 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                     {assignedPages.length > 1 && (
                       <div className="flex items-center justify-between text-[9.5px] font-bold text-emerald-900 border-b border-emerald-100 pb-0.5 mb-0.5">
                         <span>
-                          🟢 {assignedPages.filter((p) => p.status !== 'Không làm').length} làm • 🔴{' '}
-                          {assignedPages.filter((p) => p.status === 'Không làm').length} nghỉ
+                          🟢 {assignedPages.filter((p) => p.progressStatus !== 'Không làm').length} làm • 🔴{' '}
+                          {assignedPages.filter((p) => p.progressStatus === 'Không làm').length} nghỉ
                         </span>
                         <span className="text-indigo-700 font-extrabold">
                           Tổng: {assignedPages.length} Page
@@ -2538,7 +2538,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                           key={p.id}
                           onClick={() => onFilterPageByVia && onFilterPageByVia(via.uid)}
                           className="text-[10px] flex items-center justify-between gap-1 cursor-pointer hover:text-indigo-700"
-                          title={`${p.pageName} (${p.status}) - Bấm để mở bên Quản Lý Page`}
+                          title={`${p.pageName} (${p.progressStatus || p.status}) - Bấm để mở bên Quản Lý Page`}
                         >
                           <span className="truncate font-semibold text-slate-800">
                             {assignedPages.length > 1 ? `${pIdx + 1}. ` : ''}
@@ -2546,9 +2546,9 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                           </span>
                           <span
                             className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                              p.status === 'Không làm' ? 'bg-rose-500' : 'bg-emerald-500'
+                              p.progressStatus === 'Không làm' ? 'bg-rose-500' : 'bg-emerald-500'
                             }`}
-                            title={p.status}
+                            title={p.progressStatus || p.status}
                           />
                         </div>
                       ))}
@@ -5544,7 +5544,7 @@ export const FullViaTable: React.FC<FullViaTableProps> = ({
                           : 'bg-slate-100 text-slate-600'
                       }`}>
                         {linkedGroups.length > 0
-                          ? `Có ${linkedGroups.length} dòng Group (${linkedGroups.slice(0, 2).map((g) => g.viaName || `${g.groupCount} nhóm`).join(', ')}${linkedGroups.length > 2 ? '...' : ''})`
+                          ? `Có ${linkedGroups.length} dòng Group (${linkedGroups.slice(0, 2).map((g) => g.groupName || g.viaName || g.uid).join(', ')}${linkedGroups.length > 2 ? '...' : ''})`
                           : '0 dòng Group liên kết'}
                       </span>
                     </div>

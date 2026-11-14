@@ -224,7 +224,8 @@ export type TabKey =
   | 'staff_info'
   | 'image_studio'
   | 'view_stats'
-  | 'web_publish';
+  | 'web_publish'
+  | 'movieshd4k_story';
 
 export interface TabPermissionConfig {
   id: TabKey;
@@ -248,6 +249,7 @@ export const ALL_TAB_KEYS: TabKey[] = [
   'image_studio',
   'view_stats',
   'web_publish',
+  'movieshd4k_story',
 ];
 
 // Các bảng phân quyền cho nhân viên (Bảng 5 Quản Trị NV & Bảng 7 Quản Lý Doanh Thu chỉ dành riêng cho Admin quản lý)
@@ -261,6 +263,7 @@ export const STAFF_ASSIGNABLE_TABS: TabKey[] = [
   'image_studio',
   'view_stats',
   'web_publish',
+  'movieshd4k_story',
 ];
 
 export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
@@ -357,11 +360,20 @@ export const TAB_DEFINITIONS: Record<TabKey, TabPermissionConfig> = {
   web_publish: {
     id: 'web_publish',
     tabNumber: 11,
-    label: 'Bảng 11: Viết Bài & Đẩy Web',
-    shortLabel: 'B11 Viết Bài Web',
-    badgeName: 'Viết Bài',
+    label: 'Bảng 11: Viết Bài & Đẩy Web (celeb24h)',
+    shortLabel: 'B11 celeb24h',
+    badgeName: 'celeb24h',
     color: 'emerald',
     description: 'WebPublish Studio — Soạn thảo bài viết chuẩn SEO & tự động đẩy bài trực tiếp lên WordPress (celeb24h.com) kèm mã nhân viên.',
+  },
+  movieshd4k_story: {
+    id: 'movieshd4k_story',
+    tabNumber: 12,
+    label: 'Bảng 12: Viết Truyện (movieshd4k.com)',
+    shortLabel: 'B12 Truyện MoviesHD4K',
+    badgeName: 'Truyện HD4K',
+    color: 'indigo',
+    description: 'Story Studio riêng cho domain https://movieshd4k.com/ — Sáng tác & viết lại bài viết theo dạng truyện kể hấp dẫn, chia chương hồi & đẩy thẳng lên web.',
   },
 };
 
@@ -555,6 +567,27 @@ export function resolveAccountWpEmployeeCode(
     return 'A0006';
   }
   return '';
+}
+
+export function resolveAccountAllowedTabs(acc?: Partial<UserAccount> | null): TabKey[] {
+  if (!acc) {
+    return ['fanpage', 'fullvia', 'staff_info', 'image_studio', 'web_publish', 'movieshd4k_story'];
+  }
+  if (acc.role === 'admin') {
+    return [...ALL_TAB_KEYS];
+  }
+  const base: TabKey[] =
+    Array.isArray(acc.allowedTabs) && acc.allowedTabs.length > 0
+      ? (acc.allowedTabs.filter(
+          (t) => t !== 'staff_management' && t !== 'revenue' && ALL_TAB_KEYS.includes(t as TabKey)
+        ) as TabKey[])
+      : ['fanpage', 'fullvia', 'staff_info', 'image_studio', 'web_publish', 'movieshd4k_story'];
+  if (!base.includes('staff_info')) base.push('staff_info');
+  if (!base.includes('image_studio')) base.push('image_studio');
+  if (acc.wpEmployeeCode && acc.wpEmployeeCode !== 'NONE' && !base.includes('view_stats')) {
+    base.push('view_stats');
+  }
+  return base;
 }
 
 export interface AppUser {

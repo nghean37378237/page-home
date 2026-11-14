@@ -235,7 +235,7 @@ export const SheetFilterBar: React.FC<SheetFilterBarProps> = ({
     });
     return Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count || a.name.localeCompare(b, 'vi' as any));
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'vi'));
   }, [staffScopedRecords]);
 
   const handleClear = () => {

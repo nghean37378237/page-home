@@ -130,8 +130,9 @@ import { StaffInfoTable } from './components/StaffInfoTable';
 import { ImageStudioTab } from './components/ImageStudioTab';
 import { WordPressStatsTab } from './components/WordPressStatsTab';
 import { WebPublishStudioTab } from './components/WebPublishStudioTab';
+import { MoviesHd4kStoryTab } from './components/MoviesHd4kStoryTab';
 import { getCleanBmName, parseFullVia, parseSupplementalViaInput, buildFullViaString } from './utils/helpers';
-import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon, BarChart3, PenTool } from 'lucide-react';
+import { FileSpreadsheet, KeyRound, RotateCw, Cloud, Globe, Users, Upload, Plus, Network, UserCheck, X, CheckCircle2, RefreshCw, DollarSign, ChevronLeft, ChevronRight, ChevronDown, Layers, Contact, Image as ImageIcon, BarChart3, PenTool, BookOpen } from 'lucide-react';
 
 // Helper chuẩn hóa UID để so khớp chính xác giữa Quản Lý Page và Quản Lý Full Via
 function normalizeViaUidKey(raw?: string): string {
@@ -439,6 +440,10 @@ export default function App() {
     // Bảng 11: Viết Bài & Đẩy Web (WebPublish Studio) cho phép nhân viên truy cập để soạn thảo và đẩy bài lên website
     if (!filteredTabs.includes('web_publish')) {
       filteredTabs.push('web_publish');
+    }
+    // Bảng 12: Viết Truyện (https://movieshd4k.com/) tách riêng cho nhân viên và Admin viết dạng truyện
+    if (!filteredTabs.includes('movieshd4k_story')) {
+      filteredTabs.push('movieshd4k_story');
     }
     return filteredTabs;
   }, [currentUser, accounts]);
@@ -1327,7 +1332,7 @@ export default function App() {
     {
       id: 'web_publish' as TabKey,
       num: currentUser.role === 'admin' ? 11 : (userAllowedTabs.indexOf('web_publish') !== -1 ? userAllowedTabs.indexOf('web_publish') + 1 : 8),
-      title: 'Viết Bài Web',
+      title: 'Bài celeb24h',
       fullTitle: 'Bảng 11: WebPublish Studio - Soạn Thảo & Đẩy Bài Lên Website (celeb24h.com)',
       icon: PenTool,
       count: 'WP',
@@ -1339,6 +1344,22 @@ export default function App() {
       accentColor: 'text-emerald-700',
       description: 'Soạn thảo bài viết chuẩn SEO, viết bài AI, tải ảnh đại diện và đẩy trực tiếp lên website celeb24h.com kèm mã nhân viên',
       visible: userAllowedTabs.includes('web_publish'),
+    },
+    {
+      id: 'movieshd4k_story' as TabKey,
+      num: currentUser.role === 'admin' ? 12 : (userAllowedTabs.indexOf('movieshd4k_story') !== -1 ? userAllowedTabs.indexOf('movieshd4k_story') + 1 : 9),
+      title: 'Truyện HD4K',
+      fullTitle: 'Bảng 12: Story Studio - Viết Dạng Truyện (https://movieshd4k.com/)',
+      icon: BookOpen,
+      count: 'Story',
+      newCount: 0,
+      unit: 'Truyện',
+      activeClass: 'bg-indigo-700 text-white shadow-xs ring-2 ring-indigo-500/25',
+      activeNumClass: 'bg-white/20 text-white',
+      dotColor: 'bg-indigo-500',
+      accentColor: 'text-indigo-700',
+      description: 'Tab riêng biệt cho domain https://movieshd4k.com/ — Sáng tác & viết lại bài dạng truyện nhiều chương và đẩy thẳng lên website',
+      visible: userAllowedTabs.includes('movieshd4k_story'),
     },
   ].filter((t) => t.visible), [userAllowedTabs, currentUser, userScopedRecords, groupRecords, proxies, viaList, accounts, sharedAccounts, finances, imageTasks]);
 
@@ -5602,6 +5623,12 @@ export default function App() {
           />
         ) : activeTab === 'web_publish' ? (
           <WebPublishStudioTab
+            currentUser={currentUser}
+            accounts={accounts}
+            onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}
+          />
+        ) : activeTab === 'movieshd4k_story' ? (
+          <MoviesHd4kStoryTab
             currentUser={currentUser}
             accounts={accounts}
             onNavigateToTab={(tab) => setActiveTab(tab as TabKey)}

@@ -66,6 +66,16 @@ interface WpRemotePostItem {
   featuredImageUrl: string;
 }
 
+interface RelatedYouTubeVideo {
+  videoId: string;
+  title: string;
+  watchUrl: string;
+  embedUrl: string;
+  thumbnailUrl: string;
+  channelTitle?: string;
+  duration?: string;
+}
+
 interface CustomTargetConfig {
   targetMode: 'default_wp' | 'custom_wp' | 'webhook';
   customWpUrl: string;
@@ -3410,6 +3420,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
                   Kết nối: {siteUrl.replace(/^https?:\/\//, '')} · Mã NV: ?{selectedEmployeeCode}
                 </span>
+                {onNavigateToTab && (
+                  <button
+                    type="button"
+                    onClick={() => onNavigateToTab('movieshd4k_story')}
+                    className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border border-indigo-200 cursor-pointer transition-colors"
+                  >
+                    📖 Tab Truyện movieshd4k.com →
+                  </button>
+                )}
               </div>
               <p className="text-xs text-slate-600 mt-0.5">
                 Quy trình 3 bước khoa học: <b>(1)</b> Hút bài từ Link Web / Đoạn văn → <b>(2)</b> Soạn thảo, gắn 5–7 ảnh & 2 Video YouTube → <b>(3)</b> Chấm điểm SEO & Đẩy lên Web.

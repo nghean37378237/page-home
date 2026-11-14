@@ -166,13 +166,13 @@ export const QuickViaLookup: React.FC<QuickViaLookupProps> = ({
 
   const handleSaveAdminFullVia = () => {
     if (!foundVia || !onUpdateFullViaForAll) return;
-    const built = buildFullViaString(
-      foundVia.viaUid,
-      suppPass,
-      suppTwoFa,
-      suppEmail,
-      suppEmailPass
-    );
+    const built = buildFullViaString({
+      uid: foundVia.viaUid,
+      pass: suppPass,
+      twoFa: suppTwoFa,
+      email: suppEmail,
+      emailPass: suppEmailPass,
+    });
     onUpdateFullViaForAll(foundVia.viaUid, built);
     setIsEditingAdmin(false);
   };

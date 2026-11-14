@@ -15,6 +15,7 @@ import {
   BackgroundPreset,
   RatioOption,
 } from '../data/collageData';
+import { QuizImageStudioPanel } from './QuizImageStudioPanel';
 import {
   Image,
   Sparkles,
@@ -185,8 +186,8 @@ export function ImageStudioTab({
   allPageNames = [],
   onNavigateToTab,
 }: ImageStudioTabProps) {
-  // Main view mode: Studio Ghép Ảnh vs Phân Chia Việc Làm Ảnh
-  const [activeSubTab, setActiveSubTab] = useState<'studio' | 'tasks'>('studio');
+  // Main view mode: Studio Ghép Ảnh vs Làm Ảnh Quiz Đố Vui vs Phân Chia Việc Làm Ảnh
+  const [activeSubTab, setActiveSubTab] = useState<'studio' | 'quiz' | 'tasks'>('studio');
   // Bộ lọc menu quy trình khoa học trong Xưởng Ghép Ảnh: Xem tất cả 3 bước hoặc tập trung từng bước
   const [studioSectionFilter, setStudioSectionFilter] = useState<
     'all' | 'step1_pool' | 'step2_auto' | 'step3_editor'
@@ -2499,6 +2500,18 @@ export function ImageStudioTab({
             >
               <Sparkles className="w-3.5 h-3.5" />
               <span>Xưởng Ghép Ảnh Tự Động</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('quiz')}
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer ${
+                activeSubTab === 'quiz'
+                  ? 'bg-gradient-to-r from-amber-500 to-rose-600 text-white shadow-xs'
+                  : 'text-amber-900 bg-amber-50/80 hover:bg-white border border-amber-200/80'
+              }`}
+            >
+              <Star className="w-3.5 h-3.5" />
+              <span>🎯 Làm Ảnh Quiz Đố Vui (4 Ô A-B-C-D)</span>
             </button>
             <button
               type="button"
@@ -5866,6 +5879,16 @@ export function ImageStudioTab({
           </div>
           )}
         </div>
+      )}
+
+      {/* ==================================================== */}
+      {/* VIEW 1B: LÀM ẢNH QUIZ ĐỐ VUI (4 Ô 1-2-3-4 & A-B-C-D) */}
+      {/* ==================================================== */}
+      {activeSubTab === 'quiz' && (
+        <QuizImageStudioPanel
+          sharedPoolPhotos={uploadedPhotos}
+          defaultWatermarkText={watermarkText}
+        />
       )}
 
       {/* ==================================================== */}

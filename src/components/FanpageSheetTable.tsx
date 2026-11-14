@@ -1817,7 +1817,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
           const staffPageCount =
             isStaffPaginationActive && currentStaffPage
               ? currentStaffPage.count
-              : sInfo?.totalPages || paginatedItems.length;
+              : sInfo?.total || paginatedItems.length;
 
           return (
             <div className="bg-gradient-to-r from-[#1b5e20] via-[#2e7d32] to-[#1b5e20] text-white px-4 py-2.5 border-b-2 border-emerald-900 flex flex-wrap items-center justify-between gap-3 shadow-xs">
@@ -2571,13 +2571,13 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                                       type="button"
                                       onClick={() => {
                                         if (!onUpdateFullViaForAll) return;
-                                        const built = buildFullViaString(
-                                          record.viaUid.trim(),
-                                          suppPass,
-                                          suppTwoFa,
-                                          suppEmail,
-                                          suppEmailPass
-                                        );
+                                        const built = buildFullViaString({
+                                          uid: record.viaUid.trim(),
+                                          pass: suppPass,
+                                          twoFa: suppTwoFa,
+                                          email: suppEmail,
+                                          emailPass: suppEmailPass,
+                                        });
                                         onUpdateFullViaForAll(record.viaUid.trim(), built);
                                         setSupplementingViaRecordId(null);
                                         setCopyToast(`✅ Đã lưu bổ sung 2FA | Mail | Pass cho Via ${record.viaUid}!`);

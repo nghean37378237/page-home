@@ -169,7 +169,7 @@ export const BulkImportViaModal: React.FC<BulkImportViaModalProps> = ({
       const twoFa = parsed.twoFa || '';
       const email = parsed.email || '';
       const emailPass = parsed.emailPass || '';
-      const extra = parsed.extraInfo || '';
+      const extra = Array.isArray(parsed.extra) ? parsed.extra.join(' | ') : '';
       const isValid = uid.length >= 4 && Boolean(pass || twoFa || email);
 
       // Check duplicate against existing database
@@ -457,7 +457,14 @@ ${existingSampleUid}|MatKhauCheckTrung#99|JBSWY3DPEHPK3PXP|Anh Quỳnh|Nick Đã
         status: 'active',
         adminReportStatus: 'None',
         createdAt: new Date().toLocaleDateString('vi-VN'),
-        rawFullVia: buildFullViaString(row.uid, row.pass, row.twoFa, row.email, row.emailPass, row.extra),
+        rawFullVia: buildFullViaString({
+          uid: row.uid,
+          pass: row.pass,
+          twoFa: row.twoFa,
+          email: row.email,
+          emailPass: row.emailPass,
+          extra: row.extra,
+        }),
         pageUpdateStatus: isNotJoinedGroup
           ? 'not_joined_group'
           : isPendingAssign

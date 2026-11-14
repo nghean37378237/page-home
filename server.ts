@@ -17,10 +17,32 @@ import {
 } from './src/server/wpPublishService';
 import { extractImagesFromWebUrl } from './src/server/webImageExtractor';
 import { fetchMgidPublisherDashboard } from './src/server/mgidService';
+import {
+  fetchMoviesHd4kInitData,
+  publishStoryToMoviesHd4k,
+  uploadMediaToMoviesHd4k,
+  generateStoryArticleWithAi,
+} from './src/server/moviesHd4kService';
+
+function resolveServerPort(): number {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === '--port' && args[i + 1]) {
+      const parsed = Number(args[i + 1]);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    } else if (arg.startsWith('--port=')) {
+      const parsed = Number(arg.split('=')[1]);
+      if (Number.isFinite(parsed) && parsed > 0) return parsed;
+    }
+  }
+  const envPort = Number(process.env.PORT);
+  return Number.isFinite(envPort) && envPort > 0 ? envPort : 3000;
+}
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = resolveServerPort();
 
   app.use(express.json({ limit: '25mb' }));
 
@@ -456,6 +478,148 @@ async function startServer() {
     }
   });
 
+  // API Route: Story Studio riêng cho domain https://movieshd4k.com/ (Viết dạng truyện)
+  app.get('/api/movieshd4k-publish', async (_req, res) => {
+    try {
+      const data = await fetchMoviesHd4kInitData();
+      res.json(data);
+    } catch (error: any) {
+      console.error('[/api/movieshd4k-publish GET] Error:', error);
+      res.status(500).json({
+        ok: false,
+        error: error?.message || 'Không thể tải danh mục và bài viết từ movieshd4k.com',
+      });
+    }
+  });
+
+  app.post('/api/movieshd4k-publish', async (req, res) => {
+    try {
+      const body = req.body || {};
+      const action = String(body.action || 'publish');
+
+      if (action === 'upload_media') {
+        const uploaded = await uploadMediaToMoviesHd4k({
+          base64Data: body.base64Data,
+          imageUrl: body.imageUrl,
+          fileName: body.fileName,
+          altText: body.altText,
+          customWpUrl: body.customWpUrl,
+          customWpUser: body.customWpUser,
+          customWpAppPassword: body.customWpAppPassword,
+        });
+        res.json({ ok: true, ...uploaded });
+        return;
+      }
+
+      if (action === 'extract_source') {
+        const url = String(body.sourceUrl || body.url || '').trim();
+        if (!url) {
+          res.status(400).json({ ok: false, error: 'Thiếu đường dẫn bài viết nguồn' });
+          return;
+        }
+        const scraped = await scrapeWebArticleForSeoRewrite(url);
+        res.json({
+          ok: true,
+          title: scraped.originalTitle || '',
+          articleText: scraped.articleText || '',
+          images: (scraped.images || []).map((im, idx) => ({
+            url: im.url,
+            alt: im.alt || scraped.originalTitle || 'Story image',
+            isFeatured: idx === 0,
+            isExternal: false,
+          })),
+        });
+        return;
+      }
+
+      if (action === 'search_external_images') {
+        const query = String(body.query || '').trim();
+        const title = String(body.title || query).trim();
+        const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        const ctxProfile = analyzeArticleSubjectAndContext(
+          title,
+          String(body.articleText || query),
+          query,
+          existingImgs
+        );
+        const excludeKeys = new Set<string>(
+          existingImgs.map((im: any) => String(im?.url || '').split('?')[0].toLowerCase()).filter(Boolean)
+        );
+        const images = await searchExternalRelatedImages(
+          ctxProfile?.combinedSearchQuery || query,
+          Number(body.limit) || 6,
+          excludeKeys,
+          ctxProfile
+        );
+        res.json({
+          ok: true,
+          images: images.map((im) => ({
+            url: im.url,
+            alt: im.alt || title,
+            isFeatured: false,
+            isExternal: true,
+          })),
+        });
+        return;
+      }
+
+      if (action === 'ai_story' || action === 'ai_write') {
+        const result = await generateStoryArticleWithAi({
+          topic: String(body.topic || ''),
+          sourceUrl: body.sourceUrl ? String(body.sourceUrl) : undefined,
+          mode: body.mode || 'from_idea',
+          storyStyle: body.storyStyle || 'emotional_drama',
+          storyPov: body.storyPov || 'third_person',
+          chapterCount: body.chapterCount ? Number(body.chapterCount) : 5,
+          language: body.language === 'vi' ? 'vi' : 'en',
+          categoryName: body.categoryName ? String(body.categoryName) : undefined,
+          keyword: body.keyword ? String(body.keyword) : undefined,
+          existingTitle: body.existingTitle ? String(body.existingTitle) : undefined,
+          existingContent: body.existingContent ? String(body.existingContent) : undefined,
+          existingImages: Array.isArray(body.existingImages) ? body.existingImages : undefined,
+        });
+        res.json(result);
+        return;
+      }
+
+      if (action !== 'publish') {
+        res.status(400).json({ ok: false, error: `Action không hợp lệ: "${action}"` });
+        return;
+      }
+
+      const published = await publishStoryToMoviesHd4k({
+        postId: body.postId ? Number(body.postId) : undefined,
+        postType: body.postType === 'posts' ? 'posts' : 'np_story',
+        title: String(body.title || ''),
+        content: String(body.content || ''),
+        excerpt: body.excerpt ? String(body.excerpt) : '',
+        slug: body.slug ? String(body.slug) : undefined,
+        status: body.status || 'publish',
+        categories: Array.isArray(body.categories) ? body.categories.map(Number) : undefined,
+        genres: Array.isArray(body.genres) ? body.genres.map(Number) : undefined,
+        tags: Array.isArray(body.tags) ? body.tags.map(String) : undefined,
+        employeeCode: body.employeeCode ? String(body.employeeCode) : undefined,
+        featuredMediaId: body.featuredMediaId ? Number(body.featuredMediaId) : undefined,
+        featuredImageBase64: body.featuredImageBase64 ? String(body.featuredImageBase64) : undefined,
+        featuredImageUrl: body.featuredImageUrl ? String(body.featuredImageUrl) : undefined,
+        featuredImageAlt: body.featuredImageAlt ? String(body.featuredImageAlt) : undefined,
+        targetMode: body.targetMode || 'default_wp',
+        customWpUrl: body.customWpUrl,
+        customWpUser: body.customWpUser,
+        customWpAppPassword: body.customWpAppPassword,
+        webhookUrl: body.webhookUrl,
+        webhookSecret: body.webhookSecret,
+      });
+      res.json(published);
+    } catch (error: any) {
+      console.error('[/api/movieshd4k-publish POST] Error:', error);
+      res.status(500).json({
+        ok: false,
+        error: error?.message || 'Lỗi khi xử lý truyện trên movieshd4k.com',
+      });
+    }
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -470,9 +634,19 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Server running on http://0.0.0.0:${PORT}`);
+  });
+  server.on('error', (err) => {
+    console.error('[server] HTTP server error:', err);
   });
 }
 
-startServer();
+process.on('unhandledRejection', (reason) => {
+  console.error('[server] Unhandled promise rejection:', reason);
+});
+
+startServer().catch((err) => {
+  console.error('[server] Failed to start:', err);
+  process.exit(1);
+});
