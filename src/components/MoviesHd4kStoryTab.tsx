@@ -142,6 +142,21 @@ function stripTagsPlain(html: string): string {
   return (html || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
+async function parseJsonSafe(res: Response): Promise<any> {
+  const raw = await res.text();
+  if (!raw) {
+    throw new Error(`Máy chủ không trả về dữ liệu (HTTP ${res.status})`);
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    const cleanSnippet = raw.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 140);
+    throw new Error(
+      `API không trả về JSON hợp lệ (HTTP ${res.status})${cleanSnippet ? `: ${cleanSnippet}` : ''}`
+    );
+  }
+}
+
 export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
   currentUser,
   accounts = [],
@@ -312,7 +327,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     setRemoteError(null);
     try {
       const res = await fetch('/api/movieshd4k-publish');
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || 'Không thể tải dữ liệu từ movieshd4k.com');
       }
@@ -412,7 +427,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'extract_source', sourceUrl: cleanUrl }),
       });
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || 'Không thể lấy nội dung từ link này');
       }
@@ -465,7 +480,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
           limit: 6,
         }),
       });
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || 'Không tìm thấy ảnh liên quan');
       }
@@ -540,7 +555,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         }),
       });
 
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || 'Không thể tạo truyện từ AI');
       }
@@ -602,7 +617,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
               targetConfig.targetMode === 'custom_wp' ? targetConfig.customWpAppPassword : undefined,
           }),
         });
-        const data = await res.json();
+        const data = await parseJsonSafe(res);
         if (res.ok && data?.ok && data.mediaId) {
           setFeaturedMediaId(Number(data.mediaId));
           if (data.mediaUrl) setFeaturedImageUrl(data.mediaUrl);
@@ -762,7 +777,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         }),
       });
 
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || 'Không thể đẩy truyện lên movieshd4k.com');
       }
