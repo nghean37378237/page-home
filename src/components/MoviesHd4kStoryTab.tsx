@@ -553,7 +553,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
       aiLanguage === 'vi'
         ? `Chương ${nextNum}: Diễn biến tiếp theo`
         : `Chapter ${nextNum}: The Next Turning Point`;
-    const newHtml = `<h2>${newHeading}</h2>\n\n<p></p>`;
+    const newHtml = '<p></p>';
     const nextChapter: StoryChapterItem = {
       chapterNumber: nextNum,
       heading: newHeading,
@@ -684,8 +684,11 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
           : isMain
           ? 'Chapter 1 (Main Story)'
           : `Chapter ${chNum}: Continuation`);
-      const chRaw = b.htmlParts.join('\n\n');
-      const chClean = stripSharedCoverFromChapterHtml(chRaw);
+      const rawWithoutDupHeading =
+        b.heading && b.htmlParts[0] && /^<h[23]\b/i.test(b.htmlParts[0])
+          ? b.htmlParts.slice(1).join('\n\n')
+          : b.htmlParts.join('\n\n');
+      const chClean = stripSharedCoverFromChapterHtml(rawWithoutDupHeading);
       return {
         chapterNumber: chNum,
         heading: defaultHeading,
@@ -1251,7 +1254,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         aiLanguage === 'vi'
           ? `Chương ${nextNum}: Diễn biến tiếp theo`
           : `Chapter ${nextNum}: The Next Turning Point`;
-      const newHtml = `<h2>${newHeading}</h2>\n\n<p></p>`;
+      const newHtml = '<p></p>';
       loadedChapters.push({
         chapterNumber: nextNum,
         heading: newHeading,

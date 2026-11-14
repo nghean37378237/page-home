@@ -725,7 +725,6 @@ function buildSingleChapterHtml(params: {
   storyTitle: string;
 }): string {
   const parts: string[] = [];
-  parts.push(`<h2>${escapeHtml(params.heading)}</h2>`);
   const rawParas = params.paragraphs.map((p) => String(p || '').trim()).filter(Boolean);
   const cleanParas = splitIntoShortReadingParagraphs(rawParas);
   cleanParas.forEach((p) => {

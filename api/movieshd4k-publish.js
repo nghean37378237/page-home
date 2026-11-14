@@ -958,9 +958,8 @@ function splitIntoShortReadingParagraphs(paragraphs) {
   return result;
 }
 
-function buildSingleChapterHtml({ heading, paragraphs }) {
+function buildSingleChapterHtml({ paragraphs }) {
   const parts = [];
-  parts.push(`<h2>${escapeHtml(heading)}</h2>`);
   const rawParas = (Array.isArray(paragraphs) ? paragraphs : [])
     .map((p) => String(p || '').trim())
     .filter(Boolean);
