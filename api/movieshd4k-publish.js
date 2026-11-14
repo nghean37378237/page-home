@@ -958,15 +958,8 @@ function splitIntoShortReadingParagraphs(paragraphs) {
   return result;
 }
 
-function buildSingleChapterHtml({ heading, paragraphs, sharedCoverImageUrl, storyTitle }) {
+function buildSingleChapterHtml({ heading, paragraphs }) {
   const parts = [];
-  if (sharedCoverImageUrl && sharedCoverImageUrl.startsWith('http')) {
-    parts.push(
-      `<figure class="wp-block-image size-large story-shared-cover"><img src="${escapeHtml(
-        sharedCoverImageUrl
-      )}" alt="${escapeHtml(storyTitle)}" /></figure>`
-    );
-  }
   parts.push(`<h2>${escapeHtml(heading)}</h2>`);
   const rawParas = (Array.isArray(paragraphs) ? paragraphs : [])
     .map((p) => String(p || '').trim())

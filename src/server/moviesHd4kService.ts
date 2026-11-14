@@ -725,13 +725,6 @@ function buildSingleChapterHtml(params: {
   storyTitle: string;
 }): string {
   const parts: string[] = [];
-  if (params.sharedCoverImageUrl && params.sharedCoverImageUrl.startsWith('http')) {
-    parts.push(
-      `<figure class="wp-block-image size-large story-shared-cover"><img src="${escapeHtml(
-        params.sharedCoverImageUrl
-      )}" alt="${escapeHtml(params.storyTitle)}" /></figure>`
-    );
-  }
   parts.push(`<h2>${escapeHtml(params.heading)}</h2>`);
   const rawParas = params.paragraphs.map((p) => String(p || '').trim()).filter(Boolean);
   const cleanParas = splitIntoShortReadingParagraphs(rawParas);

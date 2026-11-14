@@ -229,17 +229,10 @@ function formatHtmlIntoShortLines(html: string): string {
   });
 }
 
-function applySharedCoverToChapterHtml(html: string, imageUrl: string, altText: string): string {
-  const withoutOldShared = String(html || '')
+function stripSharedCoverFromChapterHtml(html: string): string {
+  return String(html || '')
     .replace(/<figure\b[^>]*class=["'][^"']*story-shared-cover[^"']*["'][^>]*>[\s\S]*?<\/figure>\s*/gi, '')
     .trim();
-  if (!imageUrl || imageUrl.startsWith('data:')) {
-    return withoutOldShared;
-  }
-  const safeUrl = imageUrl.replace(/"/g, '&quot;');
-  const safeAlt = (altText || 'Story cover').replace(/"/g, '&quot;');
-  const figure = `<figure class="wp-block-image size-large story-shared-cover"><img src="${safeUrl}" alt="${safeAlt}" /></figure>`;
-  return withoutOldShared ? `${figure}\n\n${withoutOldShared}` : figure;
 }
 
 async function parseJsonSafe(res: Response): Promise<any> {
@@ -481,23 +474,19 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     } catch {}
   };
 
-  const syncSharedCoverImageAcrossChapters = useCallback(
-    (nextImageUrl: string, altTitle?: string) => {
-      const effectiveAlt = altTitle || title || 'Story cover';
-      setContent((prev) => applySharedCoverToChapterHtml(prev, nextImageUrl, effectiveAlt));
-      setStoryChapters((prev) =>
-        prev.map((ch) => {
-          const updatedHtml = applySharedCoverToChapterHtml(ch.contentHtml, nextImageUrl, effectiveAlt);
-          return {
-            ...ch,
-            contentHtml: updatedHtml,
-            wordCount: countPlainWords(updatedHtml),
-          };
-        })
-      );
-    },
-    [title]
-  );
+  const syncSharedCoverImageAcrossChapters = useCallback(() => {
+    setContent((prev) => stripSharedCoverFromChapterHtml(prev));
+    setStoryChapters((prev) =>
+      prev.map((ch) => {
+        const updatedHtml = stripSharedCoverFromChapterHtml(ch.contentHtml);
+        return {
+          ...ch,
+          contentHtml: updatedHtml,
+          wordCount: countPlainWords(updatedHtml),
+        };
+      })
+    );
+  }, []);
 
   const handleUpdateActiveContent = useCallback(
     (nextHtml: string) => {
@@ -564,11 +553,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
       aiLanguage === 'vi'
         ? `Chương ${nextNum}: Diễn biến tiếp theo`
         : `Chapter ${nextNum}: The Next Turning Point`;
-    const newHtml = applySharedCoverToChapterHtml(
-      `<h2>${newHeading}</h2>\n\n<p></p>`,
-      featuredImageUrl,
-      title
-    );
+    const newHtml = `<h2>${newHeading}</h2>\n\n<p></p>`;
     const nextChapter: StoryChapterItem = {
       chapterNumber: nextNum,
       heading: newHeading,
@@ -583,7 +568,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     setActiveChapterIndex(nextList.length - 1);
     setPreviewAllChapters(false);
     setContent(newHtml);
-  }, [storyChapters, slug, title, aiLanguage, content, excerpt, featuredImageUrl]);
+  }, [storyChapters, slug, title, aiLanguage, content, excerpt]);
 
   const handleRemoveChapterTab = useCallback(
     (idxToRemove: number) => {
@@ -700,14 +685,14 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
           ? 'Chapter 1 (Main Story)'
           : `Chapter ${chNum}: Continuation`);
       const chRaw = b.htmlParts.join('\n\n');
-      const chWithCover = applySharedCoverToChapterHtml(chRaw, featuredImageUrl, title);
+      const chClean = stripSharedCoverFromChapterHtml(chRaw);
       return {
         chapterNumber: chNum,
         heading: defaultHeading,
         slug: isMain ? baseSlug : `${baseSlug}-chuong-${chNum}`,
-        contentHtml: chWithCover,
-        excerpt: stripTagsPlain(chRaw).slice(0, 155),
-        wordCount: countPlainWords(chWithCover),
+        contentHtml: chClean,
+        excerpt: stripTagsPlain(chClean).slice(0, 155),
+        wordCount: countPlainWords(chClean),
         isMainContent: isMain,
         publishedPostId: storyChapters[idx]?.publishedPostId,
         publishedLink: storyChapters[idx]?.publishedLink,
@@ -1032,9 +1017,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         if (Array.isArray(data.chapters) && data.chapters.length > 0) {
           const normalizedBatch: StoryChapterItem[] = data.chapters.map((ch: any, idx: number) => {
             const chNum = Number(ch.chapterNumber || batchStart + idx);
-            const chHtml = lockedCoverUrl
-              ? applySharedCoverToChapterHtml(String(ch.contentHtml || ''), lockedCoverUrl, lockedTitle || '')
-              : String(ch.contentHtml || '');
+            const chHtml = stripSharedCoverFromChapterHtml(String(ch.contentHtml || ''));
             return {
               chapterNumber: chNum,
               heading: String(ch.heading || `Chương ${chNum}`),
@@ -1105,7 +1088,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
           setFeaturedMediaId(Number(data.mediaId));
           if (data.mediaUrl) {
             setFeaturedImageUrl(data.mediaUrl);
-            syncSharedCoverImageAcrossChapters(data.mediaUrl, title || file.name);
+            syncSharedCoverImageAcrossChapters();
           }
           setNotice({
             type: 'success',
@@ -1133,7 +1116,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     setFeaturedImageBase64('');
     setFeaturedImageAlt(title || '');
     setFeaturedMediaId(0);
-    syncSharedCoverImageAcrossChapters(u, title);
+    syncSharedCoverImageAcrossChapters();
     setManualImageUrlInput('');
     setNotice({
       type: 'success',
@@ -1268,11 +1251,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         aiLanguage === 'vi'
           ? `Chương ${nextNum}: Diễn biến tiếp theo`
           : `Chapter ${nextNum}: The Next Turning Point`;
-      const newHtml = applySharedCoverToChapterHtml(
-        `<h2>${newHeading}</h2>\n\n<p></p>`,
-        post.featuredImageUrl || '',
-        post.title
-      );
+      const newHtml = `<h2>${newHeading}</h2>\n\n<p></p>`;
       loadedChapters.push({
         chapterNumber: nextNum,
         heading: newHeading,
@@ -1379,7 +1358,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
             if (sharedMediaUrl) {
               setFeaturedImageUrl(sharedMediaUrl);
               setFeaturedImageBase64('');
-              syncSharedCoverImageAcrossChapters(sharedMediaUrl, title);
+              syncSharedCoverImageAcrossChapters();
             }
           }
         } catch {
@@ -1387,11 +1366,8 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         }
       }
 
-      // Đảm bảo nội dung tất cả chương đều mang đúng 1 ảnh đại diện duy nhất đó
-      const finalMainHtml =
-        sharedMediaUrl && !sharedMediaUrl.startsWith('data:')
-          ? applySharedCoverToChapterHtml(mainChapterContent, sharedMediaUrl, title)
-          : mainChapterContent;
+      // Gỡ ảnh chèn trùng trong nội dung (chỉ dùng Featured Image chung _thumbnail_id)
+      const finalMainHtml = stripSharedCoverFromChapterHtml(mainChapterContent);
 
       // Bước 2: Đăng Chương 1 làm Nội dung chính (np_story hoặc posts)
       setPublishProgress(
@@ -1464,10 +1440,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
           setPublishProgress(
             `Bước 3/4: Đang đăng & gắn ảnh chung cho Chương ${ch.chapterNumber}/${activeSyncedChapters.length}...`
           );
-          const chBaseHtml =
-            sharedMediaUrl && !sharedMediaUrl.startsWith('data:')
-              ? applySharedCoverToChapterHtml(ch.contentHtml, sharedMediaUrl, title)
-              : ch.contentHtml;
+          const chBaseHtml = stripSharedCoverFromChapterHtml(ch.contentHtml);
 
           const chRes = await fetch('/api/movieshd4k-publish', {
             method: 'POST',
@@ -2538,7 +2511,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                                   setFeaturedImageBase64('');
                                   setFeaturedMediaId(0);
                                   setFeaturedImageAlt(img.alt || title);
-                                  syncSharedCoverImageAcrossChapters(img.url, img.alt || title);
+                                  syncSharedCoverImageAcrossChapters();
                                 }}
                                 className={`w-full py-1 rounded text-[10px] font-bold cursor-pointer ${
                                   isCover
@@ -2809,7 +2782,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                       setFeaturedImageUrl('');
                       setFeaturedImageBase64('');
                       setFeaturedMediaId(0);
-                      syncSharedCoverImageAcrossChapters('', title);
+                      syncSharedCoverImageAcrossChapters();
                     }}
                     className="absolute top-2 right-2 px-2 py-1 rounded bg-slate-900/75 text-white text-[10px] font-semibold hover:bg-slate-900 cursor-pointer"
                   >
