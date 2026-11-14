@@ -160,6 +160,75 @@ function countPlainWords(html: string): number {
   return plain ? plain.split(/\s+/).filter(Boolean).length : 0;
 }
 
+function splitPlainIntoShortLines(text: string): string[] {
+  const preSplit = String(text || '')
+    .split(/\r?\n+/)
+    .map((s) => s.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+
+  const result: string[] = [];
+  for (const block of preSplit) {
+    const wordsCount = block.split(/\s+/).filter(Boolean).length;
+    if (wordsCount <= 36) {
+      result.push(block);
+      continue;
+    }
+
+    const sentences = block
+      .split(/(?<=[.!?…”"'])\s+(?=[A-ZÀ-Ỹ“"'\d])/u)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (sentences.length <= 1) {
+      const words = block.split(/\s+/).filter(Boolean);
+      let cursor = 0;
+      while (cursor < words.length) {
+        result.push(words.slice(cursor, cursor + 30).join(' '));
+        cursor += 30;
+      }
+      continue;
+    }
+
+    let current = '';
+    for (const sent of sentences) {
+      const candidate = current ? `${current} ${sent}` : sent;
+      const candWords = candidate.split(/\s+/).filter(Boolean).length;
+      if (current && candWords > 36) {
+        result.push(current);
+        current = sent;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) result.push(current);
+  }
+  return result;
+}
+
+function formatHtmlIntoShortLines(html: string): string {
+  const raw = String(html || '').trim();
+  if (!raw) return '';
+  if (!raw.includes('<')) {
+    return splitPlainIntoShortLines(raw)
+      .map((line) => `<p>${line}</p>`)
+      .join('\n\n');
+  }
+
+  return raw.replace(/<p(\b[^>]*)>([\s\S]*?)<\/p>/gi, (fullMatch, attrs, inner) => {
+    if (/<(img|figure|iframe|video|table|ul|ol)/i.test(inner) || /text-align:\s*center/i.test(attrs || '')) {
+      return fullMatch;
+    }
+    const plain = inner
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, ' ')
+      .trim();
+    if (!plain) return '';
+    const chunks = splitPlainIntoShortLines(plain);
+    if (chunks.length <= 1) return fullMatch;
+    return chunks.map((line) => `<p${attrs || ''}>${line}</p>`).join('\n\n');
+  });
+}
+
 function applySharedCoverToChapterHtml(html: string, imageUrl: string, altText: string): string {
   const withoutOldShared = String(html || '')
     .replace(/<figure\b[^>]*class=["'][^"']*story-shared-cover[^"']*["'][^>]*>[\s\S]*?<\/figure>\s*/gi, '')
@@ -731,6 +800,19 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
     }, 10);
   };
 
+  const handleFormatShortStoryLines = () => {
+    if (!content.trim()) {
+      setNotice({ type: 'error', message: 'Chưa có nội dung để ngắt thành các đoạn ngắn 1–3 dòng.' });
+      return;
+    }
+    const formatted = formatHtmlIntoShortLines(content);
+    handleUpdateActiveContent(formatted);
+    setNotice({
+      type: 'success',
+      message: 'Đã tách lại chương hiện tại thành từng đoạn 1–3 dòng xuống dòng liên tục để đọc mượt và dài mạch truyện hơn.',
+    });
+  };
+
   const handleExtractSourceUrl = async () => {
     const cleanUrl = aiSourceUrl.trim();
     if (!cleanUrl || !cleanUrl.startsWith('http')) {
@@ -845,95 +927,150 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
       return;
     }
 
+    const totalTargetChapters = Math.max(2, Math.min(30, Math.round(Number(chapterCount) || 5)));
+    const BATCH_SIZE = totalTargetChapters <= 5 ? totalTargetChapters : 4;
+
     setAiLoading(true);
     setNotice(null);
+    setPublishProgress(null);
+
     try {
       const catNames = categories
         .filter((c) => selectedCategories.includes(c.id))
         .map((c) => c.name)
         .join(', ');
 
-      const res = await fetch('/api/movieshd4k-publish', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'ai_story',
-          mode: aiMode,
-          topic: aiTopic,
-          sourceUrl: aiMode === 'from_url' ? aiSourceUrl.trim() : undefined,
-          storyStyle,
-          storyPov,
-          chapterCount,
-          language: aiLanguage,
-          categoryName: catNames || 'Story',
-          keyword: aiKeyword.trim() || undefined,
-          existingTitle: title.trim() || undefined,
-          existingContent: aiMode === 'rewrite_draft' ? content : undefined,
-          existingImages: storyImages,
-        }),
-      });
+      let lockedTitle = title.trim() || '';
+      let lockedSlug = slug.trim() || '';
+      let lockedCoverUrl = featuredImageUrl || '';
+      let lockedImages: StoryImageCandidate[] = [...storyImages];
+      let lastModel = 'gemini-4-hydrogen';
+      const batchWarnings: string[] = [];
+      const accumulatedChapters: StoryChapterItem[] = [];
 
-      const data = await parseJsonSafe(res);
-      if (!res.ok || !data?.ok) {
-        throw new Error(data?.error || 'Không thể tạo truyện từ AI');
-      }
+      for (let batchStart = 1; batchStart <= totalTargetChapters; batchStart += BATCH_SIZE) {
+        const batchEnd = Math.min(totalTargetChapters, batchStart + BATCH_SIZE - 1);
+        setPublishProgress(
+          totalTargetChapters > 5
+            ? `Đang sáng tác Chương ${batchStart}–${batchEnd} / ${totalTargetChapters} (~500 từ/chương)...`
+            : `Đang sáng tác trọn bộ ${totalTargetChapters} chương (~500 từ/chương)...`
+        );
 
-      if (data.title) setTitle(data.title);
-      if (data.slug) {
-        setAutoSlug(false);
-        setSlug(data.slug);
-      }
-      if (data.excerpt) setExcerpt(data.excerpt);
-      if (Array.isArray(data.tags) && data.tags.length > 0) {
-        setTagsInput(data.tags.join(', '));
-      }
+        const prevTailContext =
+          accumulatedChapters.length > 0
+            ? [
+                `Các chương đã viết: ${accumulatedChapters
+                  .map((c) => `Ch.${c.chapterNumber}: ${c.heading}`)
+                  .join(' | ')}`,
+                `Đoạn kết gần nhất (Chương ${accumulatedChapters[accumulatedChapters.length - 1].chapterNumber}): ${stripTagsPlain(
+                  accumulatedChapters[accumulatedChapters.length - 1].contentHtml
+                ).slice(-1200)}`,
+              ].join('\n')
+            : undefined;
 
-      const chosenCoverUrl = data.featuredImageUrl || data.images?.[0]?.url || featuredImageUrl || '';
-      if (Array.isArray(data.images) && data.images.length > 0) {
-        setStoryImages(data.images);
-      }
-      if (chosenCoverUrl) {
-        setFeaturedImageUrl(chosenCoverUrl);
-        setFeaturedImageBase64('');
-        setFeaturedMediaId(0);
-        setFeaturedImageAlt(data.title || '');
-      }
-
-      if (Array.isArray(data.chapters) && data.chapters.length > 0) {
-        const normalizedChapters: StoryChapterItem[] = data.chapters.map((ch: any, idx: number) => {
-          const chHtml = chosenCoverUrl
-            ? applySharedCoverToChapterHtml(String(ch.contentHtml || ''), chosenCoverUrl, data.title || '')
-            : String(ch.contentHtml || '');
-          return {
-            chapterNumber: Number(ch.chapterNumber || idx + 1),
-            heading: String(ch.heading || `Chương ${idx + 1}`),
-            slug: String(ch.slug || ''),
-            contentHtml: chHtml,
-            excerpt: String(ch.excerpt || ''),
-            wordCount: countPlainWords(chHtml),
-            isMainContent: Boolean(ch.isMainContent || idx === 0),
-          };
+        const res = await fetch('/api/movieshd4k-publish', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'ai_story',
+            mode: aiMode,
+            topic: aiTopic,
+            sourceUrl: aiMode === 'from_url' ? aiSourceUrl.trim() : undefined,
+            storyStyle,
+            storyPov,
+            chapterCount: totalTargetChapters,
+            batchStartChapter: batchStart,
+            batchEndChapter: batchEnd,
+            previousStoryContext: prevTailContext,
+            sharedCoverImageUrl: lockedCoverUrl || undefined,
+            existingSlug: lockedSlug || undefined,
+            language: aiLanguage,
+            categoryName: catNames || 'Story',
+            keyword: aiKeyword.trim() || undefined,
+            existingTitle: lockedTitle || undefined,
+            existingContent: batchStart === 1 && aiMode === 'rewrite_draft' ? content : undefined,
+            existingImages: lockedImages,
+          }),
         });
-        setStoryChapters(normalizedChapters);
-        setActiveChapterIndex(0);
-        setPreviewAllChapters(false);
-        setContent(normalizedChapters[0].contentHtml);
-      } else if (data.content) {
-        setStoryChapters([]);
-        setActiveChapterIndex(0);
-        setContent(data.content);
+
+        const data = await parseJsonSafe(res);
+        if (!res.ok || !data?.ok) {
+          throw new Error(data?.error || `Không thể tạo Chương ${batchStart}–${batchEnd} từ AI`);
+        }
+
+        if (data.model) lastModel = String(data.model);
+        if (data.warning) batchWarnings.push(String(data.warning));
+
+        if (batchStart === 1) {
+          if (data.title) {
+            lockedTitle = String(data.title);
+            setTitle(lockedTitle);
+          }
+          if (data.slug) {
+            lockedSlug = String(data.slug);
+            setAutoSlug(false);
+            setSlug(lockedSlug);
+          }
+          if (data.excerpt) setExcerpt(String(data.excerpt));
+          if (Array.isArray(data.tags) && data.tags.length > 0) {
+            setTagsInput(data.tags.join(', '));
+          }
+          const chosenCover = data.featuredImageUrl || data.images?.[0]?.url || lockedCoverUrl || '';
+          if (Array.isArray(data.images) && data.images.length > 0) {
+            lockedImages = data.images;
+            setStoryImages(lockedImages);
+          }
+          if (chosenCover) {
+            lockedCoverUrl = chosenCover;
+            setFeaturedImageUrl(chosenCover);
+            setFeaturedImageBase64('');
+            setFeaturedMediaId(0);
+            setFeaturedImageAlt(lockedTitle || '');
+          }
+        }
+
+        if (Array.isArray(data.chapters) && data.chapters.length > 0) {
+          const normalizedBatch: StoryChapterItem[] = data.chapters.map((ch: any, idx: number) => {
+            const chNum = Number(ch.chapterNumber || batchStart + idx);
+            const chHtml = lockedCoverUrl
+              ? applySharedCoverToChapterHtml(String(ch.contentHtml || ''), lockedCoverUrl, lockedTitle || '')
+              : String(ch.contentHtml || '');
+            return {
+              chapterNumber: chNum,
+              heading: String(ch.heading || `Chương ${chNum}`),
+              slug: String(ch.slug || (chNum === 1 ? lockedSlug : `${lockedSlug}-chuong-${chNum}`)),
+              contentHtml: chHtml,
+              excerpt: String(ch.excerpt || ''),
+              wordCount: countPlainWords(chHtml),
+              isMainContent: chNum === 1 || Boolean(ch.isMainContent),
+            };
+          });
+          accumulatedChapters.push(...normalizedBatch);
+          setStoryChapters([...accumulatedChapters]);
+          if (batchStart === 1 && accumulatedChapters[0]) {
+            setActiveChapterIndex(0);
+            setPreviewAllChapters(false);
+            setContent(accumulatedChapters[0].contentHtml);
+          }
+        } else if (batchStart === 1 && data.content) {
+          setStoryChapters([]);
+          setActiveChapterIndex(0);
+          setContent(data.content);
+        }
       }
 
       setNotice({
-        type: data.warning ? 'info' : 'success',
-        message: data.warning
-          ? data.warning
-          : `Đã sáng tác xong ${data.chapterCount} chương liên kết (mỗi chương ~500 từ · Chương 1 là Nội dung chính · dùng chung 1 ảnh đại diện) bằng Gemini Free Tier (${data.model}).`,
+        type: batchWarnings.length > 0 ? 'info' : 'success',
+        message:
+          batchWarnings.length > 0
+            ? batchWarnings[0]
+            : `Đã sáng tác xong ${accumulatedChapters.length || totalTargetChapters} chương liên kết (mỗi chương ~500 từ · Chương 1 là Nội dung chính · dùng chung 1 ảnh đại diện) bằng Gemini Free Tier (${lastModel}).`,
       });
     } catch (err: any) {
       setNotice({ type: 'error', message: err?.message || 'Lỗi khi viết truyện AI' });
     } finally {
       setAiLoading(false);
+      setPublishProgress(null);
     }
   };
 
@@ -1369,27 +1506,40 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
           });
         }
 
-        // Bước 4: Gắn liên kết giữa tất cả các chương (Mục lục + Chương trước/sau + Về Chương 1)
-        setPublishProgress('Bước 4/4: Đang liên kết tất cả các chương với nhau...');
-        const linkRes = await fetch('/api/movieshd4k-publish', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'link_chapters',
-            postType,
-            language: aiLanguage,
-            featuredMediaId: sharedMediaId || undefined,
-            chapters: publishedChaptersList.map((pc) => ({
-              chapterNumber: pc.chapterNumber,
-              postId: pc.postId,
-              heading: pc.heading,
-              link: pc.link,
-              baseContentHtml: pc.baseContentHtml,
-              isMainContent: pc.isMainContent,
-            })),
-          }),
-        });
-        await parseJsonSafe(linkRes).catch(() => null);
+        // Bước 4: Gắn liên kết giữa tất cả các chương theo từng nhóm 5 chương (Mục lục + Chương trước/sau + Về Chương 1)
+        const allChaptersSummary = publishedChaptersList.map((pc) => ({
+          chapterNumber: pc.chapterNumber,
+          postId: pc.postId,
+          heading: pc.heading,
+          link: pc.link,
+          isMainContent: pc.isMainContent,
+        }));
+        for (let k = 0; k < publishedChaptersList.length; k += 5) {
+          const chunk = publishedChaptersList.slice(k, k + 5);
+          setPublishProgress(
+            `Bước 4/4: Đang liên kết Chương ${chunk[0].chapterNumber}–${chunk[chunk.length - 1].chapterNumber} / ${publishedChaptersList.length}...`
+          );
+          const linkRes = await fetch('/api/movieshd4k-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'link_chapters',
+              postType,
+              language: aiLanguage,
+              featuredMediaId: sharedMediaId || undefined,
+              allChapters: allChaptersSummary,
+              chapters: chunk.map((pc) => ({
+                chapterNumber: pc.chapterNumber,
+                postId: pc.postId,
+                heading: pc.heading,
+                link: pc.link,
+                baseContentHtml: pc.baseContentHtml,
+                isMainContent: pc.isMainContent,
+              })),
+            }),
+          });
+          await parseJsonSafe(linkRes).catch(() => null);
+        }
 
         setStoryChapters((prev) =>
           prev.map((ch) => {
@@ -1654,7 +1804,7 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
         </div>
       )}
 
-      {publishing && publishProgress && (
+      {(publishing || aiLoading) && publishProgress && (
         <div className="bg-indigo-950 text-white rounded-xl px-4 py-3 border border-indigo-800 flex items-center gap-3">
           <RefreshCw className="w-4 h-4 text-indigo-300 animate-spin shrink-0" />
           <div className="text-xs font-semibold text-indigo-100">{publishProgress}</div>
@@ -1870,16 +2020,44 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                     <label className="block text-[11px] font-semibold text-slate-600 mb-1">
                       Số chương (~500 từ / chương)
                     </label>
-                    <select
-                      value={chapterCount}
-                      onChange={(e) => setChapterCount(Number(e.target.value))}
-                      className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 bg-white font-medium text-slate-800"
-                    >
-                      <option value={3}>3 Chương (~500 từ/chương)</option>
-                      <option value={4}>4 Chương (~500 từ/chương)</option>
-                      <option value={5}>5 Chương (~500 từ/chương · Chuẩn)</option>
-                      <option value={6}>6 Chương (~500 từ/chương)</option>
-                    </select>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={[3, 4, 5, 6, 8, 10, 12, 15, 20].includes(chapterCount) ? chapterCount : 'custom'}
+                        onChange={(e) => {
+                          if (e.target.value !== 'custom') {
+                            setChapterCount(Number(e.target.value));
+                          }
+                        }}
+                        className="flex-1 min-w-0 px-2 py-1.5 text-xs rounded-lg border border-slate-300 bg-white font-medium text-slate-800"
+                      >
+                        <option value={3}>3 Chương</option>
+                        <option value={4}>4 Chương</option>
+                        <option value={5}>5 Chương (Chuẩn)</option>
+                        <option value={6}>6 Chương</option>
+                        <option value={8}>8 Chương</option>
+                        <option value={10}>10 Chương (~5.000 từ)</option>
+                        <option value={12}>12 Chương (~6.000 từ)</option>
+                        <option value={15}>15 Chương (~7.500 từ)</option>
+                        <option value={20}>20 Chương (~10.000 từ)</option>
+                        {![3, 4, 5, 6, 8, 10, 12, 15, 20].includes(chapterCount) && (
+                          <option value="custom">{chapterCount} Chương (Tuỳ chỉnh)</option>
+                        )}
+                      </select>
+                      <input
+                        type="number"
+                        min={2}
+                        max={30}
+                        value={chapterCount}
+                        onChange={(e) => {
+                          const v = Number(e.target.value);
+                          if (!Number.isNaN(v)) {
+                            setChapterCount(Math.max(2, Math.min(30, Math.round(v))));
+                          }
+                        }}
+                        title="Nhập số chương tuỳ chọn từ 2 đến 30"
+                        className="w-14 px-2 py-1.5 text-xs text-center font-bold rounded-lg border border-slate-300 bg-white text-indigo-900 tabular-nums"
+                      />
+                    </div>
                   </div>
 
                   <div>
@@ -2221,6 +2399,14 @@ export const MoviesHd4kStoryTab: React.FC<MoviesHd4kStoryTabProps> = ({
                     className="px-2 py-1 rounded bg-white border border-slate-200 hover:bg-slate-100 text-xs font-semibold text-slate-700 cursor-pointer"
                   >
                     Ngắt Cảnh (* * *)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleFormatShortStoryLines}
+                    className="px-2.5 py-1 rounded bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-xs font-bold text-indigo-800 cursor-pointer"
+                    title="Tự động tách các đoạn dài thành 1–3 dòng xuống dòng liên tục"
+                  >
+                    Ngắt 1–3 Dòng Liên Tục
                   </button>
                 </div>
 

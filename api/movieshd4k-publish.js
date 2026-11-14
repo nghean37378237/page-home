@@ -905,6 +905,59 @@ const STORY_STYLE_DESCRIPTIONS = {
   },
 };
 
+function splitIntoShortReadingParagraphs(paragraphs) {
+  const result = [];
+
+  for (const raw of paragraphs) {
+    const preSplit = String(raw || '')
+      .split(/\r?\n+/)
+      .map((s) => s.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+
+    for (const block of preSplit) {
+      if (countWords(block) <= 36) {
+        result.push(block);
+        continue;
+      }
+
+      const sentences = block
+        .split(/(?<=[.!?…”"'])\s+(?=[A-ZÀ-Ỹ“"'\d])/u)
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      if (sentences.length <= 1) {
+        const words = block.split(/\s+/).filter(Boolean);
+        if (words.length <= 42) {
+          result.push(block);
+        } else {
+          let cursor = 0;
+          while (cursor < words.length) {
+            result.push(words.slice(cursor, cursor + 30).join(' '));
+            cursor += 30;
+          }
+        }
+        continue;
+      }
+
+      let current = '';
+      for (const sent of sentences) {
+        const candidate = current ? `${current} ${sent}` : sent;
+        if (current && countWords(candidate) > 36) {
+          result.push(current);
+          current = sent;
+        } else {
+          current = candidate;
+        }
+      }
+      if (current) {
+        result.push(current);
+      }
+    }
+  }
+
+  return result;
+}
+
 function buildSingleChapterHtml({ heading, paragraphs, sharedCoverImageUrl, storyTitle }) {
   const parts = [];
   if (sharedCoverImageUrl && sharedCoverImageUrl.startsWith('http')) {
@@ -915,9 +968,10 @@ function buildSingleChapterHtml({ heading, paragraphs, sharedCoverImageUrl, stor
     );
   }
   parts.push(`<h2>${escapeHtml(heading)}</h2>`);
-  const cleanParas = (Array.isArray(paragraphs) ? paragraphs : [])
+  const rawParas = (Array.isArray(paragraphs) ? paragraphs : [])
     .map((p) => String(p || '').trim())
     .filter(Boolean);
+  const cleanParas = splitIntoShortReadingParagraphs(rawParas);
   cleanParas.forEach((p) => {
     parts.push(`<p>${escapeHtml(p)}</p>`);
   });
@@ -930,36 +984,68 @@ function buildFallbackChapterParagraphs({ language, chapterIndex, baseSlice }) {
   const result = [];
 
   if (baseSlice.length > 0) {
-    for (let i = 0; i < baseSlice.length; i += 2) {
-      result.push(baseSlice.slice(i, i + 2).join(' '));
+    for (const s of baseSlice) {
+      if (s.trim()) result.push(s.trim());
     }
   }
 
+  // Mỗi đoạn chỉ 1–3 dòng ngắn (18–34 từ), xuống dòng liên tục để kéo dài mạch truyện mượt mà
   const expansionPool = isVi
     ? [
-        `Không khí trong căn phòng lúc ấy dường như lắng xuống hoàn toàn, chỉ còn tiếng đồng hồ tích tắc vang lên đều đặn như đếm ngược tới khoảnh khắc không ai kịp lường trước. Nhân vật chính khẽ siết chặt bàn tay, ánh mắt hướng về phía cửa sổ nơi những vệt nắng cuối ngày hắt lên từng đường nét căng thẳng trên gương mặt.`,
-        `“Nếu ngay lúc này chúng ta không nói hết sự thật, có lẽ cả đời sau cũng không còn cơ hội nào nữa,” giọng nói trầm xuống nhưng dứt khoát vang lên giữa khoảng lặng. Từng ký ức của những tháng ngày đã qua bất chợt ùa về, nối tiếp nhau như những thước phim quay chậm khiến người nghe không khỏi nghẹn lời.`,
-        `Bước ngoặt thực sự chỉ bắt đầu khi lá thư cũ cùng những chi tiết tưởng chừng rời rạc bỗng khớp lại với nhau thành một bức tranh hoàn chỉnh. Những người từng nghi ngờ giờ đây lặng người nhìn lại từng hành động âm thầm suốt bao năm trời mà trước nay họ vốn xem nhẹ.`,
-        `Bên ngoài hành lang, tiếng bước chân vội vã vọng lại mỗi lúc một gần, mang theo dự cảm về cuộc đối mặt không thể né tránh trong phần tiếp theo. Mọi lựa chọn lúc này đều đặt lên bàn cân giữa danh dự, tình thân và sự thật bị che giấu bấy lâu.`,
-        `Mỗi câu chữ, mỗi ánh nhìn trao nhau trong giây phút ấy đều trở thành mắt xích nối dài mạch truyện từ khởi đầu cho tới cao trào phía trước, để lại trong lòng người chứng kiến một khoảng lặng khó phai và câu hỏi lớn chưa có lời đáp trọn vẹn.`,
+        `Căn phòng bỗng lặng đi hoàn toàn, chỉ còn tiếng đồng hồ tích tắc vang đều giữa khoảng không tĩnh mịch.`,
+        `Bàn tay anh khẽ siết chặt lại bên mép bàn, ánh mắt hướng về phía khung cửa sổ cuối hành lang.`,
+        `Ngoài kia, vệt nắng cuối chiều hắt lên từng đường nét căng thẳng trên gương mặt vốn trầm lặng bấy lâu.`,
+        `“Nếu ngay lúc này không nói ra sự thật, có lẽ cả đời sau chúng ta cũng không còn cơ hội nữa.”`,
+        `Giọng nói trầm thấp nhưng dứt khoát vang lên, cắt ngang sự im lặng kéo dài suốt nhiều năm qua.`,
+        `Những ký ức cũ bất chợt ùa về, nối tiếp nhau chậm rãi như từng thước phim quay chậm trước mắt.`,
+        `Không ai trong số những người có mặt lúc ấy ngờ rằng mọi chuyện lại bắt đầu từ một chi tiết nhỏ bé đến thế.`,
+        `Tờ giấy gấp tư nằm yên dưới đáy hộp gỗ bỗng trở thành mảnh ghép quan trọng nhất của cả câu chuyện.`,
+        `Những người từng hiểu lầm giờ đây chỉ biết đứng lặng, nhìn lại từng hy sinh âm thầm suốt bao năm trời.`,
+        `Họ nhận ra vẻ ngoài bình thản trước nay thực chất chỉ là lớp vỏ bọc che giấu biết bao tổn thương.`,
+        `Ngoài hành lang, tiếng bước chân vội vã vọng lại mỗi lúc một gần hơn sau cánh cửa khép hờ.`,
+        `Một cuộc đối mặt không thể né tránh sắp sửa diễn ra ngay trước mắt tất cả mọi người.`,
+        `Khoảnh khắc ấy, ranh giới giữa danh dự, tình thân và sự thật bị chôn giấu trở nên mong manh hơn bao giờ hết.`,
+        `Một ánh nhìn trao vội trong giây lát cũng đủ thay cho hàng trăm lời giải thích muộn màng.`,
+        `Khi cánh cửa bật mở, bí mật tưởng chừng đã ngủ yên suốt hai thập kỷ cuối cùng cũng chuẩn bị bước ra ánh sáng.`,
+        `Dư âm của lời thú nhận vừa rồi vẫn còn đọng lại nặng trĩu, mở đường cho bước ngoặt lớn ngay phía trước.`,
       ]
     : [
-        `The quiet inside the room felt heavy enough to hear the steady ticking of the wall clock, marking every second before the truth could no longer stay hidden. Resting a trembling hand near the doorframe, the main character looked back over years of silent sacrifice, realizing that every small choice had led directly to this unforgettable evening.`,
-        `“If we walk away without facing what really happened, none of us will ever find peace again,” a calm yet resolute voice broke through the silence. In that single heartbeat, fragments of forgotten conversations and quiet promises began weaving together, turning long-held doubts into undeniable clarity for everyone standing in the hallway.`,
-        `What had once looked like an ordinary misunderstanding now revealed deeper layers of loyalty, unspoken sorrow, and quiet courage beneath the surface. Every gesture carried weight, reminding those watching closely how easily appearances can deceive until the deciding moment arrives under bright lights and watchful eyes.`,
-        `Outside, hurried footsteps echoed along the corridor, carrying news that would reshape the next chapter of their lives forever. No one dared speak first as the tension rose, knowing full well that what came next would test every bond they had built together from the very beginning.`,
-        `Even as the dust began to settle around that pivotal scene, one lingering detail remained unresolved—pointing straight toward the next turning point of the story where hidden motives, heartfelt confessions, and unexpected revelations awaited just beyond the next closed door.`,
+        `The room fell completely silent, save for the steady ticking of the wall clock in the corner.`,
+        `His fingers tightened slightly against the edge of the table as his eyes drifted toward the narrow window.`,
+        `Outside, the fading afternoon light traced deep lines of quiet exhaustion across his otherwise calm face.`,
+        `“If we walk out of here without telling the whole truth, none of us will ever find peace again.”`,
+        `The voice was low yet unshakable, cutting straight through years of heavy, unspoken tension.`,
+        `In that single heartbeat, forgotten memories began rushing back like slow-motion scenes from another life.`,
+        `No one standing in that room had ever imagined the secret began with something so small and ordinary.`,
+        `Folded carefully at the bottom of the old wooden box, a faded note finally connected every missing piece.`,
+        `Those who had doubted him for years stood frozen, replaying every quiet sacrifice they had overlooked.`,
+        `They realized now that his calm silence had never been indifference—it had been protection all along.`,
+        `Out in the hallway, hurried footsteps echoed closer toward the half-open door.`,
+        `The confrontation everyone had tried to avoid for so long was suddenly only seconds away.`,
+        `In that breathless pause, pride, family loyalty, and buried truth hung in delicate balance.`,
+        `One steady glance across the room spoke louder than a hundred late apologies ever could.`,
+        `As the latch finally clicked open, twenty years of hidden history stood ready to step into the light.`,
+        `Yet one unanswered question still lingered in the air, pulling everyone straight into the next turning point.`,
       ];
 
   let loopGuard = 0;
-  while (countWords(result.join(' ')) < 460 && loopGuard < 12) {
+  while (countWords(result.join(' ')) < 470 && loopGuard < 26) {
     result.push(expansionPool[(loopGuard + chNum - 1) % expansionPool.length]);
     loopGuard++;
   }
-  return result;
+  return splitIntoShortReadingParagraphs(result);
 }
 
-function buildFallbackMultiChapterStory({ title, sourceText, language, chapterCount, sharedCoverImageUrl }) {
+function buildFallbackMultiChapterStory({
+  title,
+  sourceText,
+  language,
+  chapterCount,
+  batchStartChapter,
+  batchEndChapter,
+  existingSlug,
+  sharedCoverImageUrl,
+}) {
   const isVi = language === 'vi';
   const cleanText = String(sourceText || '').replace(/\s+/g, ' ').trim();
   const sentences = cleanText
@@ -967,27 +1053,74 @@ function buildFallbackMultiChapterStory({ title, sourceText, language, chapterCo
     .map((s) => s.trim())
     .filter((s) => s.length > 10);
 
-  const count = Math.max(3, Math.min(6, chapterCount || 4));
+  const count = Math.max(2, Math.min(30, chapterCount || 4));
+  const startCh = Math.max(1, Math.min(count, batchStartChapter || 1));
+  const endCh = Math.max(startCh, Math.min(count, batchEndChapter || count));
   const chunkSize = Math.max(1, Math.ceil(sentences.length / count));
   const finalTitle = title || (isVi ? 'Câu chuyện đặc biệt hôm nay' : 'A Story Worth Remembering');
-  const baseSlug = slugifyStory(finalTitle) || `story-${Date.now()}`;
+  const baseSlug = existingSlug || slugifyStory(finalTitle) || `story-${Date.now()}`;
+
+  const viArcLabels = [
+    'Khởi nguồn câu chuyện',
+    'Những dấu hiệu bất thường',
+    'Mảnh ghép bị che giấu',
+    'Cuộc gặp gỡ không ngờ',
+    'Bí mật trong quá khứ',
+    'Sóng gió âm thầm nổi lên',
+    'Khoảnh khắc nghi ngờ dâng cao',
+    'Lời hứa bị thử thách',
+    'Những chứng cứ đầu tiên',
+    'Bước ngoặt thay đổi tất cả',
+    'Khi sự thật chạm giới hạn',
+    'Ánh mắt nói thay lời',
+    'Cuộc đối thoại định mệnh',
+    'Màn sương dần được vén mở',
+    'Cái giá của sự im lặng',
+    'Lựa chọn không thể quay đầu',
+    'Cao trào giữa tâm bão',
+    'Sự thật lộ diện hoàn toàn',
+    'Khoảnh khắc vỡ òa cảm xúc',
+    'Cái kết lắng đọng & dư âm',
+  ];
+
+  const enArcLabels = [
+    'Where Everything Began',
+    'Unspoken Signs Beneath the Surface',
+    'Fragments of a Hidden Past',
+    'An Unexpected Encounter',
+    'Whispers Behind Closed Doors',
+    'Quiet Storms Gathering',
+    'Shadows of Doubt',
+    'A Promise Put to the Test',
+    'The First Clue Emerges',
+    'The Turning Point Arrives',
+    'When Patience Reaches Its Limit',
+    'Words Left Unsaid',
+    'A Fateful Confrontation',
+    'Lifting the Veil of Secrets',
+    'The Weight of Silent Years',
+    'A Choice with No Return',
+    'At the Heart of the Storm',
+    'The Whole Truth Unfolds',
+    'A Heartbreaking Reckoning',
+    'Peace After the Storm',
+  ];
 
   const chapters = [];
-  for (let i = 0; i < count; i++) {
-    const chNum = i + 1;
+  for (let chNum = startCh; chNum <= endCh; chNum++) {
+    const i = chNum - 1;
     const isMainContent = chNum === 1;
     const slice = sentences.slice(i * chunkSize, (i + 1) * chunkSize);
+    const arcVi = chNum === count ? viArcLabels[viArcLabels.length - 1] : viArcLabels[i % (viArcLabels.length - 1)];
+    const arcEn = chNum === count ? enArcLabels[enArcLabels.length - 1] : enArcLabels[i % (enArcLabels.length - 1)];
+
     const heading = isVi
       ? isMainContent
-        ? 'Chương 1 (Nội dung chính): Khởi nguồn câu chuyện'
-        : chNum === count
-        ? `Chương ${chNum}: Sự thật hé lộ & cái kết lắng đọng`
-        : `Chương ${chNum}: Bước ngoặt nối tiếp`
+        ? `Chương 1 (Nội dung chính): ${arcVi}`
+        : `Chương ${chNum}: ${arcVi}`
       : isMainContent
-      ? 'Chapter 1 (Main Story): Where Everything Began'
-      : chNum === count
-      ? `Chapter ${chNum}: The Truth Revealed at Last`
-      : `Chapter ${chNum}: The Turning Point Continues`;
+      ? `Chapter 1 (Main Story): ${arcEn}`
+      : `Chapter ${chNum}: ${arcEn}`;
 
     const paragraphs = buildFallbackChapterParagraphs({
       language,
@@ -1028,7 +1161,11 @@ async function generateStoryArticleWithAi(params) {
     ? params.storyStyle
     : 'emotional_drama';
   const storyPov = params.storyPov === 'first_person' ? 'first_person' : 'third_person';
-  const chapterCount = Math.max(3, Math.min(6, Number(params.chapterCount) || 4));
+  const chapterCount = Math.max(2, Math.min(30, Number(params.chapterCount) || 4));
+  const batchStart = Math.max(1, Math.min(chapterCount, Number(params.batchStartChapter) || 1));
+  const batchEnd = Math.max(batchStart, Math.min(chapterCount, Number(params.batchEndChapter) || chapterCount));
+  const batchTotal = batchEnd - batchStart + 1;
+  const isContinuationBatch = batchStart > 1;
 
   let sourceTitle = String(params.existingTitle || '').trim();
   let sourceText = stripHtmlTags(params.existingContent || '');
@@ -1042,30 +1179,32 @@ async function generateStoryArticleWithAi(params) {
     : [];
 
   const cleanSourceUrl = String(params.sourceUrl || '').trim();
-  if (cleanSourceUrl && cleanSourceUrl.startsWith('http')) {
-    try {
-      const scraped = await scrapeSourceForStory(cleanSourceUrl);
-      if (scraped.originalTitle && !sourceTitle) sourceTitle = scraped.originalTitle;
-      if (scraped.articleText && scraped.articleText.length > sourceText.length) {
-        sourceText = scraped.articleText;
-      }
-      if (scraped.images && scraped.images.length > 0 && candidateImages.length === 0) {
-        candidateImages = scraped.images.slice(0, 6);
-      }
-    } catch {}
-  }
+  if (!params.sharedCoverImageUrl) {
+    if (!isContinuationBatch && cleanSourceUrl && cleanSourceUrl.startsWith('http')) {
+      try {
+        const scraped = await scrapeSourceForStory(cleanSourceUrl);
+        if (scraped.originalTitle && !sourceTitle) sourceTitle = scraped.originalTitle;
+        if (scraped.articleText && scraped.articleText.length > sourceText.length) {
+          sourceText = scraped.articleText;
+        }
+        if (scraped.images && scraped.images.length > 0 && candidateImages.length === 0) {
+          candidateImages = scraped.images.slice(0, 6);
+        }
+      } catch {}
+    }
 
-  if (candidateImages.length === 0 && (sourceTitle || params.topic)) {
-    try {
-      const extra = await searchBingStoryImages(sourceTitle || params.topic, 4, []);
-      if (extra.length > 0) {
-        candidateImages = extra.map((im, idx) => ({ ...im, isFeatured: idx === 0 }));
-      }
-    } catch {}
+    if (!isContinuationBatch && candidateImages.length === 0 && (sourceTitle || params.topic)) {
+      try {
+        const extra = await searchBingStoryImages(sourceTitle || params.topic, 4, []);
+        if (extra.length > 0) {
+          candidateImages = extra.map((im, idx) => ({ ...im, isFeatured: idx === 0 }));
+        }
+      } catch {}
+    }
   }
 
   // CHỈ DÙNG 1 ẢNH ĐẠI DIỆN DUY NHẤT CHUNG CHO TẤT CẢ CHƯƠNG
-  const singleCoverUrl = candidateImages[0]?.url || '';
+  const singleCoverUrl = String(params.sharedCoverImageUrl || candidateImages[0]?.url || '').trim();
   const singleCoverList = candidateImages.slice(0, 6).map((im, idx) => ({
     ...im,
     isFeatured: idx === 0,
@@ -1074,8 +1213,13 @@ async function generateStoryArticleWithAi(params) {
   const ai = createFreeGeminiClient();
   const promptInputText = [
     params.topic ? `User Premise / Story Core:\n${String(params.topic).trim()}` : '',
-    sourceTitle ? `Original Reference Title:\n${sourceTitle}` : '',
+    sourceTitle ? `Story Title:\n${sourceTitle}` : '',
     sourceText ? `Reference Facts / Story Material:\n${sourceText.slice(0, 10000)}` : '',
+    params.previousStoryContext
+      ? `Previous Chapters Continuity (Continue DIRECTLY from this plot point, do NOT repeat events already told):\n${String(
+          params.previousStoryContext
+        ).slice(0, 4000)}`
+      : '',
     params.keyword ? `Focus Keyword: ${params.keyword}` : '',
     params.categoryName ? `Category: ${params.categoryName}` : '',
   ]
@@ -1095,22 +1239,26 @@ async function generateStoryArticleWithAi(params) {
   const systemInstruction =
     language === 'vi'
       ? `Bạn là nhà văn viết truyện dài kỳ chuyên nghiệp cho website https://movieshd4k.com/.
-Nhiệm vụ: Sáng tác bộ truyện gồm đúng ${chapterCount} chương liên kết chặt chẽ với nhau:
-1. CHƯƠNG 1 LÀ NỘI DUNG CHÍNH (Main Story): Mở đầu cuốn hút, giới thiệu trọn vẹn nhân vật chính, bối cảnh, mâu thuẫn trung tâm của toàn bộ câu chuyện và kết chương bằng móc nối căng thẳng dẫn thẳng sang Chương 2.
-2. CÁC CHƯƠNG TIẾP THEO (Chương 2..${chapterCount}): Mỗi chương tiếp nối TRỰC TIẾP khoảnh khắc cuối của chương trước, đẩy cao kịch tính, hội thoại tự nhiên trong ngoặc kép, cảm xúc nhân vật và móc nối liền mạch sang chương sau cho đến cái kết lắng đọng ở chương cuối.
-3. ĐỘ DÀI BẮT BUỘC: MỖI CHƯƠNG phải viết dài TẦM 500 TỪ (từ 450 đến 580 từ cho MỖI CHƯƠNG — viết 6 đến 8 đoạn văn chi tiết, mỗi đoạn 65-95 từ). TUYỆT ĐỐI KHÔNG viết tóm tắt ngắn vài dòng.
-4. Phong cách: ${styleGuide}. Góc nhìn: ${povInstruction}.`
+Nhiệm vụ hiện tại: Sáng tác ĐÚNG ${batchTotal} chương (từ Chương ${batchStart} đến Chương ${batchEnd}) nằm trong bộ truyện tổng cộng ${chapterCount} chương liên kết chặt chẽ:
+1. ${batchStart === 1 ? 'CHƯƠNG 1 LÀ NỘI DUNG CHÍNH (Main Story): Mở đầu cuốn hút, giới thiệu trọn vẹn nhân vật, bối cảnh, mâu thuẫn trung tâm và móc nối dẫn thẳng sang Chương 2.' : `CHƯƠNG ${batchStart}..${batchEnd}: Tiếp nối TRỰC TIẾP mạch truyện và tình huống cuối cùng từ Chương ${batchStart - 1}, phát triển diễn biến mới mẻ không lặp lại, đẩy cao kịch tính qua từng chương.`}
+2. ${batchEnd === chapterCount ? `Chương ${batchEnd} là chương kết trọn vẹn (giải quyết nút thắt, cao trào cảm xúc và dư âm sâu sắc).` : `Chương ${batchEnd} kết thúc bằng điểm móc nối hấp dẫn để dẫn tiếp sang Chương ${batchEnd + 1}.`}
+3. ĐỘ DÀI & PHONG CÁCH XUỐNG DÒNG LIÊN TỤC: MỖI CHƯƠNG dài TẦM 500 TỪ (460–580 từ MỖI CHƯƠNG) nhưng PHẢI chia thành 16–24 đoạn ngắn trong mảng "paragraphs".
+4. QUY TẮC 1–3 DÒNG MỖI ĐOẠN: MỖI phần tử trong "paragraphs" CHỈ DÀI ĐÚNG 1 ĐẾN 3 DÒNG (1–2 câu ngắn, khoảng 15–38 từ), tuyệt đối KHÔNG viết đoạn văn dài 4–8 dòng. Tách riêng từng hành động nhỏ, ánh mắt, lời thoại, khoảng lặng suy tư thành từng đoạn 1–3 dòng xuống dòng liên tục để kéo dài mạch truyện cuốn hút và dễ đọc.
+5. Số thứ tự chapterNumber trong JSON phải đánh đúng từ ${batchStart} đến ${batchEnd}.
+6. Phong cách: ${styleGuide}. Góc nhìn: ${povInstruction}.`
       : `You are a professional serialized fiction author writing multi-chapter stories for https://movieshd4k.com/.
-Mission: Write a tightly connected ${chapterCount}-chapter story:
-1. CHAPTER 1 IS THE MAIN CONTENT (Nội dung chính): Hook the reader immediately, establish the central characters, main setting, core premise/conflict, and end on a vivid cliffhanger leading straight into Chapter 2.
-2. CHAPTERS 2..${chapterCount}: Each chapter continues DIRECTLY from the exact ending moment of the previous chapter so all chapters form one seamless, linked narrative arc through the emotional climax and finale.
-3. STRICT WORD COUNT REQUIREMENT: EVERY SINGLE CHAPTER MUST be around 500 words (450–580 words PER CHAPTER, composed of 6 to 8 rich narrative paragraphs of 65–95 words each including natural character dialogue). NEVER output short 100-word summaries.
-4. Style: ${styleGuide}. POV: ${povInstruction}.`;
+Current assignment: Write EXACTLY ${batchTotal} connected chapters (Chapters ${batchStart} through ${batchEnd} of a ${chapterCount}-chapter series):
+1. ${batchStart === 1 ? 'CHAPTER 1 IS THE MAIN STORY CONTENT: Hook readers immediately, introduce core characters, setting, and central conflict, ending on a cliffhanger leading into Chapter 2.' : `CHAPTERS ${batchStart}..${batchEnd}: Continue DIRECTLY from Chapter ${batchStart - 1} with fresh escalating events, vivid dialogue, and zero repetition.`}
+2. ${batchEnd === chapterCount ? `Chapter ${batchEnd} brings the full narrative arc to its emotional climax and satisfying resolution.` : `Chapter ${batchEnd} ends with an engaging hook leading seamlessly into Chapter ${batchEnd + 1}.`}
+3. STRICT WORD COUNT & LINE-BREAK PACING: EVERY SINGLE CHAPTER must be around 500 words (460–580 words PER CHAPTER), broken into 16–24 short micro-paragraphs in the "paragraphs" array.
+4. STRICT 1–3 LINE RULE: EVERY item in "paragraphs" MUST be ONLY 1 to 3 short lines (1–2 crisp sentences, ~15–38 words max). NEVER write dense 4+ line blocks! Break actions, dialogue beats, reactions, and quiet pauses onto separate 1–3 line paragraphs with continuous line breaks to stretch the story pace effortlessly.
+5. Set chapterNumber in JSON cleanly from ${batchStart} to ${batchEnd}.
+6. Style: ${styleGuide}. POV: ${povInstruction}.`;
 
   let usedGemini = false;
   let warning = '';
   let generatedTitle = sourceTitle || String(params.topic || '').slice(0, 90);
-  let generatedSlug = slugifyStory(generatedTitle);
+  let generatedSlug = params.existingSlug || slugifyStory(generatedTitle);
   let generatedExcerpt = '';
   let generatedTags = [];
   let chapters = [];
@@ -1119,9 +1267,9 @@ Mission: Write a tightly connected ${chapterCount}-chapter story:
     try {
       const response = await ai.models.generateContent({
         model: STORY_AI_MODEL,
-        contents: `${promptInputText}\n\nWrite ${chapterCount} tightly linked chapters in ${
+        contents: `${promptInputText}\n\nWrite ${batchTotal} tightly linked chapters numbered strictly from Chapter ${batchStart} to Chapter ${batchEnd} (out of ${chapterCount} total chapters) in ${
           language === 'vi' ? 'Vietnamese' : 'English'
-        }. Chapter 1 is the Main Story Content, and EACH of the ${chapterCount} chapters must be ~500 words (6-8 full paragraphs per chapter). Return strictly valid JSON matching the schema.`,
+        }. EACH chapter MUST be ~500 words divided into 16-24 ultra-readable short paragraphs where every single paragraph is strictly 1-3 lines (15-38 words max, continuous line breaks). Return strictly valid JSON matching the schema.`,
         config: {
           systemInstruction,
           responseMimeType: 'application/json',
@@ -1160,8 +1308,8 @@ Mission: Write a tightly connected ${chapterCount}-chapter story:
       const rawJson = (response.text || '').trim();
       if (rawJson) {
         const parsed = JSON.parse(rawJson);
-        if (parsed.title) generatedTitle = String(parsed.title).trim();
-        if (parsed.slug) {
+        if (!isContinuationBatch && parsed.title) generatedTitle = String(parsed.title).trim();
+        if (!params.existingSlug && parsed.slug) {
           generatedSlug = slugifyStory(String(parsed.slug)) || slugifyStory(generatedTitle);
         }
         if (parsed.excerpt) generatedExcerpt = String(parsed.excerpt).trim();
@@ -1173,8 +1321,8 @@ Mission: Write a tightly connected ${chapterCount}-chapter story:
         }
         if (Array.isArray(parsed.chapters) && parsed.chapters.length > 0) {
           const baseSlug = generatedSlug || slugifyStory(generatedTitle) || `story-${Date.now()}`;
-          chapters = parsed.chapters.map((ch, idx) => {
-            const chNum = idx + 1;
+          chapters = parsed.chapters.slice(0, batchTotal).map((ch, idx) => {
+            const chNum = batchStart + idx;
             const isMain = chNum === 1;
             const heading = String(
               ch.heading ||
@@ -1226,6 +1374,9 @@ Mission: Write a tightly connected ${chapterCount}-chapter story:
       sourceText: sourceText || params.topic,
       language,
       chapterCount,
+      batchStartChapter: batchStart,
+      batchEndChapter: batchEnd,
+      existingSlug: generatedSlug,
       sharedCoverImageUrl: singleCoverUrl,
     });
     generatedTitle = fallback.title;
@@ -1449,7 +1600,13 @@ function buildChapterNavigationFooterHtml({ currentChapterNumber, language, chap
 </div>`;
 }
 
-async function linkChaptersContentOnMoviesHd4k({ postType, language, featuredMediaId, chapters }) {
+async function linkChaptersContentOnMoviesHd4k({
+  postType,
+  language,
+  featuredMediaId,
+  chapters,
+  allChapters,
+}) {
   const session = await getMoviesHd4kSession(false);
   const headers = {
     'Content-Type': 'application/json',
@@ -1458,49 +1615,55 @@ async function linkChaptersContentOnMoviesHd4k({ postType, language, featuredMed
     'X-WP-Nonce': session.restNonce,
   };
   const lang = language === 'vi' ? 'vi' : 'en';
+  const tocChapters = Array.isArray(allChapters) && allChapters.length > 0 ? allChapters : chapters;
 
-  const results = await Promise.all(
-    chapters.map(async (ch) => {
-      const cleanBase = String(ch.baseContentHtml || '').replace(
-        /<hr class="wp-block-separator" \/>\s*<div class="story-chapter-navigation"[\s\S]*$/i,
-        ''
-      );
-      const navFooter = buildChapterNavigationFooterHtml({
-        currentChapterNumber: ch.chapterNumber,
-        language: lang,
-        chapters,
-      });
-      const fullContent = `${cleanBase.trim()}\n\n${navFooter}`;
-      const collection =
-        postType === 'posts'
-          ? 'posts'
-          : ch.isMainContent || ch.chapterNumber === 1
-          ? 'np_story'
-          : 'np_chapter';
+  let updatedCount = 0;
+  for (let i = 0; i < chapters.length; i += 5) {
+    const chunk = chapters.slice(i, i + 5);
+    const results = await Promise.all(
+      chunk.map(async (ch) => {
+        const cleanBase = String(ch.baseContentHtml || '').replace(
+          /<hr class="wp-block-separator" \/>\s*<div class="story-chapter-navigation"[\s\S]*$/i,
+          ''
+        );
+        const navFooter = buildChapterNavigationFooterHtml({
+          currentChapterNumber: ch.chapterNumber,
+          language: lang,
+          chapters: tocChapters,
+        });
+        const fullContent = `${cleanBase.trim()}\n\n${navFooter}`;
+        const collection =
+          postType === 'posts'
+            ? 'posts'
+            : ch.isMainContent || ch.chapterNumber === 1
+            ? 'np_story'
+            : 'np_chapter';
 
-      const bodyPayload = {
-        content: fullContent,
-      };
-      if (featuredMediaId && featuredMediaId > 0) {
-        bodyPayload.featured_media = featuredMediaId;
-      }
+        const bodyPayload = {
+          content: fullContent,
+        };
+        if (featuredMediaId && featuredMediaId > 0) {
+          bodyPayload.featured_media = featuredMediaId;
+        }
 
-      const r = await fetchWithTimeout(
-        `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/${collection}/${ch.postId}`,
-        {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(bodyPayload),
-        },
-        6000
-      );
-      return r.ok;
-    })
-  );
+        const r = await fetchWithTimeout(
+          `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/${collection}/${ch.postId}`,
+          {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(bodyPayload),
+          },
+          6000
+        );
+        return r.ok;
+      })
+    );
+    updatedCount += results.filter(Boolean).length;
+  }
 
   return {
     ok: true,
-    updatedCount: results.filter(Boolean).length,
+    updatedCount,
   };
 }
 
@@ -1871,6 +2034,11 @@ export default async function handler(req, res) {
           storyStyle: body.storyStyle || 'emotional_drama',
           storyPov: body.storyPov || 'third_person',
           chapterCount: Number(body.chapterCount) || 4,
+          batchStartChapter: body.batchStartChapter ? Number(body.batchStartChapter) : undefined,
+          batchEndChapter: body.batchEndChapter ? Number(body.batchEndChapter) : undefined,
+          previousStoryContext: body.previousStoryContext ? String(body.previousStoryContext) : undefined,
+          sharedCoverImageUrl: body.sharedCoverImageUrl ? String(body.sharedCoverImageUrl) : undefined,
+          existingSlug: body.existingSlug ? String(body.existingSlug) : undefined,
           language: body.language === 'vi' ? 'vi' : 'en',
           categoryName: body.categoryName ? String(body.categoryName) : undefined,
           keyword: body.keyword ? String(body.keyword) : undefined,
@@ -1930,6 +2098,7 @@ export default async function handler(req, res) {
           language: body.language === 'vi' ? 'vi' : 'en',
           featuredMediaId: body.featuredMediaId ? Number(body.featuredMediaId) : undefined,
           chapters: Array.isArray(body.chapters) ? body.chapters : [],
+          allChapters: Array.isArray(body.allChapters) ? body.allChapters : undefined,
         });
         return res.status(200).json(linked);
       }

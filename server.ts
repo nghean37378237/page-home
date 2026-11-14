@@ -574,6 +574,11 @@ async function startServer() {
           storyStyle: body.storyStyle || 'emotional_drama',
           storyPov: body.storyPov || 'third_person',
           chapterCount: body.chapterCount ? Number(body.chapterCount) : 5,
+          batchStartChapter: body.batchStartChapter ? Number(body.batchStartChapter) : undefined,
+          batchEndChapter: body.batchEndChapter ? Number(body.batchEndChapter) : undefined,
+          previousStoryContext: body.previousStoryContext ? String(body.previousStoryContext) : undefined,
+          sharedCoverImageUrl: body.sharedCoverImageUrl ? String(body.sharedCoverImageUrl) : undefined,
+          existingSlug: body.existingSlug ? String(body.existingSlug) : undefined,
           language: body.language === 'vi' ? 'vi' : 'en',
           categoryName: body.categoryName ? String(body.categoryName) : undefined,
           keyword: body.keyword ? String(body.keyword) : undefined,
@@ -636,6 +641,7 @@ async function startServer() {
           language: body.language === 'vi' ? 'vi' : 'en',
           featuredMediaId: body.featuredMediaId ? Number(body.featuredMediaId) : undefined,
           chapters: Array.isArray(body.chapters) ? body.chapters : [],
+          allChapters: Array.isArray(body.allChapters) ? body.allChapters : undefined,
         });
         res.json(linked);
         return;
