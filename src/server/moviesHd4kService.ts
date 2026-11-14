@@ -231,6 +231,7 @@ export async function fetchMoviesHd4kInitData(): Promise<{
   categories: WpCategoryItem[];
   genres: WpCategoryItem[];
   posts: (WpRemotePostItem & { postType?: 'posts' | 'np_story' })[];
+  chapters: (WpRemotePostItem & { postType: 'np_chapter' })[];
   wpUsers: { id: number; name: string; slug: string }[];
   employeeOptions: typeof WP_EMPLOYEE_AUTHOR_MAP;
 }> {
@@ -281,6 +282,7 @@ export async function fetchMoviesHd4kInitData(): Promise<{
 
   let wpUsers: { id: number; name: string; slug: string }[] = [];
   const rawPosts: { item: any; postType: 'posts' | 'np_story' }[] = [];
+  const rawChapters: any[] = [];
 
   if (session) {
     const authHeaders = {
@@ -288,13 +290,17 @@ export async function fetchMoviesHd4kInitData(): Promise<{
       Cookie: session.cookieHeader,
       'X-WP-Nonce': session.restNonce,
     };
-    const [postsRes, storiesRes, usersRes] = await Promise.all([
+    const [postsRes, storiesRes, chaptersRes, usersRes] = await Promise.all([
       fetch(
         `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/posts?per_page=30&status=publish,draft,pending,future&_embed=1`,
         { headers: authHeaders }
       ).catch(() => null),
       fetch(
         `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_story?per_page=30&status=publish,draft,pending,future&_embed=1`,
+        { headers: authHeaders }
+      ).catch(() => null),
+      fetch(
+        `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_chapter?per_page=50&status=publish,draft,pending,future&_embed=1`,
         { headers: authHeaders }
       ).catch(() => null),
       fetch(`${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/users?per_page=50`, {
@@ -314,6 +320,12 @@ export async function fetchMoviesHd4kInitData(): Promise<{
         rawPosts.push(...pJson.map((item: any) => ({ item, postType: 'posts' as const })));
       }
     }
+    if (chaptersRes && chaptersRes.ok) {
+      const cJson = await chaptersRes.json();
+      if (Array.isArray(cJson)) {
+        rawChapters.push(...cJson);
+      }
+    }
     if (usersRes && usersRes.ok) {
       const uJson = await usersRes.json();
       if (Array.isArray(uJson)) {
@@ -326,11 +338,14 @@ export async function fetchMoviesHd4kInitData(): Promise<{
     }
   } else {
     try {
-      const [pubPostsRes, pubStoriesRes] = await Promise.all([
+      const [pubPostsRes, pubStoriesRes, pubChaptersRes] = await Promise.all([
         fetch(`${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/posts?per_page=20&_embed=1`, {
           headers: { Accept: 'application/json' },
         }).catch(() => null),
         fetch(`${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_story?per_page=20&_embed=1`, {
+          headers: { Accept: 'application/json' },
+        }).catch(() => null),
+        fetch(`${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_chapter?per_page=50&_embed=1`, {
           headers: { Accept: 'application/json' },
         }).catch(() => null),
       ]);
@@ -344,6 +359,12 @@ export async function fetchMoviesHd4kInitData(): Promise<{
         const pubJson = await pubPostsRes.json();
         if (Array.isArray(pubJson)) {
           rawPosts.push(...pubJson.map((item: any) => ({ item, postType: 'posts' as const })));
+        }
+      }
+      if (pubChaptersRes && pubChaptersRes.ok) {
+        const chJson = await pubChaptersRes.json();
+        if (Array.isArray(chJson)) {
+          rawChapters.push(...chJson);
         }
       }
     } catch {}
@@ -405,6 +426,37 @@ export async function fetchMoviesHd4kInitData(): Promise<{
     })
     .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
+  const chapters: (WpRemotePostItem & { postType: 'np_chapter' })[] = rawChapters
+    .map((p: any) => {
+      const authorId = Number(p.author || 1);
+      const embeddedAuthor = p?._embedded?.author?.[0];
+      const embeddedFeatured = p?._embedded?.['wp:featuredmedia']?.[0];
+      const authorDisplay =
+        userNameById.get(authorId) ||
+        embeddedAuthor?.name ||
+        (authorId === 1 ? 'admin' : `User #${authorId}`);
+      return {
+        id: Number(p.id),
+        postType: 'np_chapter' as const,
+        title: decodeHtmlEntities(stripHtmlTags(String(p.title?.rendered || ''))),
+        content: String(p.content?.rendered || ''),
+        excerpt: decodeHtmlEntities(stripHtmlTags(String(p.excerpt?.rendered || ''))),
+        slug: String(p.slug || ''),
+        status: (p.status || 'publish') as WpRemotePostItem['status'],
+        date: String(p.date || ''),
+        modified: String(p.modified || ''),
+        link: String(p.link || `${DEFAULT_MOVIES_SITE}/?post_type=np_chapter&p=${p.id}`),
+        authorId,
+        authorName: authorDisplay,
+        employeeCode: 'H0082',
+        categories: [],
+        categoryNames: ['Chapters (np_chapter)'],
+        featuredMediaId: Number(p.featured_media || 0),
+        featuredImageUrl: String(embeddedFeatured?.source_url || ''),
+      };
+    })
+    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
   return {
     ok: true,
     siteUrl: DEFAULT_MOVIES_SITE,
@@ -414,6 +466,7 @@ export async function fetchMoviesHd4kInitData(): Promise<{
     categories,
     genres,
     posts,
+    chapters,
     wpUsers,
     employeeOptions: WP_EMPLOYEE_AUTHOR_MAP,
   };
@@ -1521,3 +1574,85 @@ export async function publishStoryToMoviesHd4k(params: {
       : `Đã đăng Chương 1 (Nội dung chính) #${createdPost.id} lên ${targetSite} thành công!`,
   };
 }
+
+export async function fetchLinkedChaptersForStory(params: {
+  storyId: number;
+  storyLink?: string;
+}): Promise<{
+  ok: boolean;
+  chapters: {
+    chapterNumber: number;
+    postId: number;
+    heading: string;
+    slug: string;
+    contentHtml: string;
+    link: string;
+    featuredMediaId: number;
+  }[];
+}> {
+  const session = await getMoviesHd4kSession(false);
+  const authHeaders = {
+    Accept: 'application/json',
+    Cookie: session.cookieHeader,
+    'X-WP-Nonce': session.restNonce,
+  };
+
+  let targetLink = (params.storyLink || '').trim();
+  if (!targetLink && params.storyId > 0) {
+    try {
+      const sRes = await fetch(`${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_story/${params.storyId}`, {
+        headers: authHeaders,
+      });
+      if (sRes.ok) {
+        const sJson = (await sRes.json()) as any;
+        if (sJson?.link) targetLink = String(sJson.link);
+      }
+    } catch {}
+  }
+
+  const chapterLinks: string[] = [];
+  if (targetLink) {
+    try {
+      const htmlRes = await fetch(targetLink, { headers: { Cookie: session.cookieHeader } });
+      if (htmlRes.ok) {
+        const pageHtml = await htmlRes.text();
+        const sectionMatch = pageHtml.match(/<section[^>]*chapter-section[^>]*>([\s\S]*?)<\/section>/i);
+        const zone = sectionMatch ? sectionMatch[1] : pageHtml;
+        const hrefMatches = [...zone.matchAll(/href=["']([^"']*\/chuong\/[^"']+)["']/gi)];
+        hrefMatches.forEach((m) => {
+          const url = String(m[1] || '').replace(/\/+$/, '');
+          if (url && !chapterLinks.includes(url)) chapterLinks.push(url);
+        });
+      }
+    } catch {}
+  }
+
+  const allChaptersRes = await fetch(
+    `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_chapter?per_page=100&status=publish,draft,pending,future`,
+    { headers: authHeaders }
+  ).catch(() => null);
+  const allChapters = allChaptersRes && allChaptersRes.ok ? ((await allChaptersRes.json()) as any[]) : [];
+
+  const matched = (Array.isArray(allChapters) ? allChapters : [])
+    .filter((c) => {
+      const cleanLink = String(c.link || '').replace(/\/+$/, '');
+      return chapterLinks.some((u) => u === cleanLink || cleanLink.endsWith(new URL(u).pathname.replace(/\/+$/, '')));
+    })
+    .map((c, idx) => {
+      const rawTitle = decodeHtmlEntities(stripHtmlTags(String(c.title?.rendered || '')));
+      const numMatch = rawTitle.match(/(?:chương|chapter)\s*(\d+)/i);
+      return {
+        chapterNumber: numMatch ? Math.max(2, Number(numMatch[1])) : idx + 2,
+        postId: Number(c.id),
+        heading: rawTitle || `Chương ${idx + 2}`,
+        slug: String(c.slug || ''),
+        contentHtml: String(c.content?.rendered || ''),
+        link: String(c.link || ''),
+        featuredMediaId: Number(c.featured_media || 0),
+      };
+    })
+    .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+  return { ok: true, chapters: matched };
+}
+

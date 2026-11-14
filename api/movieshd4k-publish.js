@@ -339,6 +339,7 @@ async function fetchMoviesHd4kInitData() {
 
   let wpUsers = [];
   const rawPosts = [];
+  const rawChapters = [];
 
   if (session) {
     const authHeaders = {
@@ -347,7 +348,7 @@ async function fetchMoviesHd4kInitData() {
       'X-WP-Nonce': session.restNonce,
       'User-Agent': SCRAPER_USER_AGENT,
     };
-    const [postsRes, storiesRes, usersRes] = await Promise.all([
+    const [postsRes, storiesRes, chaptersRes, usersRes] = await Promise.all([
       fetchWithTimeout(
         `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/posts?per_page=30&status=publish,draft,pending,future&_embed=1`,
         { headers: authHeaders },
@@ -355,6 +356,11 @@ async function fetchMoviesHd4kInitData() {
       ).catch(() => null),
       fetchWithTimeout(
         `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_story?per_page=30&status=publish,draft,pending,future&_embed=1`,
+        { headers: authHeaders },
+        5500
+      ).catch(() => null),
+      fetchWithTimeout(
+        `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_chapter?per_page=50&status=publish,draft,pending,future&_embed=1`,
         { headers: authHeaders },
         5500
       ).catch(() => null),
@@ -377,6 +383,12 @@ async function fetchMoviesHd4kInitData() {
         rawPosts.push(...pJson.map((item) => ({ item, postType: 'posts' })));
       }
     }
+    if (chaptersRes && chaptersRes.ok) {
+      const cJson = await chaptersRes.json().catch(() => []);
+      if (Array.isArray(cJson)) {
+        rawChapters.push(...cJson);
+      }
+    }
     if (usersRes && usersRes.ok) {
       const uJson = await usersRes.json().catch(() => []);
       if (Array.isArray(uJson)) {
@@ -389,7 +401,7 @@ async function fetchMoviesHd4kInitData() {
     }
   } else {
     try {
-      const [pubPostsRes, pubStoriesRes] = await Promise.all([
+      const [pubPostsRes, pubStoriesRes, pubChaptersRes] = await Promise.all([
         fetchWithTimeout(
           `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/posts?per_page=20&_embed=1`,
           { headers: { Accept: 'application/json', 'User-Agent': SCRAPER_USER_AGENT } },
@@ -397,6 +409,11 @@ async function fetchMoviesHd4kInitData() {
         ).catch(() => null),
         fetchWithTimeout(
           `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_story?per_page=20&_embed=1`,
+          { headers: { Accept: 'application/json', 'User-Agent': SCRAPER_USER_AGENT } },
+          5000
+        ).catch(() => null),
+        fetchWithTimeout(
+          `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_chapter?per_page=50&_embed=1`,
           { headers: { Accept: 'application/json', 'User-Agent': SCRAPER_USER_AGENT } },
           5000
         ).catch(() => null),
@@ -411,6 +428,12 @@ async function fetchMoviesHd4kInitData() {
         const pubJson = await pubPostsRes.json().catch(() => []);
         if (Array.isArray(pubJson)) {
           rawPosts.push(...pubJson.map((item) => ({ item, postType: 'posts' })));
+        }
+      }
+      if (pubChaptersRes && pubChaptersRes.ok) {
+        const chJson = await pubChaptersRes.json().catch(() => []);
+        if (Array.isArray(chJson)) {
+          rawChapters.push(...chJson);
         }
       }
     } catch {}
@@ -472,6 +495,37 @@ async function fetchMoviesHd4kInitData() {
     })
     .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
 
+  const chapters = rawChapters
+    .map((p) => {
+      const authorId = Number(p.author || 1);
+      const embeddedAuthor = p?._embedded?.author?.[0];
+      const embeddedFeatured = p?._embedded?.['wp:featuredmedia']?.[0];
+      const authorDisplay =
+        userNameById.get(authorId) ||
+        embeddedAuthor?.name ||
+        (authorId === 1 ? 'admin' : `User #${authorId}`);
+      return {
+        id: Number(p.id),
+        postType: 'np_chapter',
+        title: decodeHtmlEntities(stripHtmlTags(String(p.title?.rendered || ''))),
+        content: String(p.content?.rendered || ''),
+        excerpt: decodeHtmlEntities(stripHtmlTags(String(p.excerpt?.rendered || ''))),
+        slug: String(p.slug || ''),
+        status: p.status || 'publish',
+        date: String(p.date || ''),
+        modified: String(p.modified || ''),
+        link: String(p.link || `${DEFAULT_MOVIES_SITE}/?post_type=np_chapter&p=${p.id}`),
+        authorId,
+        authorName: authorDisplay,
+        employeeCode: 'H0082',
+        categories: [],
+        categoryNames: ['Chapters (np_chapter)'],
+        featuredMediaId: Number(p.featured_media || 0),
+        featuredImageUrl: String(embeddedFeatured?.source_url || ''),
+      };
+    })
+    .sort((a, b) => new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime());
+
   return {
     ok: true,
     siteUrl: DEFAULT_MOVIES_SITE,
@@ -481,6 +535,7 @@ async function fetchMoviesHd4kInitData() {
     categories,
     genres,
     posts,
+    chapters,
     wpUsers,
     employeeOptions: WP_EMPLOYEE_AUTHOR_MAP,
   };
@@ -1656,6 +1711,88 @@ async function publishStoryToMoviesHd4k(params) {
   };
 }
 
+async function fetchLinkedChaptersForStory({ storyId, storyLink }) {
+  const session = await getMoviesHd4kSession(false);
+  const authHeaders = {
+    Accept: 'application/json',
+    Cookie: session.cookieHeader,
+    'X-WP-Nonce': session.restNonce,
+    'User-Agent': SCRAPER_USER_AGENT,
+  };
+
+  let targetLink = String(storyLink || '').trim();
+  if (!targetLink && storyId > 0) {
+    try {
+      const sRes = await fetchWithTimeout(
+        `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_story/${storyId}`,
+        { headers: authHeaders },
+        5000
+      );
+      if (sRes.ok) {
+        const sJson = await sRes.json().catch(() => null);
+        if (sJson?.link) targetLink = String(sJson.link);
+      }
+    } catch {}
+  }
+
+  const chapterLinks = [];
+  if (targetLink) {
+    try {
+      const htmlRes = await fetchWithTimeout(
+        targetLink,
+        { headers: { Cookie: session.cookieHeader, 'User-Agent': SCRAPER_USER_AGENT } },
+        5500
+      );
+      if (htmlRes.ok) {
+        const pageHtml = await htmlRes.text();
+        const sectionMatch = pageHtml.match(/<section[^>]*chapter-section[^>]*>([\s\S]*?)<\/section>/i);
+        const zone = sectionMatch ? sectionMatch[1] : pageHtml;
+        const hrefMatches = [...zone.matchAll(/href=["']([^"']*\/chuong\/[^"']+)["']/gi)];
+        hrefMatches.forEach((m) => {
+          const url = String(m[1] || '').replace(/\/+$/, '');
+          if (url && !chapterLinks.includes(url)) chapterLinks.push(url);
+        });
+      }
+    } catch {}
+  }
+
+  const allChaptersRes = await fetchWithTimeout(
+    `${DEFAULT_MOVIES_SITE}/wp-json/wp/v2/np_chapter?per_page=100&status=publish,draft,pending,future`,
+    { headers: authHeaders },
+    5500
+  ).catch(() => null);
+  const allChapters =
+    allChaptersRes && allChaptersRes.ok ? await allChaptersRes.json().catch(() => []) : [];
+
+  const matched = (Array.isArray(allChapters) ? allChapters : [])
+    .filter((c) => {
+      const cleanLink = String(c.link || '').replace(/\/+$/, '');
+      return chapterLinks.some((u) => {
+        try {
+          return u === cleanLink || cleanLink.endsWith(new URL(u).pathname.replace(/\/+$/, ''));
+        } catch {
+          return u === cleanLink;
+        }
+      });
+    })
+    .map((c, idx) => {
+      const rawTitle = decodeHtmlEntities(stripHtmlTags(String(c.title?.rendered || '')));
+      const numMatch = rawTitle.match(/(?:chương|chapter)\s*(\d+)/i);
+      return {
+        chapterNumber: numMatch ? Math.max(2, Number(numMatch[1])) : idx + 2,
+        postId: Number(c.id),
+        heading: rawTitle || `Chương ${idx + 2}`,
+        slug: String(c.slug || ''),
+        contentHtml: String(c.content?.rendered || ''),
+        link: String(c.link || ''),
+        featuredMediaId: Number(c.featured_media || 0),
+      };
+    })
+    .sort((a, b) => a.chapterNumber - b.chapterNumber);
+
+  return { ok: true, chapters: matched };
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -1795,6 +1932,14 @@ export default async function handler(req, res) {
           chapters: Array.isArray(body.chapters) ? body.chapters : [],
         });
         return res.status(200).json(linked);
+      }
+
+      if (action === 'get_story_chapters') {
+        const result = await fetchLinkedChaptersForStory({
+          storyId: Number(body.storyId || 0),
+          storyLink: body.storyLink ? String(body.storyLink) : undefined,
+        });
+        return res.status(200).json(result);
       }
 
       const published = await publishStoryToMoviesHd4k({

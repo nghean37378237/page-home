@@ -24,6 +24,7 @@ import {
   generateStoryArticleWithAi,
   publishLinkedNpChapterOnMoviesHd4k,
   linkChaptersContentOnMoviesHd4k,
+  fetchLinkedChaptersForStory,
 } from './src/server/moviesHd4kService';
 
 function resolveServerPort(): number {
@@ -637,6 +638,15 @@ async function startServer() {
           chapters: Array.isArray(body.chapters) ? body.chapters : [],
         });
         res.json(linked);
+        return;
+      }
+
+      if (action === 'get_story_chapters') {
+        const result = await fetchLinkedChaptersForStory({
+          storyId: Number(body.storyId || 0),
+          storyLink: body.storyLink ? String(body.storyLink) : undefined,
+        });
+        res.json(result);
         return;
       }
 
