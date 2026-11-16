@@ -100,14 +100,19 @@ async function attemptWpCookieLogin(
 ): Promise<string> {
   let seedCookie = 'wordpress_test_cookie=WP%20Cookie%20check';
   let formActionUrl = loginEndpoint;
+  let effectiveReferer = loginEndpoint;
   try {
     const preRes = await fetch(loginEndpoint, {
       method: 'GET',
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0 Safari/537.36',
       },
-      redirect: 'manual',
+      redirect: 'follow',
     });
+    if (preRes.url) {
+      effectiveReferer = preRes.url;
+      formActionUrl = preRes.url;
+    }
     const preCookies = preRes.headers.getSetCookie ? preRes.headers.getSetCookie() : [];
     const prePairs = preCookies.map((c) => c.split(';')[0]).filter(Boolean);
     if (prePairs.length > 0) {
@@ -117,7 +122,11 @@ async function attemptWpCookieLogin(
       const preHtml = await preRes.text();
       const actionMatch = preHtml.match(/<form[^>]*name=["']loginform["'][^>]*action=["']([^"']+)["']/i);
       if (actionMatch && actionMatch[1]) {
-        formActionUrl = actionMatch[1];
+        try {
+          formActionUrl = new URL(actionMatch[1], preRes.url || loginEndpoint).href;
+        } catch {
+          formActionUrl = actionMatch[1];
+        }
       }
     }
   } catch {
@@ -133,18 +142,42 @@ async function attemptWpCookieLogin(
     testcookie: '1',
   });
 
-  const loginRes = await fetch(formActionUrl, {
+  let loginRes = await fetch(formActionUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
       Cookie: seedCookie,
       Origin: siteUrl,
-      Referer: loginEndpoint,
+      Referer: effectiveReferer,
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0 Safari/537.36',
     },
     body: body.toString(),
     redirect: 'manual',
   });
+
+  if (loginRes.status >= 300 && loginRes.status < 400) {
+    const redirectCookies = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [];
+    const hasAuthCookie = redirectCookies.some((c) => c.startsWith('wordpress_logged_in_'));
+    const loc = loginRes.headers.get('location') || '';
+    if (!hasAuthCookie && loc && !loc.includes('wp-admin')) {
+      let resolvedLoc = loc;
+      try {
+        resolvedLoc = new URL(loc, formActionUrl).href;
+      } catch {}
+      loginRes = await fetch(resolvedLoc, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Cookie: seedCookie,
+          Origin: siteUrl,
+          Referer: resolvedLoc,
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/126.0.0.0 Safari/537.36',
+        },
+        body: body.toString(),
+        redirect: 'manual',
+      });
+    }
+  }
 
   const rawCookies = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [];
   return rawCookies
@@ -164,18 +197,26 @@ export async function getMoviesHd4kSession(forceRefresh = false): Promise<Movies
     return cachedMoviesSession;
   }
 
-  const candidates = [DEFAULT_MOVIES_LOGIN_URL, `${DEFAULT_MOVIES_SITE}/wp-login.php`];
+  const slashLogin =
+    DEFAULT_MOVIES_LOGIN_URL.endsWith('/') || DEFAULT_MOVIES_LOGIN_URL.endsWith('.php')
+      ? DEFAULT_MOVIES_LOGIN_URL
+      : `${DEFAULT_MOVIES_LOGIN_URL}/`;
+  const candidates = Array.from(
+    new Set([slashLogin, DEFAULT_MOVIES_LOGIN_URL, `${DEFAULT_MOVIES_SITE}/wp-login.php`])
+  );
   let cookieHeader = '';
   for (const endpoint of candidates) {
-    cookieHeader = await attemptWpCookieLogin(
-      endpoint,
-      DEFAULT_MOVIES_SITE,
-      DEFAULT_MOVIES_USER,
-      DEFAULT_MOVIES_PASS
-    );
-    if (cookieHeader.includes('wordpress_logged_in_')) {
-      break;
-    }
+    try {
+      cookieHeader = await attemptWpCookieLogin(
+        endpoint,
+        DEFAULT_MOVIES_SITE,
+        DEFAULT_MOVIES_USER,
+        DEFAULT_MOVIES_PASS
+      );
+      if (cookieHeader.includes('wordpress_logged_in_')) {
+        break;
+      }
+    } catch {}
   }
 
   if (!cookieHeader.includes('wordpress_logged_in_')) {

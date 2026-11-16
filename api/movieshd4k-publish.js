@@ -151,6 +151,7 @@ function createFreeGeminiClient() {
 async function attemptWpCookieLogin(loginEndpoint, siteUrl, username, password) {
   let seedCookie = 'wordpress_test_cookie=WP%20Cookie%20check';
   let formActionUrl = loginEndpoint;
+  let effectiveReferer = loginEndpoint;
 
   try {
     const preRes = await fetchWithTimeout(
@@ -158,10 +159,14 @@ async function attemptWpCookieLogin(loginEndpoint, siteUrl, username, password) 
       {
         method: 'GET',
         headers: { 'User-Agent': SCRAPER_USER_AGENT },
-        redirect: 'manual',
+        redirect: 'follow',
       },
       4500
     );
+    if (preRes.url) {
+      effectiveReferer = preRes.url;
+      formActionUrl = preRes.url;
+    }
     const preCookies = preRes.headers.getSetCookie ? preRes.headers.getSetCookie() : [];
     const prePairs = preCookies.map((c) => c.split(';')[0]).filter(Boolean);
     if (prePairs.length > 0) {
@@ -173,7 +178,7 @@ async function attemptWpCookieLogin(loginEndpoint, siteUrl, username, password) 
         /<form[^>]*name=["']loginform["'][^>]*action=["']([^"']+)["']/i
       );
       if (actionMatch && actionMatch[1]) {
-        formActionUrl = actionMatch[1];
+        formActionUrl = resolveAbsoluteUrl(actionMatch[1], preRes.url || loginEndpoint) || actionMatch[1];
       }
     }
   } catch {}
@@ -187,7 +192,7 @@ async function attemptWpCookieLogin(loginEndpoint, siteUrl, username, password) 
     testcookie: '1',
   });
 
-  const loginRes = await fetchWithTimeout(
+  let loginRes = await fetchWithTimeout(
     formActionUrl,
     {
       method: 'POST',
@@ -195,14 +200,40 @@ async function attemptWpCookieLogin(loginEndpoint, siteUrl, username, password) 
         'Content-Type': 'application/x-www-form-urlencoded',
         Cookie: seedCookie,
         Origin: siteUrl,
-        Referer: loginEndpoint,
+        Referer: effectiveReferer,
         'User-Agent': SCRAPER_USER_AGENT,
       },
       body: body.toString(),
       redirect: 'manual',
     },
-    5500
+    7000
   );
+
+  // If server returned a trailing-slash 301/302/307/308 redirect without setting auth cookies, re-POST to Location
+  if (loginRes.status >= 300 && loginRes.status < 400) {
+    const redirectCookies = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [];
+    const hasAuthCookie = redirectCookies.some((c) => c.startsWith('wordpress_logged_in_'));
+    const loc = loginRes.headers.get('location') || '';
+    if (!hasAuthCookie && loc && !loc.includes('wp-admin')) {
+      const resolvedLoc = resolveAbsoluteUrl(loc, formActionUrl) || loc;
+      loginRes = await fetchWithTimeout(
+        resolvedLoc,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            Cookie: seedCookie,
+            Origin: siteUrl,
+            Referer: resolvedLoc,
+            'User-Agent': SCRAPER_USER_AGENT,
+          },
+          body: body.toString(),
+          redirect: 'manual',
+        },
+        7000
+      );
+    }
+  }
 
   const rawCookies = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [];
   return rawCookies
@@ -222,7 +253,12 @@ async function getMoviesHd4kSession(forceRefresh = false) {
     return cachedMoviesSession;
   }
 
-  const candidates = [DEFAULT_MOVIES_LOGIN_URL, `${DEFAULT_MOVIES_SITE}/wp-login.php`];
+  const slashLogin = DEFAULT_MOVIES_LOGIN_URL.endsWith('/') || DEFAULT_MOVIES_LOGIN_URL.endsWith('.php')
+    ? DEFAULT_MOVIES_LOGIN_URL
+    : `${DEFAULT_MOVIES_LOGIN_URL}/`;
+  const candidates = Array.from(
+    new Set([slashLogin, DEFAULT_MOVIES_LOGIN_URL, `${DEFAULT_MOVIES_SITE}/wp-login.php`])
+  );
   let cookieHeader = '';
   for (const endpoint of candidates) {
     try {
