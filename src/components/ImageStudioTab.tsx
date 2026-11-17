@@ -463,6 +463,8 @@ export function ImageStudioTab({
   const [storyTopTheme, setStoryTopTheme] = useState<
     'white_black' | 'white_red' | 'black_white' | 'black_yellow'
   >('white_black');
+  const [storyTopCustomTextColor, setStoryTopCustomTextColor] = useState<string | null>(null);
+  const [storyTopCustomBgColor, setStoryTopCustomBgColor] = useState<string | null>(null);
   const [storyTopFontScale, setStoryTopFontScale] = useState<number>(1);
   // Cho phép bật/tắt phần viết chữ phía trên trên từng khung Story ('on' | 'off')
   const [storyHeaderToggleMap, setStoryHeaderToggleMap] = useState<Record<string, 'on' | 'off'>>(
@@ -2045,7 +2047,7 @@ export function ImageStudioTab({
           ? perStoryCustomTopText[cardKey]
           : storyTopText) || '';
 
-      const themeColors =
+      const baseThemeColors =
         storyTopTheme === 'white_red'
           ? { bg: '#FFFFFF', text: '#be123c', border: '#fecdd3' }
           : storyTopTheme === 'black_white'
@@ -2053,6 +2055,12 @@ export function ImageStudioTab({
           : storyTopTheme === 'black_yellow'
           ? { bg: '#09090b', text: '#facc15', border: '#27272a' }
           : { bg: '#FFFFFF', text: '#0f172a', border: '#e2e8f0' };
+
+      const themeColors = {
+        bg: storyTopCustomBgColor || baseThemeColors.bg,
+        text: storyTopCustomTextColor || baseThemeColors.text,
+        border: baseThemeColors.border,
+      };
 
       return {
         isHeaderActive,
@@ -2062,7 +2070,14 @@ export function ImageStudioTab({
         themeColors,
       };
     },
-    [storyHeaderToggleMap, perStoryCustomTopText, storyTopText, storyTopTheme]
+    [
+      storyHeaderToggleMap,
+      perStoryCustomTopText,
+      storyTopText,
+      storyTopTheme,
+      storyTopCustomTextColor,
+      storyTopCustomBgColor,
+    ]
   );
 
   // Phân tích tiêu đề chân ảnh tạp chí (Serif trắng + tô vàng *cụm chữ* hoặc khớp highlightPhrase)
@@ -2271,7 +2286,7 @@ export function ImageStudioTab({
       const cleanHeadline = resolvedText.trim();
       if (cleanHeadline) {
         const baseFontPx = Math.round(
-          Math.max(24, Math.min(54, (targetW / 1080) * 38 * storyTopFontScale))
+          Math.max(20, Math.min(84, (targetW / 1080) * 44 * storyTopFontScale))
         );
         ctx.font = `900 ${baseFontPx}px "Inter", "Segoe UI", Arial, sans-serif`;
         ctx.fillStyle = themeColors.text;
@@ -4757,9 +4772,17 @@ export function ImageStudioTab({
                           <button
                             key={t.id}
                             type="button"
-                            onClick={() => setStoryTopTheme(t.id)}
+                            onClick={() => {
+                              setStoryTopTheme(t.id);
+                              setStoryTopCustomTextColor(null);
+                              setStoryTopCustomBgColor(null);
+                            }}
                             className={`px-1.5 py-0.5 rounded text-[9px] font-black border cursor-pointer ${t.cls} ${
-                              storyTopTheme === t.id ? 'ring-2 ring-indigo-500' : 'opacity-75 hover:opacity-100'
+                              storyTopTheme === t.id &&
+                              !storyTopCustomTextColor &&
+                              !storyTopCustomBgColor
+                                ? 'ring-2 ring-indigo-500'
+                                : 'opacity-75 hover:opacity-100'
                             }`}
                           >
                             {t.label}
@@ -4769,7 +4792,7 @@ export function ImageStudioTab({
                           type="button"
                           onClick={() =>
                             setStoryTopFontScale((prev) =>
-                              Math.max(0.65, Number((prev - 0.1).toFixed(2)))
+                              Math.max(0.6, Number((prev - 0.1).toFixed(2)))
                             )
                           }
                           className="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-slate-700 text-[10px] font-black cursor-pointer hover:bg-slate-100"
@@ -4781,7 +4804,7 @@ export function ImageStudioTab({
                           type="button"
                           onClick={() =>
                             setStoryTopFontScale((prev) =>
-                              Math.min(1.5, Number((prev + 0.1).toFixed(2)))
+                              Math.min(2.0, Number((prev + 0.1).toFixed(2)))
                             )
                           }
                           className="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-slate-700 text-[10px] font-black cursor-pointer hover:bg-slate-100"
@@ -5630,6 +5653,202 @@ export function ImageStudioTab({
                   </div>
                 </div>
 
+                {/* THANH CHỈNH TRỰC QUAN CHỮ ĐẦU STORY (CỠ CHỮ TO/NHỎ + MÀU CHỮ + MÀU NỀN NGAY TẠI BÀN CHỈNH SỬA) */}
+                {isActiveStoryContext && (() => {
+                  const mainStoryCardKey = `main-${activePreset.id}`;
+                  const mainStoryCtrl = resolveStoryHeaderAndSlots(activePreset, mainStoryCardKey);
+                  return (
+                    <div
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-full mb-3 p-2.5 rounded-xl bg-slate-800/95 border border-indigo-400/40 space-y-2 text-[11px] text-white"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="font-black text-indigo-300 flex items-center gap-1.5">
+                          <Type className="w-3.5 h-3.5" />
+                          <span>Chữ Phần Trên Story:</span>
+                        </span>
+
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {extractedArticleInfo?.title && mainStoryCtrl.isHeaderActive && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setStoryTopText(extractedArticleInfo.title);
+                                setPerStoryCustomTopText((prev) => {
+                                  const next = { ...prev };
+                                  delete next[mainStoryCardKey];
+                                  return next;
+                                });
+                              }}
+                              className="px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 font-bold text-[10px] cursor-pointer"
+                              title="Lấy tiêu đề bài viết điền vào phần trên Story"
+                            >
+                              📋 Lấy tiêu đề bài
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setStoryHeaderToggleMap((prev) => ({
+                                ...prev,
+                                [mainStoryCardKey]: mainStoryCtrl.isHeaderActive ? 'off' : 'on',
+                              }))
+                            }
+                            className={`px-2 py-0.5 rounded font-bold text-[10px] cursor-pointer ${
+                              mainStoryCtrl.isHeaderActive
+                                ? 'bg-indigo-500 text-white'
+                                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                            }`}
+                          >
+                            {mainStoryCtrl.isHeaderActive ? '✍️ Đang Bật Chữ Đầu' : '+ Bật Chữ Đầu Story'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {mainStoryCtrl.isHeaderActive && (
+                        <>
+                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-center">
+                            <div className="lg:col-span-6">
+                              <input
+                                type="text"
+                                value={mainStoryCtrl.resolvedText}
+                                onChange={(e) => {
+                                  setStoryTopText(e.target.value);
+                                  setPerStoryCustomTopText((prev) => {
+                                    const next = { ...prev };
+                                    delete next[mainStoryCardKey];
+                                    return next;
+                                  });
+                                }}
+                                placeholder="Nhập chữ tiêu đề phần trên Story..."
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 focus:border-indigo-400 text-xs font-semibold text-white placeholder:text-slate-400 focus:outline-none"
+                              />
+                            </div>
+
+                            {/* Thanh chỉnh cỡ chữ to / nhỏ trực quan */}
+                            <div className="lg:col-span-6 flex items-center gap-1.5 bg-slate-900/80 border border-slate-700/80 rounded-lg px-2 py-1">
+                              <span className="text-[10px] text-slate-300 font-bold shrink-0">Cỡ chữ:</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setStoryTopFontScale((s) =>
+                                    Math.max(0.6, Number((s - 0.1).toFixed(2)))
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 font-black cursor-pointer shrink-0"
+                                title="Chữ nhỏ hơn"
+                              >
+                                A-
+                              </button>
+                              <input
+                                type="range"
+                                min="0.6"
+                                max="2.0"
+                                step="0.05"
+                                value={storyTopFontScale}
+                                onChange={(e) => setStoryTopFontScale(Number(e.target.value))}
+                                className="flex-1 min-w-[70px] accent-indigo-400 cursor-pointer"
+                                title="Kéo để chỉnh chữ to / nhỏ"
+                              />
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setStoryTopFontScale((s) =>
+                                    Math.min(2.0, Number((s + 0.1).toFixed(2)))
+                                  )
+                                }
+                                className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 font-black cursor-pointer shrink-0"
+                                title="Chữ to hơn"
+                              >
+                                A+
+                              </button>
+                              <span className="text-[10px] font-mono font-bold text-indigo-300 w-9 text-right shrink-0">
+                                {Math.round(storyTopFontScale * 100)}%
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Chọn nhanh bộ màu + màu chữ + màu nền */}
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
+                            <div className="flex flex-wrap items-center gap-1">
+                              {(
+                                [
+                                  { id: 'white_black', label: 'Trắng•Đen', cls: 'bg-white text-slate-900 border-slate-300' },
+                                  { id: 'white_red', label: 'Trắng•Đỏ', cls: 'bg-white text-rose-700 border-rose-300' },
+                                  { id: 'black_white', label: 'Đen•Trắng', cls: 'bg-slate-900 text-white border-slate-600' },
+                                  { id: 'black_yellow', label: 'Đen•Vàng', cls: 'bg-slate-950 text-amber-300 border-slate-700' },
+                                ] as const
+                              ).map((t) => (
+                                <button
+                                  key={t.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setStoryTopTheme(t.id);
+                                    setStoryTopCustomTextColor(null);
+                                    setStoryTopCustomBgColor(null);
+                                  }}
+                                  className={`px-2 py-0.5 rounded text-[10px] font-black border cursor-pointer ${t.cls} ${
+                                    storyTopTheme === t.id &&
+                                    !storyTopCustomTextColor &&
+                                    !storyTopCustomBgColor
+                                      ? 'ring-2 ring-indigo-400'
+                                      : 'opacity-80 hover:opacity-100'
+                                  }`}
+                                >
+                                  {t.label}
+                                </button>
+                              ))}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              {/* Màu chữ trực tiếp */}
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-slate-300 font-bold">Màu chữ:</span>
+                                {['#0f172a', '#be123c', '#1d4ed8', '#7c3aed', '#facc15', '#ffffff'].map(
+                                  (hex) => (
+                                    <button
+                                      key={hex}
+                                      type="button"
+                                      onClick={() => setStoryTopCustomTextColor(hex)}
+                                      style={{ backgroundColor: hex }}
+                                      className={`w-4 h-4 rounded-full border cursor-pointer transition-transform ${
+                                        mainStoryCtrl.themeColors.text.toLowerCase() === hex
+                                          ? 'ring-2 ring-indigo-400 ring-offset-1 ring-offset-slate-800 scale-110 border-white'
+                                          : 'border-slate-500 hover:scale-105'
+                                      }`}
+                                      title={`Đặt màu chữ ${hex}`}
+                                    />
+                                  )
+                                )}
+                                <input
+                                  type="color"
+                                  value={mainStoryCtrl.themeColors.text}
+                                  onChange={(e) => setStoryTopCustomTextColor(e.target.value)}
+                                  className="w-5 h-5 rounded bg-transparent border-0 p-0 cursor-pointer"
+                                  title="Tự chọn màu chữ bất kỳ"
+                                />
+                              </div>
+
+                              {/* Màu nền ô chữ */}
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-slate-300 font-bold">Nền:</span>
+                                <input
+                                  type="color"
+                                  value={mainStoryCtrl.themeColors.bg}
+                                  onChange={(e) => setStoryTopCustomBgColor(e.target.value)}
+                                  className="w-5 h-5 rounded bg-transparent border-0 p-0 cursor-pointer"
+                                  title="Tự chọn màu nền ô chữ"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  );
+                })()}
+
                 {/* THANH SỬA NHANH CHỮ TIÊU ĐỀ TẠP CHÍ PHỦ ĐÁY ẢNH (KHI MẪU ĐANG CHỌN CÓ BOTTOM EDITORIAL OVERLAY) */}
                 {activePreset.bottomOverlay?.enabled && (
                   <div
@@ -5919,15 +6138,32 @@ export function ImageStudioTab({
                                 value={mainStoryInfo.resolvedText}
                                 onChange={(e) => {
                                   setStoryTopText(e.target.value);
+                                  setPerStoryCustomTopText((prev) => {
+                                    const next = { ...prev };
+                                    delete next[`main-${activePreset.id}`];
+                                    return next;
+                                  });
                                 }}
                                 placeholder="✍️ Nhập chữ tiêu đề phần trắng phía trên của Story..."
-                                rows={3}
+                                rows={Math.min(
+                                  4,
+                                  Math.max(
+                                    1,
+                                    Math.ceil((mainStoryInfo.resolvedText || '').length / 32)
+                                  )
+                                )}
                                 style={{
                                   color: mainStoryInfo.themeColors.text,
-                                  fontSize: `${Math.max(12, Math.min(24, Math.round(16 * storyTopFontScale)))}px`,
-                                  lineHeight: '1.25',
+                                  fontSize: `${Math.max(
+                                    9,
+                                    Math.round(
+                                      (previewBoxW / 1080) *
+                                        Math.max(20, Math.min(84, 44 * storyTopFontScale))
+                                    )
+                                  )}px`,
+                                  lineHeight: '1.24',
                                 }}
-                                className="w-full h-full bg-transparent resize-none border-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded font-black text-center flex items-center justify-center overflow-hidden p-1 cursor-text select-text"
+                                className="w-full max-h-full bg-transparent resize-none border-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded font-black text-center overflow-hidden p-1 cursor-text select-text"
                               />
                             </div>
                           );
