@@ -2528,7 +2528,11 @@ export function ImageStudioTab({
 
       const finalLines = wrappedLines.slice(0, 5);
       const lineHeightPx = edFontPx * 1.18;
-      const bottomMarginPx = edOverlay.showAccentLines ? targetH * 0.045 : targetH * 0.032;
+      const hasCornerCtaBottom =
+        shouldRenderCornerCta(preset, ratio.id) && Boolean(cornerCtaText.trim());
+      const bottomMarginPx =
+        (edOverlay.showAccentLines ? targetH * 0.045 : targetH * 0.032) +
+        (hasCornerCtaBottom ? targetH * 0.062 : 0);
       const firstBaselineY =
         padPx + innerH - bottomMarginPx - (finalLines.length - 1) * lineHeightPx;
 
@@ -2709,7 +2713,7 @@ export function ImageStudioTab({
     }
 
     // 4. Draw Bottom-Right Pill Badge ("Full Comments 👇")
-    if (shouldRenderCornerCta(preset, ratio.id) && cornerCtaText.trim() && !edOverlay.isEnabled) {
+    if (shouldRenderCornerCta(preset, ratio.id) && cornerCtaText.trim()) {
       ctx.save();
       const ctaLabel = cornerCtaText.trim();
       const ctaScaledFont = Math.round((cornerCtaFontSize / 1080) * targetW);
@@ -4457,6 +4461,9 @@ export function ImageStudioTab({
                               {(() => {
                                 const miniEd = resolveEditorialOverlay(item.preset);
                                 if (!miniEd.isEnabled || !miniEd.rawTitle) return null;
+                                const miniHasCta =
+                                  shouldRenderCornerCta(item.preset, item.ratio.id) &&
+                                  Boolean(cornerCtaText.trim());
                                 return (
                                   <div
                                     style={{
@@ -4464,7 +4471,9 @@ export function ImageStudioTab({
                                       background:
                                         'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.44) 32%, rgba(0,0,0,0.84) 68%, rgba(0,0,0,0.96) 100%)',
                                     }}
-                                    className="absolute inset-x-0 bottom-0 z-25 pointer-events-none select-none flex flex-col justify-end items-center px-2 pb-1.5"
+                                    className={`absolute inset-x-0 bottom-0 z-25 pointer-events-none select-none flex flex-col justify-end items-center px-2 ${
+                                      miniHasCta ? 'pb-4' : 'pb-1.5'
+                                    }`}
                                   >
                                     <p
                                       style={{
@@ -4507,7 +4516,7 @@ export function ImageStudioTab({
                                 );
                               })()}
 
-                              {shouldRenderCornerCta(item.preset, item.ratio.id) && cornerCtaText.trim() && !item.preset.bottomOverlay?.enabled && (
+                              {shouldRenderCornerCta(item.preset, item.ratio.id) && cornerCtaText.trim() && (
                                 <div
                                   style={{
                                     bottom: '4%',
@@ -6077,11 +6086,32 @@ export function ImageStudioTab({
                                     />
                                   </div>
 
-                                  {/* Quick overlay actions on hover (tự ẩn khi đang kéo ảnh để nhìn rõ toàn bộ khuôn mặt/ảnh) */}
+                                  {/* Quick overlay actions on hover hoặc khi đang chọn ô (tự đưa lên góc trên-phải nếu ô chạm vùng chữ dưới hoặc nhãn Full Comments để không bị che nút Đảo ảnh) */}
+                                  {(() => {
+                                    const activeEdCheck = resolveEditorialOverlay(activePreset);
+                                    const hasBottomTextOverlay =
+                                      activeEdCheck.isEnabled && Boolean(activeEdCheck.rawTitle);
+                                    const overlapsBottomCta =
+                                      shouldRenderCornerCta(activePreset, activeRatio.id) &&
+                                      Boolean(cornerCtaText.trim()) &&
+                                      cornerCtaPosition === 'bottom_right' &&
+                                      eff.y + eff.height > 85 &&
+                                      eff.x + eff.width > 65;
+                                    const placeToolbarTopRight =
+                                      !isCircle &&
+                                      ((hasBottomTextOverlay && eff.y + eff.height > 62) ||
+                                        overlapsBottomCta);
+                                    return (
                                   <div
-                                    className={`absolute bottom-1.5 right-1.5 z-30 transition-opacity flex items-center gap-1 ${
+                                    className={`absolute ${
+                                      placeToolbarTopRight
+                                        ? 'top-1.5 right-1.5'
+                                        : 'bottom-1.5 right-1.5'
+                                    } z-30 transition-opacity flex items-center gap-1 ${
                                       draggingSlot === slot.id
                                         ? 'opacity-0 pointer-events-none'
+                                        : isSelected
+                                        ? 'opacity-100'
                                         : 'opacity-0 group-hover:opacity-100'
                                     }`}
                                   >
@@ -6181,6 +6211,8 @@ export function ImageStudioTab({
                                       <X className="w-3.5 h-3.5" />
                                     </button>
                                   </div>
+                                    );
+                                  })()}
                                 </div>
                               ) : (
                                 <div className="w-full h-full bg-slate-200/80 hover:bg-slate-300/80 flex flex-col items-center justify-center text-slate-500 cursor-pointer p-2">
@@ -6262,14 +6294,18 @@ export function ImageStudioTab({
                             11,
                             Math.round(previewBoxW * 0.047 * editorialTitleFontScale * autoAdjust)
                           );
+                          const hasCornerCtaBottom =
+                            shouldRenderCornerCta(activePreset, activeRatio.id) &&
+                            Boolean(cornerCtaText.trim());
                           return (
                             <div
                               style={{
                                 height: `${edOverlay.gradientHeightPercent}%`,
+                                paddingBottom: hasCornerCtaBottom ? '10%' : '4%',
                                 background:
                                   'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.44) 32%, rgba(0,0,0,0.84) 68%, rgba(0,0,0,0.96) 100%)',
                               }}
-                              className="absolute inset-x-0 bottom-0 z-25 pointer-events-none select-none flex flex-col justify-end items-center px-[5%] pb-[4%]"
+                              className="absolute inset-x-0 bottom-0 z-25 pointer-events-none select-none flex flex-col justify-end items-center px-[5%]"
                             >
                               <p
                                 style={{
@@ -6402,8 +6438,7 @@ export function ImageStudioTab({
 
                       {/* OVERLAY NHÃN GÓC CUỐI ẢNH BÊN PHẢI ("Full Comments 👇") */}
                       {shouldRenderCornerCta(activePreset, activeRatio.id) &&
-                        cornerCtaText.trim() &&
-                        !(activePreset.bottomOverlay?.enabled && showEditorialBottomOverlay) && (
+                        cornerCtaText.trim() && (
                         <div
                           style={{
                             bottom: '3.2%',
