@@ -459,9 +459,23 @@ export function ImageStudioTab({
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
 
-  // Dragging state for photo pan
+  // Dragging state for photo pan + natural aspect tracking so hidden cropped parts pan seamlessly without leaving blank edges
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
-  const [dragStartPos, setDragStartPos] = useState<{ x: number; y: number } | null>(null);
+  const [photoNaturalSizes, setPhotoNaturalSizes] = useState<
+    Record<string, { w: number; h: number }>
+  >({});
+  const slotPanDragRef = useRef<{
+    slotId: number;
+    startClientX: number;
+    startClientY: number;
+    startPanX: number;
+    startPanY: number;
+    scale: number;
+    slotWidth: number;
+    slotHeight: number;
+    maxPanX: number;
+    maxPanY: number;
+  } | null>(null);
 
   // --- DI CHUYỂN & THU PHÓNG KHUNG ẢNH TRÒN (PIP) TRÁNH CHE ẢNH NỀN ---
   // Lưu vị trí & kích thước vòng tròn cho từng khung trong Bộ Sưu Tập 2 Hàng (key: offsetKey)
@@ -1303,6 +1317,101 @@ export function ImageStudioTab({
     };
   }, []);
 
+  // Lắng nghe kéo chuột/cảm ứng toàn cục để kéo ảnh lên/xuống/trái/phải mượt mà ngay cả ở khung hẹp (như Before/After)
+  useEffect(() => {
+    const applySlotPanMove = (clientX: number, clientY: number) => {
+      const drag = slotPanDragRef.current;
+      if (!drag) return;
+      const dx = clientX - drag.startClientX;
+      const dy = clientY - drag.startClientY;
+      const deltaPanX = (dx / Math.max(20, drag.slotWidth * drag.scale)) * 100;
+      const deltaPanY = (dy / Math.max(20, drag.slotHeight * drag.scale)) * 100;
+      const nextPanX = Math.max(-drag.maxPanX, Math.min(drag.maxPanX, drag.startPanX + deltaPanX));
+      const nextPanY = Math.max(-drag.maxPanY, Math.min(drag.maxPanY, drag.startPanY + deltaPanY));
+
+      setSlotTransforms((prev) => ({
+        ...prev,
+        [drag.slotId]: {
+          ...(prev[drag.slotId] || { scale: 1, panX: 0, panY: 0, rotate: 0 }),
+          panX: nextPanX,
+          panY: nextPanY,
+        },
+      }));
+    };
+
+    const handlePanMouseMove = (ev: MouseEvent) => {
+      if (!slotPanDragRef.current) return;
+      applySlotPanMove(ev.clientX, ev.clientY);
+    };
+
+    const handlePanTouchMove = (ev: TouchEvent) => {
+      if (!slotPanDragRef.current || ev.touches.length === 0) return;
+      ev.preventDefault();
+      applySlotPanMove(ev.touches[0].clientX, ev.touches[0].clientY);
+    };
+
+    const handlePanEnd = () => {
+      if (slotPanDragRef.current) {
+        slotPanDragRef.current = null;
+        setDraggingSlot(null);
+      }
+    };
+
+    window.addEventListener('mousemove', handlePanMouseMove);
+    window.addEventListener('mouseup', handlePanEnd);
+    window.addEventListener('touchmove', handlePanTouchMove, { passive: false });
+    window.addEventListener('touchend', handlePanEnd);
+    return () => {
+      window.removeEventListener('mousemove', handlePanMouseMove);
+      window.removeEventListener('mouseup', handlePanEnd);
+      window.removeEventListener('touchmove', handlePanTouchMove);
+      window.removeEventListener('touchend', handlePanEnd);
+    };
+  }, []);
+
+  const getSlotCoverMetrics = useCallback(
+    (slot: CollageSlot, photoUrl: string | undefined, scale = 1, rotate = 0) => {
+      const ratioAspect = activeRatio.exportWidth / Math.max(1, activeRatio.exportHeight);
+      const eff = getEffectiveSlotBounds(
+        slot,
+        ratioAspect,
+        slot.shape === 'circle' ? mainCircleOverrides[slot.id] : undefined
+      );
+      const slotAspect = (eff.width / Math.max(0.01, eff.height)) * ratioAspect;
+      const nat = photoUrl ? photoNaturalSizes[photoUrl] : undefined;
+
+      let coverWPercent = 100;
+      let coverHPercent = 100;
+      if (nat && nat.w > 0 && nat.h > 0) {
+        const imgAspect = nat.w / nat.h;
+        if (imgAspect > slotAspect) {
+          coverWPercent = (imgAspect / slotAspect) * 100;
+        } else {
+          coverHPercent = (slotAspect / imgAspect) * 100;
+        }
+      }
+
+      const safeScale = Math.max(1, scale || 1);
+      const isQuarterRotated = Math.abs(rotate % 180) === 90;
+      let maxPanX = nat ? Math.max(0, (coverWPercent / 100 - 1 / safeScale) * 50) : 120;
+      let maxPanY = nat ? Math.max(0, (coverHPercent / 100 - 1 / safeScale) * 50) : 120;
+      if (isQuarterRotated) {
+        const m = Math.max(maxPanX, maxPanY, 80);
+        maxPanX = m;
+        maxPanY = m;
+      }
+
+      return {
+        hasNaturalSize: Boolean(nat && nat.w > 0 && nat.h > 0),
+        coverWPercent,
+        coverHPercent,
+        maxPanX,
+        maxPanY,
+      };
+    },
+    [activeRatio, getEffectiveSlotBounds, mainCircleOverrides, photoNaturalSizes]
+  );
+
   const handleStartGalleryCircleDrag = (
     e: React.MouseEvent<HTMLDivElement>,
     offsetKey: string,
@@ -2122,10 +2231,23 @@ export function ImageStudioTab({
         }
 
         // Cô lập ma trận biến đổi của ảnh để không làm lệch chữ/nhãn slot.badge phía sau
+        // Giới hạn panX/panY khớp chuẩn phần xem trước để không hở nền và không lệch khung
+        const safeScale = Math.max(1, transform.scale || 1);
+        const isQuarterRotated = Math.abs(transform.rotate % 180) === 90;
+        let maxPanX = Math.max(0, (baseDrawW / slotW - 1 / safeScale) * 50);
+        let maxPanY = Math.max(0, (baseDrawH / slotH - 1 / safeScale) * 50);
+        if (isQuarterRotated) {
+          const m = Math.max(maxPanX, maxPanY, 80);
+          maxPanX = m;
+          maxPanY = m;
+        }
+        const clampedPanX = Math.max(-maxPanX, Math.min(maxPanX, transform.panX));
+        const clampedPanY = Math.max(-maxPanY, Math.min(maxPanY, transform.panY));
+
         // Khớp 100% thứ tự phép biến đổi CSS: scale(s) translate(panX%, panY%) rotate(deg)
         ctx.translate(centerX, centerY);
-        ctx.scale(transform.scale, transform.scale);
-        ctx.translate((transform.panX / 100) * slotW, (transform.panY / 100) * slotH);
+        ctx.scale(safeScale, safeScale);
+        ctx.translate((clampedPanX / 100) * slotW, (clampedPanY / 100) * slotH);
         ctx.rotate((transform.rotate * Math.PI) / 180);
 
         ctx.drawImage(img, -baseDrawW / 2, -baseDrawH / 2, baseDrawW, baseDrawH);
@@ -5414,6 +5536,20 @@ export function ImageStudioTab({
                         ).adjustedSlots.map((slot) => {
                           const assignedPhoto = slotAssignments[slot.id];
                           const transform = getSlotTransform(slot.id);
+                          const coverMetrics = getSlotCoverMetrics(
+                            slot,
+                            assignedPhoto,
+                            transform.scale,
+                            transform.rotate
+                          );
+                          const effectivePanX = Math.max(
+                            -coverMetrics.maxPanX,
+                            Math.min(coverMetrics.maxPanX, transform.panX)
+                          );
+                          const effectivePanY = Math.max(
+                            -coverMetrics.maxPanY,
+                            Math.min(coverMetrics.maxPanY, transform.panY)
+                          );
                           const isSelected = activeSlotId === slot.id;
                           const isCircle = slot.shape === 'circle';
                           const eff = getEffectiveSlotBounds(
@@ -5433,23 +5569,45 @@ export function ImageStudioTab({
                                   handleStartMainCircleDrag(e, slot.id);
                                   return;
                                 }
+                                if (!assignedPhoto) return;
+                                e.preventDefault();
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                slotPanDragRef.current = {
+                                  slotId: slot.id,
+                                  startClientX: e.clientX,
+                                  startClientY: e.clientY,
+                                  startPanX: effectivePanX,
+                                  startPanY: effectivePanY,
+                                  scale: Math.max(1, transform.scale || 1),
+                                  slotWidth: Math.max(20, rect.width),
+                                  slotHeight: Math.max(20, rect.height),
+                                  maxPanX: coverMetrics.maxPanX,
+                                  maxPanY: coverMetrics.maxPanY,
+                                };
                                 setDraggingSlot(slot.id);
-                                setDragStartPos({ x: e.clientX, y: e.clientY });
                               }}
-                              onMouseMove={(e) => {
-                                if (isCircle && circleDragMode === 'move_circle') return;
-                                if (draggingSlot === slot.id && dragStartPos) {
-                                  const deltaX = (e.clientX - dragStartPos.x) / 3;
-                                  const deltaY = (e.clientY - dragStartPos.y) / 3;
-                                  updateSlotTransform(slot.id, {
-                                    panX: Math.max(-60, Math.min(60, transform.panX + deltaX)),
-                                    panY: Math.max(-60, Math.min(60, transform.panY + deltaY)),
-                                  });
-                                  setDragStartPos({ x: e.clientX, y: e.clientY });
+                              onTouchStart={(e) => {
+                                setActiveSlotId(slot.id);
+                                if ((isCircle && circleDragMode === 'move_circle') || !assignedPhoto) {
+                                  return;
                                 }
+                                if (e.touches.length === 0) return;
+                                const touch = e.touches[0];
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                slotPanDragRef.current = {
+                                  slotId: slot.id,
+                                  startClientX: touch.clientX,
+                                  startClientY: touch.clientY,
+                                  startPanX: effectivePanX,
+                                  startPanY: effectivePanY,
+                                  scale: Math.max(1, transform.scale || 1),
+                                  slotWidth: Math.max(20, rect.width),
+                                  slotHeight: Math.max(20, rect.height),
+                                  maxPanX: coverMetrics.maxPanX,
+                                  maxPanY: coverMetrics.maxPanY,
+                                };
+                                setDraggingSlot(slot.id);
                               }}
-                              onMouseUp={() => setDraggingSlot(null)}
-                              onMouseLeave={() => setDraggingSlot(null)}
                               style={{
                                 left: `calc(${eff.x}% + ${previewGapPx / 2}px)`,
                                 top: `calc(${eff.y}% + ${previewGapPx / 2}px)`,
@@ -5468,55 +5626,123 @@ export function ImageStudioTab({
                             >
                               {assignedPhoto ? (
                                 <div className="w-full h-full relative">
-                                  <img
-                                    src={assignedPhoto}
-                                    alt={`Slot ${slot.id}`}
-                                    draggable={false}
+                                  <div
                                     style={{
-                                      transform: `scale(${transform.scale}) translate(${transform.panX}%, ${transform.panY}%) rotate(${transform.rotate}deg)`,
+                                      transform: `scale(${transform.scale}) translate(${effectivePanX}%, ${effectivePanY}%) rotate(${transform.rotate}deg)`,
                                       transition:
-                                        draggingSlot === slot.id ? 'none' : 'transform 0.15s ease-out',
+                                        draggingSlot === slot.id ? 'none' : 'transform 0.12s ease-out',
                                     }}
-                                    className="w-full h-full object-cover pointer-events-none select-none"
-                                  />
+                                    className="w-full h-full relative pointer-events-none select-none"
+                                  >
+                                    <img
+                                      src={assignedPhoto}
+                                      alt={`Slot ${slot.id}`}
+                                      draggable={false}
+                                      onLoad={(e) => {
+                                        const el = e.currentTarget;
+                                        if (el.naturalWidth > 0 && el.naturalHeight > 0) {
+                                          setPhotoNaturalSizes((prev) => {
+                                            const cur = prev[assignedPhoto];
+                                            if (
+                                              cur &&
+                                              cur.w === el.naturalWidth &&
+                                              cur.h === el.naturalHeight
+                                            ) {
+                                              return prev;
+                                            }
+                                            return {
+                                              ...prev,
+                                              [assignedPhoto]: {
+                                                w: el.naturalWidth,
+                                                h: el.naturalHeight,
+                                              },
+                                            };
+                                          });
+                                        }
+                                      }}
+                                      style={
+                                        coverMetrics.hasNaturalSize
+                                          ? {
+                                              position: 'absolute',
+                                              left: '50%',
+                                              top: '50%',
+                                              width: `${coverMetrics.coverWPercent}%`,
+                                              height: `${coverMetrics.coverHPercent}%`,
+                                              maxWidth: 'none',
+                                              maxHeight: 'none',
+                                              transform: 'translate(-50%, -50%)',
+                                            }
+                                          : undefined
+                                      }
+                                      className={
+                                        coverMetrics.hasNaturalSize
+                                          ? 'pointer-events-none select-none'
+                                          : 'w-full h-full object-cover pointer-events-none select-none'
+                                      }
+                                    />
+                                  </div>
 
-                                  {/* Quick overlay actions on hover */}
-                                  <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-2">
+                                  {/* Quick overlay actions on hover (tự ẩn khi đang kéo ảnh để nhìn rõ toàn bộ khuôn mặt/ảnh) */}
+                                  <div
+                                    className={`absolute bottom-1.5 right-1.5 z-30 transition-opacity flex items-center gap-1 ${
+                                      draggingSlot === slot.id
+                                        ? 'opacity-0 pointer-events-none'
+                                        : 'opacity-0 group-hover:opacity-100'
+                                    }`}
+                                  >
                                     <button
                                       type="button"
+                                      onMouseDown={(e) => e.stopPropagation()}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         updateSlotTransform(slot.id, {
                                           scale: Math.min(3, transform.scale + 0.15),
                                         });
                                       }}
-                                      className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
+                                      className="p-1.5 rounded-lg bg-white/95 hover:bg-white text-slate-800 shadow cursor-pointer"
                                       title="Phóng to ảnh"
                                     >
                                       <ZoomIn className="w-3.5 h-3.5" />
                                     </button>
                                     <button
                                       type="button"
+                                      onMouseDown={(e) => e.stopPropagation()}
                                       onClick={(e) => {
                                         e.stopPropagation();
+                                        const nextScale = Math.max(1, transform.scale - 0.15);
+                                        const nextMetrics = getSlotCoverMetrics(
+                                          slot,
+                                          assignedPhoto,
+                                          nextScale,
+                                          transform.rotate
+                                        );
                                         updateSlotTransform(slot.id, {
-                                          scale: Math.max(1, transform.scale - 0.15),
+                                          scale: nextScale,
+                                          panX: Math.max(
+                                            -nextMetrics.maxPanX,
+                                            Math.min(nextMetrics.maxPanX, effectivePanX)
+                                          ),
+                                          panY: Math.max(
+                                            -nextMetrics.maxPanY,
+                                            Math.min(nextMetrics.maxPanY, effectivePanY)
+                                          ),
                                         });
                                       }}
-                                      className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
+                                      className="p-1.5 rounded-lg bg-white/95 hover:bg-white text-slate-800 shadow cursor-pointer"
                                       title="Thu nhỏ ảnh"
                                     >
                                       <ZoomOut className="w-3.5 h-3.5" />
                                     </button>
                                     <button
                                       type="button"
+                                      onMouseDown={(e) => e.stopPropagation()}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         updateSlotTransform(slot.id, {
                                           rotate: (transform.rotate + 90) % 360,
                                         });
                                       }}
-                                      className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
+                                      className="p-1.5 rounded-lg bg-white/95 hover:bg-white text-slate-800 shadow cursor-pointer"
                                       title="Xoay 90 độ"
                                     >
                                       <RotateCw className="w-3.5 h-3.5" />
@@ -5524,6 +5750,7 @@ export function ImageStudioTab({
                                     {uploadedPhotos.length > 1 && (
                                       <button
                                         type="button"
+                                        onMouseDown={(e) => e.stopPropagation()}
                                         onClick={(e) => {
                                           e.stopPropagation();
                                           const curIdx = uploadedPhotos.indexOf(assignedPhoto);
@@ -5533,8 +5760,14 @@ export function ImageStudioTab({
                                             ...prev,
                                             [slot.id]: nextPhoto,
                                           }));
+                                          updateSlotTransform(slot.id, {
+                                            scale: 1,
+                                            panX: 0,
+                                            panY: 0,
+                                            rotate: 0,
+                                          });
                                         }}
-                                        className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-rose-700 shadow cursor-pointer"
+                                        className="p-1.5 rounded-lg bg-white/95 hover:bg-white text-rose-700 shadow cursor-pointer"
                                         title="Đổi sang ảnh tiếp theo trong bài"
                                       >
                                         <Shuffle className="w-3.5 h-3.5" />
@@ -5542,6 +5775,7 @@ export function ImageStudioTab({
                                     )}
                                     <button
                                       type="button"
+                                      onMouseDown={(e) => e.stopPropagation()}
                                       onClick={(e) => {
                                         e.stopPropagation();
                                         setSlotAssignments((prev) => ({ ...prev, [slot.id]: '' }));
