@@ -2089,6 +2089,7 @@ export function ImageStudioTab({
 
       const img = loadedImgs[slot.id];
       if (img) {
+        ctx.save();
         const transform = transforms[slot.id] || { scale: 1, panX: 0, panY: 0, rotate: 0 };
         const centerX = slotX + slotW / 2;
         const centerY = slotY + slotH / 2;
@@ -2103,6 +2104,7 @@ export function ImageStudioTab({
           baseDrawH = slotW / imgAspect;
         }
 
+        // Cô lập ma trận biến đổi của ảnh để không làm lệch chữ/nhãn slot.badge phía sau
         // Khớp 100% thứ tự phép biến đổi CSS: scale(s) translate(panX%, panY%) rotate(deg)
         ctx.translate(centerX, centerY);
         ctx.scale(transform.scale, transform.scale);
@@ -2110,13 +2112,14 @@ export function ImageStudioTab({
         ctx.rotate((transform.rotate * Math.PI) / 180);
 
         ctx.drawImage(img, -baseDrawW / 2, -baseDrawH / 2, baseDrawW, baseDrawH);
+        ctx.restore();
       } else {
         ctx.fillStyle = '#e2e8f0';
         ctx.fillRect(slotX, slotY, slotW, slotH);
       }
 
       if (slot.badge?.text) {
-        const badgeText = slot.badge.text;
+        const badgeText = slot.badge.text.trim().toUpperCase();
         const isPill = slot.badge.style === 'pill';
         const badgeFontPx = Math.round(isPill ? targetW * 0.036 : targetW * 0.048);
         ctx.font = `900 ${badgeFontPx}px "Inter", "Segoe UI", Arial, sans-serif`;
