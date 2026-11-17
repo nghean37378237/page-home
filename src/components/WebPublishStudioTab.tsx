@@ -4532,33 +4532,120 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                         <span className="font-black text-emerald-900">
                           🖼️ Đã lấy &amp; gắn {extractedWebImages.length} ảnh vào bài ({extractedWebImages.filter((x) => !x.isExternal).length} ảnh trong bài gốc{extractedWebImages.some((x) => x.isExternal) ? ` + ${extractedWebImages.filter((x) => x.isExternal).length} ảnh ngoài` : ''}):
                         </span>
-                        <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const nextHtml = distributeAndAttachImagesToHtml(
-                                content,
-                                extractedWebImages,
-                                title || 'Exclusive Story'
-                              );
-                              setContent(nextHtml);
-                              setEditorViewMode('preview');
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const nextHtml = distributeAndAttachImagesToHtml(
+                              content,
+                              extractedWebImages,
+                              title || 'Exclusive Story'
+                            );
+                            setContent(nextHtml);
+                            setEditorViewMode('preview');
+                          }}
+                          className="px-2 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[10px] cursor-pointer"
+                          title="Phân bổ và gắn lại toàn bộ danh sách ảnh này xen kẽ vào giữa các đoạn trong bài viết"
+                        >
+                          Gắn lại vào bài
+                        </button>
+                      </div>
+
+                      {/* Thanh nhập tên nhân vật / diễn viên hoặc chủ đề để bổ sung ảnh ngoài nhanh */}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <div className="relative flex-1 min-w-[190px] flex items-center">
+                          <input
+                            type="text"
+                            value={customExtImageQuery}
+                            onChange={(e) => {
+                              setCustomExtImageQuery(e.target.value);
+                              setExtQueryUserEdited(e.target.value.trim().length > 0);
                             }}
-                            className="px-2 py-0.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-bold text-[10px] cursor-pointer"
-                            title="Phân bổ và gắn lại toàn bộ danh sách ảnh này xen kẽ vào giữa các đoạn trong bài viết"
-                          >
-                            Gắn lại vào bài
-                          </button>
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                void handleFetchMoreExternalImages(false);
+                              }
+                            }}
+                            placeholder="Nhập tên nhân vật / chủ đề muốn tìm ảnh ngoài (hoặc để trống tự đọc bài)..."
+                            title="Nhập tên nhân vật, diễn viên hoặc chủ đề cụ thể rồi bấm Enter / + Bổ sung ảnh ngoài"
+                            className="w-full px-2.5 py-1 pr-6 rounded-lg border border-emerald-300 bg-emerald-50/40 focus:bg-white text-[11px] font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                          />
+                          {customExtImageQuery && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCustomExtImageQuery('');
+                                setExtQueryUserEdited(false);
+                              }}
+                              title="Xóa từ khóa để tự nhận diện theo nội dung bài viết"
+                              className="absolute right-1.5 text-slate-400 hover:text-slate-700 text-xs font-black cursor-pointer"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={searchingExtImages}
+                          onClick={() => void handleFetchMoreExternalImages(false)}
+                          className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-[10px] cursor-pointer shrink-0 flex items-center gap-1 shadow-2xs"
+                        >
+                          {searchingExtImages && <RefreshCw className="w-3 h-3 animate-spin" />}
+                          <span>{searchingExtImages ? 'Đang tìm...' : '+ Bổ sung ảnh ngoài'}</span>
+                        </button>
+                        {(pendingExternalImages.length > 0 || extractedWebImages.some((x) => x.isExternal)) && (
                           <button
                             type="button"
                             disabled={searchingExtImages}
-                            onClick={() => void handleFetchMoreExternalImages()}
-                            className="px-2 py-0.5 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-900 font-bold text-[10px] cursor-pointer"
+                            onClick={() => void handleFetchMoreExternalImages(true)}
+                            className="px-2 py-1 rounded-lg bg-indigo-100 hover:bg-indigo-200 disabled:opacity-50 text-indigo-900 font-bold text-[10px] cursor-pointer shrink-0"
+                            title="Bỏ khay chờ cũ và tìm loạt ảnh ngoài mới theo tên nhân vật / chủ đề vừa nhập"
                           >
-                            {searchingExtImages ? 'Đang tìm...' : '+ Bổ sung ảnh ngoài'}
+                            🔄 Đổi loạt khác
+                          </button>
+                        )}
+                      </div>
+
+                      {detectedExtActors && detectedExtActors.actors.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1 text-[10px]">
+                          <span className="font-bold text-emerald-900">
+                            Nhân vật từ bài{detectedExtActors.projectOrMovie ? ` (${detectedExtActors.projectOrMovie})` : ''}:
+                          </span>
+                          {detectedExtActors.actors.map((actorName) => {
+                            const isSelected =
+                              customExtImageQuery.trim().toLowerCase() === actorName.toLowerCase();
+                            return (
+                              <button
+                                key={`top-actor-${actorName}`}
+                                type="button"
+                                disabled={searchingExtImages}
+                                onClick={() => void handleFetchMoreExternalImages(false, actorName)}
+                                className={`px-1.5 py-0.5 rounded border font-bold cursor-pointer transition-colors disabled:opacity-50 ${
+                                  isSelected
+                                    ? 'bg-emerald-600 text-white border-emerald-700'
+                                    : 'bg-emerald-50 text-emerald-900 border-emerald-200 hover:bg-emerald-100'
+                                }`}
+                                title={`Bấm để tìm nhanh ảnh ngoài cho ${actorName}`}
+                              >
+                                {actorName}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {extImageNotice && (
+                        <div className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-[10px] font-bold text-indigo-950 flex items-center justify-between gap-2">
+                          <span>{extImageNotice}</span>
+                          <button
+                            type="button"
+                            onClick={() => setExtImageNotice(null)}
+                            className="text-indigo-600 hover:text-indigo-900 font-black cursor-pointer"
+                          >
+                            ×
                           </button>
                         </div>
-                      </div>
+                      )}
                       <div className="flex items-center gap-2 overflow-x-auto pb-1">
                         {extractedWebImages.map((img, i) => {
                           const isCurrentFeatured = featuredImageUrl === img.url;

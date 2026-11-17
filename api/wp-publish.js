@@ -1112,7 +1112,7 @@ async function enrichArticleContextWithGemini(baseProfile, opts = {}) {
         .slice(0, 6500);
 
       if (titleStr || bodyStr || cleanExplicit || imgHints) {
-        const hasExplicitTarget = Boolean(cleanExplicit && cleanExplicit.split(/\s+/).length <= 5);
+        const hasExplicitTarget = Boolean(cleanExplicit && cleanExplicit.split(/\s+/).length <= 10);
         const prompt = [
           'You are an entertainment photo researcher. Read the FULL article content carefully to identify the real actors, characters, and movie/show/event so we can search Bing Images for accurate photos.',
           'CRITICAL RULES:',
@@ -1255,7 +1255,7 @@ async function enrichArticleContextWithGemini(baseProfile, opts = {}) {
     nextProfile.detectedPeople = [...new Set(fallbackDetected)].slice(0, 6);
   }
 
-  if (cleanExplicit && cleanExplicit.split(/\s+/).length <= 5) {
+  if (cleanExplicit && cleanExplicit.split(/\s+/).length <= 10) {
     nextProfile.primaryPerson = cleanExplicit;
     if (
       nextProfile.secondaryPerson &&
