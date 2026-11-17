@@ -1021,6 +1021,36 @@ export function ImageStudioTab({
     return () => window.removeEventListener('paste', handlePaste);
   }, [activeSlotId]);
 
+  // Tự động bỏ viền đỏ chọn ô (activeSlotId) khi bấm ra ngoài ô ảnh hoặc nhấn Esc
+  useEffect(() => {
+    if (activeSlotId === null) return;
+    const handleOutsideMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target) {
+        setActiveSlotId(null);
+        return;
+      }
+      if (
+        target.closest('[data-collage-slot="true"]') ||
+        target.closest('[data-keep-slot-selection="true"]')
+      ) {
+        return;
+      }
+      setActiveSlotId(null);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setActiveSlotId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideMouseDown);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideMouseDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [activeSlotId]);
+
   // File Upload handler (hỗ trợ cả thêm vào kho hoặc thay mới toàn bộ kho ảnh tự ghép)
   const handleFileUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -3113,6 +3143,7 @@ export function ImageStudioTab({
                               )}
                               <button
                                 type="button"
+                                data-keep-slot-selection="true"
                                 onClick={() => {
                                   const targetSlot = activeSlotId !== null ? activeSlotId : 0;
                                   setSlotAssignments((prev) => ({ ...prev, [targetSlot]: photo }));
@@ -4707,6 +4738,7 @@ export function ImageStudioTab({
                       <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-1">
                         <button
                           type="button"
+                          data-keep-slot-selection="true"
                           onClick={() => {
                             const targetSlot = activeSlotId !== null ? activeSlotId : 0;
                             setSlotAssignments((prev) => ({ ...prev, [targetSlot]: photo }));
@@ -4928,9 +4960,14 @@ export function ImageStudioTab({
                   <div className="flex items-center space-x-2 text-[11px]">
                     <span>Kéo rê ảnh trong ô để chỉnh vị trí</span>
                     {activeSlotId !== null && (
-                      <span className="text-rose-400 font-bold">
-                        (Đang chọn Ô #{activeSlotId + 1})
-                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveSlotId(null)}
+                        className="text-rose-400 hover:text-rose-300 font-bold cursor-pointer"
+                        title="Bấm để bỏ chọn ô hiện tại (hoặc bấm ra ngoài khung ảnh)"
+                      >
+                        (Đang chọn Ô #{activeSlotId + 1} · Bỏ chọn ✕)
+                      </button>
                     )}
                   </div>
                 </div>
@@ -5141,10 +5178,11 @@ export function ImageStudioTab({
                     return (
                       <div
                         key={slot.id}
+                        data-collage-slot="true"
                         onClick={() => setActiveSlotId(slot.id)}
                         onMouseDown={(e) => {
+                          setActiveSlotId(slot.id);
                           if (isCircle && circleDragMode === 'move_circle') {
-                            setActiveSlotId(slot.id);
                             handleStartMainCircleDrag(e, slot.id);
                             return;
                           }
@@ -5395,6 +5433,79 @@ export function ImageStudioTab({
                       </div>
                     </div>
                   )}
+                </div>
+
+                {/* THANH TẢI ẢNH TRỰC TIẾP NGAY DƯỚI KHUNG CHỈNH ẢNH */}
+                <div className="w-full mt-4 pt-3.5 border-t border-slate-800/90 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                  <div className="text-[11px] text-slate-300 flex items-center gap-2 min-w-0">
+                    {exportNotice ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 font-bold truncate">
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                        <span className="truncate">{exportNotice}</span>
+                      </span>
+                    ) : (
+                      <span className="text-slate-400">
+                        Chỉnh xong tải trực tiếp tại đây • Bấm ra ngoài ô để bỏ viền đỏ
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      disabled={isExporting}
+                      onClick={() => {
+                        setActiveSlotId(null);
+                        void handleDownloadImage('png');
+                      }}
+                      className="px-3.5 py-2 rounded-xl font-black text-xs bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white shadow-md shadow-rose-950/40 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>{isExporting ? 'Đang xuất...' : 'Tải Ảnh PNG'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isExporting}
+                      onClick={() => {
+                        setActiveSlotId(null);
+                        void handleDownloadImage('jpeg');
+                      }}
+                      className="px-3 py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                      <span>Tải JPG Nhẹ</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isExporting}
+                      onClick={() => {
+                        setActiveSlotId(null);
+                        void handleCopyImage();
+                      }}
+                      className="px-3 py-2 rounded-xl font-bold text-xs bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      title="Sao chép ảnh vào clipboard để dán Ctrl+V ngay"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Copy Ảnh</span>
+                    </button>
+
+                    {currentWorkingTask && (
+                      <button
+                        type="button"
+                        disabled={isExporting}
+                        onClick={() => {
+                          setActiveSlotId(null);
+                          void handleSaveToTask();
+                        }}
+                        className="px-3 py-2 rounded-xl font-black text-xs bg-emerald-600 hover:bg-emerald-500 text-white transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Lưu Vào Bài</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
