@@ -423,10 +423,10 @@ export function ImageStudioTab({
   const [selectedRatioId, setSelectedRatioId] = useState<string>('3:4');
   const [categoryFilter, setCategoryFilter] = useState<string>('favorites');
 
-  // Spacing & Styling
-  const [padding, setPadding] = useState<number>(10);
-  const [gap, setGap] = useState<number>(8);
-  const [borderRadius, setBorderRadius] = useState<number>(12);
+  // Spacing & Styling (mặc định viền mảnh gọn đẹp)
+  const [padding, setPadding] = useState<number>(3);
+  const [gap, setGap] = useState<number>(3);
+  const [borderRadius, setBorderRadius] = useState<number>(6);
   const [selectedBackground, setSelectedBackground] = useState<BackgroundPreset>(COLLAGE_BACKGROUNDS[0]);
 
   // Watermark & Copyright Embossed Logo
@@ -444,7 +444,9 @@ export function ImageStudioTab({
   const [watermarkFontSize, setWatermarkFontSize] = useState<number>(30);
 
   // Nhãn Kêu Gọi Góc Cuối Ảnh Bên Phải ("Full Comments 👇")
+  // Ảnh bài viết mặc định BẬT, ảnh Story 9:16 mặc định TẮT (người dùng vẫn có thể bật thủ công nếu muốn)
   const [showCornerCta, setShowCornerCta] = useState<boolean>(true);
+  const [showStoryCornerCta, setShowStoryCornerCta] = useState<boolean>(false);
   const [cornerCtaText, setCornerCtaText] = useState<string>('Full Comments 👇');
   const [cornerCtaPosition, setCornerCtaPosition] = useState<
     'bottom_right' | 'bottom_center' | 'bottom_left'
@@ -593,6 +595,22 @@ export function ImageStudioTab({
       COLLAGE_RATIOS[0]
     );
   }, [selectedRatioId]);
+
+  const isStoryFrameContext = (preset: CollagePreset, ratioId: string): boolean =>
+    preset.id.startsWith('story-fb') || preset.recommendedRatio === '9:16' || ratioId === '9:16';
+
+  const shouldRenderCornerCta = (preset: CollagePreset, ratioId: string): boolean =>
+    isStoryFrameContext(preset, ratioId) ? showStoryCornerCta : showCornerCta;
+
+  const isActiveStoryContext = isStoryFrameContext(activePreset, activeRatio.id);
+  const activeShowCornerCta = isActiveStoryContext ? showStoryCornerCta : showCornerCta;
+  const setActiveShowCornerCta = (checked: boolean) => {
+    if (isActiveStoryContext) {
+      setShowStoryCornerCta(checked);
+    } else {
+      setShowCornerCta(checked);
+    }
+  };
 
   // Sync slots when preset changes (Ưu tiên mặc định 3:4 cho ảnh bài viết, 9:16 cho ảnh Story)
   useEffect(() => {
@@ -2691,7 +2709,7 @@ export function ImageStudioTab({
     }
 
     // 4. Draw Bottom-Right Pill Badge ("Full Comments 👇")
-    if (showCornerCta && cornerCtaText.trim() && !edOverlay.isEnabled) {
+    if (shouldRenderCornerCta(preset, ratio.id) && cornerCtaText.trim() && !edOverlay.isEnabled) {
       ctx.save();
       const ctaLabel = cornerCtaText.trim();
       const ctaScaledFont = Math.round((cornerCtaFontSize / 1080) * targetW);
@@ -4489,7 +4507,7 @@ export function ImageStudioTab({
                                 );
                               })()}
 
-                              {showCornerCta && cornerCtaText.trim() && !item.preset.bottomOverlay?.enabled && (
+                              {shouldRenderCornerCta(item.preset, item.ratio.id) && cornerCtaText.trim() && !item.preset.bottomOverlay?.enabled && (
                                 <div
                                   style={{
                                     bottom: '4%',
@@ -5088,7 +5106,7 @@ export function ImageStudioTab({
                                 </div>
                               )}
 
-                              {showCornerCta && cornerCtaText.trim() && (
+                              {shouldRenderCornerCta(item.preset, '9:16') && cornerCtaText.trim() && (
                                 <div
                                   style={{
                                     bottom: '4%',
@@ -5852,7 +5870,7 @@ export function ImageStudioTab({
                         aspectRatio: `${activeRatio.aspect}`,
                         background: selectedBackground.value,
                       }}
-                      className="rounded-2xl relative shadow-2xl overflow-hidden transition-all select-none"
+                      className="rounded-xl relative shadow-2xl overflow-hidden transition-all select-none"
                     >
                       {/* Vùng chứa nội dung bên trong (áp đúng outer padding giống 100% khi xuất Canvas) */}
                       <div
@@ -6383,7 +6401,7 @@ export function ImageStudioTab({
                       )}
 
                       {/* OVERLAY NHÃN GÓC CUỐI ẢNH BÊN PHẢI ("Full Comments 👇") */}
-                      {showCornerCta &&
+                      {shouldRenderCornerCta(activePreset, activeRatio.id) &&
                         cornerCtaText.trim() &&
                         !(activePreset.bottomOverlay?.enabled && showEditorialBottomOverlay) && (
                         <div
@@ -6618,10 +6636,24 @@ export function ImageStudioTab({
                 {(editorSettingsTab === 'ratio_border' || editorSettingsTab === 'all') && (
                 <>
                 <div className="pt-2 border-t border-slate-100 space-y-3">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    <Sliders className="w-3.5 h-3.5 text-rose-600" />
-                    Viền & Bo Góc
-                  </label>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sliders className="w-3.5 h-3.5 text-rose-600" />
+                      Viền & Bo Góc
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPadding(3);
+                        setGap(3);
+                        setBorderRadius(6);
+                      }}
+                      className="text-[10px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-md cursor-pointer transition-colors"
+                      title="Đặt lại viền mảnh mặc định (3px / 3px / 6px)"
+                    >
+                      Viền mảnh mặc định
+                    </button>
+                  </div>
 
                   <div>
                     <div className="flex justify-between text-xs text-slate-600 mb-1">
@@ -6711,23 +6743,32 @@ export function ImageStudioTab({
                 {(editorSettingsTab === 'logo_cta' || editorSettingsTab === 'all') && (
                 <>
                 <div className="pt-2 border-t border-slate-100 space-y-2.5">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       <Sparkles className="w-3.5 h-3.5 text-rose-600" />
-                      Nhãn Góc Phải Cuối Ảnh (Full Comments 👇)
+                      <span>Nhãn Góc Phải Cuối Ảnh</span>
+                      <span
+                        className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+                          isActiveStoryContext
+                            ? 'bg-indigo-100 text-indigo-800'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}
+                      >
+                        {isActiveStoryContext ? 'Story' : 'Bài viết'}
+                      </span>
                     </label>
-                    <label className="inline-flex items-center cursor-pointer">
+                    <label className="inline-flex items-center cursor-pointer relative">
                       <input
                         type="checkbox"
-                        checked={showCornerCta}
-                        onChange={(e) => setShowCornerCta(e.target.checked)}
+                        checked={activeShowCornerCta}
+                        onChange={(e) => setActiveShowCornerCta(e.target.checked)}
                         className="sr-only peer"
                       />
                       <div className="w-7 h-4 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-rose-600"></div>
                     </label>
                   </div>
 
-                  {showCornerCta && (
+                  {activeShowCornerCta && (
                     <div className="space-y-2 bg-slate-50/80 p-2.5 rounded-xl border border-slate-200/80">
                       <input
                         type="text"
