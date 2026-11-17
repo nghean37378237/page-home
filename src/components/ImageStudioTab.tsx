@@ -57,6 +57,7 @@ import {
   Link2,
   Wand2,
   Shuffle,
+  ArrowLeftRight,
   Star,
   Settings2,
 } from 'lucide-react';
@@ -1100,7 +1101,7 @@ export function ImageStudioTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Xoay vòng (Đảo) thứ tự ảnh đang ghép trong khung chính
+  // Xoay vòng (Đảo) thứ tự ảnh từ kho vào khung chính
   const handleShuffleMainSlots = () => {
     if (uploadedPhotos.length === 0) return;
     setSlotAssignments((prev) => {
@@ -1112,6 +1113,46 @@ export function ImageStudioTab({
       });
       return next;
     });
+    setSlotTransforms({});
+  };
+
+  // Đảo trực tiếp vị trí ảnh của 2 ô bất kỳ cho nhau ngay trong khung đang chỉnh
+  const handleSwapTwoSlots = (slotIdA: number, slotIdB: number) => {
+    setSlotAssignments((prev) => {
+      const photoA = prev[slotIdA] || '';
+      const photoB = prev[slotIdB] || '';
+      return {
+        ...prev,
+        [slotIdA]: photoB,
+        [slotIdB]: photoA,
+      };
+    });
+    setSlotTransforms((prev) => {
+      const next = { ...prev };
+      delete next[slotIdA];
+      delete next[slotIdB];
+      return next;
+    });
+  };
+
+  // Xoay vòng vị trí các ảnh đang có trong khung với nhau (#1 -> #2 -> #3 -> #1)
+  const handleRotateSlotsInFrame = () => {
+    const slots = activePreset.slots;
+    if (slots.length < 2) return;
+    if (slots.length === 2) {
+      handleSwapTwoSlots(slots[0].id, slots[1].id);
+      return;
+    }
+    setSlotAssignments((prev) => {
+      const next = { ...prev };
+      const lastPhoto = prev[slots[slots.length - 1].id] || '';
+      for (let i = slots.length - 1; i > 0; i--) {
+        next[slots[i].id] = prev[slots[i - 1].id] || '';
+      }
+      next[slots[0].id] = lastPhoto;
+      return next;
+    });
+    setSlotTransforms({});
   };
 
   // Paste image directly from clipboard (Ctrl+V) anywhere in window
@@ -5653,13 +5694,91 @@ export function ImageStudioTab({
 
               {/* KHUNG GHÉP ẢNH TƯƠNG TÁC (INTERACTIVE COLLAGE PREVIEW) */}
               <div className="bg-slate-900/90 rounded-2xl border border-slate-800 p-4 sm:p-6 flex flex-col items-center justify-center relative overflow-hidden min-h-[460px]">
-                {/* Canvas header controls */}
+                {/* Canvas header controls + Đảo vị trí ảnh trực tiếp */}
                 <div className="w-full flex flex-wrap items-center justify-between gap-2 text-xs text-white/80 mb-3 px-1">
-                  <div className="flex items-center space-x-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span className="font-bold text-white">Xem trước bố cục:</span>
                     <span className="px-2 py-0.5 rounded bg-white/10 text-white font-mono text-[11px]">
                       {activeRatio.id} ({activeRatio.exportWidth}x{activeRatio.exportHeight})
                     </span>
+
+                    {activePreset.slots.length >= 2 && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex flex-wrap items-center gap-1 bg-slate-800/90 border border-slate-700 rounded-lg px-1.5 py-0.5"
+                      >
+                        <button
+                          type="button"
+                          onClick={handleRotateSlotsInFrame}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-[11px] cursor-pointer transition-colors"
+                          title={
+                            activePreset.slots.length === 2
+                              ? 'Đảo vị trí ảnh #1 và #2 cho nhau'
+                              : 'Xoay vòng vị trí các ảnh đang có trong khung với nhau'
+                          }
+                        >
+                          <ArrowLeftRight className="w-3 h-3" />
+                          <span>
+                            {activePreset.slots.length === 2
+                              ? `Đảo #${activePreset.slots[0].id + 1} ↔ #${activePreset.slots[1].id + 1}`
+                              : 'Đảo vị trí ảnh'}
+                          </span>
+                        </button>
+
+                        {activePreset.slots.length === 3 && (
+                          <>
+                            {(
+                              [
+                                [activePreset.slots[0].id, activePreset.slots[1].id],
+                                [activePreset.slots[1].id, activePreset.slots[2].id],
+                                [activePreset.slots[0].id, activePreset.slots[2].id],
+                              ] as const
+                            ).map(([idA, idB]) => (
+                              <button
+                                key={`${idA}-${idB}`}
+                                type="button"
+                                onClick={() => handleSwapTwoSlots(idA, idB)}
+                                className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 font-bold text-[10px] cursor-pointer transition-colors"
+                                title={`Đổi chỗ ảnh Ô #${idA + 1} và Ô #${idB + 1} cho nhau`}
+                              >
+                                #{idA + 1}↔#{idB + 1}
+                              </button>
+                            ))}
+                          </>
+                        )}
+
+                        {activePreset.slots.length >= 4 && (
+                          <>
+                            {activePreset.slots.slice(0, 4).map((s, sIdx, arr) => {
+                              const nextS = arr[(sIdx + 1) % arr.length];
+                              return (
+                                <button
+                                  key={`${s.id}-${nextS.id}`}
+                                  type="button"
+                                  onClick={() => handleSwapTwoSlots(s.id, nextS.id)}
+                                  className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 font-bold text-[10px] cursor-pointer transition-colors"
+                                  title={`Đổi chỗ ảnh Ô #${s.id + 1} và Ô #${nextS.id + 1} cho nhau`}
+                                >
+                                  #{s.id + 1}↔#{nextS.id + 1}
+                                </button>
+                              );
+                            })}
+                          </>
+                        )}
+
+                        {uploadedPhotos.length > activePreset.slots.length && (
+                          <button
+                            type="button"
+                            onClick={handleShuffleMainSlots}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-700 hover:bg-indigo-600 text-slate-100 font-bold text-[10px] cursor-pointer transition-colors"
+                            title="Đổi sang bộ ảnh tiếp theo từ kho ảnh"
+                          >
+                            <Shuffle className="w-2.5 h-2.5" />
+                            <span>Đổi ảnh kho</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center space-x-2 text-[11px]">
                     <span>Kéo rê ảnh trong ô để chỉnh vị trí</span>
