@@ -151,6 +151,11 @@ const AUTO_MULTI_FRAME_IDS: {
     ratioId: '3:4',
     badge: '3 Ảnh Tạp Chí + Chữ Dưới',
   },
+  {
+    presetId: '2-editorial-split-v-bottom-title',
+    ratioId: '3:4',
+    badge: '2 Ảnh Dọc Tạp Chí + Chữ Dưới',
+  },
 ];
 
 // Hàng 2: 5 mẫu ảnh Story (Kích thước mặc định: 9:16)
@@ -257,18 +262,33 @@ export function ImageStudioTab({
   const [extractedRawUrls, setExtractedRawUrls] = useState<string[]>([]);
   const [extractedArticleBodyText, setExtractedArticleBodyText] = useState<string>('');
 
-  // --- HÀNG 1: 9 MẪU ẢNH CHO BÀI VIẾT (ƯU TIÊN MẶC ĐỊNH 3:4) ---
-  const favStorageKey = `celeb24h_fav9_post_v3_${currentUser?.id || currentUser?.name || 'default'}`;
+  // --- HÀNG 1: 10 MẪU ẢNH CHO BÀI VIẾT (ƯU TIÊN MẶC ĐỊNH 3:4) ---
+  const favStorageKey = `celeb24h_fav10_post_v4_${currentUser?.id || currentUser?.name || 'default'}`;
   const [favoritePresetIds, setFavoritePresetIds] = useState<string[]>(() => {
     try {
-      const savedV3 = localStorage.getItem(favStorageKey);
-      if (savedV3) {
-        const parsed = JSON.parse(savedV3);
+      const savedV4 = localStorage.getItem(favStorageKey);
+      if (savedV4) {
+        const parsed = JSON.parse(savedV4);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const valid = parsed.filter((id: string) =>
             COLLAGE_PRESETS.some((p) => p.id === id)
           );
-          if (valid.length === 9) return valid;
+          if (valid.length === 10) return valid;
+        }
+      }
+      const legacyV3Key = `celeb24h_fav9_post_v3_${currentUser?.id || currentUser?.name || 'default'}`;
+      const savedV3 = localStorage.getItem(legacyV3Key);
+      if (savedV3) {
+        const parsed = JSON.parse(savedV3);
+        if (Array.isArray(parsed) && parsed.length === 9) {
+          const valid = parsed.filter((id: string) =>
+            COLLAGE_PRESETS.some((p) => p.id === id)
+          );
+          if (valid.length === 9) {
+            return valid.includes('2-editorial-split-v-bottom-title')
+              ? [...valid, '2-split-v'].slice(0, 10)
+              : [...valid, '2-editorial-split-v-bottom-title'];
+          }
         }
       }
       const legacyKey = `celeb24h_fav8_post_v2_${currentUser?.id || currentUser?.name || 'default'}`;
@@ -280,9 +300,12 @@ export function ImageStudioTab({
             COLLAGE_PRESETS.some((p) => p.id === id)
           );
           if (valid.length === 8) {
-            return valid.includes('3-editorial-split-bottom-title')
+            const with9 = valid.includes('3-editorial-split-bottom-title')
               ? [...valid, '3-top-big'].slice(0, 9)
               : [...valid, '3-editorial-split-bottom-title'];
+            return with9.includes('2-editorial-split-v-bottom-title')
+              ? [...with9, '2-split-v'].slice(0, 10)
+              : [...with9, '2-editorial-split-v-bottom-title'];
           }
         }
       }
@@ -378,7 +401,7 @@ export function ImageStudioTab({
     });
   }, []);
 
-  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ #1 đến #9) trong Hàng 1 (9 mẫu bài viết)
+  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ #1 đến #10) trong Hàng 1 (10 mẫu bài viết)
   const handleReplaceFavoriteSlot = useCallback((slotIndex: number, newPresetId: string) => {
     setFavoritePresetIds((prev) => {
       const next = [...prev];
@@ -390,7 +413,7 @@ export function ImageStudioTab({
       } else {
         next[slotIndex] = newPresetId;
       }
-      return next.slice(0, 9);
+      return next.slice(0, 10);
     });
   }, []);
 
@@ -413,7 +436,7 @@ export function ImageStudioTab({
   const handleResetDefaultFavorites = useCallback(() => {
     setFavoritePresetIds(AUTO_MULTI_FRAME_IDS.map((item) => item.presetId));
     setFavoriteStoryPresetIds(AUTO_STORY_FRAME_IDS.map((item) => item.presetId));
-    setExportNotice('Đã khôi phục mặc định: Hàng 1 (9 mẫu bài viết 3:4) & Hàng 2 (5 mẫu Story 9:16)!');
+    setExportNotice('Đã khôi phục mặc định: Hàng 1 (10 mẫu bài viết 3:4) & Hàng 2 (5 mẫu Story 9:16)!');
     setTimeout(() => setExportNotice(null), 2500);
   }, []);
 
@@ -1605,12 +1628,12 @@ export function ImageStudioTab({
     return COLLAGE_PRESETS.filter((p) => p.category === categoryFilter);
   }, [categoryFilter, favoritePresetIds]);
 
-  // HÀNG 1: Danh sách 9 mẫu ảnh cho bài viết (Kích thước ưu tiên mặc định: 3:4)
+  // HÀNG 1: Danh sách 10 mẫu ảnh cho bài viết (Kích thước ưu tiên mặc định: 3:4)
   const multiFrameVariations = useMemo(() => {
     const ratio34 = COLLAGE_RATIOS.find((r) => r.id === '3:4') || COLLAGE_RATIOS[3];
     const ratio45 = COLLAGE_RATIOS.find((r) => r.id === '4:5') || COLLAGE_RATIOS[1];
 
-    let baseList = favoritePresetIds.slice(0, 9).map((presetId, idx) => {
+    let baseList = favoritePresetIds.slice(0, 10).map((presetId, idx) => {
       const preset = COLLAGE_PRESETS.find((p) => p.id === presetId) || COLLAGE_PRESETS[0];
       const defaultMeta = AUTO_MULTI_FRAME_IDS.find((m) => m.presetId === preset.id);
       return {
@@ -1626,7 +1649,7 @@ export function ImageStudioTab({
     if (selectedQuickRequirement === 'circle_pip') {
       const circlePresets = COLLAGE_PRESETS.filter(
         (p) => p.hasCircleAccent && !p.id.startsWith('story-fb')
-      ).slice(0, 9);
+      ).slice(0, 10);
       baseList = circlePresets.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
@@ -1638,7 +1661,7 @@ export function ImageStudioTab({
     } else if (selectedQuickRequirement === '2_photos') {
       const p2 = COLLAGE_PRESETS.filter(
         (p) => p.photoCount === 2 && !p.id.startsWith('story-fb')
-      ).slice(0, 9);
+      ).slice(0, 10);
       baseList = p2.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
@@ -3320,7 +3343,7 @@ export function ImageStudioTab({
                   Yêu cầu ghép nhanh:
                 </span>
                 {[
-                  { id: 'all_frames', label: `⭐ 9 Mẫu Hay Dùng Nhất (${favoritePresetIds.length}/9)` },
+                  { id: 'all_frames', label: `⭐ 10 Mẫu Hay Dùng Nhất (${favoritePresetIds.length}/10)` },
                   { id: 'circle_pip', label: '⭕ Khung Tròn Góc / Tròn Tâm (PiP)' },
                   { id: 'story_fb', label: '📱 Story FB 9:16 Viral' },
                   { id: 'feed_vertical', label: '📐 Chuẩn Feed Dọc 4:5' },
@@ -4050,14 +4073,14 @@ export function ImageStudioTab({
                       }`}
                     >
                       <Settings2 className="w-3 h-3" />
-                      <span>{showFavoriteManager ? 'Đóng chọn mẫu' : '⭐ Chọn 9 Mẫu Bài & 5 Mẫu Story'}</span>
+                      <span>{showFavoriteManager ? 'Đóng chọn mẫu' : '⭐ Chọn 10 Mẫu Bài & 5 Mẫu Story'}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleRandomizeAll8FramesRichly()}
                       className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-700 hover:to-orange-600 text-white text-[11px] font-extrabold cursor-pointer shadow-xs transition-all"
-                      title="Đảo ngẫu nhiên tổ hợp ảnh mới từ Kho Tự Ghép cho toàn bộ 9 khung Bài Viết & 5 khung Story"
+                      title="Đảo ngẫu nhiên tổ hợp ảnh mới từ Kho Tự Ghép cho toàn bộ 10 khung Bài Viết & 5 khung Story"
                     >
                       <Shuffle className="w-3 h-3" />
                       <span>🎲 Đảo Ngẫu Nhiên Khung</span>
@@ -4065,14 +4088,14 @@ export function ImageStudioTab({
                   </div>
                 </div>
 
-                {/* BẢNG TÙY CHỈNH NHANH 9 MẪU BÀI VIẾT + 5 MẪU STORY */}
+                {/* BẢNG TÙY CHỈNH NHANH 10 MẪU BÀI VIẾT + 5 MẪU STORY */}
                 {showFavoriteManager && (
                   <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-300 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                           <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                          <span>Thiết Lập 9 Mẫu Bài Viết (3:4) & 5 Mẫu Story (9:16)</span>
+                          <span>Thiết Lập 10 Mẫu Bài Viết (3:4) & 5 Mẫu Story (9:16)</span>
                         </p>
                         <p className="text-[11px] text-amber-800">
                           Chọn mẫu cho từng ô bên dưới. Hệ thống tự động lưu lại theo tài khoản của bạn.
@@ -4083,16 +4106,16 @@ export function ImageStudioTab({
                         onClick={handleResetDefaultFavorites}
                         className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold cursor-pointer"
                       >
-                        Khôi phục mặc định (9 + 5 mẫu)
+                        Khôi phục mặc định (10 + 5 mẫu)
                       </button>
                     </div>
 
                     <div className="space-y-1.5">
                       <div className="text-[11px] font-extrabold text-amber-950">
-                        Hàng 1 — 9 Mẫu Ảnh Cho Bài Viết (Mặc định 3:4):
+                        Hàng 1 — 10 Mẫu Ảnh Cho Bài Viết (Mặc định 3:4):
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
-                        {Array.from({ length: 9 }).map((_, idx) => {
+                        {Array.from({ length: 10 }).map((_, idx) => {
                           const currentId =
                             favoritePresetIds[idx] || COLLAGE_PRESETS[idx]?.id || COLLAGE_PRESETS[0].id;
                           return (
@@ -4235,7 +4258,7 @@ export function ImageStudioTab({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 2xl:grid-cols-10 gap-2.5">
                     {multiFrameVariations.map((item, idx) => {
                       const offsetKey = `post-${idx}-${item.preset.id}`;
                       const { variationSlots, usedPhotoIndices } = getFrameVariationSlotsAndIndices(
@@ -5450,7 +5473,7 @@ export function ImageStudioTab({
                   {/* Filter tags */}
                   <div className="flex items-center space-x-1 overflow-x-auto text-xs font-bold">
                     {[
-                      { id: 'favorites', label: `⭐ 9 Mẫu Hay Dùng (${favoritePresetIds.length}/9)` },
+                      { id: 'favorites', label: `⭐ 10 Mẫu Hay Dùng (${favoritePresetIds.length}/10)` },
                       { id: 'all', label: `Tất cả (${COLLAGE_PRESETS.length})` },
                       { id: 'story', label: 'Story FB' },
                       { id: '2-photo', label: '2 Ảnh' },
