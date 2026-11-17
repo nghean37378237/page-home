@@ -284,6 +284,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     externalImageCount: number;
   } | null>(null);
   const [customYtQuery, setCustomYtQuery] = useState('');
+  const [customExtImageQuery, setCustomExtImageQuery] = useState('');
+  const [extQueryUserEdited, setExtQueryUserEdited] = useState(false);
   const [searchingYt, setSearchingYt] = useState(false);
   const [searchingExtImages, setSearchingExtImages] = useState(false);
   const [extImageNotice, setExtImageNotice] = useState<string | null>(null);
@@ -1622,6 +1624,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       if (data.focusKeyword) {
         setFocusKeyword(data.focusKeyword);
         setCustomYtQuery('');
+        setCustomExtImageQuery('');
+        setExtQueryUserEdited(false);
       }
       if (Array.isArray(data.tags)) setTagsInput(data.tags.join(', '));
 
@@ -1918,16 +1922,17 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       .slice(0, 8000);
     let currentOrigImages = extractedWebImages.filter((im) => !im.isExternal);
 
+    const explicitActorQuery = customExtImageQuery.trim();
     const q =
+      explicitActorQuery ||
       customYtQuery.trim() ||
-      focusKeyword.trim() ||
       resolvedTitle ||
       cleanTopicText.slice(0, 120) ||
       sourceLink;
 
     if (!q && !sourceLink && currentOrigImages.length === 0) {
       const msg =
-        'Vui lòng dán Link bài viết hoặc nhập Tiêu đề / Từ khóa nhân vật để tìm thêm ảnh ngoài tương tự!';
+        'Vui lòng dán Link bài viết hoặc nhập Tên diễn viên / nhân vật / phim để tìm thêm ảnh ngoài chuẩn xác!';
       setExtImageNotice(msg);
       setPublishError(msg);
       return;
@@ -1993,7 +1998,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         body: JSON.stringify({
           action: 'search_external_images',
           forceExternalSearch: true,
-          query: customYtQuery.trim() || focusKeyword.trim() || resolvedTitle || q,
+          explicitQuery: explicitActorQuery || undefined,
+          query: explicitActorQuery || resolvedTitle || q,
           sourceUrl: sourceLink || undefined,
           title: resolvedTitle,
           articleText: resolvedBodyText,
@@ -2008,11 +2014,11 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         ? data.images.filter((im: any) => im.isExternal !== false)
         : [];
 
-      if (res.ok && data.ok && rawExtList.length > 0) {
-        if (data.primaryPerson && !focusKeyword.trim()) {
-          setFocusKeyword(String(data.primaryPerson));
-        }
+      if (data.primaryPerson && !extQueryUserEdited) {
+        setCustomExtImageQuery(String(data.primaryPerson));
+      }
 
+      if (res.ok && data.ok && rawExtList.length > 0) {
         const returnedExternals = rawExtList.map((im: any) => ({
           url: String(im.url || ''),
           alt: String(im.alt || data.primaryPerson || resolvedTitle || q),
@@ -2038,12 +2044,16 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           }
           return next;
         });
+        const detectedLabel = [data.primaryPerson, data.projectOrMovie]
+          .filter(Boolean)
+          .join(' · ');
         setExtImageNotice(
-          `✅ Đã tìm thấy ${returnedExternals.length} ảnh ngoài tương tự (${data.primaryPerson || 'cùng chủ đề'})! Hãy xem và bấm Duyệt ở khung bên dưới.`
+          `✅ Đã tìm thấy ${returnedExternals.length} ảnh ngoài chuẩn xác (${detectedLabel || 'cùng chủ đề'})! Hãy xem và bấm Duyệt ở khung bên dưới.`
         );
       } else {
         const errMsg =
-          data?.error || 'Chưa tìm thêm được ảnh ngoài mới khớp với nhân vật/bối cảnh này.';
+          data?.error ||
+          `Chưa tìm thêm được ảnh ngoài mới khớp với "${explicitActorQuery || data?.primaryPerson || 'nhân vật/bối cảnh này'}". Thử nhập trực tiếp tên diễn viên vào ô tìm ảnh bên trên.`;
         setExtImageNotice(`⚠️ ${errMsg}`);
         setPublishError(errMsg);
       }
@@ -4837,6 +4847,38 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     </span>
                   </div>
                   <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="relative flex items-center">
+                      <input
+                        type="text"
+                        value={customExtImageQuery}
+                        onChange={(e) => {
+                          setCustomExtImageQuery(e.target.value);
+                          setExtQueryUserEdited(e.target.value.trim().length > 0);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void handleFetchMoreExternalImages(false);
+                          }
+                        }}
+                        placeholder="Tên diễn viên / phim (tự nhận diện)..."
+                        title="Hệ thống tự phân tích tên diễn viên & bộ phim từ bài viết, hoặc bạn nhập trực tiếp tên diễn viên muốn tìm ảnh rồi bấm Enter / + Tìm thêm ảnh ngoài"
+                        className="w-52 sm:w-60 px-2.5 py-1 pr-6 rounded-lg border border-emerald-300 bg-white text-[11px] font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                      />
+                      {customExtImageQuery && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomExtImageQuery('');
+                            setExtQueryUserEdited(false);
+                          }}
+                          title="Xóa từ khóa tìm ảnh để tự nhận diện theo bài viết"
+                          className="absolute right-1.5 text-slate-400 hover:text-slate-700 text-xs font-black cursor-pointer"
+                        >
+                          ×
+                        </button>
+                      )}
+                    </div>
                     <button
                       type="button"
                       disabled={searchingExtImages || aiLoading}

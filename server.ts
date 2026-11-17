@@ -10,6 +10,7 @@ import {
   searchRelatedYouTubeVideos,
   searchExternalRelatedImages,
   analyzeArticleSubjectAndContext,
+  enrichArticleContextWithGemini,
   scrapeWebArticleForSeoRewrite,
   tryDiscoverSourceArticleImagesFromText,
   findExistingDuplicatePostOnWp,
@@ -196,6 +197,13 @@ async function startServer() {
           );
         }
 
+        ctxProfile = await enrichArticleContextWithGemini(ctxProfile, {
+          title: effectiveTitle,
+          articleText: effectiveText || query,
+          explicitQuery: customQuery || undefined,
+          existingImages: existingImgs,
+        });
+
         const effectiveSearchInput =
           customQuery || ctxProfile?.combinedSearchQuery || query;
         const videos = await searchRelatedYouTubeVideos(
@@ -215,6 +223,7 @@ async function startServer() {
 
       if (action === 'search_external_images') {
         const query = String(body.query || '');
+        const explicitQuery = String(body.explicitQuery || '').trim();
         const forceExternalSearch = Boolean(body.forceExternalSearch);
         let existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
         let discoveredOrigImgs: any[] = [];
@@ -228,7 +237,7 @@ async function startServer() {
         let ctxProfile = analyzeArticleSubjectAndContext(
           effectiveTitle || query,
           effectiveText || query,
-          query,
+          explicitQuery || query,
           existingImgs
         );
 
@@ -295,10 +304,17 @@ async function startServer() {
           ctxProfile = analyzeArticleSubjectAndContext(
             effectiveTitle || query,
             effectiveText || query,
-            query,
+            explicitQuery || query,
             existingImgs
           );
         }
+
+        ctxProfile = await enrichArticleContextWithGemini(ctxProfile, {
+          title: effectiveTitle || query,
+          articleText: effectiveText || query,
+          explicitQuery: explicitQuery || undefined,
+          existingImages: existingImgs,
+        });
 
         const excludeKeys = new Set<string>(
           existingImgs
@@ -320,7 +336,7 @@ async function startServer() {
         const extImages =
           neededCount > 0
             ? await searchExternalRelatedImages(
-                ctxProfile?.combinedSearchQuery || query,
+                explicitQuery || ctxProfile?.combinedSearchQuery || query,
                 neededCount,
                 excludeKeys,
                 ctxProfile
@@ -332,7 +348,9 @@ async function startServer() {
           externalImages: extImages,
           originalImages: discoveredOrigImgs,
           primaryPerson: ctxProfile?.primaryPerson || '',
-          searchQuery: ctxProfile?.combinedSearchQuery || query,
+          characterOrRole: ctxProfile?.characterOrRole || '',
+          projectOrMovie: ctxProfile?.projectOrMovie || '',
+          searchQuery: ctxProfile?.combinedSearchQuery || explicitQuery || query,
         });
         return;
       }
