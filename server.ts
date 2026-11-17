@@ -350,6 +350,7 @@ async function startServer() {
           primaryPerson: ctxProfile?.primaryPerson || '',
           characterOrRole: ctxProfile?.characterOrRole || '',
           projectOrMovie: ctxProfile?.projectOrMovie || '',
+          detectedPeople: ctxProfile?.detectedPeople || [],
           searchQuery: ctxProfile?.combinedSearchQuery || explicitQuery || query,
         });
         return;

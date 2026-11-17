@@ -289,6 +289,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   const [searchingYt, setSearchingYt] = useState(false);
   const [searchingExtImages, setSearchingExtImages] = useState(false);
   const [extImageNotice, setExtImageNotice] = useState<string | null>(null);
+  const [detectedExtActors, setDetectedExtActors] = useState<{
+    actors: string[];
+    projectOrMovie?: string;
+  } | null>(null);
 
   // Trạng thái đang đẩy bài & kết quả trả về
   const [isPublishing, setIsPublishing] = useState(false);
@@ -1623,10 +1627,13 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       if (data.excerpt) setExcerpt(data.excerpt);
       if (data.focusKeyword) {
         setFocusKeyword(data.focusKeyword);
-        setCustomYtQuery('');
-        setCustomExtImageQuery('');
-        setExtQueryUserEdited(false);
       }
+      setCustomYtQuery('');
+      setCustomExtImageQuery('');
+      setExtQueryUserEdited(false);
+      setDetectedExtActors(null);
+      setPendingExternalImages([]);
+      setRejectedExternalUrls([]);
       if (Array.isArray(data.tags)) setTagsInput(data.tags.join(', '));
 
       // Chỉ lấy ảnh bài gốc đưa vào khay "Phần Ảnh Trong Bài Viết" chờ người dùng ấn gắn vào bài (nếu bài trùng đã update thì ảnh gốc cũng đã được gắn vào nội dung bài cũ)
@@ -1896,7 +1903,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   };
 
   // Tìm thêm ảnh ngoài tương tự: Khi ấn nút mới tìm và đưa vào danh sách CHỜ DUYỆT (pendingExternalImages) để người dùng xem & bấm Duyệt
-  const handleFetchMoreExternalImages = async (replaceExistingExternals: boolean = false) => {
+  const handleFetchMoreExternalImages = async (
+    replaceExistingExternals: boolean = false,
+    actorQueryOverride?: string
+  ) => {
     const sourceLink =
       aiSourceUrl.trim() ||
       extractFirstArticleUrl(aiTopic) ||
@@ -1909,20 +1919,26 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     const cleanTopicText = aiTopic.replace(/https?:\/\/[^\s"'<>]+/gi, '').trim();
     const strippedContentText = content
       .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
-      .replace(/<h[1-6][^>]*>[\s\S]*?<\/h[1-6]>/gi, ' ')
-      .replace(/<\/p>/gi, '\n\n')
+      .replace(/<\/(p|h[1-6]|li|div|blockquote)>/gi, '\n\n')
       .replace(/<[^>]*>/g, ' ')
       .replace(/[ \t]+/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
       .trim();
 
     let resolvedTitle = title.trim();
     let resolvedBodyText = [cleanTopicText, strippedContentText, excerpt.trim()]
       .filter(Boolean)
       .join('\n\n')
-      .slice(0, 8000);
+      .slice(0, 12000);
     let currentOrigImages = extractedWebImages.filter((im) => !im.isExternal);
 
-    const explicitActorQuery = customExtImageQuery.trim();
+    const explicitActorQuery = (
+      actorQueryOverride !== undefined ? actorQueryOverride : customExtImageQuery
+    ).trim();
+    if (actorQueryOverride !== undefined) {
+      setCustomExtImageQuery(actorQueryOverride);
+      setExtQueryUserEdited(explicitActorQuery.length > 0);
+    }
     const q =
       explicitActorQuery ||
       customYtQuery.trim() ||
@@ -2014,8 +2030,19 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         ? data.images.filter((im: any) => im.isExternal !== false)
         : [];
 
-      if (data.primaryPerson && !extQueryUserEdited) {
+      if (data.primaryPerson && !extQueryUserEdited && actorQueryOverride === undefined) {
         setCustomExtImageQuery(String(data.primaryPerson));
+      }
+      if (Array.isArray(data.detectedPeople) && data.detectedPeople.length > 0) {
+        setDetectedExtActors({
+          actors: data.detectedPeople.map((p: any) => String(p).trim()).filter(Boolean),
+          projectOrMovie: data.projectOrMovie ? String(data.projectOrMovie).trim() : undefined,
+        });
+      } else if (data.primaryPerson) {
+        setDetectedExtActors({
+          actors: [String(data.primaryPerson).trim()],
+          projectOrMovie: data.projectOrMovie ? String(data.projectOrMovie).trim() : undefined,
+        });
       }
 
       if (res.ok && data.ok && rawExtList.length > 0) {
@@ -3149,6 +3176,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       });
     }
     setExtractedWebImages(parsedImgs);
+    setCustomExtImageQuery('');
+    setExtQueryUserEdited(false);
+    setDetectedExtActors(null);
+    setPendingExternalImages([]);
+    setRejectedExternalUrls([]);
+    setExtImageNotice(null);
     setEditorViewMode('preview');
     setActiveSubTab('editor');
   };
@@ -4861,9 +4894,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                             void handleFetchMoreExternalImages(false);
                           }
                         }}
-                        placeholder="Tên diễn viên / phim (tự nhận diện)..."
-                        title="Hệ thống tự phân tích tên diễn viên & bộ phim từ bài viết, hoặc bạn nhập trực tiếp tên diễn viên muốn tìm ảnh rồi bấm Enter / + Tìm thêm ảnh ngoài"
-                        className="w-52 sm:w-60 px-2.5 py-1 pr-6 rounded-lg border border-emerald-300 bg-white text-[11px] font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                        placeholder="Nhập tên diễn viên (hoặc để trống tự đọc bài)..."
+                        title="Để trống để hệ thống tự đọc nội dung bài viết và tìm đúng diễn viên/nhân vật, hoặc nhập thẳng tên diễn viên bạn muốn tìm ảnh rồi bấm Enter / + Tìm thêm ảnh ngoài"
+                        className="w-56 sm:w-64 px-2.5 py-1 pr-6 rounded-lg border border-emerald-300 bg-white text-[11px] font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
                       />
                       {customExtImageQuery && (
                         <button
@@ -4933,6 +4966,34 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     )}
                   </div>
                 </div>
+
+                {detectedExtActors && detectedExtActors.actors.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/80 border border-emerald-200/80 text-[11px]">
+                    <span className="font-bold text-emerald-900">
+                      Nhân vật đọc từ nội dung bài{detectedExtActors.projectOrMovie ? ` (${detectedExtActors.projectOrMovie})` : ''}:
+                    </span>
+                    {detectedExtActors.actors.map((actorName) => {
+                      const isSelected =
+                        customExtImageQuery.trim().toLowerCase() === actorName.toLowerCase();
+                      return (
+                        <button
+                          key={actorName}
+                          type="button"
+                          disabled={searchingExtImages}
+                          onClick={() => void handleFetchMoreExternalImages(false, actorName)}
+                          className={`px-2 py-0.5 rounded-md border text-[11px] font-bold cursor-pointer transition-colors disabled:opacity-50 ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white border-emerald-700'
+                              : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100'
+                          }`}
+                          title={`Tìm ảnh ngoài cho diễn viên ${actorName}`}
+                        >
+                          {actorName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {extImageNotice && (
                   <div className="px-3 py-1.5 rounded-lg bg-indigo-50 border border-indigo-200 text-[11px] font-bold text-indigo-950 flex items-center justify-between gap-2">

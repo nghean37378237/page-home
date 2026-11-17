@@ -1505,6 +1505,7 @@ export interface ArticleContextProfile {
   characterOrRole?: string;
   projectOrMovie?: string;
   aiVisualQueries?: string[];
+  detectedPeople?: string[];
   subjectDisplay: string;
   combinedSearchQuery: string;
 }
@@ -1545,7 +1546,7 @@ export function analyzeArticleSubjectAndContext(
         })
         .join(' ')
     : '';
-  const sample = fullText.slice(0, 6000);
+  const sample = fullText.slice(0, 12000);
 
   const stopWords = new Set([
     'There', 'The', 'This', 'That', 'These', 'Those', 'When', 'While', 'Where',
@@ -2135,22 +2136,27 @@ export async function enrichArticleContextWithGemini(
       const titleStr = String(opts.title || '').trim().slice(0, 220);
       const bodyStr = String(opts.articleText || '')
         .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+        .replace(/<\/(p|h[1-6]|li|div|blockquote)>/gi, '\n')
         .replace(/<[^>]*>/g, ' ')
         .replace(/\s+/g, ' ')
         .trim()
-        .slice(0, 4200);
+        .slice(0, 6500);
 
       if (titleStr || bodyStr || cleanExplicit || imgHints) {
+        const hasExplicitTarget = Boolean(cleanExplicit && cleanExplicit.split(/\s+/).length <= 5);
         const prompt = [
-          'You are an entertainment photo researcher. Extract the REAL actor/celebrity names, character, and movie/show/event from this article so we can search Bing Images for accurate photos.',
+          'You are an entertainment photo researcher. Read the FULL article content carefully to identify the real actors, characters, and movie/show/event so we can search Bing Images for accurate photos.',
           'CRITICAL RULES:',
-          '- primaryPerson MUST be a real actor/celebrity full name (e.g. "Johnny Depp", "Sydney Sweeney", "Jenna Ortega") OR if the user typed an explicit name, honor it cleanly.',
-          '- NEVER output headline phrases, adjectives, or movie words (like "Grand Adventure", "Years Later", "Classic Film") as primaryPerson.',
-          '- If the article focuses on a movie/franchise (e.g. "Pirates of the Caribbean"), identify the lead star (e.g. "Johnny Depp"), character ("Jack Sparrow"), co-stars ("Orlando Bloom", "Keira Knightley", "Geoffrey Rush"), and projectOrMovie ("Pirates of the Caribbean").',
-          '- visualSearchQueries must contain 5 short, clean English photo search queries tailored to finding real photographs of this actor/cast/movie on Bing Images.',
-          cleanExplicit ? `User explicit focus/search: ${cleanExplicit}` : '',
+          '- primaryPerson MUST be the main real actor/celebrity full name discussed in the article (e.g. "Johnny Depp", "Sydney Sweeney", "Jenna Ortega").',
+          '- supportingPeople must list ALL key real actors/celebrities mentioned in the article (ordered by prominence).',
+          '- NEVER output headline adjectives, verbs, or generic movie phrases (like "Grand Adventure", "Years Later", "Classic Film") as a person name.',
+          '- If the article focuses on a movie/franchise (e.g. "Pirates of the Caribbean"), identify the lead actor (e.g. "Johnny Depp"), iconic character ("Jack Sparrow"), co-stars ("Orlando Bloom", "Keira Knightley", "Geoffrey Rush"), and projectOrMovie ("Pirates of the Caribbean").',
+          hasExplicitTarget
+            ? `- USER EXPLICIT OVERRIDE: The user specifically typed "${cleanExplicit}" to search photos for. All 5 visualSearchQueries MUST focus directly on finding real photos of "${cleanExplicit}" (optionally paired with the relevant movie/show if "${cleanExplicit}" is part of it).`
+            : '- visualSearchQueries must contain 5 short, clean English photo search queries tailored to finding real photographs of the main actor/cast in this exact article context on Bing Images.',
+          hasExplicitTarget ? `User explicit actor/query: ${cleanExplicit}` : '',
           titleStr ? `Article Title: ${titleStr}` : '',
-          imgHints ? `Existing Image Hints: ${imgHints.slice(0, 500)}` : '',
+          imgHints ? `Existing Image Hints: ${imgHints.slice(0, 600)}` : '',
           bodyStr ? `Article Content:\n${bodyStr}` : '',
         ]
           .filter(Boolean)
@@ -2178,7 +2184,7 @@ export async function enrichArticleContextWithGemini(
         });
 
         const timeoutPromise = new Promise<null>((resolve) =>
-          setTimeout(() => resolve(null), 4200)
+          setTimeout(() => resolve(null), 4500)
         );
         const resp = await Promise.race([aiPromise, timeoutPromise]);
         if (resp && resp.text) {
@@ -2194,15 +2200,49 @@ export async function enrichArticleContextWithGemini(
             ? parsed.visualSearchQueries.map((s: any) => String(s || '').trim()).filter(Boolean)
             : [];
 
-          if (cleanExplicit && cleanExplicit.split(/\s+/).length <= 4) {
+          const combinedDetected = [
+            aiPrimary,
+            aiSecondary,
+            ...aiSupporting,
+            baseProfile.primaryPerson,
+            baseProfile.secondaryPerson,
+            ...baseProfile.supportingEntities,
+          ]
+            .map((s) => String(s || '').trim())
+            .filter((s) => s.length >= 3);
+          const dedupDetected: string[] = [];
+          const seenLow = new Set<string>();
+          for (const p of combinedDetected) {
+            const k = p.toLowerCase();
+            if (!seenLow.has(k)) {
+              seenLow.add(k);
+              dedupDetected.push(p);
+            }
+          }
+          nextProfile.detectedPeople = dedupDetected.slice(0, 6);
+
+          const isExplicitDifferentFromAiPrimary =
+            hasExplicitTarget &&
+            aiPrimary &&
+            !aiPrimary.toLowerCase().includes(cleanExplicit.toLowerCase()) &&
+            !cleanExplicit.toLowerCase().includes(aiPrimary.toLowerCase());
+
+          if (hasExplicitTarget) {
             nextProfile.primaryPerson = cleanExplicit;
           } else if (aiPrimary) {
             nextProfile.primaryPerson = aiPrimary;
           }
-          if (aiSecondary && aiSecondary.toLowerCase() !== nextProfile.primaryPerson.toLowerCase()) {
-            nextProfile.secondaryPerson = aiSecondary;
+
+          if (!isExplicitDifferentFromAiPrimary) {
+            if (aiSecondary && aiSecondary.toLowerCase() !== nextProfile.primaryPerson.toLowerCase()) {
+              nextProfile.secondaryPerson = aiSecondary;
+            }
+            if (aiChar) nextProfile.characterOrRole = aiChar;
+          } else {
+            nextProfile.secondaryPerson = '';
+            nextProfile.characterOrRole = '';
           }
-          if (aiChar) nextProfile.characterOrRole = aiChar;
+
           if (aiProject) nextProfile.projectOrMovie = aiProject;
           if (aiSupporting.length > 0) {
             nextProfile.supportingEntities = [
@@ -2235,18 +2275,41 @@ export async function enrichArticleContextWithGemini(
     }
   }
 
-  if (cleanExplicit && cleanExplicit.split(/\s+/).length <= 4 && !nextProfile.primaryPerson) {
+  if (!nextProfile.detectedPeople || nextProfile.detectedPeople.length === 0) {
+    const fallbackDetected = [
+      baseProfile.primaryPerson,
+      baseProfile.secondaryPerson,
+      ...baseProfile.supportingEntities,
+    ]
+      .map((s) => String(s || '').trim())
+      .filter((s) => s.length >= 3);
+    nextProfile.detectedPeople = [...new Set(fallbackDetected)].slice(0, 6);
+  }
+
+  if (cleanExplicit && cleanExplicit.split(/\s+/).length <= 5) {
     nextProfile.primaryPerson = cleanExplicit;
-  } else if (cleanExplicit && cleanExplicit.split(/\s+/).length <= 4) {
-    nextProfile.primaryPerson = cleanExplicit;
+    if (
+      nextProfile.secondaryPerson &&
+      nextProfile.secondaryPerson.toLowerCase() !== cleanExplicit.toLowerCase() &&
+      !nextProfile.aiVisualQueries?.some((q) => q.toLowerCase().includes(cleanExplicit.toLowerCase()))
+    ) {
+      nextProfile.secondaryPerson = '';
+    }
     const extraExplicitQueries = [
       [cleanExplicit, nextProfile.projectOrMovie].filter(Boolean).join(' ').trim(),
-      [cleanExplicit, nextProfile.characterOrRole].filter(Boolean).join(' ').trim(),
       cleanExplicit,
+      `${cleanExplicit} photos`,
+      `${cleanExplicit} portrait red carpet`,
     ].filter(Boolean);
     nextProfile.aiVisualQueries = [
-      ...new Set([...extraExplicitQueries, ...(nextProfile.aiVisualQueries || [])]),
+      ...new Set([
+        ...extraExplicitQueries,
+        ...(nextProfile.aiVisualQueries || []).filter((q) =>
+          q.toLowerCase().includes(cleanExplicit.toLowerCase().split(/\s+/)[0])
+        ),
+      ]),
     ].slice(0, 7);
+    nextProfile.combinedSearchQuery = nextProfile.aiVisualQueries[0] || cleanExplicit;
   }
 
   return nextProfile;
@@ -2407,7 +2470,7 @@ export async function searchExternalRelatedImages(
     /\b(red dead redemption|rockstar games|grand theft auto|gta\s*v|arthur morgan|john marston|fortnite|minecraft|roblox|witcher|skyrim|cyberpunk)\b/i;
 
   const acceptedImageExtOrCdnRe =
-    /\.(jpg|jpeg|png|webp)(\?|$)|(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|image\.tmdb\.org|upload\.wikimedia\.org|hips\.hearstapps\.com|ichef\.bbci\.co\.uk|static01\.nyt\.com|media\.vanityfair\.com|variety\.com|hollywoodreporter\.com|ew\.com|people\.com)\//i;
+    /\.(jpg|jpeg|png|webp)(\?|$)|(?:m\.media-amazon\.com|images-na\.ssl-images-amazon\.com|image\.tmdb\.org|upload\.wikimedia\.org|hips\.hearstapps\.com|ichef\.bbci\.co\.uk|static01\.nyt\.com|media\.vanityfair\.com|variety\.com|hollywoodreporter\.com|ew\.com|people\.com|dailymail\.co\.uk|pagesix\.com|collider\.com|screenrant\.com|deadline\.com|indiewire\.com|eonline\.com|usmagazine\.com|static\.wikia\.nocookie\.net)\//i;
 
   const normalizeFullResWpUrl = (rawImgUrl: string): string => {
     let cleaned = String(rawImgUrl || '').trim();

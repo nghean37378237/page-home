@@ -247,6 +247,7 @@ export function ImageStudioTab({
   const [rejectedSimilarUrls, setRejectedSimilarUrls] = useState<string[]>([]);
   const [isSearchingSimilar, setIsSearchingSimilar] = useState<boolean>(false);
   const [similarSearchQuery, setSimilarSearchQuery] = useState<string>('');
+  const [detectedSimilarActors, setDetectedSimilarActors] = useState<string[]>([]);
   const [similarSearchNotice, setSimilarSearchNotice] = useState<string | null>(null);
   const [extractedRawUrls, setExtractedRawUrls] = useState<string[]>([]);
   const [extractedArticleBodyText, setExtractedArticleBodyText] = useState<string>('');
@@ -729,21 +730,24 @@ export function ImageStudioTab({
       extractedArticleBodyText ??
       ''
     ).trim();
-    const resolvedQuery = (
-      options?.customQueryOverride ??
-      similarSearchQuery.trim() ??
-      ''
+    const explicitQueryStr = (
+      options?.customQueryOverride !== undefined
+        ? options.customQueryOverride
+        : similarSearchQuery
     ).trim();
+    if (options?.customQueryOverride !== undefined) {
+      setSimilarSearchQuery(options.customQueryOverride);
+    }
 
-    if (!resolvedQuery && !resolvedTitle && !resolvedSourceUrl) {
+    if (!explicitQueryStr && !resolvedTitle && !resolvedSourceUrl) {
       setSimilarSearchNotice(
-        'Vui lòng dán Link bài viết hoặc nhập Tên nhân vật / Từ khóa để tìm ảnh tương tự vào hàng chờ!'
+        'Vui lòng dán Link bài viết hoặc nhập Tên diễn viên để tìm ảnh tương tự vào hàng chờ!'
       );
       return;
     }
 
     setIsSearchingSimilar(true);
-    setSimilarSearchNotice('⏳ Đang tự động tìm ảnh tương tự cùng nhân vật & bối cảnh vào hàng chờ...');
+    setSimilarSearchNotice('⏳ Đang đọc nội dung bài viết & tìm ảnh đúng nhân vật vào hàng chờ...');
     try {
       const rawOrigUrls = options?.existingRawUrlsOverride ?? extractedRawUrls;
       const replaceQueue = options?.replaceQueue ?? false;
@@ -765,10 +769,11 @@ export function ImageStudioTab({
         body: JSON.stringify({
           action: 'search_external_images',
           forceExternalSearch: true,
-          query: resolvedQuery || resolvedTitle || resolvedSourceUrl,
+          explicitQuery: explicitQueryStr || undefined,
+          query: explicitQueryStr || resolvedTitle || resolvedSourceUrl,
           sourceUrl: resolvedSourceUrl || undefined,
           title: resolvedTitle,
-          articleText: resolvedBodyText.slice(0, 8000),
+          articleText: resolvedBodyText.slice(0, 12000),
           existingImages: excludedList,
           limit: 8,
         }),
@@ -787,8 +792,16 @@ export function ImageStudioTab({
         ? data.images.filter((im: any) => im.isExternal !== false)
         : [];
 
+      if (Array.isArray(data?.detectedPeople) && data.detectedPeople.length > 0) {
+        setDetectedSimilarActors(
+          data.detectedPeople.map((p: any) => String(p).trim()).filter(Boolean)
+        );
+      } else if (data?.primaryPerson) {
+        setDetectedSimilarActors([String(data.primaryPerson).trim()]);
+      }
+
       if (res.ok && data?.ok && rawExtList.length > 0) {
-        if (data.primaryPerson && !similarSearchQuery.trim()) {
+        if (data.primaryPerson && !explicitQueryStr) {
           setSimilarSearchQuery(String(data.primaryPerson));
         }
 
@@ -942,6 +955,10 @@ export function ImageStudioTab({
       setUploadedPhotos(extractedPhotos);
       setExtractedRawUrls(rawUrls);
       setExtractedArticleBodyText(String(data.articleText || data.excerpt || ''));
+      setSimilarSearchQuery('');
+      setDetectedSimilarActors([]);
+      setPendingSimilarImages([]);
+      setRejectedSimilarUrls([]);
       setExtractedArticleInfo({
         title: data.title || 'Bài viết Web',
         sourceUrl: data.sourceUrl || targetUrl,
@@ -3458,9 +3475,19 @@ export function ImageStudioTab({
                           });
                         }
                       }}
-                      placeholder="Nhập tên nhân vật / từ khóa để tìm thêm ảnh tương tự (hoặc tự động theo link bài)..."
-                      className="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-white border border-indigo-200 text-[11px] font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                      placeholder="Nhập tên diễn viên muốn tìm (hoặc để trống tự đọc từ nội dung bài)..."
+                      className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-white border border-indigo-200 text-[11px] font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
                     />
+                    {similarSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setSimilarSearchQuery('')}
+                        title="Xóa tên diễn viên để tự đọc từ bài viết"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 text-xs font-black cursor-pointer"
+                      >
+                        ×
+                      </button>
+                    )}
                   </div>
                   <button
                     type="button"
@@ -3476,6 +3503,36 @@ export function ImageStudioTab({
                     + Tìm thêm
                   </button>
                 </div>
+
+                {detectedSimilarActors.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                    <span className="font-bold text-indigo-900">Nhân vật đọc từ bài:</span>
+                    {detectedSimilarActors.map((actorName) => {
+                      const isSelected =
+                        similarSearchQuery.trim().toLowerCase() === actorName.toLowerCase();
+                      return (
+                        <button
+                          key={actorName}
+                          type="button"
+                          disabled={isSearchingSimilar}
+                          onClick={() =>
+                            void handleSearchSimilarImagesToQueue({
+                              customQueryOverride: actorName,
+                              replaceQueue: false,
+                            })
+                          }
+                          className={`px-2 py-0.5 rounded-md border text-[11px] font-bold cursor-pointer transition-colors disabled:opacity-50 ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white border-indigo-700'
+                              : 'bg-white text-indigo-900 border-indigo-200 hover:bg-indigo-100'
+                          }`}
+                        >
+                          {actorName}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
                 {similarSearchNotice && (
                   <div className="text-[11px] font-semibold text-indigo-900 bg-white/80 px-2.5 py-1 rounded-lg border border-indigo-200/80">
