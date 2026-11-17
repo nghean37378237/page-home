@@ -1247,6 +1247,62 @@
     ]
   },
   {
+    "id": "story-fb-before-after-white-tag",
+    "name": "Story FB: Before & After Nền Trắng (83:17 Viral)",
+    "photoCount": 2,
+    "category": "creative",
+    "recommendedRatio": "9:16",
+    "tags": [
+      "story",
+      "before-after",
+      "white-tag",
+      "facebook",
+      "viral"
+    ],
+    "dividerBadge": {
+      "enabled": true,
+      "text": "",
+      "positionYPercent": 83.2,
+      "showDividerLine": true,
+      "dividerLineColor": "#FFFFFF",
+      "dividerLineWidth": 6
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 100,
+        "height": 83.2,
+        "badge": {
+          "text": "BEFORE",
+          "bg": "#FFFFFF",
+          "textColor": "#EF0000",
+          "style": "rect",
+          "position": "top-left",
+          "topOffsetPercent": 6.2,
+          "leftOffsetPercent": 0
+        }
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 83.2,
+        "width": 100,
+        "height": 16.8,
+        "badge": {
+          "text": "AFTER",
+          "bg": "#FFFFFF",
+          "textColor": "#1CE000",
+          "style": "rect",
+          "position": "top-left",
+          "topOffsetPercent": 6,
+          "leftOffsetPercent": 1.2
+        }
+      }
+    ]
+  },
+  {
     "id": "story-fb-news-headline-duo",
     "name": "Story FB: Headline Tin Tức (Tiêu Đề Báo + 2 Ảnh)",
     "photoCount": 2,

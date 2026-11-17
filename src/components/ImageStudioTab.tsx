@@ -148,7 +148,7 @@ const AUTO_MULTI_FRAME_IDS: {
   },
 ];
 
-// Hàng 2: 4 mẫu ảnh Story (Kích thước mặc định: 9:16)
+// Hàng 2: 5 mẫu ảnh Story (Kích thước mặc định: 9:16)
 const AUTO_STORY_FRAME_IDS: {
   presetId: string;
   ratioId: string;
@@ -158,6 +158,11 @@ const AUTO_STORY_FRAME_IDS: {
     presetId: 'story-fb-before-after-classic',
     ratioId: '9:16',
     badge: 'Story FB: Before & After',
+  },
+  {
+    presetId: 'story-fb-before-after-white-tag',
+    ratioId: '9:16',
+    badge: 'Story FB: Before/After Nền Trắng',
   },
   {
     presetId: 'story-fb-headline-now-then',
@@ -266,18 +271,33 @@ export function ImageStudioTab({
     return AUTO_MULTI_FRAME_IDS.map((item) => item.presetId);
   });
 
-  // --- HÀNG 2: 4 MẪU ẢNH STORY (MẶC ĐỊNH 9:16) ---
-  const storyStorageKey = `celeb24h_fav4_story_v2_${currentUser?.id || currentUser?.name || 'default'}`;
+  // --- HÀNG 2: 5 MẪU ẢNH STORY (MẶC ĐỊNH 9:16) ---
+  const storyStorageKey = `celeb24h_fav5_story_v3_${currentUser?.id || currentUser?.name || 'default'}`;
   const [favoriteStoryPresetIds, setFavoriteStoryPresetIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem(storyStorageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const savedV3 = localStorage.getItem(storyStorageKey);
+      if (savedV3) {
+        const parsed = JSON.parse(savedV3);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const valid = parsed.filter((id: string) =>
             COLLAGE_PRESETS.some((p) => p.id === id)
           );
-          if (valid.length === 4) return valid;
+          if (valid.length === 5) return valid;
+        }
+      }
+      const legacyKey = `celeb24h_fav4_story_v2_${currentUser?.id || currentUser?.name || 'default'}`;
+      const savedV2 = localStorage.getItem(legacyKey);
+      if (savedV2) {
+        const parsed = JSON.parse(savedV2);
+        if (Array.isArray(parsed) && parsed.length === 4) {
+          const valid = parsed.filter((id: string) =>
+            COLLAGE_PRESETS.some((p) => p.id === id)
+          );
+          if (valid.length === 4) {
+            return valid.includes('story-fb-before-after-white-tag')
+              ? [...valid, 'story-fb-trio-portrait'].slice(0, 5)
+              : [valid[0], 'story-fb-before-after-white-tag', ...valid.slice(1)].slice(0, 5);
+          }
         }
       }
     } catch {
@@ -353,7 +373,7 @@ export function ImageStudioTab({
     });
   }, []);
 
-  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ Story #1 đến Story #4) trong Hàng 2 (4 mẫu Story)
+  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ Story #1 đến Story #5) trong Hàng 2 (5 mẫu Story)
   const handleReplaceStorySlot = useCallback((slotIndex: number, newPresetId: string) => {
     setFavoriteStoryPresetIds((prev) => {
       const next = [...prev];
@@ -365,14 +385,14 @@ export function ImageStudioTab({
       } else {
         next[slotIndex] = newPresetId;
       }
-      return next.slice(0, 4);
+      return next.slice(0, 5);
     });
   }, []);
 
   const handleResetDefaultFavorites = useCallback(() => {
     setFavoritePresetIds(AUTO_MULTI_FRAME_IDS.map((item) => item.presetId));
     setFavoriteStoryPresetIds(AUTO_STORY_FRAME_IDS.map((item) => item.presetId));
-    setExportNotice('Đã khôi phục mặc định: Hàng 1 (8 mẫu bài viết 3:4) & Hàng 2 (4 mẫu Story 9:16)!');
+    setExportNotice('Đã khôi phục mặc định: Hàng 1 (8 mẫu bài viết 3:4) & Hàng 2 (5 mẫu Story 9:16)!');
     setTimeout(() => setExportNotice(null), 2500);
   }, []);
 
@@ -1487,10 +1507,10 @@ export function ImageStudioTab({
     return baseList;
   }, [selectedQuickRequirement, favoritePresetIds]);
 
-  // HÀNG 2: Danh sách 4 mẫu ảnh Story (Kích thước mặc định: 9:16)
+  // HÀNG 2: Danh sách 5 mẫu ảnh Story (Kích thước mặc định: 9:16)
   const storyFrameVariations = useMemo(() => {
     const ratio916 = COLLAGE_RATIOS.find((r) => r.id === '9:16') || COLLAGE_RATIOS[2];
-    return favoriteStoryPresetIds.slice(0, 4).map((presetId, idx) => {
+    return favoriteStoryPresetIds.slice(0, 5).map((presetId, idx) => {
       const preset =
         COLLAGE_PRESETS.find((p) => p.id === presetId) ||
         COLLAGE_PRESETS.find((p) => p.id.startsWith('story-fb')) ||
@@ -1929,10 +1949,11 @@ export function ImageStudioTab({
       ctx.fillRect(0, 0, targetW, targetH);
     }
 
-    // 2. Draw slots with padding & gap scaling
-    const padPx = (padding / 100) * Math.min(targetW, targetH);
-    const gapPx = (gap / 100) * Math.min(targetW, targetH);
-    const cornerPx = (borderRadius / 100) * Math.min(targetW, targetH);
+    // 2. Draw slots with padding, gap & borderRadius scaled identically to preview (480px short-side ref)
+    const canvasSpaceScale = Math.min(targetW, targetH) / 480;
+    const padPx = padding * canvasSpaceScale;
+    const gapPx = gap * canvasSpaceScale;
+    const cornerPx = borderRadius * canvasSpaceScale;
 
     const innerW = targetW - padPx * 2;
     const innerH = targetH - padPx * 2;
@@ -2072,29 +2093,57 @@ export function ImageStudioTab({
         const centerX = slotX + slotW / 2;
         const centerY = slotY + slotH / 2;
 
-        ctx.translate(centerX, centerY);
-        ctx.rotate((transform.rotate * Math.PI) / 180);
-
         const imgAspect = img.width / img.height;
         const slotAspect = slotW / slotH;
-        let drawW = slotW;
-        let drawH = slotH;
+        let baseDrawW = slotW;
+        let baseDrawH = slotH;
         if (imgAspect > slotAspect) {
-          drawW = slotH * imgAspect;
+          baseDrawW = slotH * imgAspect;
         } else {
-          drawH = slotW / imgAspect;
+          baseDrawH = slotW / imgAspect;
         }
 
-        drawW *= transform.scale;
-        drawH *= transform.scale;
+        // Khớp 100% thứ tự phép biến đổi CSS: scale(s) translate(panX%, panY%) rotate(deg)
+        ctx.translate(centerX, centerY);
+        ctx.scale(transform.scale, transform.scale);
+        ctx.translate((transform.panX / 100) * slotW, (transform.panY / 100) * slotH);
+        ctx.rotate((transform.rotate * Math.PI) / 180);
 
-        const panXPx = (transform.panX / 100) * slotW;
-        const panYPx = (transform.panY / 100) * slotH;
-
-        ctx.drawImage(img, -drawW / 2 + panXPx, -drawH / 2 + panYPx, drawW, drawH);
+        ctx.drawImage(img, -baseDrawW / 2, -baseDrawH / 2, baseDrawW, baseDrawH);
       } else {
         ctx.fillStyle = '#e2e8f0';
         ctx.fillRect(slotX, slotY, slotW, slotH);
+      }
+
+      if (slot.badge?.text) {
+        const badgeText = slot.badge.text;
+        const isPill = slot.badge.style === 'pill';
+        const badgeFontPx = Math.round(isPill ? targetW * 0.036 : targetW * 0.048);
+        ctx.font = `900 ${badgeFontPx}px "Inter", "Segoe UI", Arial, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        const metrics = ctx.measureText(badgeText);
+        const bPadX = isPill ? badgeFontPx * 0.65 : badgeFontPx * 0.24;
+        const bPadY = isPill ? badgeFontPx * 0.28 : badgeFontPx * 0.14;
+        const bW = metrics.width + bPadX * 2;
+        const bH = badgeFontPx + bPadY * 2;
+
+        const leftPct = slot.badge.leftOffsetPercent ?? (isPill ? 3 : 0);
+        const topPct = slot.badge.topOffsetPercent ?? (isPill ? 4 : 0);
+        const bX = slotX + (leftPct / 100) * slotW;
+        const bY = slotY + (topPct / 100) * slotH;
+
+        ctx.fillStyle = slot.badge.bg || '#FFFFFF';
+        if (isPill && ctx.roundRect) {
+          ctx.beginPath();
+          ctx.roundRect(bX, bY, bW, bH, bH / 2);
+          ctx.fill();
+        } else {
+          ctx.fillRect(bX, bY, bW, bH);
+        }
+
+        ctx.fillStyle = slot.badge.textColor || '#EF0000';
+        ctx.fillText(badgeText, bX + bPadX, bY + bH / 2 + badgeFontPx * 0.03);
       }
       ctx.restore();
 
@@ -2108,6 +2157,39 @@ export function ImageStudioTab({
         ctx.lineWidth = ((slot.borderWidth || 4) / 100) * Math.min(targetW, targetH);
         ctx.strokeStyle = slot.borderColor || '#FFFFFF';
         ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    // 2B. Draw Divider Line & Optional Divider Text (e.g. Before/After seam or SWIPE UP)
+    if (preset.dividerBadge?.enabled) {
+      const divY = padPx + ((preset.dividerBadge.positionYPercent ?? 50) / 100) * innerH;
+      const lineX = padPx + gapPx / 2;
+      const lineW = Math.max(1, innerW - gapPx);
+      if (preset.dividerBadge.showDividerLine) {
+        ctx.save();
+        const linePx = Math.max(
+          2,
+          ((preset.dividerBadge.dividerLineWidth || 4) / 1080) * targetW
+        );
+        ctx.fillStyle = preset.dividerBadge.dividerLineColor || '#FFFFFF';
+        ctx.fillRect(lineX, divY - linePx / 2, lineW, linePx);
+        ctx.restore();
+      }
+      if (preset.dividerBadge.text && preset.dividerBadge.text.trim()) {
+        ctx.save();
+        const divLabel = preset.dividerBadge.text.trim();
+        const divFontPx = Math.round(targetW * 0.044);
+        ctx.font = `900 ${divFontPx}px "Inter", "Segoe UI", Arial, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        const strokeW = Math.max(2, ((preset.dividerBadge.strokeWidth || 6) / 1080) * targetW);
+        ctx.lineJoin = 'round';
+        ctx.lineWidth = strokeW;
+        ctx.strokeStyle = preset.dividerBadge.strokeColor || '#000000';
+        ctx.strokeText(divLabel, targetW / 2, divY);
+        ctx.fillStyle = preset.dividerBadge.textColor || '#FFE500';
+        ctx.fillText(divLabel, targetW / 2, divY);
         ctx.restore();
       }
     }
@@ -2128,25 +2210,26 @@ export function ImageStudioTab({
       const boxW = textMetrics.width + paddingX * 2;
       const boxH = scaledFontSize + paddingY * 2;
 
-      const edgeMargin = Math.max(24, targetW * 0.045);
+      const edgeMarginX = targetW * 0.045;
+      const edgeMarginY = targetH * 0.045;
       let posX = targetW / 2;
       let posY = targetH / 2;
 
       if (watermarkPosition === 'top') {
         posX = targetW / 2;
-        posY = Math.max(boxH / 2 + edgeMargin, targetH * 0.09);
+        posY = Math.max(boxH / 2 + edgeMarginY, targetH * 0.09);
       } else if (watermarkPosition === 'bottom') {
         posX = targetW / 2;
-        posY = Math.min(targetH - boxH / 2 - edgeMargin, targetH * 0.91);
+        posY = Math.min(targetH - boxH / 2 - edgeMarginY, targetH * 0.91);
       } else if (watermarkPosition === 'bottom_right') {
-        posX = targetW - boxW / 2 - edgeMargin;
-        posY = targetH - boxH / 2 - edgeMargin;
+        posX = targetW - boxW / 2 - edgeMarginX;
+        posY = targetH - boxH / 2 - edgeMarginY;
       } else if (watermarkPosition === 'bottom_left') {
-        posX = boxW / 2 + edgeMargin;
-        posY = targetH - boxH / 2 - edgeMargin;
+        posX = boxW / 2 + edgeMarginX;
+        posY = targetH - boxH / 2 - edgeMarginY;
       } else if (watermarkPosition === 'top_right') {
-        posX = targetW - boxW / 2 - edgeMargin;
-        posY = boxH / 2 + edgeMargin;
+        posX = targetW - boxW / 2 - edgeMarginX;
+        posY = boxH / 2 + edgeMarginY;
       }
 
       ctx.translate(posX, posY);
@@ -2259,14 +2342,15 @@ export function ImageStudioTab({
       const pillW = metrics.width + padX * 2;
       const pillH = ctaScaledFont + padY * 2;
 
-      const margin = Math.max(20, targetW * 0.032);
-      let pillCenterX = targetW - pillW / 2 - margin;
+      const ctaMarginX = targetW * 0.032;
+      const ctaMarginY = targetH * 0.032;
+      let pillCenterX = targetW - pillW / 2 - ctaMarginX;
       if (cornerCtaPosition === 'bottom_center') {
         pillCenterX = targetW / 2;
       } else if (cornerCtaPosition === 'bottom_left') {
-        pillCenterX = pillW / 2 + margin;
+        pillCenterX = pillW / 2 + ctaMarginX;
       }
-      const pillCenterY = targetH - pillH / 2 - margin;
+      const pillCenterY = targetH - pillH / 2 - ctaMarginY;
 
       // Đổ bóng nổi cho khung thuốc đen "Full Comments 👇"
       ctx.shadowColor = 'rgba(0, 0, 0, 0.55)';
@@ -2601,8 +2685,8 @@ export function ImageStudioTab({
                 },
                 {
                   id: 'step2_auto' as const,
-                  label: 'Bước 2: Ghép Tự Động 2 Hàng (8 Bài 3:4 + 4 Story 9:16)',
-                  badge: '12 mẫu',
+                  label: 'Bước 2: Ghép Tự Động 2 Hàng (8 Bài 3:4 + 5 Story 9:16)',
+                  badge: '13 mẫu',
                 },
                 {
                   id: 'step3_editor' as const,
@@ -3598,10 +3682,10 @@ export function ImageStudioTab({
 
                     <div className="space-y-1.5 pt-1 border-t border-amber-200/80">
                       <div className="text-[11px] font-extrabold text-indigo-950">
-                        Hàng 2 — 4 Mẫu Ảnh Story (Mặc định 9:16):
+                        Hàng 2 — 5 Mẫu Ảnh Story (Mặc định 9:16):
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                        {Array.from({ length: 4 }).map((_, idx) => {
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
+                        {Array.from({ length: 5 }).map((_, idx) => {
                           const currentId =
                             favoriteStoryPresetIds[idx] ||
                             AUTO_STORY_FRAME_IDS[idx]?.presetId ||
@@ -3858,6 +3942,21 @@ export function ImageStudioTab({
                                         className="w-full h-full object-cover pointer-events-none select-none"
                                       />
                                     )}
+                                    {slot.badge?.text && (
+                                      <span
+                                        style={{
+                                          top: `${slot.badge.topOffsetPercent ?? (slot.badge.style === 'pill' ? 4 : 0)}%`,
+                                          left: `${slot.badge.leftOffsetPercent ?? (slot.badge.style === 'pill' ? 3 : 0)}%`,
+                                          backgroundColor: slot.badge.bg || '#FFFFFF',
+                                          color: slot.badge.textColor || '#EF0000',
+                                        }}
+                                        className={`absolute z-20 pointer-events-none select-none font-black uppercase leading-none px-1 py-0.5 text-[7px] ${
+                                          slot.badge.style === 'pill' ? 'rounded-full' : ''
+                                        }`}
+                                      >
+                                        {slot.badge.text}
+                                      </span>
+                                    )}
                                     {isCircle && (
                                       <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[8px] font-bold py-0.5 text-center opacity-0 group-hover/circle:opacity-100 transition-opacity pointer-events-none flex items-center justify-center gap-0.5">
                                         <Move className="w-2.5 h-2.5 text-amber-300" />
@@ -3867,6 +3966,19 @@ export function ImageStudioTab({
                                   </div>
                                 );
                               })}
+
+                              {item.preset.dividerBadge?.enabled &&
+                                item.preset.dividerBadge.showDividerLine && (
+                                  <div
+                                    style={{
+                                      top: `${item.preset.dividerBadge.positionYPercent ?? 50}%`,
+                                      backgroundColor:
+                                        item.preset.dividerBadge.dividerLineColor || '#FFFFFF',
+                                      height: '2px',
+                                    }}
+                                    className="absolute left-0 right-0 -translate-y-1/2 z-20 pointer-events-none"
+                                  />
+                                )}
 
                               {showWatermark && watermarkText.trim() && (
                                 <div
@@ -4105,7 +4217,7 @@ export function ImageStudioTab({
                 </div>
 
                 {/* ========================================================= */}
-                {/* HÀNG 2: 4 MẪU ẢNH STORY (KÍCH THƯỚC MẶC ĐỊNH 9:16)        */}
+                {/* HÀNG 2: 5 MẪU ẢNH STORY (KÍCH THƯỚC MẶC ĐỊNH 9:16)        */}
                 {/* ========================================================= */}
                 <div className="space-y-2.5 pt-2 border-t border-rose-200/50">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -4114,7 +4226,7 @@ export function ImageStudioTab({
                         Hàng 2
                       </span>
                       <span className="text-xs font-extrabold text-slate-800">
-                        4 Mẫu Ảnh Story Facebook / Reels
+                        5 Mẫu Ảnh Story Facebook / Reels
                       </span>
                       <span className="px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold font-mono">
                         Kích thước mặc định: 9:16 (1080×1920)
@@ -4414,6 +4526,21 @@ export function ImageStudioTab({
                                         className="w-full h-full object-cover pointer-events-none select-none"
                                       />
                                     )}
+                                    {slot.badge?.text && (
+                                      <span
+                                        style={{
+                                          top: `${slot.badge.topOffsetPercent ?? (slot.badge.style === 'pill' ? 4 : 0)}%`,
+                                          left: `${slot.badge.leftOffsetPercent ?? (slot.badge.style === 'pill' ? 3 : 0)}%`,
+                                          backgroundColor: slot.badge.bg || '#FFFFFF',
+                                          color: slot.badge.textColor || '#EF0000',
+                                        }}
+                                        className={`absolute z-20 pointer-events-none select-none font-black uppercase leading-none px-1 py-0.5 text-[8px] shadow-2xs ${
+                                          slot.badge.style === 'pill' ? 'rounded-full' : ''
+                                        }`}
+                                      >
+                                        {slot.badge.text}
+                                      </span>
+                                    )}
                                     {isCircle && (
                                       <div className="absolute inset-x-0 bottom-0 bg-black/60 text-white text-[8px] font-bold py-0.5 text-center opacity-0 group-hover/circle:opacity-100 transition-opacity pointer-events-none flex items-center justify-center gap-0.5">
                                         <Move className="w-2.5 h-2.5 text-amber-300" />
@@ -4423,6 +4550,34 @@ export function ImageStudioTab({
                                   </div>
                                 );
                               })}
+
+                              {item.preset.dividerBadge?.enabled && (
+                                <>
+                                  {item.preset.dividerBadge.showDividerLine && (
+                                    <div
+                                      style={{
+                                        top: `${item.preset.dividerBadge.positionYPercent ?? 50}%`,
+                                        backgroundColor:
+                                          item.preset.dividerBadge.dividerLineColor || '#FFFFFF',
+                                        height: '2px',
+                                      }}
+                                      className="absolute left-0 right-0 -translate-y-1/2 z-20 pointer-events-none"
+                                    />
+                                  )}
+                                  {item.preset.dividerBadge.text?.trim() && (
+                                    <div
+                                      style={{
+                                        top: `${item.preset.dividerBadge.positionYPercent ?? 50}%`,
+                                        color: item.preset.dividerBadge.textColor || '#FFE500',
+                                        textShadow: '0 1px 2px #000, 0 0 2px #000',
+                                      }}
+                                      className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 text-[7px] font-black tracking-tight pointer-events-none whitespace-nowrap"
+                                    >
+                                      {item.preset.dividerBadge.text}
+                                    </div>
+                                  )}
+                                </>
+                              )}
 
                               {showWatermark && watermarkText.trim() && (
                                 <div
@@ -4910,16 +5065,28 @@ export function ImageStudioTab({
                                     ? '2px solid white'
                                     : '1px solid rgba(255,255,255,0.7)',
                               }}
-                              className={`absolute ${
-                                s.shape === 'circle'
-                                  ? 'bg-rose-500 shadow-sm'
-                                  : idx % 2 === 0
-                                  ? 'bg-slate-300'
-                                  : 'bg-slate-400'
-                              }`}
-                            />
-                          ))}
-                        </div>
+                                className={`absolute flex items-start justify-start overflow-hidden ${
+                                  s.shape === 'circle'
+                                    ? 'bg-rose-500 shadow-sm'
+                                    : idx % 2 === 0
+                                    ? 'bg-slate-300'
+                                    : 'bg-slate-400'
+                                }`}
+                              >
+                                {s.badge?.text && (
+                                  <span
+                                    style={{
+                                      backgroundColor: s.badge.bg || '#FFFFFF',
+                                      color: s.badge.textColor || '#EF0000',
+                                    }}
+                                    className="text-[6px] font-black leading-none px-0.5 py-[1px] m-[1px]"
+                                  >
+                                    {s.badge.text}
+                                  </span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
 
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-black text-slate-800 line-clamp-1 group-hover:text-rose-700">
@@ -5108,332 +5275,408 @@ export function ImageStudioTab({
                   </div>
                 )}
 
-                {/* CONTAINER GIỮ TỶ LỆ CHUẨN */}
-                <div
-                  style={{
-                    aspectRatio: `${activeRatio.aspect}`,
-                    background: selectedBackground.value,
-                    padding: `${padding}px`,
-                    gap: `${gap}px`,
-                  }}
-                  className="w-full max-w-[480px] max-h-[620px] rounded-2xl relative shadow-2xl overflow-hidden transition-all select-none"
-                >
-                  {(() => {
-                    const mainStoryInfo = resolveStoryHeaderAndSlots(
-                      activePreset,
-                      `main-${activePreset.id}`
-                    );
-                    if (!mainStoryInfo.isHeaderActive || mainStoryInfo.headerHeightPercent <= 0) {
-                      return null;
-                    }
-                    return (
-                      <div
-                        onClick={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        style={{
-                          left: `calc(0% + ${gap / 2}px)`,
-                          top: `calc(0% + ${gap / 2}px)`,
-                          width: `calc(100% - ${gap}px)`,
-                          height: `calc(${mainStoryInfo.headerHeightPercent}% - ${gap}px)`,
-                          backgroundColor: mainStoryInfo.themeColors.bg,
-                          borderBottom: `1px solid ${mainStoryInfo.themeColors.border}`,
-                          borderRadius: `${borderRadius}px`,
-                          zIndex: 30,
-                        }}
-                        className="absolute overflow-hidden flex flex-col justify-center px-3 py-2"
-                      >
-                        <textarea
-                          value={mainStoryInfo.resolvedText}
-                          onChange={(e) => {
-                            setStoryTopText(e.target.value);
-                          }}
-                          placeholder="✍️ Nhập chữ tiêu đề phần trắng phía trên của Story..."
-                          rows={3}
-                          style={{
-                            color: mainStoryInfo.themeColors.text,
-                            fontSize: `${Math.max(12, Math.min(24, Math.round(16 * storyTopFontScale)))}px`,
-                            lineHeight: '1.25',
-                          }}
-                          className="w-full h-full bg-transparent resize-none border-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded font-black text-center flex items-center justify-center overflow-hidden p-1 cursor-text select-text"
-                        />
-                      </div>
-                    );
-                  })()}
+                {/* CONTAINER GIỮ TỶ LỆ CHUẨN 1:1 VỚI ẢNH XUẤT RA */}
+                {(() => {
+                  const previewAspect = activeRatio.exportWidth / activeRatio.exportHeight;
+                  const previewBoxW = Math.min(480, Math.round(620 * previewAspect));
+                  const previewBoxH = Math.round(previewBoxW / previewAspect);
+                  const previewSpaceScale = Math.min(previewBoxW, previewBoxH) / 480;
+                  const previewPadPx = padding * previewSpaceScale;
+                  const previewGapPx = gap * previewSpaceScale;
+                  const previewCornerPx = borderRadius * previewSpaceScale;
 
-                  {/* RENDER CÁC Ô ẢNH THEO TỶ LỆ PHẦN TRĂM */}
-                  {resolveStoryHeaderAndSlots(
-                    activePreset,
-                    `main-${activePreset.id}`
-                  ).adjustedSlots.map((slot) => {
-                    const assignedPhoto = slotAssignments[slot.id];
-                    const transform = getSlotTransform(slot.id);
-                    const isSelected = activeSlotId === slot.id;
-                    const isCircle = slot.shape === 'circle';
-                    const eff = getEffectiveSlotBounds(
-                      slot,
-                      activeRatio.exportWidth / activeRatio.exportHeight,
-                      isCircle ? mainCircleOverrides[slot.id] : undefined
-                    );
-
-                    return (
+                  return (
+                    <div
+                      style={{
+                        width: '100%',
+                        maxWidth: `${previewBoxW}px`,
+                        aspectRatio: `${activeRatio.aspect}`,
+                        background: selectedBackground.value,
+                      }}
+                      className="rounded-2xl relative shadow-2xl overflow-hidden transition-all select-none"
+                    >
+                      {/* Vùng chứa nội dung bên trong (áp đúng outer padding giống 100% khi xuất Canvas) */}
                       <div
-                        key={slot.id}
-                        data-collage-slot="true"
-                        onClick={() => setActiveSlotId(slot.id)}
-                        onMouseDown={(e) => {
-                          setActiveSlotId(slot.id);
-                          if (isCircle && circleDragMode === 'move_circle') {
-                            handleStartMainCircleDrag(e, slot.id);
-                            return;
-                          }
-                          setDraggingSlot(slot.id);
-                          setDragStartPos({ x: e.clientX, y: e.clientY });
-                        }}
-                        onMouseMove={(e) => {
-                          if (isCircle && circleDragMode === 'move_circle') return;
-                          if (draggingSlot === slot.id && dragStartPos) {
-                            const deltaX = (e.clientX - dragStartPos.x) / 3;
-                            const deltaY = (e.clientY - dragStartPos.y) / 3;
-                            updateSlotTransform(slot.id, {
-                              panX: Math.max(-60, Math.min(60, transform.panX + deltaX)),
-                              panY: Math.max(-60, Math.min(60, transform.panY + deltaY)),
-                            });
-                            setDragStartPos({ x: e.clientX, y: e.clientY });
-                          }
-                        }}
-                        onMouseUp={() => setDraggingSlot(null)}
-                        onMouseLeave={() => setDraggingSlot(null)}
                         style={{
-                          left: `calc(${eff.x}% + ${gap / 2}px)`,
-                          top: `calc(${eff.y}% + ${gap / 2}px)`,
-                          width: `calc(${eff.width}% - ${gap}px)`,
-                          height: `calc(${eff.height}% - ${gap}px)`,
-                          borderRadius: isCircle ? '9999px' : `${borderRadius}px`,
-                          zIndex: isCircle ? 25 : slot.zIndex || 1,
-                          border: isCircle
-                            ? `${slot.borderWidth || 4}px solid ${slot.borderColor || '#FFFFFF'}`
-                            : isSelected
-                            ? '2px solid #e11d48'
-                            : 'none',
-                          boxShadow: isCircle ? '0 8px 24px rgba(0,0,0,0.4)' : 'none',
+                          top: `${previewPadPx}px`,
+                          right: `${previewPadPx}px`,
+                          bottom: `${previewPadPx}px`,
+                          left: `${previewPadPx}px`,
                         }}
-                        className="absolute overflow-hidden cursor-move group transition-shadow"
+                        className="absolute"
                       >
-                        {assignedPhoto ? (
-                          <div className="w-full h-full relative">
-                            <img
-                              src={assignedPhoto}
-                              alt={`Slot ${slot.id}`}
-                              draggable={false}
+                        {(() => {
+                          const mainStoryInfo = resolveStoryHeaderAndSlots(
+                            activePreset,
+                            `main-${activePreset.id}`
+                          );
+                          if (!mainStoryInfo.isHeaderActive || mainStoryInfo.headerHeightPercent <= 0) {
+                            return null;
+                          }
+                          return (
+                            <div
+                              onClick={(e) => e.stopPropagation()}
+                              onMouseDown={(e) => e.stopPropagation()}
                               style={{
-                                transform: `scale(${transform.scale}) translate(${transform.panX}%, ${transform.panY}%) rotate(${transform.rotate}deg)`,
-                                transition:
-                                  draggingSlot === slot.id ? 'none' : 'transform 0.15s ease-out',
+                                left: `calc(0% + ${previewGapPx / 2}px)`,
+                                top: `calc(0% + ${previewGapPx / 2}px)`,
+                                width: `calc(100% - ${previewGapPx}px)`,
+                                height: `calc(${mainStoryInfo.headerHeightPercent}% - ${previewGapPx}px)`,
+                                backgroundColor: mainStoryInfo.themeColors.bg,
+                                borderBottom: `1px solid ${mainStoryInfo.themeColors.border}`,
+                                borderRadius: `${previewCornerPx}px`,
+                                zIndex: 30,
                               }}
-                              className="w-full h-full object-cover pointer-events-none select-none"
-                            />
-
-                            {/* Quick overlay actions on hover */}
-                            <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-2">
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateSlotTransform(slot.id, {
-                                    scale: Math.min(3, transform.scale + 0.15),
-                                  });
+                              className="absolute overflow-hidden flex flex-col justify-center px-3 py-2"
+                            >
+                              <textarea
+                                value={mainStoryInfo.resolvedText}
+                                onChange={(e) => {
+                                  setStoryTopText(e.target.value);
                                 }}
-                                className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
-                                title="Phóng to ảnh"
-                              >
-                                <ZoomIn className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateSlotTransform(slot.id, {
-                                    scale: Math.max(1, transform.scale - 0.15),
-                                  });
+                                placeholder="✍️ Nhập chữ tiêu đề phần trắng phía trên của Story..."
+                                rows={3}
+                                style={{
+                                  color: mainStoryInfo.themeColors.text,
+                                  fontSize: `${Math.max(12, Math.min(24, Math.round(16 * storyTopFontScale)))}px`,
+                                  lineHeight: '1.25',
                                 }}
-                                className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
-                                title="Thu nhỏ ảnh"
-                              >
-                                <ZoomOut className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateSlotTransform(slot.id, {
-                                    rotate: (transform.rotate + 90) % 360,
-                                  });
-                                }}
-                                className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
-                                title="Xoay 90 độ"
-                              >
-                                <RotateCw className="w-3.5 h-3.5" />
-                              </button>
-                              {uploadedPhotos.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const curIdx = uploadedPhotos.indexOf(assignedPhoto);
-                                    const nextPhoto =
-                                      uploadedPhotos[(curIdx + 1) % uploadedPhotos.length];
-                                    setSlotAssignments((prev) => ({
-                                      ...prev,
-                                      [slot.id]: nextPhoto,
-                                    }));
-                                  }}
-                                  className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-rose-700 shadow cursor-pointer"
-                                  title="Đổi sang ảnh tiếp theo trong bài"
-                                >
-                                  <Shuffle className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSlotAssignments((prev) => ({ ...prev, [slot.id]: '' }));
-                                }}
-                                className="p-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow cursor-pointer"
-                                title="Xóa ảnh khỏi ô"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
+                                className="w-full h-full bg-transparent resize-none border-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded font-black text-center flex items-center justify-center overflow-hidden p-1 cursor-text select-text"
+                              />
                             </div>
-                          </div>
-                        ) : (
-                          <div className="w-full h-full bg-slate-200/80 hover:bg-slate-300/80 flex flex-col items-center justify-center text-slate-500 cursor-pointer p-2">
-                            <Plus className="w-5 h-5 text-slate-400 group-hover:text-rose-600 transition-colors" />
-                            <span className="text-[10px] font-bold mt-1 text-center">
-                              Chọn ảnh ô #{slot.id + 1}
-                            </span>
-                          </div>
+                          );
+                        })()}
+
+                        {/* RENDER CÁC Ô ẢNH THEO TỶ LỆ PHẦN TRĂM */}
+                        {resolveStoryHeaderAndSlots(
+                          activePreset,
+                          `main-${activePreset.id}`
+                        ).adjustedSlots.map((slot) => {
+                          const assignedPhoto = slotAssignments[slot.id];
+                          const transform = getSlotTransform(slot.id);
+                          const isSelected = activeSlotId === slot.id;
+                          const isCircle = slot.shape === 'circle';
+                          const eff = getEffectiveSlotBounds(
+                            slot,
+                            activeRatio.exportWidth / activeRatio.exportHeight,
+                            isCircle ? mainCircleOverrides[slot.id] : undefined
+                          );
+
+                          return (
+                            <div
+                              key={slot.id}
+                              data-collage-slot="true"
+                              onClick={() => setActiveSlotId(slot.id)}
+                              onMouseDown={(e) => {
+                                setActiveSlotId(slot.id);
+                                if (isCircle && circleDragMode === 'move_circle') {
+                                  handleStartMainCircleDrag(e, slot.id);
+                                  return;
+                                }
+                                setDraggingSlot(slot.id);
+                                setDragStartPos({ x: e.clientX, y: e.clientY });
+                              }}
+                              onMouseMove={(e) => {
+                                if (isCircle && circleDragMode === 'move_circle') return;
+                                if (draggingSlot === slot.id && dragStartPos) {
+                                  const deltaX = (e.clientX - dragStartPos.x) / 3;
+                                  const deltaY = (e.clientY - dragStartPos.y) / 3;
+                                  updateSlotTransform(slot.id, {
+                                    panX: Math.max(-60, Math.min(60, transform.panX + deltaX)),
+                                    panY: Math.max(-60, Math.min(60, transform.panY + deltaY)),
+                                  });
+                                  setDragStartPos({ x: e.clientX, y: e.clientY });
+                                }
+                              }}
+                              onMouseUp={() => setDraggingSlot(null)}
+                              onMouseLeave={() => setDraggingSlot(null)}
+                              style={{
+                                left: `calc(${eff.x}% + ${previewGapPx / 2}px)`,
+                                top: `calc(${eff.y}% + ${previewGapPx / 2}px)`,
+                                width: `calc(${eff.width}% - ${previewGapPx}px)`,
+                                height: `calc(${eff.height}% - ${previewGapPx}px)`,
+                                borderRadius: isCircle ? '9999px' : `${previewCornerPx}px`,
+                                zIndex: isCircle ? 25 : slot.zIndex || 1,
+                                border: isCircle
+                                  ? `${slot.borderWidth || 4}px solid ${slot.borderColor || '#FFFFFF'}`
+                                  : isSelected
+                                  ? '2px solid #e11d48'
+                                  : 'none',
+                                boxShadow: isCircle ? '0 8px 24px rgba(0,0,0,0.4)' : 'none',
+                              }}
+                              className="absolute overflow-hidden cursor-move group transition-shadow"
+                            >
+                              {assignedPhoto ? (
+                                <div className="w-full h-full relative">
+                                  <img
+                                    src={assignedPhoto}
+                                    alt={`Slot ${slot.id}`}
+                                    draggable={false}
+                                    style={{
+                                      transform: `scale(${transform.scale}) translate(${transform.panX}%, ${transform.panY}%) rotate(${transform.rotate}deg)`,
+                                      transition:
+                                        draggingSlot === slot.id ? 'none' : 'transform 0.15s ease-out',
+                                    }}
+                                    className="w-full h-full object-cover pointer-events-none select-none"
+                                  />
+
+                                  {/* Quick overlay actions on hover */}
+                                  <div className="absolute inset-0 bg-black/45 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 p-2">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        updateSlotTransform(slot.id, {
+                                          scale: Math.min(3, transform.scale + 0.15),
+                                        });
+                                      }}
+                                      className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
+                                      title="Phóng to ảnh"
+                                    >
+                                      <ZoomIn className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        updateSlotTransform(slot.id, {
+                                          scale: Math.max(1, transform.scale - 0.15),
+                                        });
+                                      }}
+                                      className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
+                                      title="Thu nhỏ ảnh"
+                                    >
+                                      <ZoomOut className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        updateSlotTransform(slot.id, {
+                                          rotate: (transform.rotate + 90) % 360,
+                                        });
+                                      }}
+                                      className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-slate-800 shadow cursor-pointer"
+                                      title="Xoay 90 độ"
+                                    >
+                                      <RotateCw className="w-3.5 h-3.5" />
+                                    </button>
+                                    {uploadedPhotos.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const curIdx = uploadedPhotos.indexOf(assignedPhoto);
+                                          const nextPhoto =
+                                            uploadedPhotos[(curIdx + 1) % uploadedPhotos.length];
+                                          setSlotAssignments((prev) => ({
+                                            ...prev,
+                                            [slot.id]: nextPhoto,
+                                          }));
+                                        }}
+                                        className="p-1.5 rounded-lg bg-white/90 hover:bg-white text-rose-700 shadow cursor-pointer"
+                                        title="Đổi sang ảnh tiếp theo trong bài"
+                                      >
+                                        <Shuffle className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setSlotAssignments((prev) => ({ ...prev, [slot.id]: '' }));
+                                      }}
+                                      className="p-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow cursor-pointer"
+                                      title="Xóa ảnh khỏi ô"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-full h-full bg-slate-200/80 hover:bg-slate-300/80 flex flex-col items-center justify-center text-slate-500 cursor-pointer p-2">
+                                  <Plus className="w-5 h-5 text-slate-400 group-hover:text-rose-600 transition-colors" />
+                                  <span className="text-[10px] font-bold mt-1 text-center">
+                                    Chọn ảnh ô #{slot.id + 1}
+                                  </span>
+                                </div>
+                              )}
+
+                              {slot.badge?.text && (
+                                <span
+                                  style={{
+                                    top: `${slot.badge.topOffsetPercent ?? (slot.badge.style === 'pill' ? 4 : 0)}%`,
+                                    left: `${slot.badge.leftOffsetPercent ?? (slot.badge.style === 'pill' ? 3 : 0)}%`,
+                                    backgroundColor: slot.badge.bg || '#FFFFFF',
+                                    color: slot.badge.textColor || '#EF0000',
+                                    fontSize: `${Math.max(10, Math.round(previewBoxW * (slot.badge.style === 'pill' ? 0.036 : 0.048)))}px`,
+                                  }}
+                                  className={`absolute z-20 pointer-events-none select-none font-black uppercase leading-none px-1.5 py-0.5 shadow-xs ${
+                                    slot.badge.style === 'pill' ? 'rounded-full' : ''
+                                  }`}
+                                >
+                                  {slot.badge.text}
+                                </span>
+                              )}
+
+                              {/* Number badge */}
+                              <span
+                                className={`absolute top-1 ${
+                                  slot.badge?.text ? 'right-1' : 'left-1'
+                                } bg-black/60 text-white text-[9px] font-bold px-1 rounded pointer-events-none`}
+                              >
+                                #{slot.id + 1}
+                              </span>
+                            </div>
+                          );
+                        })}
+
+                        {/* DIVIDER LINE & OPTIONAL DIVIDER TEXT (BEFORE/AFTER SEAM OR SWIPE UP) */}
+                        {activePreset.dividerBadge?.enabled && (
+                          <>
+                            {activePreset.dividerBadge.showDividerLine && (
+                              <div
+                                style={{
+                                  top: `calc(${activePreset.dividerBadge.positionYPercent ?? 50}%)`,
+                                  left: `${previewGapPx / 2}px`,
+                                  right: `${previewGapPx / 2}px`,
+                                  height: `${Math.max(2, Math.round(((activePreset.dividerBadge.dividerLineWidth || 4) / 1080) * previewBoxW))}px`,
+                                  backgroundColor:
+                                    activePreset.dividerBadge.dividerLineColor || '#FFFFFF',
+                                }}
+                                className="absolute -translate-y-1/2 z-25 pointer-events-none"
+                              />
+                            )}
+                            {activePreset.dividerBadge.text?.trim() && (
+                              <div
+                                style={{
+                                  top: `${activePreset.dividerBadge.positionYPercent ?? 50}%`,
+                                  color: activePreset.dividerBadge.textColor || '#FFE500',
+                                  fontSize: `${Math.max(11, Math.round(previewBoxW * 0.044))}px`,
+                                  textShadow: `-1.5px -1.5px 0 ${activePreset.dividerBadge.strokeColor || '#000'}, 1.5px -1.5px 0 ${activePreset.dividerBadge.strokeColor || '#000'}, -1.5px 1.5px 0 ${activePreset.dividerBadge.strokeColor || '#000'}, 1.5px 1.5px 0 ${activePreset.dividerBadge.strokeColor || '#000'}`,
+                                }}
+                                className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2 z-25 font-black tracking-wide pointer-events-none select-none whitespace-nowrap"
+                              >
+                                {activePreset.dividerBadge.text}
+                              </div>
+                            )}
+                          </>
                         )}
-
-                        {/* Number badge */}
-                        <span className="absolute top-1 left-1 bg-black/60 text-white text-[9px] font-bold px-1 rounded pointer-events-none">
-                          #{slot.id + 1}
-                        </span>
                       </div>
-                    );
-                  })}
 
-                  {/* OVERLAY WATERMARK / EMBOSSED 3D COPYRIGHT LOGO */}
-                  {showWatermark && watermarkText.trim() && (
-                    <div
-                      style={{
-                        opacity: Math.max(0.15, Math.min(1, watermarkOpacity / 100)),
-                        ...(watermarkPosition === 'center'
-                          ? {
-                              top: '50%',
-                              left: '50%',
-                              transform: `translate(-50%, -50%) ${
-                                watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
-                              }`,
-                            }
-                          : watermarkPosition === 'top'
-                          ? {
-                              top: '9%',
-                              left: '50%',
-                              transform: `translate(-50%, -50%) ${
-                                watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
-                              }`,
-                            }
-                          : watermarkPosition === 'bottom'
-                          ? {
-                              top: '91%',
-                              left: '50%',
-                              transform: `translate(-50%, -50%) ${
-                                watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
-                              }`,
-                            }
-                          : watermarkPosition === 'bottom_right'
-                          ? {
-                              bottom: '4.5%',
-                              right: '4.5%',
-                              transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
-                            }
-                          : watermarkPosition === 'bottom_left'
-                          ? {
-                              bottom: '4.5%',
-                              left: '4.5%',
-                              transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
-                            }
-                          : {
-                              top: '4.5%',
-                              right: '4.5%',
-                              transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
-                            }),
-                      }}
-                      className="absolute z-30 pointer-events-none select-none transition-all"
-                    >
-                      <div
-                        style={{
-                          color: watermarkTextColor,
-                          fontSize: `${Math.round((watermarkFontSize / 1080) * 420)}px`,
-                          backgroundColor:
-                            watermarkStyle === 'solid_banner'
-                              ? watermarkBgColor
-                              : watermarkStyle === 'glass_badge'
-                              ? 'rgba(15, 23, 42, 0.5)'
-                              : 'transparent',
-                          backdropFilter: watermarkStyle === 'glass_badge' ? 'blur(4px)' : 'none',
-                          border:
-                            watermarkStyle === 'diagonal_stamp'
-                              ? `2px solid ${watermarkTextColor}`
-                              : watermarkStyle === 'glass_badge'
-                              ? '1.5px solid rgba(255, 255, 255, 0.65)'
-                              : 'none',
-                          textShadow:
-                            watermarkStyle === 'solid_banner'
-                              ? 'none'
-                              : '-1px -1px 0px rgba(255,255,255,0.85), 1.5px 1.5px 0px rgba(0,0,0,0.75), 0px 2px 6px rgba(0,0,0,0.6)',
-                          WebkitTextStroke:
-                            watermarkStyle === 'embossed_logo' || watermarkStyle === 'diagonal_stamp'
-                              ? '0.6px rgba(0,0,0,0.45)'
-                              : 'none',
-                        }}
-                        className={`px-3.5 py-1.5 font-black tracking-wider whitespace-nowrap text-center ${
-                          watermarkStyle === 'glass_badge' ? 'rounded-full shadow-lg' : 'rounded-lg'
-                        }`}
-                      >
-                        {watermarkText}
-                      </div>
+                      {/* OVERLAY WATERMARK / EMBOSSED 3D COPYRIGHT LOGO */}
+                      {showWatermark && watermarkText.trim() && (
+                        <div
+                          style={{
+                            opacity: Math.max(0.15, Math.min(1, watermarkOpacity / 100)),
+                            ...(watermarkPosition === 'center'
+                              ? {
+                                  top: '50%',
+                                  left: '50%',
+                                  transform: `translate(-50%, -50%) ${
+                                    watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
+                                  }`,
+                                }
+                              : watermarkPosition === 'top'
+                              ? {
+                                  top: '9%',
+                                  left: '50%',
+                                  transform: `translate(-50%, -50%) ${
+                                    watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
+                                  }`,
+                                }
+                              : watermarkPosition === 'bottom'
+                              ? {
+                                  top: '91%',
+                                  left: '50%',
+                                  transform: `translate(-50%, -50%) ${
+                                    watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : ''
+                                  }`,
+                                }
+                              : watermarkPosition === 'bottom_right'
+                              ? {
+                                  bottom: '4.5%',
+                                  right: '4.5%',
+                                  transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
+                                }
+                              : watermarkPosition === 'bottom_left'
+                              ? {
+                                  bottom: '4.5%',
+                                  left: '4.5%',
+                                  transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
+                                }
+                              : {
+                                  top: '4.5%',
+                                  right: '4.5%',
+                                  transform: watermarkStyle === 'diagonal_stamp' ? 'rotate(-18deg)' : 'none',
+                                }),
+                          }}
+                          className="absolute z-30 pointer-events-none select-none transition-all"
+                        >
+                          <div
+                            style={{
+                              color: watermarkTextColor,
+                              fontSize: `${Math.round((watermarkFontSize / 1080) * previewBoxW)}px`,
+                              backgroundColor:
+                                watermarkStyle === 'solid_banner'
+                                  ? watermarkBgColor
+                                  : watermarkStyle === 'glass_badge'
+                                  ? 'rgba(15, 23, 42, 0.5)'
+                                  : 'transparent',
+                              backdropFilter: watermarkStyle === 'glass_badge' ? 'blur(4px)' : 'none',
+                              border:
+                                watermarkStyle === 'diagonal_stamp'
+                                  ? `2px solid ${watermarkTextColor}`
+                                  : watermarkStyle === 'glass_badge'
+                                  ? '1.5px solid rgba(255, 255, 255, 0.65)'
+                                  : 'none',
+                              textShadow:
+                                watermarkStyle === 'solid_banner'
+                                  ? 'none'
+                                  : '-1px -1px 0px rgba(255,255,255,0.85), 1.5px 1.5px 0px rgba(0,0,0,0.75), 0px 2px 6px rgba(0,0,0,0.6)',
+                              WebkitTextStroke:
+                                watermarkStyle === 'embossed_logo' || watermarkStyle === 'diagonal_stamp'
+                                  ? '0.6px rgba(0,0,0,0.45)'
+                                  : 'none',
+                            }}
+                            className={`px-3.5 py-1.5 font-black tracking-wider whitespace-nowrap text-center ${
+                              watermarkStyle === 'glass_badge' ? 'rounded-full shadow-lg' : 'rounded-lg'
+                            }`}
+                          >
+                            {watermarkText}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* OVERLAY NHÃN GÓC CUỐI ẢNH BÊN PHẢI ("Full Comments 👇") */}
+                      {showCornerCta && cornerCtaText.trim() && (
+                        <div
+                          style={{
+                            bottom: '3.2%',
+                            ...(cornerCtaPosition === 'bottom_right'
+                              ? { right: '3.2%' }
+                              : cornerCtaPosition === 'bottom_left'
+                              ? { left: '3.2%' }
+                              : { left: '50%', transform: 'translateX(-50%)' }),
+                          }}
+                          className="absolute z-30 pointer-events-none select-none transition-all"
+                        >
+                          <div
+                            style={{
+                              fontSize: `${Math.round((cornerCtaFontSize / 1080) * previewBoxW)}px`,
+                              backgroundColor: 'rgba(10, 10, 12, 0.86)',
+                              border: '1.5px solid rgba(255, 255, 255, 0.25)',
+                              boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)',
+                            }}
+                            className="px-3.5 py-1 rounded-full text-white font-extrabold tracking-tight whitespace-nowrap text-center"
+                          >
+                            {cornerCtaText}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                  )}
-
-                  {/* OVERLAY NHÃN GÓC CUỐI ẢNH BÊN PHẢI ("Full Comments 👇") */}
-                  {showCornerCta && cornerCtaText.trim() && (
-                    <div
-                      style={{
-                        bottom: '3.2%',
-                        ...(cornerCtaPosition === 'bottom_right'
-                          ? { right: '3.2%' }
-                          : cornerCtaPosition === 'bottom_left'
-                          ? { left: '3.2%' }
-                          : { left: '50%', transform: 'translateX(-50%)' }),
-                      }}
-                      className="absolute z-30 pointer-events-none select-none transition-all"
-                    >
-                      <div
-                        style={{
-                          fontSize: `${Math.round((cornerCtaFontSize / 1080) * 420)}px`,
-                          backgroundColor: 'rgba(10, 10, 12, 0.86)',
-                          border: '1.5px solid rgba(255, 255, 255, 0.25)',
-                          boxShadow: '0 4px 14px rgba(0, 0, 0, 0.5)',
-                        }}
-                        className="px-3.5 py-1 rounded-full text-white font-extrabold tracking-tight whitespace-nowrap text-center"
-                      >
-                        {cornerCtaText}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* THANH TẢI ẢNH TRỰC TIẾP NGAY DƯỚI KHUNG CHỈNH ẢNH */}
                 <div className="w-full mt-4 pt-3.5 border-t border-slate-800/90 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
@@ -6502,6 +6745,7 @@ export function ImageStudioTab({
                     <option value="2-circle-bottom-right">1 Nền + 1 Tròn góc</option>
                     <option value="3-circle-split-h-right">2 Ngang + 1 Tròn phải</option>
                     <option value="story-fb-before-after-classic">Story FB (Before/After)</option>
+                    <option value="story-fb-before-after-white-tag">Story FB (Before/After Nền Trắng)</option>
                     <option value="story-fb-headline-now-then">Story FB (Báo chí Viral)</option>
                     <option value="4-grid-2x2">Lưới 4 ô (2x2 Classic)</option>
                     <option value="2-split-v">2 Cột đôi song song</option>

@@ -394,6 +394,8 @@ export interface CollageSlot {
     textColor?: string;
     style?: 'rect' | 'pill';
     position?: string;
+    topOffsetPercent?: number;
+    leftOffsetPercent?: number;
   };
 }
 
