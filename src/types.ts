@@ -409,6 +409,16 @@ export interface StoryHeaderConfig {
   subtitleColor?: string;
 }
 
+export interface BottomEditorialConfig {
+  enabled?: boolean;
+  gradientHeightPercent?: number;
+  defaultTitle?: string;
+  defaultHighlight?: string;
+  highlightColor?: string;
+  accentLineColor?: string;
+  showAccentLines?: boolean;
+}
+
 export interface CollagePreset {
   id: string;
   name: string;
@@ -417,6 +427,7 @@ export interface CollagePreset {
   recommendedRatio?: string;
   hasCircleAccent?: boolean;
   storyHeader?: StoryHeaderConfig;
+  bottomOverlay?: BottomEditorialConfig;
   dividerBadge?: {
     enabled?: boolean;
     text?: string;

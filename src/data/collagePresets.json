@@ -1574,5 +1574,44 @@
         "height": 33.333
       }
     ]
+  },
+  {
+    "id": "3-editorial-split-bottom-title",
+    "name": "3 Ảnh Tạp Chí (2 Trái + 1 Lớn Phải) + Chữ Dưới",
+    "photoCount": 3,
+    "category": "creative",
+    "recommendedRatio": "3:4",
+    "bottomOverlay": {
+      "enabled": true,
+      "gradientHeightPercent": 44,
+      "defaultTitle": "From Hollywood's Golden Comedy Era to Back in Action — Cameron Diaz Never Lost Her Star Power",
+      "defaultHighlight": "Cameron Diaz",
+      "highlightColor": "#F5C451",
+      "accentLineColor": "#E5B84B",
+      "showAccentLines": true
+    },
+    "slots": [
+      {
+        "id": 0,
+        "x": 0,
+        "y": 0,
+        "width": 48.5,
+        "height": 42
+      },
+      {
+        "id": 1,
+        "x": 0,
+        "y": 42,
+        "width": 48.5,
+        "height": 58
+      },
+      {
+        "id": 2,
+        "x": 48.5,
+        "y": 0,
+        "width": 51.5,
+        "height": 100
+      }
+    ]
   }
 ]

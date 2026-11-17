@@ -146,6 +146,11 @@ const AUTO_MULTI_FRAME_IDS: {
     ratioId: '3:4',
     badge: 'Banner Trên + 2 Dưới + Tròn',
   },
+  {
+    presetId: '3-editorial-split-bottom-title',
+    ratioId: '3:4',
+    badge: '3 Ảnh Tạp Chí + Chữ Dưới',
+  },
 ];
 
 // Hàng 2: 5 mẫu ảnh Story (Kích thước mặc định: 9:16)
@@ -252,18 +257,33 @@ export function ImageStudioTab({
   const [extractedRawUrls, setExtractedRawUrls] = useState<string[]>([]);
   const [extractedArticleBodyText, setExtractedArticleBodyText] = useState<string>('');
 
-  // --- HÀNG 1: 8 MẪU ẢNH CHO BÀI VIẾT (ƯU TIÊN MẶC ĐỊNH 3:4) ---
-  const favStorageKey = `celeb24h_fav8_post_v2_${currentUser?.id || currentUser?.name || 'default'}`;
+  // --- HÀNG 1: 9 MẪU ẢNH CHO BÀI VIẾT (ƯU TIÊN MẶC ĐỊNH 3:4) ---
+  const favStorageKey = `celeb24h_fav9_post_v3_${currentUser?.id || currentUser?.name || 'default'}`;
   const [favoritePresetIds, setFavoritePresetIds] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem(favStorageKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
+      const savedV3 = localStorage.getItem(favStorageKey);
+      if (savedV3) {
+        const parsed = JSON.parse(savedV3);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const valid = parsed.filter((id: string) =>
             COLLAGE_PRESETS.some((p) => p.id === id)
           );
-          if (valid.length === 8) return valid;
+          if (valid.length === 9) return valid;
+        }
+      }
+      const legacyKey = `celeb24h_fav8_post_v2_${currentUser?.id || currentUser?.name || 'default'}`;
+      const savedV2 = localStorage.getItem(legacyKey);
+      if (savedV2) {
+        const parsed = JSON.parse(savedV2);
+        if (Array.isArray(parsed) && parsed.length === 8) {
+          const valid = parsed.filter((id: string) =>
+            COLLAGE_PRESETS.some((p) => p.id === id)
+          );
+          if (valid.length === 8) {
+            return valid.includes('3-editorial-split-bottom-title')
+              ? [...valid, '3-top-big'].slice(0, 9)
+              : [...valid, '3-editorial-split-bottom-title'];
+          }
         }
       }
     } catch {
@@ -340,17 +360,17 @@ export function ImageStudioTab({
         return prev.filter((id) => id !== presetId);
       } else {
         const presetObj = COLLAGE_PRESETS.find((p) => p.id === presetId);
-        if (prev.length >= 8) {
-          const next = [...prev.slice(0, 7), presetId];
+        if (prev.length >= 9) {
+          const next = [...prev.slice(0, 8), presetId];
           setExportNotice(
-            `Đã ghim "${presetObj?.name || presetId}" vào vị trí #8 trong Hàng 1 (8 mẫu bài viết)!`
+            `Đã ghim "${presetObj?.name || presetId}" vào vị trí #9 trong Hàng 1 (9 mẫu bài viết)!`
           );
           setTimeout(() => setExportNotice(null), 3000);
           return next;
         }
         const next = [...prev, presetId];
         setExportNotice(
-          `Đã thêm "${presetObj?.name || presetId}" vào Hàng 1 (${next.length}/8 mẫu bài viết)!`
+          `Đã thêm "${presetObj?.name || presetId}" vào Hàng 1 (${next.length}/9 mẫu bài viết)!`
         );
         setTimeout(() => setExportNotice(null), 2500);
         return next;
@@ -358,7 +378,7 @@ export function ImageStudioTab({
     });
   }, []);
 
-  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ #1 đến #8) trong Hàng 1 (8 mẫu bài viết)
+  // Hàm đổi mẫu tại đúng 1 ô cụ thể (từ #1 đến #9) trong Hàng 1 (9 mẫu bài viết)
   const handleReplaceFavoriteSlot = useCallback((slotIndex: number, newPresetId: string) => {
     setFavoritePresetIds((prev) => {
       const next = [...prev];
@@ -370,7 +390,7 @@ export function ImageStudioTab({
       } else {
         next[slotIndex] = newPresetId;
       }
-      return next.slice(0, 8);
+      return next.slice(0, 9);
     });
   }, []);
 
@@ -393,7 +413,7 @@ export function ImageStudioTab({
   const handleResetDefaultFavorites = useCallback(() => {
     setFavoritePresetIds(AUTO_MULTI_FRAME_IDS.map((item) => item.presetId));
     setFavoriteStoryPresetIds(AUTO_STORY_FRAME_IDS.map((item) => item.presetId));
-    setExportNotice('Đã khôi phục mặc định: Hàng 1 (8 mẫu bài viết 3:4) & Hàng 2 (5 mẫu Story 9:16)!');
+    setExportNotice('Đã khôi phục mặc định: Hàng 1 (9 mẫu bài viết 3:4) & Hàng 2 (5 mẫu Story 9:16)!');
     setTimeout(() => setExportNotice(null), 2500);
   }, []);
 
@@ -446,6 +466,12 @@ export function ImageStudioTab({
   const [storyHeaderToggleMap, setStoryHeaderToggleMap] = useState<Record<string, 'on' | 'off'>>(
     {}
   );
+
+  // --- PHẦN VIẾT CHỮ TẠP CHÍ PHỦ ĐÁY ẢNH (MẪU 3 ẢNH BÀI VIẾT: SERIF TRẮNG + TÔ VÀNG + CHỈ VÀNG) ---
+  const [editorialBottomTitle, setEditorialBottomTitle] = useState<string>('');
+  const [editorialHighlightText, setEditorialHighlightText] = useState<string>('');
+  const [editorialTitleFontScale, setEditorialTitleFontScale] = useState<number>(1);
+  const [showEditorialBottomOverlay, setShowEditorialBottomOverlay] = useState<boolean>(true);
 
   // Per-slot photo assignments and transform states
   const [slotAssignments, setSlotAssignments] = useState<Record<number, string>>({
@@ -980,7 +1006,10 @@ export function ImageStudioTab({
         imageCount: extractedPhotos.length,
       });
       if (data.title && String(data.title).trim()) {
-        setStoryTopText(String(data.title).trim());
+        const cleanedT = String(data.title).trim();
+        setStoryTopText(cleanedT);
+        setEditorialBottomTitle(cleanedT);
+        setEditorialHighlightText('');
         setPerStoryCustomTopText({});
       }
       setShowMultiFrameGallery(true);
@@ -1556,12 +1585,12 @@ export function ImageStudioTab({
     return COLLAGE_PRESETS.filter((p) => p.category === categoryFilter);
   }, [categoryFilter, favoritePresetIds]);
 
-  // HÀNG 1: Danh sách 8 mẫu ảnh cho bài viết (Kích thước ưu tiên mặc định: 3:4)
+  // HÀNG 1: Danh sách 9 mẫu ảnh cho bài viết (Kích thước ưu tiên mặc định: 3:4)
   const multiFrameVariations = useMemo(() => {
     const ratio34 = COLLAGE_RATIOS.find((r) => r.id === '3:4') || COLLAGE_RATIOS[3];
     const ratio45 = COLLAGE_RATIOS.find((r) => r.id === '4:5') || COLLAGE_RATIOS[1];
 
-    let baseList = favoritePresetIds.slice(0, 8).map((presetId, idx) => {
+    let baseList = favoritePresetIds.slice(0, 9).map((presetId, idx) => {
       const preset = COLLAGE_PRESETS.find((p) => p.id === presetId) || COLLAGE_PRESETS[0];
       const defaultMeta = AUTO_MULTI_FRAME_IDS.find((m) => m.presetId === preset.id);
       return {
@@ -1577,7 +1606,7 @@ export function ImageStudioTab({
     if (selectedQuickRequirement === 'circle_pip') {
       const circlePresets = COLLAGE_PRESETS.filter(
         (p) => p.hasCircleAccent && !p.id.startsWith('story-fb')
-      ).slice(0, 8);
+      ).slice(0, 9);
       baseList = circlePresets.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
@@ -1589,7 +1618,7 @@ export function ImageStudioTab({
     } else if (selectedQuickRequirement === '2_photos') {
       const p2 = COLLAGE_PRESETS.filter(
         (p) => p.photoCount === 2 && !p.id.startsWith('story-fb')
-      ).slice(0, 8);
+      ).slice(0, 9);
       baseList = p2.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
@@ -1601,7 +1630,7 @@ export function ImageStudioTab({
     } else if (selectedQuickRequirement === '3_photos') {
       const p3 = COLLAGE_PRESETS.filter(
         (p) => p.photoCount === 3 && !p.id.startsWith('story-fb')
-      ).slice(0, 8);
+      ).slice(0, 9);
       baseList = p3.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
@@ -1613,7 +1642,7 @@ export function ImageStudioTab({
     } else if (selectedQuickRequirement === '4_photos') {
       const p4 = COLLAGE_PRESETS.filter(
         (p) => p.photoCount === 4 && !p.id.startsWith('story-fb')
-      ).slice(0, 8);
+      ).slice(0, 9);
       baseList = p4.map((preset, idx) => ({
         slotIdx: idx,
         presetId: preset.id,
@@ -2018,6 +2047,81 @@ export function ImageStudioTab({
     [storyHeaderToggleMap, perStoryCustomTopText, storyTopText, storyTopTheme]
   );
 
+  // Phân tích tiêu đề chân ảnh tạp chí (Serif trắng + tô vàng *cụm chữ* hoặc khớp highlightPhrase)
+  const resolveEditorialOverlay = useCallback(
+    (preset: CollagePreset) => {
+      const cfg = preset.bottomOverlay;
+      const isEnabled = Boolean(cfg?.enabled && showEditorialBottomOverlay);
+      if (!isEnabled || !cfg) {
+        return { isEnabled: false as const };
+      }
+
+      const customTitle = editorialBottomTitle.trim();
+      const extractedTitle = extractedArticleInfo?.title?.trim() || '';
+      const rawTitle = customTitle || extractedTitle || cfg.defaultTitle || '';
+
+      const usingSampleDefault = !customTitle && !extractedTitle;
+      const highlightPhrase =
+        editorialHighlightText.trim() ||
+        (usingSampleDefault
+          ? cfg.defaultHighlight || ''
+          : similarSearchQuery.trim() || detectedSimilarActors[0] || '');
+
+      const highlightColor = cfg.highlightColor || '#F5C451';
+      const accentLineColor = cfg.accentLineColor || '#E5B84B';
+      const gradientHeightPercent = cfg.gradientHeightPercent ?? 44;
+      const showAccentLines = cfg.showAccentLines !== false;
+
+      // Tokenize text thành từng đoạn có đánh dấu isHighlight hoặc xuống dòng
+      type StyledChunk = { text: string; isHighlight: boolean; isNewline?: boolean };
+      const segments: StyledChunk[] = [];
+      const linesRaw = rawTitle.split(/\r?\n/);
+
+      linesRaw.forEach((lineStr, lineIdx) => {
+        if (lineIdx > 0) {
+          segments.push({ text: '', isHighlight: false, isNewline: true });
+        }
+        const starParts = lineStr.split(/(\*[^*]+\*)/g);
+        for (const part of starParts) {
+          if (!part) continue;
+          if (part.startsWith('*') && part.endsWith('*') && part.length > 2) {
+            segments.push({ text: part.slice(1, -1), isHighlight: true });
+          } else if (highlightPhrase && highlightPhrase.length >= 2) {
+            const escaped = highlightPhrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const splitRe = new RegExp(`(${escaped})`, 'gi');
+            const subParts = part.split(splitRe);
+            for (const sub of subParts) {
+              if (!sub) continue;
+              const isMatch = sub.toLowerCase() === highlightPhrase.toLowerCase();
+              segments.push({ text: sub, isHighlight: isMatch });
+            }
+          } else {
+            segments.push({ text: part, isHighlight: false });
+          }
+        }
+      });
+
+      return {
+        isEnabled: true as const,
+        rawTitle,
+        highlightPhrase,
+        highlightColor,
+        accentLineColor,
+        gradientHeightPercent,
+        showAccentLines,
+        segments,
+      };
+    },
+    [
+      showEditorialBottomOverlay,
+      editorialBottomTitle,
+      editorialHighlightText,
+      extractedArticleInfo?.title,
+      similarSearchQuery,
+      detectedSimilarActors,
+    ]
+  );
+
   // Hàm vẽ Canvas dùng chung cho cả Khung Chính và từng Khung trong Bộ Sưu Tập Đa Khung
   const generateCanvasForConfig = async (options: {
     preset: CollagePreset;
@@ -2336,6 +2440,123 @@ export function ImageStudioTab({
       }
     }
 
+    // 2C. Draw Editorial Bottom Gradient + Centered Bold Serif Headline (White + Gold Highlight) + Gold Line
+    const edOverlay = resolveEditorialOverlay(preset);
+    if (edOverlay.isEnabled && edOverlay.rawTitle) {
+      ctx.save();
+      const edX = padPx;
+      const edW = innerW;
+      const edH = (edOverlay.gradientHeightPercent / 100) * innerH;
+      const edTop = padPx + innerH - edH;
+
+      const grad = ctx.createLinearGradient(0, edTop, 0, padPx + innerH);
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      grad.addColorStop(0.32, 'rgba(0, 0, 0, 0.44)');
+      grad.addColorStop(0.68, 'rgba(0, 0, 0, 0.84)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0.96)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(edX, edTop, edW, edH);
+
+      // Chuyển segments thành danh sách token từng từ (kèm khoảng trắng/xuống dòng) để căn giữa & tô vàng chuẩn xác
+      type WordRun = { word: string; isHighlight: boolean; newline?: boolean };
+      const wordRuns: WordRun[] = [];
+      for (const seg of edOverlay.segments) {
+        if (seg.isNewline) {
+          wordRuns.push({ word: '', isHighlight: false, newline: true });
+          continue;
+        }
+        const pieces = seg.text.trim().split(/\s+/).filter(Boolean);
+        for (const p of pieces) {
+          wordRuns.push({ word: p, isHighlight: seg.isHighlight });
+        }
+      }
+
+      const plainLen = edOverlay.rawTitle.length;
+      const autoAdjust = plainLen > 95 ? 0.82 : plainLen > 70 ? 0.92 : 1;
+      const edFontPx = Math.round(
+        Math.max(24, Math.min(72, targetW * 0.047 * editorialTitleFontScale * autoAdjust))
+      );
+      const normalFont = `700 ${edFontPx}px Georgia, "Times New Roman", serif`;
+      const highlightFont = `italic 700 ${edFontPx}px Georgia, "Times New Roman", serif`;
+      const maxTextW = edW * 0.9;
+
+      ctx.font = normalFont;
+      const spaceW = ctx.measureText(' ').width;
+
+      const wrappedLines: WordRun[][] = [];
+      let curLine: WordRun[] = [];
+      let curLineW = 0;
+
+      for (const run of wordRuns) {
+        if (run.newline) {
+          if (curLine.length > 0) wrappedLines.push(curLine);
+          curLine = [];
+          curLineW = 0;
+          continue;
+        }
+        ctx.font = run.isHighlight ? highlightFont : normalFont;
+        const wWidth = ctx.measureText(run.word).width;
+        const nextW = curLine.length === 0 ? wWidth : curLineW + spaceW + wWidth;
+        if (nextW > maxTextW && curLine.length > 0) {
+          wrappedLines.push(curLine);
+          curLine = [run];
+          curLineW = wWidth;
+        } else {
+          curLine.push(run);
+          curLineW = nextW;
+        }
+      }
+      if (curLine.length > 0) wrappedLines.push(curLine);
+
+      const finalLines = wrappedLines.slice(0, 5);
+      const lineHeightPx = edFontPx * 1.18;
+      const bottomMarginPx = edOverlay.showAccentLines ? targetH * 0.045 : targetH * 0.032;
+      const firstBaselineY =
+        padPx + innerH - bottomMarginPx - (finalLines.length - 1) * lineHeightPx;
+
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'alphabetic';
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.92)';
+      ctx.shadowBlur = Math.max(6, edFontPx * 0.25);
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = Math.max(2, edFontPx * 0.06);
+
+      finalLines.forEach((lineWords, lIdx) => {
+        let totalLineW = 0;
+        lineWords.forEach((rw, rIdx) => {
+          ctx.font = rw.isHighlight ? highlightFont : normalFont;
+          const needSpace = rIdx > 0 && !/^[,.;:!?)\]]/.test(rw.word);
+          totalLineW += ctx.measureText(rw.word).width + (needSpace ? spaceW : 0);
+        });
+        let drawX = edX + (edW - totalLineW) / 2;
+        const drawY = firstBaselineY + lIdx * lineHeightPx;
+
+        lineWords.forEach((rw, rIdx) => {
+          if (rIdx > 0 && !/^[,.;:!?)\]]/.test(rw.word)) drawX += spaceW;
+          ctx.font = rw.isHighlight ? highlightFont : normalFont;
+          ctx.fillStyle = rw.isHighlight ? edOverlay.highlightColor : '#FFFFFF';
+          ctx.fillText(rw.word, drawX, drawY);
+          drawX += ctx.measureText(rw.word).width;
+        });
+      });
+
+      if (edOverlay.showAccentLines) {
+        const barY = padPx + innerH - bottomMarginPx * 0.45;
+        const barW = edW * 0.84;
+        const barX = edX + (edW - barW) / 2;
+        const barH = Math.max(2, Math.round(targetW * 0.0025));
+        ctx.shadowBlur = 0;
+        const goldGrad = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+        goldGrad.addColorStop(0, 'rgba(229, 184, 75, 0)');
+        goldGrad.addColorStop(0.2, edOverlay.accentLineColor);
+        goldGrad.addColorStop(0.8, edOverlay.accentLineColor);
+        goldGrad.addColorStop(1, 'rgba(229, 184, 75, 0)');
+        ctx.fillStyle = goldGrad;
+        ctx.fillRect(barX, barY - barH / 2, barW, barH);
+      }
+      ctx.restore();
+    }
+
     // 3. Draw Watermark / Embossed 3D Copyright Logo
     if (showWatermark && watermarkText.trim()) {
       ctx.save();
@@ -2470,7 +2691,7 @@ export function ImageStudioTab({
     }
 
     // 4. Draw Bottom-Right Pill Badge ("Full Comments 👇")
-    if (showCornerCta && cornerCtaText.trim()) {
+    if (showCornerCta && cornerCtaText.trim() && !edOverlay.isEnabled) {
       ctx.save();
       const ctaLabel = cornerCtaText.trim();
       const ctaScaledFont = Math.round((cornerCtaFontSize / 1080) * targetW);
@@ -3062,7 +3283,7 @@ export function ImageStudioTab({
                   Yêu cầu ghép nhanh:
                 </span>
                 {[
-                  { id: 'all_frames', label: `⭐ 8 Mẫu Hay Dùng Nhất (${favoritePresetIds.length}/8)` },
+                  { id: 'all_frames', label: `⭐ 9 Mẫu Hay Dùng Nhất (${favoritePresetIds.length}/9)` },
                   { id: 'circle_pip', label: '⭕ Khung Tròn Góc / Tròn Tâm (PiP)' },
                   { id: 'story_fb', label: '📱 Story FB 9:16 Viral' },
                   { id: 'feed_vertical', label: '📐 Chuẩn Feed Dọc 4:5' },
@@ -3792,29 +4013,29 @@ export function ImageStudioTab({
                       }`}
                     >
                       <Settings2 className="w-3 h-3" />
-                      <span>{showFavoriteManager ? 'Đóng chọn mẫu' : '⭐ Chọn 8 Mẫu Bài & 4 Mẫu Story'}</span>
+                      <span>{showFavoriteManager ? 'Đóng chọn mẫu' : '⭐ Chọn 9 Mẫu Bài & 5 Mẫu Story'}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleRandomizeAll8FramesRichly()}
                       className="inline-flex items-center gap-1 px-3 py-1 rounded-lg bg-gradient-to-r from-rose-600 to-orange-500 hover:from-rose-700 hover:to-orange-600 text-white text-[11px] font-extrabold cursor-pointer shadow-xs transition-all"
-                      title="Đảo ngẫu nhiên tổ hợp ảnh mới từ Kho Tự Ghép cho toàn bộ 8 khung Bài Viết & 4 khung Story"
+                      title="Đảo ngẫu nhiên tổ hợp ảnh mới từ Kho Tự Ghép cho toàn bộ 9 khung Bài Viết & 5 khung Story"
                     >
                       <Shuffle className="w-3 h-3" />
-                      <span>🎲 Đảo Ngẫu Nhiên 8 Khung</span>
+                      <span>🎲 Đảo Ngẫu Nhiên Khung</span>
                     </button>
                   </div>
                 </div>
 
-                {/* BẢNG TÙY CHỈNH NHANH 8 MẪU BÀI VIẾT + 4 MẪU STORY */}
+                {/* BẢNG TÙY CHỈNH NHANH 9 MẪU BÀI VIẾT + 5 MẪU STORY */}
                 {showFavoriteManager && (
                   <div className="p-3 rounded-xl bg-amber-50/90 border border-amber-300 space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <p className="text-xs font-black text-amber-950 flex items-center gap-1.5">
                           <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                          <span>Thiết Lập 8 Mẫu Bài Viết (3:4) & 4 Mẫu Story (9:16)</span>
+                          <span>Thiết Lập 9 Mẫu Bài Viết (3:4) & 5 Mẫu Story (9:16)</span>
                         </p>
                         <p className="text-[11px] text-amber-800">
                           Chọn mẫu cho từng ô bên dưới. Hệ thống tự động lưu lại theo tài khoản của bạn.
@@ -3825,16 +4046,16 @@ export function ImageStudioTab({
                         onClick={handleResetDefaultFavorites}
                         className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 text-[11px] font-bold cursor-pointer"
                       >
-                        Khôi phục mặc định (8 + 4 mẫu)
+                        Khôi phục mặc định (9 + 5 mẫu)
                       </button>
                     </div>
 
                     <div className="space-y-1.5">
                       <div className="text-[11px] font-extrabold text-amber-950">
-                        Hàng 1 — 8 Mẫu Ảnh Cho Bài Viết (Mặc định 3:4):
+                        Hàng 1 — 9 Mẫu Ảnh Cho Bài Viết (Mặc định 3:4):
                       </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
-                        {Array.from({ length: 8 }).map((_, idx) => {
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                        {Array.from({ length: 9 }).map((_, idx) => {
                           const currentId =
                             favoritePresetIds[idx] || COLLAGE_PRESETS[idx]?.id || COLLAGE_PRESETS[0].id;
                           return (
@@ -3960,7 +4181,7 @@ export function ImageStudioTab({
                 </div>
 
                 {/* ========================================================= */}
-                {/* HÀNG 1: 8 MẪU ẢNH CHO BÀI VIẾT (KÍCH THƯỚC MẶC ĐỊNH 3:4) */}
+                {/* HÀNG 1: 9 MẪU ẢNH CHO BÀI VIẾT (KÍCH THƯỚC MẶC ĐỊNH 3:4) */}
                 {/* ========================================================= */}
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
@@ -3969,7 +4190,7 @@ export function ImageStudioTab({
                         Hàng 1
                       </span>
                       <span className="text-xs font-extrabold text-slate-800">
-                        8 Mẫu Ảnh Cho Bài Viết
+                        {multiFrameVariations.length} Mẫu Ảnh Cho Bài Viết
                       </span>
                       <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-bold font-mono">
                         Kích thước ưu tiên mặc định: 3:4 (1080×1440)
@@ -3977,7 +4198,7 @@ export function ImageStudioTab({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 xl:grid-cols-9 gap-2.5">
                     {multiFrameVariations.map((item, idx) => {
                       const offsetKey = `post-${idx}-${item.preset.id}`;
                       const { variationSlots, usedPhotoIndices } = getFrameVariationSlotsAndIndices(
@@ -4215,7 +4436,60 @@ export function ImageStudioTab({
                                 </div>
                               )}
 
-                              {showCornerCta && cornerCtaText.trim() && (
+                              {(() => {
+                                const miniEd = resolveEditorialOverlay(item.preset);
+                                if (!miniEd.isEnabled || !miniEd.rawTitle) return null;
+                                return (
+                                  <div
+                                    style={{
+                                      height: `${miniEd.gradientHeightPercent}%`,
+                                      background:
+                                        'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.44) 32%, rgba(0,0,0,0.84) 68%, rgba(0,0,0,0.96) 100%)',
+                                    }}
+                                    className="absolute inset-x-0 bottom-0 z-25 pointer-events-none select-none flex flex-col justify-end items-center px-2 pb-1.5"
+                                  >
+                                    <p
+                                      style={{
+                                        fontFamily: 'Georgia, "Times New Roman", serif',
+                                        textShadow: '0 1px 3px rgba(0,0,0,0.95)',
+                                      }}
+                                      className="text-center font-bold text-white text-[7.5px] leading-[1.15] line-clamp-3"
+                                    >
+                                      {miniEd.segments.map((seg, sIdx) =>
+                                        seg.isNewline ? (
+                                          <br key={sIdx} />
+                                        ) : (
+                                          <span
+                                            key={sIdx}
+                                            style={
+                                              seg.isHighlight
+                                                ? {
+                                                    color: miniEd.highlightColor,
+                                                    fontStyle: 'italic',
+                                                  }
+                                                : undefined
+                                            }
+                                          >
+                                            {seg.text}
+                                          </span>
+                                        )
+                                      )}
+                                    </p>
+                                    {miniEd.showAccentLines && (
+                                      <div
+                                        style={{
+                                          height: '1px',
+                                          width: '85%',
+                                          marginTop: '2px',
+                                          background: `linear-gradient(90deg, transparent 0%, ${miniEd.accentLineColor} 20%, ${miniEd.accentLineColor} 80%, transparent 100%)`,
+                                        }}
+                                      />
+                                    )}
+                                  </div>
+                                );
+                              })()}
+
+                              {showCornerCta && cornerCtaText.trim() && !item.preset.bottomOverlay?.enabled && (
                                 <div
                                   style={{
                                     bottom: '4%',
@@ -5126,7 +5400,7 @@ export function ImageStudioTab({
                   {/* Filter tags */}
                   <div className="flex items-center space-x-1 overflow-x-auto text-xs font-bold">
                     {[
-                      { id: 'favorites', label: `⭐ 8 Mẫu Hay Dùng (${favoritePresetIds.length}/8)` },
+                      { id: 'favorites', label: `⭐ 9 Mẫu Hay Dùng (${favoritePresetIds.length}/9)` },
                       { id: 'all', label: `Tất cả (${COLLAGE_PRESETS.length})` },
                       { id: 'story', label: 'Story FB' },
                       { id: '2-photo', label: '2 Ảnh' },
@@ -5268,6 +5542,14 @@ export function ImageStudioTab({
                                 )}
                               </div>
                             ))}
+                            {preset.bottomOverlay?.enabled && (
+                              <div className="absolute inset-x-0 bottom-0 h-[36%] bg-gradient-to-t from-black/95 via-black/70 to-transparent z-15 flex flex-col items-center justify-end pb-1 pointer-events-none">
+                                <span className="text-[6px] font-serif font-bold text-amber-300 leading-none tracking-tight">
+                                  Tiêu đề tạp chí
+                                </span>
+                                <div className="w-3/4 h-[1px] bg-amber-400/80 mt-0.5" />
+                              </div>
+                            )}
                           </div>
 
                         <div className="flex items-center justify-between">
@@ -5320,6 +5602,101 @@ export function ImageStudioTab({
                     )}
                   </div>
                 </div>
+
+                {/* THANH SỬA NHANH CHỮ TIÊU ĐỀ TẠP CHÍ PHỦ ĐÁY ẢNH (KHI MẪU ĐANG CHỌN CÓ BOTTOM EDITORIAL OVERLAY) */}
+                {activePreset.bottomOverlay?.enabled && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="w-full mb-3 p-2.5 rounded-xl bg-slate-800/95 border border-amber-400/40 space-y-2 text-[11px] text-white"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-black text-amber-300 flex items-center gap-1.5">
+                        <Type className="w-3.5 h-3.5" />
+                        <span>Chữ Tiêu Đề Chân Ảnh (Serif Trắng + Tô Vàng):</span>
+                      </span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {extractedArticleInfo?.title && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditorialBottomTitle(extractedArticleInfo.title);
+                              setShowEditorialBottomOverlay(true);
+                            }}
+                            className="px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-100 font-bold text-[10px] cursor-pointer"
+                            title="Điền lại tiêu đề bài viết đã tách từ link"
+                          >
+                            Lấy tiêu đề bài
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditorialTitleFontScale((s) => Math.max(0.7, Number((s - 0.1).toFixed(2))))
+                          }
+                          className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 font-black cursor-pointer"
+                          title="Thu nhỏ cỡ chữ"
+                        >
+                          A-
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setEditorialTitleFontScale((s) => Math.min(1.5, Number((s + 0.1).toFixed(2))))
+                          }
+                          className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 font-black cursor-pointer"
+                          title="Phóng to cỡ chữ"
+                        >
+                          A+
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowEditorialBottomOverlay((v) => !v)}
+                          className={`px-2 py-0.5 rounded font-bold text-[10px] cursor-pointer ${
+                            showEditorialBottomOverlay
+                              ? 'bg-amber-500 text-slate-950'
+                              : 'bg-slate-700 text-slate-300'
+                          }`}
+                        >
+                          {showEditorialBottomOverlay ? 'Đang Bật Chữ' : 'Đang Tắt Chữ'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div className="sm:col-span-2">
+                        <textarea
+                          rows={2}
+                          value={editorialBottomTitle}
+                          onChange={(e) => setEditorialBottomTitle(e.target.value)}
+                          placeholder={
+                            extractedArticleInfo?.title ||
+                            activePreset.bottomOverlay.defaultTitle ||
+                            'Nhập dòng chữ tiêu đề dưới ảnh (bọc *chữ* hoặc dùng ô Tô vàng bên cạnh)...'
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 focus:border-amber-400 text-xs font-semibold text-white placeholder:text-slate-400 focus:outline-none resize-none"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <input
+                          type="text"
+                          value={editorialHighlightText}
+                          onChange={(e) => setEditorialHighlightText(e.target.value)}
+                          placeholder={
+                            similarSearchQuery.trim() ||
+                            detectedSimilarActors[0] ||
+                            activePreset.bottomOverlay.defaultHighlight ||
+                            'Cụm chữ tô vàng...'
+                          }
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 focus:border-amber-400 text-xs font-bold text-amber-300 placeholder:text-slate-400 focus:outline-none"
+                          title="Nhập tên nhân vật / bộ phim muốn tô màu vàng nổi bật trong câu tiêu đề"
+                        />
+                        <p className="text-[10px] text-slate-400 leading-tight">
+                          Tự tô vàng tên này (hoặc bọc <span className="text-amber-300 font-bold">*chữ*</span>)
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Thanh điều khiển vị trí & kích thước Vòng Tròn trên Bàn Chỉnh Sửa Lớn */}
                 {activePreset.slots.some((s) => s.shape === 'circle') && (
@@ -5856,6 +6233,69 @@ export function ImageStudioTab({
                             )}
                           </>
                         )}
+
+                        {/* EDITORIAL GRADIENT OVERLAY + SERIF WHITE/GOLD HEADLINE + GOLD ACCENT LINE */}
+                        {(() => {
+                          const edOverlay = resolveEditorialOverlay(activePreset);
+                          if (!edOverlay.isEnabled || !edOverlay.rawTitle) return null;
+                          const plainLen = edOverlay.rawTitle.length;
+                          const autoAdjust = plainLen > 95 ? 0.82 : plainLen > 70 ? 0.92 : 1;
+                          const fontPx = Math.max(
+                            11,
+                            Math.round(previewBoxW * 0.047 * editorialTitleFontScale * autoAdjust)
+                          );
+                          return (
+                            <div
+                              style={{
+                                height: `${edOverlay.gradientHeightPercent}%`,
+                                background:
+                                  'linear-gradient(to bottom, rgba(0,0,0,0) 0%, rgba(0,0,0,0.44) 32%, rgba(0,0,0,0.84) 68%, rgba(0,0,0,0.96) 100%)',
+                              }}
+                              className="absolute inset-x-0 bottom-0 z-25 pointer-events-none select-none flex flex-col justify-end items-center px-[5%] pb-[4%]"
+                            >
+                              <p
+                                style={{
+                                  fontFamily: 'Georgia, "Times New Roman", serif',
+                                  fontSize: `${fontPx}px`,
+                                  lineHeight: 1.18,
+                                  textShadow:
+                                    '0 2px 8px rgba(0,0,0,0.92), 0 1px 2px rgba(0,0,0,0.95)',
+                                }}
+                                className="text-center font-bold text-white max-w-full"
+                              >
+                                {edOverlay.segments.map((seg, sIdx) =>
+                                  seg.isNewline ? (
+                                    <br key={sIdx} />
+                                  ) : (
+                                    <span
+                                      key={sIdx}
+                                      style={
+                                        seg.isHighlight
+                                          ? {
+                                              color: edOverlay.highlightColor,
+                                              fontStyle: 'italic',
+                                            }
+                                          : undefined
+                                      }
+                                    >
+                                      {seg.text}
+                                    </span>
+                                  )
+                                )}
+                              </p>
+                              {edOverlay.showAccentLines && (
+                                <div
+                                  style={{
+                                    height: `${Math.max(1.5, Math.round(previewBoxW * 0.0025))}px`,
+                                    width: '84%',
+                                    marginTop: '2.5%',
+                                    background: `linear-gradient(90deg, transparent 0%, ${edOverlay.accentLineColor} 20%, ${edOverlay.accentLineColor} 80%, transparent 100%)`,
+                                  }}
+                                />
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       {/* OVERLAY WATERMARK / EMBOSSED 3D COPYRIGHT LOGO */}
@@ -5943,7 +6383,9 @@ export function ImageStudioTab({
                       )}
 
                       {/* OVERLAY NHÃN GÓC CUỐI ẢNH BÊN PHẢI ("Full Comments 👇") */}
-                      {showCornerCta && cornerCtaText.trim() && (
+                      {showCornerCta &&
+                        cornerCtaText.trim() &&
+                        !(activePreset.bottomOverlay?.enabled && showEditorialBottomOverlay) && (
                         <div
                           style={{
                             bottom: '3.2%',
