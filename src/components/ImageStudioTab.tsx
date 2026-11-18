@@ -17,6 +17,17 @@ import {
 } from '../data/collageData';
 import { QuizImageStudioPanel } from './QuizImageStudioPanel';
 import {
+  SaveImageConfirmModal,
+  PendingFallbackSaveData,
+} from './SaveImageConfirmModal';
+import {
+  pickImageSaveTarget,
+  writeBlobToPickedHandle,
+  canvasToImageBlob,
+  urlOrDataUrlToBlob,
+  sanitizeImageFileName,
+} from '../utils/saveImageWithPicker';
+import {
   Image,
   Sparkles,
   Layers,
@@ -512,6 +523,7 @@ export function ImageStudioTab({
   // Export / copy status
   const [exportNotice, setExportNotice] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState<boolean>(false);
+  const [pendingSaveDialog, setPendingSaveDialog] = useState<PendingFallbackSaveData | null>(null);
 
   // Dragging state for photo pan + natural aspect tracking so hidden cropped parts pan seamlessly without leaving blank edges
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
@@ -2865,7 +2877,7 @@ export function ImageStudioTab({
     });
   };
 
-  // Tải nhanh 1 khung bất kỳ từ Bộ Sưu Tập Đa Khung
+  // Tải nhanh 1 khung bất kỳ từ Bộ Sưu Tập Đa Khung (luôn hỏi vị trí lưu trước khi tải)
   const handleQuickDownloadVariation = async (
     preset: CollagePreset,
     ratio: RatioOption,
@@ -2875,6 +2887,15 @@ export function ImageStudioTab({
     storyCardKey?: string
   ) => {
     try {
+      const timeStr = new Date().toISOString().slice(0, 10);
+      const suggestedBaseName = `Ghep_Web_${preset.id}_${timeStr}`;
+      let pickerResult: Awaited<ReturnType<typeof pickImageSaveTarget>> | null = null;
+
+      if (mode === 'download') {
+        pickerResult = await pickImageSaveTarget(suggestedBaseName, 'png');
+        if (pickerResult.status === 'cancelled') return;
+      }
+
       setExportingPresetId(preset.id);
       const canvas = await generateCanvasForConfig({
         preset,
@@ -2898,43 +2919,88 @@ export function ImageStudioTab({
           }
         }, 'image/png');
       } else {
-        const dataUrl = canvas.toDataURL('image/png', 0.95);
-        const link = document.createElement('a');
-        const timeStr = new Date().toISOString().slice(0, 10);
-        link.download = `Ghep_Web_${preset.id}_${timeStr}.png`;
-        link.href = dataUrl;
-        link.click();
-        setExportNotice(`Đã tải khung "${preset.name}" (${ratio.id}) thành công!`);
-        setTimeout(() => setExportNotice(null), 3500);
+        const blob = await canvasToImageBlob(canvas, 'png', 0.95);
+        if (pickerResult && pickerResult.status === 'picked') {
+          await writeBlobToPickedHandle(pickerResult.handle, blob);
+          setExportNotice(
+            `Đã lưu ảnh "${pickerResult.handle.name}" (${ratio.id}) tại vị trí bạn đã chọn!`
+          );
+          setTimeout(() => setExportNotice(null), 3500);
+        } else {
+          setPendingSaveDialog({
+            blob,
+            suggestedName: sanitizeImageFileName(suggestedBaseName, 'png'),
+            format: 'png',
+          });
+        }
       }
     } catch (err) {
       console.error(err);
+      setExportNotice('Không thể xuất/lưu ảnh, vui lòng thử lại!');
+      setTimeout(() => setExportNotice(null), 3500);
     } finally {
       setExportingPresetId(null);
     }
   };
 
-  // Download Image
+  // Download Image (luôn hỏi vị trí lưu trước khi tải)
   const handleDownloadImage = async (format: 'png' | 'jpeg') => {
     try {
+      const timeStr = new Date().toISOString().slice(0, 10);
+      const suggestedBaseName = `Ghep_Anh_${activePreset.id}_${timeStr}`;
+      const pickerResult = await pickImageSaveTarget(suggestedBaseName, format);
+      if (pickerResult.status === 'cancelled') return;
+
       setIsExporting(true);
       const canvas = await generateCanvas(2);
-      const mime = format === 'png' ? 'image/png' : 'image/jpeg';
-      const dataUrl = canvas.toDataURL(mime, 0.92);
+      const blob = await canvasToImageBlob(canvas, format, 0.92);
 
-      const link = document.createElement('a');
-      const timeStr = new Date().toISOString().slice(0, 10);
-      link.download = `Ghep_Anh_${activePreset.id}_${timeStr}.${format}`;
-      link.href = dataUrl;
-      link.click();
-
-      setExportNotice(`Đã xuất và tải ảnh ${format.toUpperCase()} thành công!`);
-      setTimeout(() => setExportNotice(null), 3500);
+      if (pickerResult.status === 'picked') {
+        await writeBlobToPickedHandle(pickerResult.handle, blob);
+        setExportNotice(
+          `Đã lưu ảnh "${pickerResult.handle.name}" (${format.toUpperCase()}) tại vị trí bạn đã chọn!`
+        );
+        setTimeout(() => setExportNotice(null), 3500);
+      } else {
+        setPendingSaveDialog({
+          blob,
+          suggestedName: sanitizeImageFileName(suggestedBaseName, format),
+          format,
+        });
+      }
     } catch (err) {
       console.error(err);
       setExportNotice('Không thể xuất ảnh, vui lòng thử lại!');
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // Tải ảnh thành phẩm từ danh sách việc làm ảnh (luôn hỏi vị trí lưu trước khi tải)
+  const handleDownloadTaskResultImage = async (task: ImageTaskItem) => {
+    if (!task.resultImageUrl) return;
+    try {
+      const format = task.resultImageUrl.startsWith('data:image/png') ? 'png' : 'jpeg';
+      const suggestedBaseName = task.title || 'anh_ket_qua';
+      const pickerResult = await pickImageSaveTarget(suggestedBaseName, format);
+      if (pickerResult.status === 'cancelled') return;
+
+      const blob = await urlOrDataUrlToBlob(task.resultImageUrl);
+      if (pickerResult.status === 'picked') {
+        await writeBlobToPickedHandle(pickerResult.handle, blob);
+        setExportNotice(`Đã lưu ảnh "${pickerResult.handle.name}" thành công!`);
+        setTimeout(() => setExportNotice(null), 3500);
+      } else {
+        setPendingSaveDialog({
+          blob,
+          suggestedName: sanitizeImageFileName(suggestedBaseName, format),
+          format,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setExportNotice('Không thể đọc ảnh kết quả để lưu, vui lòng thử lại!');
+      setTimeout(() => setExportNotice(null), 3500);
     }
   };
 
@@ -7679,14 +7745,14 @@ export function ImageStudioTab({
                                   alt="Result"
                                   className="w-12 h-12 object-cover rounded-lg border border-slate-300 shadow-2xs"
                                 />
-                                <a
-                                  href={task.resultImageUrl}
-                                  download={`${task.title}.jpg`}
-                                  className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center"
-                                  title="Tải ảnh kết quả"
+                                <button
+                                  type="button"
+                                  onClick={() => void handleDownloadTaskResultImage(task)}
+                                  className="absolute inset-0 bg-black/50 text-white opacity-0 group-hover:opacity-100 transition-opacity rounded-lg flex items-center justify-center cursor-pointer"
+                                  title="Chọn vị trí lưu và tải ảnh kết quả"
                                 >
                                   <Download className="w-3.5 h-3.5" />
-                                </a>
+                                </button>
                               </div>
                             ) : (
                               <span className="text-[11px] text-slate-400 italic">Chưa có</span>
@@ -8006,6 +8072,14 @@ export function ImageStudioTab({
           </div>
         </div>
       )}
+      <SaveImageConfirmModal
+        pendingSave={pendingSaveDialog}
+        onClose={() => setPendingSaveDialog(null)}
+        onSaved={(savedName) => {
+          setExportNotice(`Đã tải ảnh "${savedName}" thành công!`);
+          setTimeout(() => setExportNotice(null), 3500);
+        }}
+      />
     </div>
   );
 }

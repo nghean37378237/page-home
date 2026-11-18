@@ -21,6 +21,16 @@ import {
   Sliders,
   Trash2,
 } from 'lucide-react';
+import {
+  SaveImageConfirmModal,
+  PendingFallbackSaveData,
+} from './SaveImageConfirmModal';
+import {
+  pickImageSaveTarget,
+  writeBlobToPickedHandle,
+  canvasToImageBlob,
+  sanitizeImageFileName,
+} from '../utils/saveImageWithPicker';
 
 export type QuizTemplateId = 'retro_tv_host' | 'retro_tv_star' | 'classic_actor_blue';
 
@@ -289,6 +299,7 @@ export const QuizImageStudioPanel: React.FC<QuizImageStudioPanelProps> = ({
   const [isFetchingWeb, setIsFetchingWeb] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [showRefSampleModal, setShowRefSampleModal] = useState<string | null>(null);
+  const [pendingSaveDialog, setPendingSaveDialog] = useState<PendingFallbackSaveData | null>(null);
 
   // Loaded HTMLImageElement cache for canvas
   const imageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
@@ -1033,21 +1044,31 @@ export const QuizImageStudioPanel: React.FC<QuizImageStudioPanelProps> = ({
     renderQuizCanvas();
   }, [renderQuizCanvas]);
 
-  // Download PNG/JPG
-  const handleDownloadQuizImage = (format: 'png' | 'jpeg' = 'png') => {
+  // Download PNG/JPG (luôn hỏi vị trí lưu trước khi tải)
+  const handleDownloadQuizImage = async (format: 'png' | 'jpeg' = 'png') => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     try {
-      const mime = format === 'png' ? 'image/png' : 'image/jpeg';
-      const dataUrl = canvas.toDataURL(mime, 0.96);
-      const link = document.createElement('a');
       const slug = (line1Highlight || line2Highlight || 'quiz')
         .toLowerCase()
         .replace(/[^a-z0-9]+/g, '-');
-      link.download = `quiz-${selectedTemplateId}-${slug}-${Date.now()}.${format === 'png' ? 'png' : 'jpg'}`;
-      link.href = dataUrl;
-      link.click();
-      showToast(`✅ Đã tải xuống ảnh Quiz (${canvas.width}x${canvas.height}px)!`);
+      const suggestedBaseName = `quiz-${selectedTemplateId}-${slug}-${Date.now()}`;
+      const pickerResult = await pickImageSaveTarget(suggestedBaseName, format);
+      if (pickerResult.status === 'cancelled') return;
+
+      const blob = await canvasToImageBlob(canvas, format, 0.96);
+      if (pickerResult.status === 'picked') {
+        await writeBlobToPickedHandle(pickerResult.handle, blob);
+        showToast(
+          `✅ Đã lưu ảnh Quiz "${pickerResult.handle.name}" (${canvas.width}x${canvas.height}px) tại vị trí bạn chọn!`
+        );
+      } else {
+        setPendingSaveDialog({
+          blob,
+          suggestedName: sanitizeImageFileName(suggestedBaseName, format),
+          format,
+        });
+      }
     } catch (err) {
       console.error(err);
       showToast('⚠️ Một số ảnh ngoài web bị chặn CORS, hãy dùng tính năng Hút ảnh từ Link Web hoặc tải ảnh từ máy!');
@@ -1736,7 +1757,7 @@ export const QuizImageStudioPanel: React.FC<QuizImageStudioPanelProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
             <button
               type="button"
-              onClick={() => handleDownloadQuizImage('png')}
+              onClick={() => void handleDownloadQuizImage('png')}
               className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-700 hover:to-pink-700 text-white font-black text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all"
             >
               <Download className="w-4 h-4" />
@@ -1783,6 +1804,13 @@ export const QuizImageStudioPanel: React.FC<QuizImageStudioPanelProps> = ({
           </div>
         </div>
       )}
+      <SaveImageConfirmModal
+        pendingSave={pendingSaveDialog}
+        onClose={() => setPendingSaveDialog(null)}
+        onSaved={(savedName) => {
+          showToast(`✅ Đã tải xuống ảnh Quiz "${savedName}"!`);
+        }}
+      />
     </div>
   );
 };
