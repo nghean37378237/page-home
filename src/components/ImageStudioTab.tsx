@@ -203,6 +203,126 @@ const AUTO_STORY_FRAME_IDS: {
   },
 ];
 
+let _storyMeasureCtx: CanvasRenderingContext2D | null = null;
+function getStoryMeasureCtx(): CanvasRenderingContext2D | null {
+  if (typeof document === 'undefined') return null;
+  if (!_storyMeasureCtx) {
+    const c = document.createElement('canvas');
+    _storyMeasureCtx = c.getContext('2d');
+  }
+  return _storyMeasureCtx;
+}
+
+const STORY_HEADER_FONT_FAMILY = '"Inter", "Segoe UI", Arial, sans-serif';
+
+function wrapLinesForMeasure(
+  ctx: CanvasRenderingContext2D | null,
+  rawText: string,
+  maxWidth: number,
+  fontPx: number
+): string[] {
+  const cleaned = rawText.trim();
+  if (!cleaned) return [];
+  const paragraphs = cleaned.split(/\r?\n/);
+  const lines: string[] = [];
+
+  if (ctx) {
+    ctx.font = `900 ${fontPx}px ${STORY_HEADER_FONT_FAMILY}`;
+  }
+
+  for (const para of paragraphs) {
+    const p = para.trim();
+    if (!p) continue;
+    const words = p.split(/\s+/);
+    let currentLine = '';
+    for (const word of words) {
+      const testLine = currentLine ? `${currentLine} ${word}` : word;
+      const measuredW = ctx
+        ? ctx.measureText(testLine).width
+        : testLine.length * fontPx * 0.58;
+      if (measuredW > maxWidth && currentLine) {
+        lines.push(currentLine);
+        currentLine = word;
+      } else {
+        currentLine = testLine;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+  }
+  return lines;
+}
+
+function computeStoryHeaderLayout(params: {
+  mainText: string;
+  redText: string;
+  headerHeightPercent: number;
+  ratioAspect: number;
+  paddingVal: number;
+  gapVal: number;
+  fontScale: number;
+}): {
+  fontPx: number;
+  lineHeightPx: number;
+  mainLines: string[];
+  redLines: string[];
+} {
+  const { mainText, redText, headerHeightPercent, ratioAspect, paddingVal, gapVal, fontScale } =
+    params;
+
+  const refW = 1080;
+  const refH = Math.round(refW / ratioAspect);
+  const spaceScale = Math.min(refW, refH) / 480;
+  const padPx = paddingVal * spaceScale;
+  const gapPx = gapVal * spaceScale;
+  const innerW = refW - padPx * 2;
+  const innerH = refH - padPx * 2;
+  const headerW = Math.max(100, innerW - gapPx);
+  const headerH = Math.max(40, (headerHeightPercent / 100) * innerH - gapPx);
+
+  const maxTextW = headerW * 0.94;
+  const maxTextH = headerH * 0.9;
+  const ctx = getStoryMeasureCtx();
+
+  // Default Image-2 large bold size (~76px on 1080x1920), auto-scaling down smoothly if long text needs more lines
+  let candidatePx = Math.round(Math.max(24, Math.min(130, 76 * fontScale)));
+  const minFitPx = Math.max(20, Math.round(24 * Math.min(1, fontScale)));
+
+  let mainLines = wrapLinesForMeasure(ctx, mainText, maxTextW, candidatePx);
+  let redLines = wrapLinesForMeasure(ctx, redText, maxTextW, candidatePx);
+
+  while (candidatePx > minFitPx) {
+    const totalLines = mainLines.length + redLines.length;
+    const lineHeight = candidatePx * 1.13;
+    const totalH = totalLines * lineHeight;
+
+    let anyLineTooWide = false;
+    if (ctx) {
+      ctx.font = `900 ${candidatePx}px ${STORY_HEADER_FONT_FAMILY}`;
+      for (const l of [...mainLines, ...redLines]) {
+        if (ctx.measureText(l).width > maxTextW * 1.02) {
+          anyLineTooWide = true;
+          break;
+        }
+      }
+    }
+
+    if (totalH <= maxTextH && !anyLineTooWide) {
+      break;
+    }
+
+    candidatePx -= 2;
+    mainLines = wrapLinesForMeasure(ctx, mainText, maxTextW, candidatePx);
+    redLines = wrapLinesForMeasure(ctx, redText, maxTextW, candidatePx);
+  }
+
+  return {
+    fontPx: candidatePx,
+    lineHeightPx: candidatePx * 1.13,
+    mainLines,
+    redLines,
+  };
+}
+
 export function ImageStudioTab({
   currentUser,
   availableStaffNames,
@@ -488,23 +608,27 @@ export function ImageStudioTab({
   >('bottom_right');
   const [cornerCtaFontSize, setCornerCtaFontSize] = useState<number>(28);
 
-  // --- PHẦN VIẾT CHỮ TIÊU ĐỀ Ở KHOẢNG TRẮNG PHÍA TRÊN CỦA MẪU STORY (S#2, S#3 & STORY HEADER) ---
-  const [storyTopText, setStoryTopText] = useState<string>(
-    'A Familiar TV Star Spotted In Throwback Photos — Can You Recognize Her Now?'
-  );
-  // Cho phép sửa riêng chữ từng khung Story nếu muốn (mặc định đồng bộ với storyTopText)
+  // --- PHẦN VIẾT CHỮ TIÊU ĐỀ 2 DÒNG (ĐEN + ĐỎ) Ở KHOẢNG TRẮNG PHÍA TRÊN CỦA MẪU STORY ---
+  const [storyTopText, setStoryTopText] = useState<string>('CAUGHT KISSING!\nGUESS WHO?');
+  const [storyTopRedText, setStoryTopRedText] = useState<string>('SWIPE UP FOR MORE');
+  // Cho phép sửa riêng chữ từng khung Story nếu muốn (mặc định đồng bộ với storyTopText / storyTopRedText)
   const [perStoryCustomTopText, setPerStoryCustomTopText] = useState<Record<string, string>>({});
-  // Màu nền & màu chữ phần tiêu đề phía trên Story
+  const [perStoryCustomTopRedText, setPerStoryCustomTopRedText] = useState<Record<string, string>>(
+    {}
+  );
+  // Màu nền & màu chữ phần tiêu đề phía trên Story (mặc định Nền Trắng · Dòng Đen + Dòng Đỏ như mẫu ảnh 2)
   const [storyTopTheme, setStoryTopTheme] = useState<
-    'white_black' | 'white_red' | 'black_white' | 'black_yellow'
-  >('white_black');
+    'white_black_red' | 'white_black' | 'white_red' | 'black_white' | 'black_yellow'
+  >('white_black_red');
   const [storyTopCustomTextColor, setStoryTopCustomTextColor] = useState<string | null>(null);
+  const [storyTopCustomAccentColor, setStoryTopCustomAccentColor] = useState<string | null>(null);
   const [storyTopCustomBgColor, setStoryTopCustomBgColor] = useState<string | null>(null);
   const [storyTopFontScale, setStoryTopFontScale] = useState<number>(1);
   // Cho phép bật/tắt phần viết chữ phía trên trên từng khung Story ('on' | 'off')
   const [storyHeaderToggleMap, setStoryHeaderToggleMap] = useState<Record<string, 'on' | 'off'>>(
     {}
   );
+  const storyTopMainInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   // --- PHẦN VIẾT CHỮ TẠP CHÍ PHỦ ĐÁY ẢNH (MẪU 3 ẢNH BÀI VIẾT: SERIF TRẮNG + TÔ VÀNG + CHỈ VÀNG) ---
   const [editorialBottomTitle, setEditorialBottomTitle] = useState<string>('');
@@ -2092,7 +2216,7 @@ export function ImageStudioTab({
         overrideState === 'on' ? true : overrideState === 'off' ? false : defaultHasHeader;
 
       const headerHeightPercent = isHeaderActive
-        ? preset.storyHeader?.heightPercent || 18
+        ? preset.storyHeader?.heightPercent || 22
         : 0;
 
       // Điều chỉnh tọa độ các ô ảnh:
@@ -2123,18 +2247,26 @@ export function ImageStudioTab({
           ? perStoryCustomTopText[cardKey]
           : storyTopText) || '';
 
+      const resolvedRedText =
+        (cardKey && perStoryCustomTopRedText[cardKey] !== undefined
+          ? perStoryCustomTopRedText[cardKey]
+          : storyTopRedText) || '';
+
       const baseThemeColors =
-        storyTopTheme === 'white_red'
-          ? { bg: '#FFFFFF', text: '#be123c', border: '#fecdd3' }
+        storyTopTheme === 'white_black_red'
+          ? { bg: '#FFFFFF', text: '#000000', accent: '#E60000', border: '#e2e8f0' }
+          : storyTopTheme === 'white_red'
+          ? { bg: '#FFFFFF', text: '#be123c', accent: '#E60000', border: '#fecdd3' }
           : storyTopTheme === 'black_white'
-          ? { bg: '#111827', text: '#FFFFFF', border: '#374151' }
+          ? { bg: '#111827', text: '#FFFFFF', accent: '#ef4444', border: '#374151' }
           : storyTopTheme === 'black_yellow'
-          ? { bg: '#09090b', text: '#facc15', border: '#27272a' }
-          : { bg: '#FFFFFF', text: '#0f172a', border: '#e2e8f0' };
+          ? { bg: '#09090b', text: '#FFFFFF', accent: '#facc15', border: '#27272a' }
+          : { bg: '#FFFFFF', text: '#000000', accent: '#000000', border: '#e2e8f0' };
 
       const themeColors = {
         bg: storyTopCustomBgColor || baseThemeColors.bg,
         text: storyTopCustomTextColor || baseThemeColors.text,
+        accent: storyTopCustomAccentColor || baseThemeColors.accent,
         border: baseThemeColors.border,
       };
 
@@ -2143,15 +2275,19 @@ export function ImageStudioTab({
         headerHeightPercent,
         adjustedSlots,
         resolvedText,
+        resolvedRedText,
         themeColors,
       };
     },
     [
       storyHeaderToggleMap,
       perStoryCustomTopText,
+      perStoryCustomTopRedText,
       storyTopText,
+      storyTopRedText,
       storyTopTheme,
       storyTopCustomTextColor,
+      storyTopCustomAccentColor,
       storyTopCustomBgColor,
     ]
   );
@@ -2303,6 +2439,7 @@ export function ImageStudioTab({
       headerHeightPercent,
       adjustedSlots,
       resolvedText,
+      resolvedRedText,
       themeColors,
     } = resolveStoryHeaderAndSlots(preset, storyCardKey);
 
@@ -2341,7 +2478,7 @@ export function ImageStudioTab({
       )
     );
 
-    // 2A. Vẽ Phần Trắng Viết Chữ Phía Trên Cho Mẫu Story (nếu mẫu có bật phần viết chữ đầu)
+    // 2A. Vẽ Phần Trắng Viết Chữ 2 Dòng (Đen + Đỏ) Phía Trên Cho Mẫu Story
     if (isHeaderActive && headerHeightPercent > 0) {
       ctx.save();
       const headerX = padPx + gapPx / 2;
@@ -2359,39 +2496,36 @@ export function ImageStudioTab({
       ctx.fillStyle = themeColors.bg;
       ctx.fill();
 
-      const cleanHeadline = resolvedText.trim();
-      if (cleanHeadline) {
-        const baseFontPx = Math.round(
-          Math.max(20, Math.min(84, (targetW / 1080) * 44 * storyTopFontScale))
-        );
-        ctx.font = `900 ${baseFontPx}px "Inter", "Segoe UI", Arial, sans-serif`;
-        ctx.fillStyle = themeColors.text;
+      const headerLayout = computeStoryHeaderLayout({
+        mainText: resolvedText,
+        redText: resolvedRedText,
+        headerHeightPercent,
+        ratioAspect,
+        paddingVal: padding,
+        gapVal: gap,
+        fontScale: storyTopFontScale,
+      });
+
+      const allLinesCount = headerLayout.mainLines.length + headerLayout.redLines.length;
+      if (allLinesCount > 0) {
+        const exportScale = targetW / 1080;
+        const drawFontPx = headerLayout.fontPx * exportScale;
+        const lineHeight = headerLayout.lineHeightPx * exportScale;
+        ctx.font = `900 ${drawFontPx}px ${STORY_HEADER_FONT_FAMILY}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
-        const maxTextW = headerW * 0.9;
-        const words = cleanHeadline.split(/\s+/);
-        const lines: string[] = [];
-        let currentLine = '';
-
-        for (const word of words) {
-          const testLine = currentLine ? `${currentLine} ${word}` : word;
-          if (ctx.measureText(testLine).width > maxTextW && currentLine) {
-            lines.push(currentLine);
-            currentLine = word;
-          } else {
-            currentLine = testLine;
-          }
-        }
-        if (currentLine) lines.push(currentLine);
-
-        const maxLines = 4;
-        const displayLines = lines.slice(0, maxLines);
-        const lineHeight = baseFontPx * 1.24;
-        const totalTextH = displayLines.length * lineHeight;
+        const totalTextH = allLinesCount * lineHeight;
         let startY = headerY + headerH / 2 - totalTextH / 2 + lineHeight / 2;
 
-        for (const line of displayLines) {
+        ctx.fillStyle = themeColors.text;
+        for (const line of headerLayout.mainLines) {
+          ctx.fillText(line, headerX + headerW / 2, startY);
+          startY += lineHeight;
+        }
+
+        ctx.fillStyle = themeColors.accent;
+        for (const line of headerLayout.redLines) {
           ctx.fillText(line, headerX + headerW / 2, startY);
           startY += lineHeight;
         }
@@ -4861,21 +4995,32 @@ export function ImageStudioTab({
                       </span>
                     </div>
 
-                    {/* Thanh nhập & tùy chỉnh nhanh Chữ Tiêu Đề Phần Trắng Phía Trên cho các mẫu Story (S#2, S#3...) */}
-                    <div className="flex flex-wrap items-center gap-1.5 bg-indigo-50/90 border border-indigo-200 px-2.5 py-1.5 rounded-xl flex-1 max-w-3xl">
+                    {/* Thanh nhập & tùy chỉnh nhanh Chữ 2 Dòng (Đen + Đỏ) Phần Trắng Phía Trên cho các mẫu Story */}
+                    <div className="flex flex-wrap items-center gap-1.5 bg-indigo-50/90 border border-indigo-200 px-2.5 py-1.5 rounded-xl flex-1 max-w-4xl">
                       <span className="text-[11px] font-black text-indigo-950 flex items-center gap-1 shrink-0">
                         <Type className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>Chữ phần trắng trên đầu Story:</span>
+                        <span>Chữ đầu Story:</span>
                       </span>
-                      <input
-                        type="text"
+                      <textarea
+                        rows={1}
                         value={storyTopText}
                         onChange={(e) => {
                           setStoryTopText(e.target.value);
                           setPerStoryCustomTopText({});
                         }}
-                        placeholder="Nhập tiêu đề chữ cho phần trắng phía trên của mẫu Story (S#2, S#3)..."
-                        className="flex-1 min-w-[180px] px-2.5 py-1 rounded-lg bg-white border border-indigo-300 text-xs font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-600"
+                        placeholder="Dòng trên (Đen) — bấm Enter xuống dòng..."
+                        className="flex-1 min-w-[160px] px-2 py-1 rounded-lg bg-white border border-slate-300 text-xs font-extrabold text-slate-950 placeholder:text-slate-400 focus:outline-none focus:border-indigo-600 resize-none leading-tight"
+                      />
+                      <input
+                        type="text"
+                        value={storyTopRedText}
+                        onChange={(e) => {
+                          setStoryTopRedText(e.target.value);
+                          setPerStoryCustomTopRedText({});
+                        }}
+                        placeholder="Dòng dưới (Đỏ): SWIPE UP FOR MORE..."
+                        className="w-44 px-2 py-1 rounded-lg bg-white border border-red-300 text-xs font-extrabold text-red-600 placeholder:text-red-300 focus:outline-none focus:border-red-600"
+                        title="Dòng chữ nhấn mạnh màu đỏ ở bên dưới"
                       />
                       {extractedArticleInfo?.title && (
                         <button
@@ -4885,7 +5030,7 @@ export function ImageStudioTab({
                             setPerStoryCustomTopText({});
                           }}
                           className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-extrabold cursor-pointer shrink-0"
-                          title="Lấy tiêu đề bài viết web điền vào phần trắng trên đầu Story"
+                          title="Lấy tiêu đề bài viết web điền vào dòng trên Story"
                         >
                           📋 Lấy tiêu đề bài
                         </button>
@@ -4893,10 +5038,11 @@ export function ImageStudioTab({
                       <div className="flex items-center gap-1 shrink-0">
                         {(
                           [
-                            { id: 'white_black', label: 'Nền Trắng•Chữ Đen', cls: 'bg-white text-slate-900 border-slate-300' },
-                            { id: 'white_red', label: 'Nền Trắng•Chữ Đỏ', cls: 'bg-white text-rose-700 border-rose-300' },
-                            { id: 'black_white', label: 'Nền Đen•Chữ Trắng', cls: 'bg-slate-900 text-white border-slate-800' },
-                            { id: 'black_yellow', label: 'Nền Đen•Chữ Vàng', cls: 'bg-slate-950 text-amber-300 border-slate-800' },
+                            { id: 'white_black_red', label: 'Trắng•Đen+Đỏ', cls: 'bg-white text-slate-900 border-red-400' },
+                            { id: 'white_black', label: 'Trắng•Đen', cls: 'bg-white text-slate-900 border-slate-300' },
+                            { id: 'white_red', label: 'Trắng•Đỏ', cls: 'bg-white text-red-600 border-red-300' },
+                            { id: 'black_white', label: 'Đen•Trắng', cls: 'bg-slate-900 text-white border-slate-800' },
+                            { id: 'black_yellow', label: 'Đen•Vàng', cls: 'bg-slate-950 text-amber-300 border-slate-800' },
                           ] as const
                         ).map((t) => (
                           <button
@@ -4905,11 +5051,13 @@ export function ImageStudioTab({
                             onClick={() => {
                               setStoryTopTheme(t.id);
                               setStoryTopCustomTextColor(null);
+                              setStoryTopCustomAccentColor(null);
                               setStoryTopCustomBgColor(null);
                             }}
                             className={`px-1.5 py-0.5 rounded text-[9px] font-black border cursor-pointer ${t.cls} ${
                               storyTopTheme === t.id &&
                               !storyTopCustomTextColor &&
+                              !storyTopCustomAccentColor &&
                               !storyTopCustomBgColor
                                 ? 'ring-2 ring-indigo-500'
                                 : 'opacity-75 hover:opacity-100'
@@ -4922,7 +5070,7 @@ export function ImageStudioTab({
                           type="button"
                           onClick={() =>
                             setStoryTopFontScale((prev) =>
-                              Math.max(0.6, Number((prev - 0.1).toFixed(2)))
+                              Math.max(0.5, Number((prev - 0.1).toFixed(2)))
                             )
                           }
                           className="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-slate-700 text-[10px] font-black cursor-pointer hover:bg-slate-100"
@@ -4934,7 +5082,7 @@ export function ImageStudioTab({
                           type="button"
                           onClick={() =>
                             setStoryTopFontScale((prev) =>
-                              Math.min(2.0, Number((prev + 0.1).toFixed(2)))
+                              Math.min(1.8, Number((prev + 0.1).toFixed(2)))
                             )
                           }
                           className="px-1.5 py-0.5 rounded bg-white border border-indigo-200 text-slate-700 text-[10px] font-black cursor-pointer hover:bg-slate-100"
@@ -4959,6 +5107,7 @@ export function ImageStudioTab({
                         headerHeightPercent,
                         adjustedSlots,
                         resolvedText,
+                        resolvedRedText,
                         themeColors,
                       } = resolveStoryHeaderAndSlots(item.preset, offsetKey);
 
@@ -5048,57 +5197,76 @@ export function ImageStudioTab({
                                   : 'Bấm để mở khung Story 9:16 này xuống bàn chỉnh sửa lớn'
                               }
                             >
-                              {/* Ô VIẾT CHỮ TRỰC TIẾP Ở PHẦN TRẮNG PHÍA TRÊN CỦA MẪU STORY (S#2, S#3...) */}
-                              {isHeaderActive && headerHeightPercent > 0 && (
-                                <div
-                                  onClick={(e) => e.stopPropagation()}
-                                  onMouseDown={(e) => e.stopPropagation()}
-                                  style={{
-                                    left: '1.5px',
-                                    top: '1.5px',
-                                    width: 'calc(100% - 3px)',
-                                    height: `calc(${headerHeightPercent}% - 3px)`,
-                                    backgroundColor: themeColors.bg,
-                                    borderBottom: `1px solid ${themeColors.border}`,
-                                    zIndex: 30,
-                                  }}
-                                  className="absolute rounded-t-md overflow-hidden flex flex-col justify-center px-1.5 py-1 group/header"
-                                >
-                                  <textarea
-                                    value={resolvedText}
-                                    onChange={(e) => {
-                                      const val = e.target.value;
-                                      setPerStoryCustomTopText((prev) => ({
-                                        ...prev,
-                                        [offsetKey]: val,
-                                      }));
-                                    }}
-                                    placeholder="✍️ Nhập chữ tiêu đề vào đây..."
-                                    rows={3}
+                              {/* Ô HIỂN THỊ CHỮ 2 DÒNG (ĐEN + ĐỎ) Ở PHẦN TRẮNG PHÍA TRÊN CỦA MẪU STORY */}
+                              {isHeaderActive && headerHeightPercent > 0 && (() => {
+                                const miniLayout = computeStoryHeaderLayout({
+                                  mainText: resolvedText,
+                                  redText: resolvedRedText,
+                                  headerHeightPercent,
+                                  ratioAspect,
+                                  paddingVal: padding,
+                                  gapVal: gap,
+                                  fontScale: storyTopFontScale,
+                                });
+                                const fontCqw = ((miniLayout.fontPx / 1080) * 100).toFixed(2);
+                                return (
+                                  <div
                                     style={{
-                                      color: themeColors.text,
-                                      fontSize: `${Math.max(8, Math.min(14, Math.round(10 * storyTopFontScale)))}px`,
-                                      lineHeight: '1.2',
+                                      left: '1.5px',
+                                      top: '1.5px',
+                                      width: 'calc(100% - 3px)',
+                                      height: `calc(${headerHeightPercent}% - 3px)`,
+                                      backgroundColor: themeColors.bg,
+                                      borderBottom: `1px solid ${themeColors.border}`,
+                                      zIndex: 30,
+                                      containerType: 'inline-size',
                                     }}
-                                    className="w-full h-full bg-transparent resize-none border-0 focus:outline-none focus:ring-1 focus:ring-indigo-500 rounded font-black text-center flex items-center justify-center overflow-hidden p-0.5 cursor-text select-text"
-                                    title="Bấm trực tiếp vào đây để gõ hoặc sửa chữ tiêu đề phần trắng phía trên của mẫu Story này!"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      setStoryHeaderToggleMap((prev) => ({
-                                        ...prev,
-                                        [offsetKey]: 'off',
-                                      }));
-                                    }}
-                                    title="Ẩn phần viết chữ phía trên để ảnh tràn kín khung"
-                                    className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-black/50 hover:bg-red-600 text-white text-[8px] font-black flex items-center justify-center opacity-0 group-hover/header:opacity-100 transition-opacity cursor-pointer"
+                                    className="absolute rounded-t-md overflow-hidden flex flex-col items-center justify-center px-1 py-0.5 group/header text-center"
                                   >
-                                    ×
-                                  </button>
-                                </div>
-                              )}
+                                    <div
+                                      style={{
+                                        fontFamily: STORY_HEADER_FONT_FAMILY,
+                                        fontSize: `${fontCqw}cqw`,
+                                        lineHeight: 1.13,
+                                      }}
+                                      className="w-full font-black flex flex-col items-center justify-center"
+                                    >
+                                      {miniLayout.mainLines.map((line, lIdx) => (
+                                        <span
+                                          key={`m-${lIdx}`}
+                                          style={{ color: themeColors.text }}
+                                          className="block w-full truncate"
+                                        >
+                                          {line}
+                                        </span>
+                                      ))}
+                                      {miniLayout.redLines.map((line, rIdx) => (
+                                        <span
+                                          key={`r-${rIdx}`}
+                                          style={{ color: themeColors.accent }}
+                                          className="block w-full truncate"
+                                        >
+                                          {line}
+                                        </span>
+                                      ))}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setStoryHeaderToggleMap((prev) => ({
+                                          ...prev,
+                                          [offsetKey]: 'off',
+                                        }));
+                                      }}
+                                      title="Ẩn phần viết chữ phía trên để ảnh tràn kín khung"
+                                      className="absolute top-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-black/50 hover:bg-red-600 text-white text-[8px] font-black flex items-center justify-center opacity-0 group-hover/header:opacity-100 transition-opacity cursor-pointer"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                );
+                              })()}
 
                               {adjustedSlots.map((slot) => {
                                 const photoSrc = variationSlots[slot.id];
@@ -5916,10 +6084,14 @@ export function ImageStudioTab({
 
                       {mainStoryCtrl.isHeaderActive && (
                         <>
-                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-center">
-                            <div className="lg:col-span-6">
-                              <input
-                                type="text"
+                          <div className="grid grid-cols-1 lg:grid-cols-12 gap-2 items-start">
+                            <div className="lg:col-span-5">
+                              <label className="block text-[10px] font-bold text-slate-300 mb-0.5">
+                                Dòng chữ trên (Đen — Enter để xuống 2 dòng):
+                              </label>
+                              <textarea
+                                ref={storyTopMainInputRef}
+                                rows={2}
                                 value={mainStoryCtrl.resolvedText}
                                 onChange={(e) => {
                                   setStoryTopText(e.target.value);
@@ -5929,61 +6101,86 @@ export function ImageStudioTab({
                                     return next;
                                   });
                                 }}
-                                placeholder="Nhập chữ tiêu đề phần trên Story..."
-                                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 focus:border-indigo-400 text-xs font-semibold text-white placeholder:text-slate-400 focus:outline-none"
+                                placeholder="VD: CAUGHT KISSING!&#10;GUESS WHO?"
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 focus:border-indigo-400 text-xs font-bold text-white placeholder:text-slate-400 focus:outline-none resize-none leading-snug"
+                              />
+                            </div>
+
+                            <div className="lg:col-span-4">
+                              <label className="block text-[10px] font-bold text-red-400 mb-0.5">
+                                Dòng chữ dưới (Đỏ — CTA):
+                              </label>
+                              <input
+                                type="text"
+                                value={mainStoryCtrl.resolvedRedText}
+                                onChange={(e) => {
+                                  setStoryTopRedText(e.target.value);
+                                  setPerStoryCustomTopRedText((prev) => {
+                                    const next = { ...prev };
+                                    delete next[mainStoryCardKey];
+                                    return next;
+                                  });
+                                }}
+                                placeholder="SWIPE UP FOR MORE (để trống nếu chỉ 1 dòng)"
+                                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-red-500/50 focus:border-red-400 text-xs font-extrabold text-red-400 placeholder:text-slate-500 focus:outline-none"
                               />
                             </div>
 
                             {/* Thanh chỉnh cỡ chữ to / nhỏ trực quan */}
-                            <div className="lg:col-span-6 flex items-center gap-1.5 bg-slate-900/80 border border-slate-700/80 rounded-lg px-2 py-1">
-                              <span className="text-[10px] text-slate-300 font-bold shrink-0">Cỡ chữ:</span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setStoryTopFontScale((s) =>
-                                    Math.max(0.6, Number((s - 0.1).toFixed(2)))
-                                  )
-                                }
-                                className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 font-black cursor-pointer shrink-0"
-                                title="Chữ nhỏ hơn"
-                              >
-                                A-
-                              </button>
-                              <input
-                                type="range"
-                                min="0.6"
-                                max="2.0"
-                                step="0.05"
-                                value={storyTopFontScale}
-                                onChange={(e) => setStoryTopFontScale(Number(e.target.value))}
-                                className="flex-1 min-w-[70px] accent-indigo-400 cursor-pointer"
-                                title="Kéo để chỉnh chữ to / nhỏ"
-                              />
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setStoryTopFontScale((s) =>
-                                    Math.min(2.0, Number((s + 0.1).toFixed(2)))
-                                  )
-                                }
-                                className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 font-black cursor-pointer shrink-0"
-                                title="Chữ to hơn"
-                              >
-                                A+
-                              </button>
-                              <span className="text-[10px] font-mono font-bold text-indigo-300 w-9 text-right shrink-0">
-                                {Math.round(storyTopFontScale * 100)}%
-                              </span>
+                            <div className="lg:col-span-3 flex flex-col justify-end h-full">
+                              <label className="block text-[10px] font-bold text-slate-300 mb-0.5">
+                                Cỡ chữ mặc định / Tùy chỉnh:
+                              </label>
+                              <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-700/80 rounded-lg px-2 py-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setStoryTopFontScale((s) =>
+                                      Math.max(0.5, Number((s - 0.1).toFixed(2)))
+                                    )
+                                  }
+                                  className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 font-black cursor-pointer shrink-0"
+                                  title="Chữ nhỏ hơn"
+                                >
+                                  A-
+                                </button>
+                                <input
+                                  type="range"
+                                  min="0.5"
+                                  max="1.8"
+                                  step="0.05"
+                                  value={storyTopFontScale}
+                                  onChange={(e) => setStoryTopFontScale(Number(e.target.value))}
+                                  className="flex-1 min-w-[46px] accent-indigo-400 cursor-pointer"
+                                  title="Kéo để chỉnh chữ to / nhỏ"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setStoryTopFontScale((s) =>
+                                      Math.min(1.8, Number((s + 0.1).toFixed(2)))
+                                    )
+                                  }
+                                  className="px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 font-black cursor-pointer shrink-0"
+                                  title="Chữ to hơn"
+                                >
+                                  A+
+                                </button>
+                                <span className="text-[10px] font-mono font-bold text-indigo-300 w-9 text-right shrink-0">
+                                  {Math.round(storyTopFontScale * 100)}%
+                                </span>
+                              </div>
                             </div>
                           </div>
 
-                          {/* Chọn nhanh bộ màu + màu chữ + màu nền */}
+                          {/* Chọn nhanh bộ màu + màu chữ chính + màu dòng dưới (đỏ) + màu nền */}
                           <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
                             <div className="flex flex-wrap items-center gap-1">
                               {(
                                 [
+                                  { id: 'white_black_red', label: 'Trắng•Đen+Đỏ', cls: 'bg-white text-slate-900 border-red-400' },
                                   { id: 'white_black', label: 'Trắng•Đen', cls: 'bg-white text-slate-900 border-slate-300' },
-                                  { id: 'white_red', label: 'Trắng•Đỏ', cls: 'bg-white text-rose-700 border-rose-300' },
+                                  { id: 'white_red', label: 'Trắng•Đỏ', cls: 'bg-white text-red-600 border-red-300' },
                                   { id: 'black_white', label: 'Đen•Trắng', cls: 'bg-slate-900 text-white border-slate-600' },
                                   { id: 'black_yellow', label: 'Đen•Vàng', cls: 'bg-slate-950 text-amber-300 border-slate-700' },
                                 ] as const
@@ -5994,11 +6191,13 @@ export function ImageStudioTab({
                                   onClick={() => {
                                     setStoryTopTheme(t.id);
                                     setStoryTopCustomTextColor(null);
+                                    setStoryTopCustomAccentColor(null);
                                     setStoryTopCustomBgColor(null);
                                   }}
                                   className={`px-2 py-0.5 rounded text-[10px] font-black border cursor-pointer ${t.cls} ${
                                     storyTopTheme === t.id &&
                                     !storyTopCustomTextColor &&
+                                    !storyTopCustomAccentColor &&
                                     !storyTopCustomBgColor
                                       ? 'ring-2 ring-indigo-400'
                                       : 'opacity-80 hover:opacity-100'
@@ -6009,11 +6208,11 @@ export function ImageStudioTab({
                               ))}
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-2">
-                              {/* Màu chữ trực tiếp */}
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              {/* Màu chữ dòng trên */}
                               <div className="flex items-center gap-1">
-                                <span className="text-[10px] text-slate-300 font-bold">Màu chữ:</span>
-                                {['#0f172a', '#be123c', '#1d4ed8', '#7c3aed', '#facc15', '#ffffff'].map(
+                                <span className="text-[10px] text-slate-300 font-bold">Chữ trên:</span>
+                                {['#000000', '#0f172a', '#be123c', '#1d4ed8', '#ffffff'].map(
                                   (hex) => (
                                     <button
                                       key={hex}
@@ -6025,7 +6224,7 @@ export function ImageStudioTab({
                                           ? 'ring-2 ring-indigo-400 ring-offset-1 ring-offset-slate-800 scale-110 border-white'
                                           : 'border-slate-500 hover:scale-105'
                                       }`}
-                                      title={`Đặt màu chữ ${hex}`}
+                                      title={`Đặt màu chữ trên ${hex}`}
                                     />
                                   )
                                 )}
@@ -6034,7 +6233,35 @@ export function ImageStudioTab({
                                   value={mainStoryCtrl.themeColors.text}
                                   onChange={(e) => setStoryTopCustomTextColor(e.target.value)}
                                   className="w-5 h-5 rounded bg-transparent border-0 p-0 cursor-pointer"
-                                  title="Tự chọn màu chữ bất kỳ"
+                                  title="Tự chọn màu chữ dòng trên bất kỳ"
+                                />
+                              </div>
+
+                              {/* Màu chữ dòng dưới (đỏ/accent) */}
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] text-red-300 font-bold">Dòng đỏ:</span>
+                                {['#e60000', '#dc2626', '#facc15', '#2563eb', '#000000'].map(
+                                  (hex) => (
+                                    <button
+                                      key={hex}
+                                      type="button"
+                                      onClick={() => setStoryTopCustomAccentColor(hex)}
+                                      style={{ backgroundColor: hex }}
+                                      className={`w-4 h-4 rounded-full border cursor-pointer transition-transform ${
+                                        mainStoryCtrl.themeColors.accent.toLowerCase() === hex
+                                          ? 'ring-2 ring-red-400 ring-offset-1 ring-offset-slate-800 scale-110 border-white'
+                                          : 'border-slate-500 hover:scale-105'
+                                      }`}
+                                      title={`Đặt màu dòng dưới ${hex}`}
+                                    />
+                                  )
+                                )}
+                                <input
+                                  type="color"
+                                  value={mainStoryCtrl.themeColors.accent}
+                                  onChange={(e) => setStoryTopCustomAccentColor(e.target.value)}
+                                  className="w-5 h-5 rounded bg-transparent border-0 p-0 cursor-pointer"
+                                  title="Tự chọn màu dòng dưới bất kỳ"
                                 />
                               </div>
 
@@ -6326,9 +6553,23 @@ export function ImageStudioTab({
                           if (!mainStoryInfo.isHeaderActive || mainStoryInfo.headerHeightPercent <= 0) {
                             return null;
                           }
+                          const mainHeaderLayout = computeStoryHeaderLayout({
+                            mainText: mainStoryInfo.resolvedText,
+                            redText: mainStoryInfo.resolvedRedText,
+                            headerHeightPercent: mainStoryInfo.headerHeightPercent,
+                            ratioAspect: previewAspect,
+                            paddingVal: padding,
+                            gapVal: gap,
+                            fontScale: storyTopFontScale,
+                          });
+                          const previewScale = previewBoxW / 1080;
+                          const previewFontPx = Math.max(8, mainHeaderLayout.fontPx * previewScale);
                           return (
                             <div
-                              onClick={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                storyTopMainInputRef.current?.focus();
+                              }}
                               onMouseDown={(e) => e.stopPropagation()}
                               style={{
                                 left: `calc(0% + ${previewGapPx / 2}px)`,
@@ -6340,39 +6581,36 @@ export function ImageStudioTab({
                                 borderRadius: `${previewCornerPx}px`,
                                 zIndex: 30,
                               }}
-                              className="absolute overflow-hidden flex flex-col justify-center px-3 py-2"
+                              className="absolute overflow-hidden flex flex-col items-center justify-center px-2 py-1 text-center cursor-text"
+                              title="Bấm để chỉnh sửa nội dung 2 dòng Đen & Đỏ ngay phía trên"
                             >
-                              <textarea
-                                value={mainStoryInfo.resolvedText}
-                                onChange={(e) => {
-                                  setStoryTopText(e.target.value);
-                                  setPerStoryCustomTopText((prev) => {
-                                    const next = { ...prev };
-                                    delete next[`main-${activePreset.id}`];
-                                    return next;
-                                  });
-                                }}
-                                placeholder="✍️ Nhập chữ tiêu đề phần trắng phía trên của Story..."
-                                rows={Math.min(
-                                  4,
-                                  Math.max(
-                                    1,
-                                    Math.ceil((mainStoryInfo.resolvedText || '').length / 32)
-                                  )
-                                )}
+                              <div
                                 style={{
-                                  color: mainStoryInfo.themeColors.text,
-                                  fontSize: `${Math.max(
-                                    9,
-                                    Math.round(
-                                      (previewBoxW / 1080) *
-                                        Math.max(20, Math.min(84, 44 * storyTopFontScale))
-                                    )
-                                  )}px`,
-                                  lineHeight: '1.24',
+                                  fontFamily: STORY_HEADER_FONT_FAMILY,
+                                  fontSize: `${previewFontPx.toFixed(2)}px`,
+                                  lineHeight: 1.13,
                                 }}
-                                className="w-full max-h-full bg-transparent resize-none border-0 focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded font-black text-center overflow-hidden p-1 cursor-text select-text"
-                              />
+                                className="w-full font-black flex flex-col items-center justify-center"
+                              >
+                                {mainHeaderLayout.mainLines.map((line, lIdx) => (
+                                  <span
+                                    key={`pm-${lIdx}`}
+                                    style={{ color: mainStoryInfo.themeColors.text }}
+                                    className="block whitespace-nowrap"
+                                  >
+                                    {line}
+                                  </span>
+                                ))}
+                                {mainHeaderLayout.redLines.map((line, rIdx) => (
+                                  <span
+                                    key={`pr-${rIdx}`}
+                                    style={{ color: mainStoryInfo.themeColors.accent }}
+                                    className="block whitespace-nowrap"
+                                  >
+                                    {line}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
                           );
                         })()}
