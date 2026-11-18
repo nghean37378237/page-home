@@ -37,6 +37,7 @@ import {
   Clock,
   Plus,
   Trash2,
+  X,
   BarChart3,
 } from 'lucide-react';
 
@@ -277,6 +278,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   const [attachedYoutubeVideos, setAttachedYoutubeVideos] = useState<
     { videoId: string; title: string; watchUrl: string; embedUrl: string; thumbnailUrl: string }[]
   >([]);
+  const [rejectedYoutubeIds, setRejectedYoutubeIds] = useState<string[]>([]);
   const [aiArticleStats, setAiArticleStats] = useState<{
     wordCount: number;
     paragraphCount: number;
@@ -1629,6 +1631,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         setFocusKeyword(data.focusKeyword);
       }
       setCustomYtQuery('');
+      setRejectedYoutubeIds([]);
       setCustomExtImageQuery('');
       setExtQueryUserEdited(false);
       setDetectedExtActors(null);
@@ -2207,7 +2210,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           query: q,
           customQuery: customYtQuery.trim() || undefined,
           excludeVideoIds: excludeCurrentVideos
-            ? attachedYoutubeVideos.map((v) => v.videoId).filter(Boolean)
+            ? Array.from(
+                new Set([
+                  ...attachedYoutubeVideos.map((v) => v.videoId).filter(Boolean),
+                  ...rejectedYoutubeIds,
+                ])
+              )
             : [],
           sourceUrl: sourceLink || undefined,
           title: title.trim(),
@@ -2222,35 +2230,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           setFocusKeyword(String(data.primaryPerson));
         }
         setAttachedYoutubeVideos(data.videos);
-        const headingText =
-          aiLanguage === 'vi'
-            ? '🎬 Video Liên Quan Đáng Chú Ý'
-            : '🎬 Related Videos & Exclusive Moments';
-        const videoBlocks = data.videos
-          .map((v: any, idx: number) => {
-            const safeTitle = String(v.title || '').replace(/"/g, '&quot;');
-            return `<div class="wp-youtube-embed-box" style="margin: 20px 0 28px 0;">
-  <p><strong>Video #${idx + 1}: ${v.title}</strong></p>
-  <figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio" style="margin: 12px 0;">
-    <div class="wp-block-embed__wrapper" style="position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000;">
-      <iframe src="https://www.youtube.com/embed/${v.videoId}" title="${safeTitle}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
-    </div>
-  </figure>
-  <p style="font-size: 13px; color: #475569;">👉 <a href="${v.watchUrl}" target="_blank" rel="noopener noreferrer">${
-              aiLanguage === 'vi' ? 'Xem trực tiếp trên YouTube' : 'Watch on YouTube'
-            }: ${v.title}</a></p>
-</div>`;
-          })
-          .join('\n');
-
-        setContent((prev) => {
-          // Xóa khối video cũ ở cuối bài nếu có rồi gắn 2 video mới
-          const cleaned = prev.replace(
-            /<h2[^>]*>🎬 (Video Liên Quan Đáng Chú Ý|Related Videos & Exclusive Moments)<\/h2>[\s\S]*$/i,
-            ''
-          ).trim();
-          return `${cleaned}\n\n<h2>${headingText}</h2>\n${videoBlocks}`;
-        });
+        syncYoutubeVideosIntoContent(data.videos);
       } else {
         setPublishError('Không tìm thấy video YouTube phù hợp hơn. Bạn có thể nhập tên nhân vật / sự kiện cụ thể vào ô bên dưới.');
       }
@@ -2259,6 +2239,104 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     } finally {
       setSearchingYt(false);
     }
+  };
+
+  // Xóa sạch các khối video YouTube cũ trong HTML (xử lý chính xác thẻ div lồng nhau) và đồng bộ lại danh sách video còn lại
+  const stripYoutubeBlocksFromHtml = (html: string): string => {
+    let out = html || '';
+    // Gỡ từng khối <div class="wp-youtube-embed-box">...</div> theo cân bằng thẻ div
+    while (true) {
+      const match = /<div\b[^>]*class="[^"]*wp-youtube-embed-box[^"]*"[^>]*>/i.exec(out);
+      if (!match || match.index === undefined) break;
+      const startIdx = match.index;
+      let cursor = startIdx + match[0].length;
+      let depth = 1;
+      const divTagRegex = /<\/?div\b[^>]*>/gi;
+      divTagRegex.lastIndex = cursor;
+      let endIdx = out.length;
+      let tagMatch: RegExpExecArray | null;
+      while ((tagMatch = divTagRegex.exec(out)) !== null) {
+        if (tagMatch[0].startsWith('</')) {
+          depth -= 1;
+          if (depth === 0) {
+            endIdx = tagMatch.index + tagMatch[0].length;
+            break;
+          }
+        } else if (!tagMatch[0].endsWith('/>')) {
+          depth += 1;
+        }
+      }
+      out = `${out.slice(0, startIdx)}${out.slice(endIdx)}`;
+    }
+    return out
+      .replace(
+        /<h2[^>]*>\s*🎬\s*(Video Liên Quan Đáng Chú Ý|Related Videos & Exclusive Moments)\s*<\/h2>/gi,
+        ''
+      )
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  };
+
+  const syncYoutubeVideosIntoContent = (
+    nextVideos: {
+      videoId: string;
+      title: string;
+      watchUrl: string;
+      embedUrl: string;
+      thumbnailUrl: string;
+    }[]
+  ) => {
+    setContent((prev) => {
+      const cleaned = stripYoutubeBlocksFromHtml(prev);
+      if (!nextVideos || nextVideos.length === 0) {
+        return cleaned;
+      }
+      const headingText =
+        aiLanguage === 'vi'
+          ? '🎬 Video Liên Quan Đáng Chú Ý'
+          : '🎬 Related Videos & Exclusive Moments';
+      const videoBlocks = nextVideos
+        .map((v, idx) => {
+          const safeTitle = String(v.title || '').replace(/"/g, '&quot;');
+          return `<div class="wp-youtube-embed-box" style="margin: 20px 0 28px 0;">
+  <p><strong>Video #${idx + 1}: ${v.title}</strong></p>
+  <figure class="wp-block-embed is-type-video is-provider-youtube wp-block-embed-youtube wp-embed-aspect-16-9 wp-has-aspect-ratio" style="margin: 12px 0;">
+    <div class="wp-block-embed__wrapper" style="position: relative; width: 100%; padding-bottom: 56.25%; height: 0; overflow: hidden; border-radius: 12px; background: #000;">
+      <iframe src="https://www.youtube.com/embed/${v.videoId}" title="${safeTitle}" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0;" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowfullscreen></iframe>
+    </div>
+  </figure>
+  <p style="font-size: 13px; color: #475569;">👉 <a href="${v.watchUrl}" target="_blank" rel="noopener noreferrer">${
+            aiLanguage === 'vi' ? 'Xem trực tiếp trên YouTube' : 'Watch on YouTube'
+          }: ${v.title}</a></p>
+</div>`;
+        })
+        .join('\n');
+
+      return `${cleaned}\n\n<h2>${headingText}</h2>\n${videoBlocks}`;
+    });
+  };
+
+  // Xóa bớt 1 video không cần thiết khỏi bài viết
+  const handleRemoveYoutubeVideo = (idxToRemove: number) => {
+    const removed = attachedYoutubeVideos[idxToRemove];
+    const nextVideos = attachedYoutubeVideos.filter((_, idx) => idx !== idxToRemove);
+    if (removed?.videoId) {
+      setRejectedYoutubeIds((prev) =>
+        prev.includes(removed.videoId) ? prev : [...prev, removed.videoId]
+      );
+    }
+    setAttachedYoutubeVideos(nextVideos);
+    syncYoutubeVideosIntoContent(nextVideos);
+  };
+
+  // Xóa toàn bộ video đang gắn ở cuối bài
+  const handleClearAllYoutubeVideos = () => {
+    const allIds = attachedYoutubeVideos.map((v) => v.videoId).filter(Boolean);
+    if (allIds.length > 0) {
+      setRejectedYoutubeIds((prev) => Array.from(new Set([...prev, ...allIds])));
+    }
+    setAttachedYoutubeVideos([]);
+    syncYoutubeVideosIntoContent([]);
   };
 
   // Lưu bản nháp nội bộ
@@ -4780,7 +4858,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       <span className="text-xs font-black text-rose-900">
                         🎬 2 Video YouTube đúng chủ đề gắn ở cuối bài ({attachedYoutubeVideos.length} video):
                       </span>
-                      <div className="flex items-center gap-1">
+                      <div className="flex flex-wrap items-center gap-1">
                         <button
                           type="button"
                           disabled={searchingYt}
@@ -4795,39 +4873,67 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                           disabled={searchingYt}
                           onClick={() => void handleRefreshYoutubeVideos(true)}
                           className="px-2 py-0.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] cursor-pointer"
-                          title="Đổi 2 video YouTube khác cùng chủ đề (loại trừ 2 video đang hiện)"
+                          title="Đổi 2 video YouTube khác cùng chủ đề (loại trừ các video đang hiện và vừa xóa)"
                         >
                           {searchingYt ? 'Đang đổi...' : '🔄 Đổi 2 Video khác'}
                         </button>
+                        {attachedYoutubeVideos.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={handleClearAllYoutubeVideos}
+                            className="px-2 py-0.5 rounded-lg bg-slate-100 hover:bg-red-100 text-slate-700 hover:text-red-700 border border-slate-200 hover:border-red-200 font-bold text-[10px] cursor-pointer transition-colors"
+                            title="Xóa hết video đang gắn ở cuối bài"
+                          >
+                            🗑️ Xóa hết
+                          </button>
+                        )}
                       </div>
                     </div>
 
-                    {attachedYoutubeVideos.length > 0 && (
-                      <div className="grid grid-cols-2 gap-2">
+                    {attachedYoutubeVideos.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {attachedYoutubeVideos.map((v, idx) => (
-                          <a
+                          <div
                             key={v.videoId || idx}
-                            href={v.watchUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center space-x-2 p-1.5 rounded-lg bg-slate-50 hover:bg-rose-50 border border-slate-200 transition-colors group"
+                            className="relative flex items-center p-1.5 pr-8 rounded-lg bg-slate-50 hover:bg-rose-50 border border-slate-200 transition-colors group"
                           >
-                            <img
-                              src={v.thumbnailUrl}
-                              alt={v.title}
-                              referrerPolicy="no-referrer"
-                              className="w-14 h-10 object-cover rounded shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <div className="text-[10px] font-black text-rose-700">
-                                Video #{idx + 1}
+                            <a
+                              href={v.watchUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center space-x-2 min-w-0 flex-1"
+                              title="Mở xem video trên YouTube"
+                            >
+                              <img
+                                src={v.thumbnailUrl}
+                                alt={v.title}
+                                referrerPolicy="no-referrer"
+                                className="w-14 h-10 object-cover rounded shrink-0"
+                              />
+                              <div className="min-w-0">
+                                <div className="text-[10px] font-black text-rose-700">
+                                  Video #{idx + 1}
+                                </div>
+                                <div className="text-[11px] font-bold text-slate-800 truncate group-hover:text-rose-700">
+                                  {v.title}
+                                </div>
                               </div>
-                              <div className="text-[11px] font-bold text-slate-800 truncate group-hover:text-rose-700">
-                                {v.title}
-                              </div>
-                            </div>
-                          </a>
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveYoutubeVideo(idx)}
+                              className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-white hover:bg-rose-600 text-slate-400 hover:text-white border border-slate-200 hover:border-rose-600 flex items-center justify-center shadow-2xs transition-colors cursor-pointer"
+                              title={`Xóa Video #${idx + 1} khỏi bài viết`}
+                              aria-label={`Xóa Video #${idx + 1}`}
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
                         ))}
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-slate-500 italic bg-slate-50 border border-dashed border-slate-200 rounded-lg px-2.5 py-2">
+                        Đã gỡ toàn bộ video khỏi bài viết. Bấm <b>&quot;Lấy chuẩn theo bài&quot;</b> hoặc nhập từ khóa bên dưới nếu muốn gắn lại.
                       </div>
                     )}
 
