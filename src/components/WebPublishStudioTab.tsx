@@ -39,6 +39,7 @@ import {
   Trash2,
   X,
   BarChart3,
+  Camera,
 } from 'lucide-react';
 
 interface WpCategoryItem {
@@ -295,6 +296,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     actors: string[];
     projectOrMovie?: string;
   } | null>(null);
+  const [referenceFacePreview, setReferenceFacePreview] = useState<{
+    previewUrl: string;
+    imageBase64?: string;
+    imageUrl?: string;
+    primaryPerson?: string;
+    faceDescription?: string;
+    confidence?: 'high' | 'medium' | 'low';
+  } | null>(null);
+  const faceSearchFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Trạng thái đang đẩy bài & kết quả trả về
   const [isPublishing, setIsPublishing] = useState(false);
@@ -2089,6 +2099,209 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       }
     } catch (err: any) {
       const errMsg = err?.message || 'Không thể tìm thêm ảnh ngoài';
+      setExtImageNotice(`⚠️ ${errMsg}`);
+      setPublishError(errMsg);
+    } finally {
+      setSearchingExtImages(false);
+    }
+  };
+
+  // Nén nhẹ ảnh mẫu khuôn mặt tải lên (tối đa 960px) để nhận diện & tìm ảnh khớp nhanh
+  const compressFaceFileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error('Không đọc được file ảnh mẫu'));
+      reader.onload = () => {
+        const rawDataUrl = String(reader.result || '');
+        if (!rawDataUrl) {
+          reject(new Error('File ảnh mẫu trống'));
+          return;
+        }
+        const img = new window.Image();
+        img.onload = () => {
+          try {
+            const maxDim = 960;
+            const scale = Math.min(1, maxDim / Math.max(img.width || 1, img.height || 1));
+            const w = Math.max(1, Math.round((img.width || maxDim) * scale));
+            const h = Math.max(1, Math.round((img.height || maxDim) * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = w;
+            canvas.height = h;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve(rawDataUrl);
+              return;
+            }
+            ctx.drawImage(img, 0, 0, w, h);
+            resolve(canvas.toDataURL('image/jpeg', 0.86));
+          } catch {
+            resolve(rawDataUrl);
+          }
+        };
+        img.onerror = () => resolve(rawDataUrl);
+        img.src = rawDataUrl;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Nhận diện khuôn mặt từ ảnh mẫu tải lên (hoặc ảnh có sẵn) & tìm loạt ảnh ngoài khớp khuôn mặt nhất
+  const handleSearchByReferenceFace = async (opts: {
+    file?: File;
+    imageUrl?: string;
+    reuseCurrent?: boolean;
+    replaceExisting?: boolean;
+  }) => {
+    let base64ToSend: string | undefined;
+    let urlToSend: string | undefined;
+    let previewUrl = '';
+
+    try {
+      setSearchingExtImages(true);
+      setPublishError(null);
+
+      if (opts.file) {
+        const compressed = await compressFaceFileToDataUrl(opts.file);
+        base64ToSend = compressed;
+        previewUrl = compressed;
+        setReferenceFacePreview({
+          previewUrl,
+          imageBase64: compressed,
+          faceDescription: 'Đang phân tích khuôn mặt bằng AI...',
+        });
+      } else if (opts.imageUrl) {
+        urlToSend = opts.imageUrl;
+        previewUrl = opts.imageUrl;
+        setReferenceFacePreview({
+          previewUrl,
+          imageUrl: opts.imageUrl,
+          faceDescription: 'Đang phân tích khuôn mặt từ ảnh này...',
+        });
+      } else if (opts.reuseCurrent && referenceFacePreview) {
+        base64ToSend = referenceFacePreview.imageBase64;
+        urlToSend = referenceFacePreview.imageUrl;
+        previewUrl = referenceFacePreview.previewUrl;
+      } else {
+        return;
+      }
+
+      setExtImageNotice(
+        '⏳ Đang nhận diện khuôn mặt từ ảnh mẫu & tìm loạt ảnh khớp gương mặt nhất...'
+      );
+
+      const allExcludedImages = [
+        ...extractedWebImages.map((x) => ({ url: x.url, alt: x.alt, isExternal: x.isExternal })),
+        ...(opts.replaceExisting
+          ? []
+          : pendingExternalImages.map((x) => ({ url: x.url, alt: x.alt, isExternal: true }))),
+        ...rejectedExternalUrls.map((u) => ({ url: u, isExternal: true })),
+      ];
+
+      const cleanTopicText = aiTopic.replace(/https?:\/\/[^\s"'<>]+/gi, '').trim();
+      const strippedContentText = content
+        .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+        .replace(/<[^>]*>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 3500);
+
+      const res = await fetch('/api/wp-publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'search_by_face',
+          imageBase64: base64ToSend,
+          imageUrl: urlToSend,
+          title: title.trim(),
+          articleText: [cleanTopicText, strippedContentText, excerpt.trim()]
+            .filter(Boolean)
+            .join('\n\n')
+            .slice(0, 3500),
+          explicitQuery: extQueryUserEdited ? customExtImageQuery.trim() : undefined,
+          existingImages: allExcludedImages,
+          limit: 6,
+        }),
+      });
+      const data = await safeParseApiJson(res);
+
+      if (!res.ok || !data.ok) {
+        const errMsg = data?.error || 'Không thể nhận diện khuôn mặt từ ảnh mẫu';
+        setExtImageNotice(`⚠️ ${errMsg}`);
+        setPublishError(errMsg);
+        setReferenceFacePreview((prev) =>
+          prev
+            ? { ...prev, faceDescription: errMsg }
+            : null
+        );
+        return;
+      }
+
+      const recognizedName = String(data.primaryPerson || '').trim();
+      const faceDesc = String(data.faceDescription || '').trim();
+
+      setReferenceFacePreview({
+        previewUrl,
+        imageBase64: base64ToSend,
+        imageUrl: urlToSend,
+        primaryPerson: recognizedName || undefined,
+        faceDescription: faceDesc,
+        confidence: data.confidence,
+      });
+
+      if (recognizedName) {
+        setCustomExtImageQuery(recognizedName);
+        setExtQueryUserEdited(true);
+      }
+
+      if (Array.isArray(data.detectedPeople) && data.detectedPeople.length > 0) {
+        setDetectedExtActors({
+          actors: data.detectedPeople.map((p: any) => String(p).trim()).filter(Boolean),
+          projectOrMovie: data.projectOrMovie ? String(data.projectOrMovie).trim() : undefined,
+        });
+      }
+
+      const rawExtList = Array.isArray(data.externalImages)
+        ? data.externalImages
+        : Array.isArray(data.images)
+        ? data.images
+        : [];
+
+      if (rawExtList.length > 0) {
+        const returnedExternals = rawExtList.map((im: any) => ({
+          url: String(im.url || ''),
+          alt: String(im.alt || recognizedName || title || 'Face match photo'),
+          isFeatured: false,
+          isExternal: true,
+        }));
+
+        setPendingExternalImages((prev) => {
+          const base = opts.replaceExisting ? [] : prev;
+          const existingSet = new Set(
+            [...extractedWebImages, ...base, ...rejectedExternalUrls.map((u) => ({ url: u }))].map(
+              (x) => String(x.url || '').split('?')[0].toLowerCase()
+            )
+          );
+          const next = [...base];
+          for (const item of returnedExternals) {
+            const key = item.url.split('?')[0].toLowerCase();
+            if (key && !existingSet.has(key)) {
+              existingSet.add(key);
+              next.push(item);
+            }
+          }
+          return next;
+        });
+
+        setExtImageNotice(
+          `✅ Đã nhận diện khuôn mặt${recognizedName ? ` "${recognizedName}"` : ''}${data.projectOrMovie ? ` (${data.projectOrMovie})` : ''} & tìm được ${returnedExternals.length} ảnh mới khớp gương mặt! Xem và bấm Duyệt ở khung bên dưới.`
+        );
+      } else {
+        setExtImageNotice(
+          `⚠️ Đã nhận diện${recognizedName ? `: "${recognizedName}"` : ' khuôn mặt'} nhưng chưa thấy thêm ảnh mới khác các ảnh đã có. Thử bấm Tìm thêm hoặc đổi ảnh mẫu rõ mặt hơn.`
+        );
+      }
+    } catch (err: any) {
+      const errMsg = err?.message || 'Lỗi khi tìm ảnh theo khuôn mặt';
       setExtImageNotice(`⚠️ ${errMsg}`);
       setPublishError(errMsg);
     } finally {
@@ -5087,8 +5300,22 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                             void handleFetchMoreExternalImages(false);
                           }
                         }}
-                        placeholder="Nhập tên diễn viên (hoặc để trống tự đọc bài)..."
-                        title="Để trống để hệ thống tự đọc nội dung bài viết và tìm đúng diễn viên/nhân vật, hoặc nhập thẳng tên diễn viên bạn muốn tìm ảnh rồi bấm Enter / + Tìm thêm ảnh ngoài"
+                        onPaste={(e) => {
+                          const items = e.clipboardData?.items;
+                          if (!items) return;
+                          for (const item of Array.from(items)) {
+                            if (item.type.startsWith('image/')) {
+                              const file = item.getAsFile();
+                              if (file) {
+                                e.preventDefault();
+                                void handleSearchByReferenceFace({ file });
+                                break;
+                              }
+                            }
+                          }
+                        }}
+                        placeholder="Nhập tên hoặc dán ảnh mặt (Ctrl+V)..."
+                        title="Nhập tên diễn viên, để trống để tự đọc bài, hoặc dán trực tiếp ảnh khuôn mặt (Ctrl+V) vào ô này để tìm ảnh khớp khuôn mặt!"
                         className="w-56 sm:w-64 px-2.5 py-1 pr-6 rounded-lg border border-emerald-300 bg-white text-[11px] font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-400"
                       />
                       {customExtImageQuery && (
@@ -5105,6 +5332,29 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                         </button>
                       )}
                     </div>
+                    <input
+                      ref={faceSearchFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const picked = e.target.files?.[0];
+                        e.target.value = '';
+                        if (picked) {
+                          void handleSearchByReferenceFace({ file: picked });
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      disabled={searchingExtImages}
+                      onClick={() => faceSearchFileInputRef.current?.click()}
+                      className="px-2.5 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-[11px] font-black cursor-pointer flex items-center space-x-1 shadow-2xs"
+                      title="Tải lên 1 ảnh khuôn mặt mẫu để AI nhận diện gương mặt và tìm thêm ảnh cùng người này"
+                    >
+                      <Camera className="w-3 h-3" />
+                      <span>Tìm theo mặt (Up ảnh)</span>
+                    </button>
                     <button
                       type="button"
                       disabled={searchingExtImages || aiLoading}
@@ -5159,6 +5409,66 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     )}
                   </div>
                 </div>
+
+                {referenceFacePreview && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-xl bg-violet-50 border border-violet-300 text-[11px]">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <img
+                        src={referenceFacePreview.previewUrl}
+                        alt="Ảnh khuôn mặt mẫu"
+                        referrerPolicy="no-referrer"
+                        className="w-11 h-11 rounded-lg object-cover border-2 border-violet-400 shrink-0 bg-white"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-black text-violet-950 flex flex-wrap items-center gap-1.5">
+                          <span>👤 Tìm theo ảnh khuôn mặt mẫu</span>
+                          {referenceFacePreview.primaryPerson && (
+                            <span className="px-1.5 py-0.5 rounded bg-violet-600 text-white text-[10px]">
+                              {referenceFacePreview.primaryPerson}
+                            </span>
+                          )}
+                          {referenceFacePreview.confidence && (
+                            <span className="px-1.5 py-0.5 rounded bg-white border border-violet-200 text-violet-700 text-[9px]">
+                              Độ khớp: {referenceFacePreview.confidence === 'high' ? 'Cao' : referenceFacePreview.confidence === 'medium' ? 'Khá' : 'Tham khảo'}
+                            </span>
+                          )}
+                        </div>
+                        {referenceFacePreview.faceDescription && (
+                          <p className="text-[10px] font-semibold text-violet-800 truncate">
+                            {referenceFacePreview.faceDescription}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        disabled={searchingExtImages}
+                        onClick={() => void handleSearchByReferenceFace({ reuseCurrent: true })}
+                        className="px-2 py-1 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-[10px] font-extrabold cursor-pointer"
+                        title="Tìm thêm loạt ảnh mới khớp với khuôn mặt mẫu đang chọn"
+                      >
+                        🔍 Tìm thêm mặt này
+                      </button>
+                      <button
+                        type="button"
+                        disabled={searchingExtImages}
+                        onClick={() => faceSearchFileInputRef.current?.click()}
+                        className="px-2 py-1 rounded-lg bg-white hover:bg-violet-100 border border-violet-300 text-violet-900 text-[10px] font-bold cursor-pointer"
+                      >
+                        ↺ Đổi ảnh mẫu
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReferenceFacePreview(null)}
+                        className="px-1.5 py-1 rounded-lg bg-white hover:bg-rose-50 border border-slate-200 text-slate-600 hover:text-rose-700 text-[10px] font-bold cursor-pointer"
+                        title="Đóng ảnh khuôn mặt mẫu"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {detectedExtActors && detectedExtActors.actors.length > 0 && (
                   <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-white/80 border border-emerald-200/80 text-[11px]">
@@ -5372,6 +5682,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                               }`}
                             >
                               {isFeatured ? '⭐ Ảnh đại diện' : 'Đặt đại diện'}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={searchingExtImages}
+                              onClick={() => void handleSearchByReferenceFace({ imageUrl: img.url })}
+                              className="py-0.5 px-1.5 rounded bg-violet-100 hover:bg-violet-200 text-violet-900 font-bold cursor-pointer shrink-0 disabled:opacity-50"
+                              title="Dùng khuôn mặt trong ảnh này làm ảnh mẫu để tìm thêm ảnh ngoài giống người này"
+                            >
+                              👤 Mặt
                             </button>
                             {!isEmbedded && (
                               <button

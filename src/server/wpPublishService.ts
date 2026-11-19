@@ -2770,6 +2770,326 @@ export async function searchExternalRelatedImages(
 }
 
 /**
+ * Nhận diện khuôn mặt từ ảnh mẫu tải lên (hoặc URL ảnh) bằng Gemini Vision (gemini-4-hydrogen),
+ * phân tích danh tính / đặc điểm ngoại hình / bối cảnh và tìm loạt ảnh ngoài khớp khuôn mặt nhất.
+ */
+export async function searchImagesByReferenceFace(params: {
+  imageBase64Data?: string;
+  imageUrl?: string;
+  articleTitle?: string;
+  articleText?: string;
+  extraHint?: string;
+  limit?: number;
+  excludeKeys?: Set<string>;
+}): Promise<{
+  primaryPerson: string;
+  secondaryPerson?: string;
+  detectedPeople: string[];
+  projectOrMovie?: string;
+  characterOrRole?: string;
+  faceDescription: string;
+  confidence: 'high' | 'medium' | 'low';
+  isPublicFigure: boolean;
+  searchQueriesUsed: string[];
+  images: ScrapedArticleImage[];
+}> {
+  const apiKey = (process.env.GEMINI_API_KEY || '').trim();
+  if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+    throw new Error(
+      'Chưa cấu hình GEMINI_API_KEY trên máy chủ. Hãy kiểm tra Settings > Secrets để dùng tính năng tìm ảnh theo khuôn mặt.'
+    );
+  }
+
+  let mimeType = 'image/jpeg';
+  let base64Body = '';
+
+  if (params.imageBase64Data && params.imageBase64Data.trim()) {
+    const raw = params.imageBase64Data.trim();
+    const dataUrlMatch = raw.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,([\s\S]+)$/);
+    if (dataUrlMatch) {
+      mimeType = dataUrlMatch[1];
+      base64Body = dataUrlMatch[2].replace(/\s+/g, '');
+    } else {
+      base64Body = raw.replace(/\s+/g, '');
+    }
+  } else if (params.imageUrl && params.imageUrl.trim()) {
+    const imgUrl = params.imageUrl.trim();
+    let refererOrigin = DEFAULT_WP_SITE;
+    try {
+      refererOrigin = `${new URL(imgUrl).origin}/`;
+    } catch {}
+
+    const tryDownload = async (u: string, ref: string) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(u, {
+          headers: {
+            'User-Agent': SCRAPER_USER_AGENT,
+            Referer: ref,
+            Accept: 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
+          },
+          signal: controller.signal,
+        });
+        if (!res.ok) return null;
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        if (ct.includes('text/html')) return null;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.byteLength < 300) return null;
+        return {
+          mime: ct.startsWith('image/') ? ct.split(';')[0] : 'image/jpeg',
+          b64: buf.toString('base64'),
+        };
+      } catch {
+        return null;
+      } finally {
+        clearTimeout(timer);
+      }
+    };
+
+    let fetched = await tryDownload(imgUrl, refererOrigin);
+    if (!fetched) {
+      fetched = await tryDownload(
+        `https://wsrv.nl/?url=${encodeURIComponent(imgUrl)}&output=jpg`,
+        'https://wsrv.nl/'
+      );
+    }
+    if (!fetched) {
+      throw new Error(`Không thể tải ảnh mẫu từ đường dẫn: ${imgUrl}`);
+    }
+    mimeType = fetched.mime;
+    base64Body = fetched.b64;
+  } else {
+    throw new Error('Vui lòng tải lên ảnh khuôn mặt mẫu hoặc chọn ảnh tham chiếu.');
+  }
+
+  if (!base64Body || base64Body.length < 100) {
+    throw new Error('Dữ liệu ảnh mẫu không hợp lệ hoặc bị trống.');
+  }
+
+  const ai = new GoogleGenAI({
+    apiKey,
+    httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+  });
+
+  const cleanTitle = String(params.articleTitle || '').trim().slice(0, 220);
+  const cleanBody = String(params.articleText || '')
+    .replace(/<figure[\s\S]*?<\/figure>/gi, ' ')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 2500);
+  const extraHint = String(params.extraHint || '').trim().slice(0, 120);
+
+  const promptText = [
+    'You are an expert celebrity/actor facial recognition & visual photo researcher.',
+    'Analyze the face(s) in the attached reference image carefully and identify WHO this person is so we can find matching high-resolution photographs of the SAME person.',
+    'RULES:',
+    '- Prioritize identifying the EXACT face visible in the uploaded image (full real name in English, e.g. "Sydney Sweeney", "Keanu Reeves", "Cameron Diaz").',
+    '- If article context is provided below, use it to disambiguate co-stars or specific era/project, BUT ALWAYS trust the face in the photo above any other name in the text.',
+    '- Note apparent age/era, hair color/style, outfit/setting, and any recognizable movie/TV show/red-carpet event shown in the photo.',
+    '- Write faceDescription in concise Vietnamese (1 sentence describing the face/appearance/outfit/era, e.g. "Nữ diễn viên tóc vàng xõa tự nhiên, nét mặt trẻ trung, bối cảnh thảm đỏ").',
+    '- Set isPublicFigure = true if this is a recognizable celebrity/actor/public figure, false if you cannot identify a public figure by name (and put closest lookalike or descriptive portrait queries in visualSearchQueries).',
+    '- Provide 6 clean English search queries in visualSearchQueries tailored for Bing Images to find clear, non-watermarked photos of this exact person matching their look/era/style in the sample photo.',
+    extraHint ? `Optional user hint: ${extraHint}` : '',
+    cleanTitle ? `Current article title (context only): ${cleanTitle}` : '',
+    cleanBody ? `Current article excerpt (context only): ${cleanBody}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+
+  const response = await ai.models.generateContent({
+    model: 'gemini-4-hydrogen',
+    contents: {
+      parts: [
+        {
+          inlineData: {
+            mimeType,
+            data: base64Body,
+          },
+        },
+        { text: promptText },
+      ],
+    },
+    config: {
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: {
+          primaryPerson: { type: Type.STRING },
+          secondaryPerson: { type: Type.STRING },
+          supportingPeople: { type: Type.ARRAY, items: { type: Type.STRING } },
+          lookalikeCelebrities: { type: Type.ARRAY, items: { type: Type.STRING } },
+          characterOrRole: { type: Type.STRING },
+          projectOrMovie: { type: Type.STRING },
+          eraOrAgeCue: { type: Type.STRING },
+          outfitKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+          locationKeywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+          faceDescription: { type: Type.STRING },
+          confidence: { type: Type.STRING },
+          isPublicFigure: { type: Type.BOOLEAN },
+          visualSearchQueries: { type: Type.ARRAY, items: { type: Type.STRING } },
+        },
+        required: ['faceDescription', 'confidence', 'isPublicFigure', 'visualSearchQueries'],
+      },
+    },
+  });
+
+  if (!response.text) {
+    throw new Error('Gemini không trả về kết quả nhận diện khuôn mặt. Vui lòng thử lại.');
+  }
+
+  const parsed = JSON.parse(response.text);
+  let primaryPerson = String(parsed.primaryPerson || '').trim();
+  const secondaryPerson = String(parsed.secondaryPerson || '').trim();
+  const supportingPeople: string[] = Array.isArray(parsed.supportingPeople)
+    ? parsed.supportingPeople.map((s: any) => String(s || '').trim()).filter(Boolean)
+    : [];
+  const lookalikes: string[] = Array.isArray(parsed.lookalikeCelebrities)
+    ? parsed.lookalikeCelebrities.map((s: any) => String(s || '').trim()).filter(Boolean)
+    : [];
+  const characterOrRole = String(parsed.characterOrRole || '').trim();
+  const projectOrMovie = String(parsed.projectOrMovie || '').trim();
+  const eraOrAgeCue = String(parsed.eraOrAgeCue || '').trim();
+  const faceDescription = String(parsed.faceDescription || '').trim();
+  const rawConf = String(parsed.confidence || 'medium').toLowerCase();
+  const confidence: 'high' | 'medium' | 'low' =
+    rawConf === 'high' ? 'high' : rawConf === 'low' ? 'low' : 'medium';
+  const isPublicFigure = Boolean(parsed.isPublicFigure);
+  const outfitKeywords: string[] = Array.isArray(parsed.outfitKeywords)
+    ? parsed.outfitKeywords.map((s: any) => String(s || '').trim()).filter(Boolean)
+    : [];
+  const locationKeywords: string[] = Array.isArray(parsed.locationKeywords)
+    ? parsed.locationKeywords.map((s: any) => String(s || '').trim()).filter(Boolean)
+    : [];
+  const visualSearchQueries: string[] = Array.isArray(parsed.visualSearchQueries)
+    ? parsed.visualSearchQueries.map((s: any) => String(s || '').trim()).filter(Boolean)
+    : [];
+
+  if (!primaryPerson && lookalikes.length > 0) {
+    primaryPerson = lookalikes[0];
+  }
+
+  const detectedPeople = [
+    ...new Set([primaryPerson, secondaryPerson, ...supportingPeople, ...lookalikes].filter(Boolean)),
+  ].slice(0, 6);
+
+  const requestedLimit = Math.max(1, Math.min(18, Number(params.limit) || 6));
+  const excludeKeys = params.excludeKeys || new Set<string>();
+
+  if (primaryPerson) {
+    const faceQueries = [
+      ...visualSearchQueries,
+      [primaryPerson, projectOrMovie].filter(Boolean).join(' ').trim(),
+      [primaryPerson, eraOrAgeCue, 'portrait'].filter(Boolean).join(' ').trim(),
+      [primaryPerson, 'close up face portrait'].filter(Boolean).join(' ').trim(),
+      `${primaryPerson} photos`,
+    ].filter(Boolean);
+
+    const faceProfile: ArticleContextProfile = {
+      primaryPerson,
+      secondaryPerson,
+      supportingEntities: supportingPeople,
+      characterOrRole,
+      projectOrMovie,
+      detectedPeople,
+      aiVisualQueries: [...new Set(faceQueries)].slice(0, 8),
+      outfitKeywords,
+      locationKeywords,
+      timeframeKeywords: eraOrAgeCue ? [eraOrAgeCue] : [],
+      eventKeywords: projectOrMovie ? [projectOrMovie] : [],
+      eventWords: projectOrMovie ? projectOrMovie.toLowerCase().split(/\s+/) : [],
+      storylineKeywords: [],
+      youtubeSearchQueries: [],
+      articleCategory: eraOrAgeCue
+        ? 'retrospective_feature'
+        : projectOrMovie
+        ? 'screen_production'
+        : 'red_carpet_event',
+      subjectDisplay: secondaryPerson ? `${primaryPerson} and ${secondaryPerson}` : primaryPerson,
+      combinedSearchQuery: faceQueries[0] || primaryPerson,
+    };
+
+    const images = await searchExternalRelatedImages(
+      primaryPerson,
+      requestedLimit,
+      excludeKeys,
+      faceProfile
+    );
+
+    return {
+      primaryPerson,
+      secondaryPerson: secondaryPerson || undefined,
+      detectedPeople,
+      projectOrMovie: projectOrMovie || undefined,
+      characterOrRole: characterOrRole || undefined,
+      faceDescription: faceDescription || `Nhận diện khuôn mặt: ${primaryPerson}`,
+      confidence,
+      isPublicFigure,
+      searchQueriesUsed: faceProfile.aiVisualQueries || [],
+      images,
+    };
+  }
+
+  // Fallback nếu ảnh mẫu không phải người nổi tiếng định danh được: tìm bằng truy vấn mô tả gương mặt/ngoại hình trực quan
+  const descriptiveQueries = visualSearchQueries.slice(0, 3);
+  const fallbackImages: ScrapedArticleImage[] = [];
+  const seenUrls = new Set<string>(excludeKeys);
+  const stockBlockRe =
+    /gettyimages\.|alamy\.|shutterstock\.|istockphoto\.|dreamstime\.|depositphotos\.|123rf\.|pond5\.|pexels\.com|pixabay\.com|unsplash\.com|freepik\.com|vecteezy\.com/i;
+
+  for (const q of descriptiveQueries) {
+    if (fallbackImages.length >= requestedLimit) break;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4200);
+      const res = await fetch(
+        `https://www.bing.com/images/search?q=${encodeURIComponent(q)}&setmkt=en-US&setlang=en-US&cc=US&first=1`,
+        {
+          headers: {
+            'User-Agent': SCRAPER_USER_AGENT,
+            'Accept-Language': 'en-US,en;q=0.9',
+            Cookie: '_EDGE_S=mkt=en-us; SRCHHPGUSR=SRCHLANG=en&WLS=2',
+          },
+          signal: controller.signal,
+        }
+      ).finally(() => clearTimeout(timer));
+      if (!res.ok) continue;
+      const html = await res.text();
+      for (const m of html.matchAll(/m="(\{[^"]+\})"/g)) {
+        if (fallbackImages.length >= requestedLimit) break;
+        try {
+          const obj = JSON.parse(decodeHtmlEntities(m[1]));
+          const imgUrl = String(obj.murl || '').trim();
+          if (!imgUrl || isIgnorableImage(imgUrl) || stockBlockRe.test(imgUrl)) continue;
+          const k = imgUrl.split('?')[0].toLowerCase();
+          if (seenUrls.has(k)) continue;
+          seenUrls.add(k);
+          fallbackImages.push({
+            url: imgUrl,
+            alt: decodeHtmlEntities(String(obj.t || obj.desc || faceDescription || q)),
+            isFeatured: false,
+            isExternal: true,
+          });
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return {
+    primaryPerson: '',
+    detectedPeople,
+    faceDescription:
+      faceDescription || 'Không xác định rõ danh tính người nổi tiếng; tìm theo đặc điểm khuôn mặt',
+    confidence,
+    isPublicFigure,
+    searchQueriesUsed: descriptiveQueries,
+    images: fallbackImages,
+  };
+}
+
+/**
  * Tìm 2 video YouTube liên quan SÁT NỘI DUNG NHẤT với diễn viên, người đi cùng và sự kiện trong bài
  */
 export async function searchRelatedYouTubeVideos(

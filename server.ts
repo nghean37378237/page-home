@@ -9,6 +9,7 @@ import {
   generateSeoArticleWithAi,
   searchRelatedYouTubeVideos,
   searchExternalRelatedImages,
+  searchImagesByReferenceFace,
   analyzeArticleSubjectAndContext,
   enrichArticleContextWithGemini,
   scrapeWebArticleForSeoRewrite,
@@ -352,6 +353,45 @@ async function startServer() {
           projectOrMovie: ctxProfile?.projectOrMovie || '',
           detectedPeople: ctxProfile?.detectedPeople || [],
           searchQuery: ctxProfile?.combinedSearchQuery || explicitQuery || query,
+        });
+        return;
+      }
+
+      if (action === 'search_by_face') {
+        const existingImgs = Array.isArray(body.existingImages) ? body.existingImages : [];
+        const excludeKeys = new Set<string>(
+          existingImgs
+            .map((im: any) =>
+              String(im?.url || '')
+                .split('?')[0]
+                .replace(/_thumbnail(?=\.[a-z]+$)/i, '')
+                .replace(/-\d+x\d+(?=\.[a-z]+$)/i, '')
+                .toLowerCase()
+            )
+            .filter(Boolean)
+        );
+        const faceResult = await searchImagesByReferenceFace({
+          imageBase64Data: body.imageBase64 ? String(body.imageBase64) : undefined,
+          imageUrl: body.imageUrl ? String(body.imageUrl) : undefined,
+          articleTitle: body.title ? String(body.title) : undefined,
+          articleText: body.articleText ? String(body.articleText) : undefined,
+          extraHint: body.explicitQuery ? String(body.explicitQuery) : undefined,
+          limit: Number(body.limit) || 6,
+          excludeKeys,
+        });
+        res.json({
+          ok: true,
+          images: faceResult.images,
+          externalImages: faceResult.images,
+          primaryPerson: faceResult.primaryPerson,
+          secondaryPerson: faceResult.secondaryPerson || '',
+          detectedPeople: faceResult.detectedPeople,
+          projectOrMovie: faceResult.projectOrMovie || '',
+          characterOrRole: faceResult.characterOrRole || '',
+          faceDescription: faceResult.faceDescription,
+          confidence: faceResult.confidence,
+          isPublicFigure: faceResult.isPublicFigure,
+          searchQuery: faceResult.searchQueriesUsed[0] || faceResult.primaryPerson,
         });
         return;
       }
