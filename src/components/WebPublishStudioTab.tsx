@@ -3796,6 +3796,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                         ...targetConfig,
                         targetMode: 'custom_wp' as const,
                         customWpUrl: 'https://yieldstudio.com',
+                        customWpUser: 'cualokhachsan@gmail.com',
+                        customWpAppPassword: 'uENSi7J&Kmc*y6$7',
                       };
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
@@ -6607,6 +6609,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   ...targetConfig,
                   targetMode: 'custom_wp' as const,
                   customWpUrl: 'https://yieldstudio.com',
+                  customWpUser: 'cualokhachsan@gmail.com',
+                  customWpAppPassword: 'uENSi7J&Kmc*y6$7',
                 };
                 setTargetConfig(next);
                 localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
