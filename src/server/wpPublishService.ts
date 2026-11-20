@@ -197,25 +197,49 @@ export async function fetchWpPublishInitData(customAuth?: {
   authors: WpEmployeeAuthorMap[];
 }> {
   const activeSiteUrl = (customAuth?.siteUrl || DEFAULT_WP_SITE).replace(/\/+$/, '');
-  const session = await getWpRestSession(
-    false,
-    customAuth?.siteUrl,
-    customAuth?.username,
-    customAuth?.password
-  );
-  const headers = {
-    Cookie: session.cookieHeader,
-    'X-WP-Nonce': session.restNonce,
+  const username = customAuth?.username?.trim();
+  const password = customAuth?.password?.trim();
+
+  let restRoot = `${activeSiteUrl}/wp-json/`;
+  let headers: Record<string, string> = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
   };
 
-  const [catRes, postsRes] = await Promise.all([
-    fetch(`${session.restRoot}wp/v2/categories?per_page=50`, { headers }),
-    fetch(
-      `${session.restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`,
-      { headers }
-    ),
-  ]);
+  let catRes: Response | null = null;
+  let postsRes: Response | null = null;
+
+  if (username && password) {
+    const authHeader = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+    headers['Authorization'] = authHeader;
+    try {
+      [catRes, postsRes] = await Promise.all([
+        fetch(`${restRoot}wp/v2/categories?per_page=50`, { headers }),
+        fetch(`${restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`, { headers }),
+      ]);
+    } catch {}
+  }
+
+  if (!catRes || !catRes.ok || !postsRes || !postsRes.ok) {
+    const session = await getWpRestSession(
+      false,
+      customAuth?.siteUrl,
+      customAuth?.username,
+      customAuth?.password
+    );
+    restRoot = session.restRoot;
+    headers = {
+      Cookie: session.cookieHeader,
+      'X-WP-Nonce': session.restNonce,
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
+    };
+    [catRes, postsRes] = await Promise.all([
+      fetch(`${restRoot}wp/v2/categories?per_page=50`, { headers }),
+      fetch(
+        `${restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`,
+        { headers }
+      ),
+    ]);
+  }
 
   let categories: WpCategoryItem[] = [];
   if (catRes.ok) {
