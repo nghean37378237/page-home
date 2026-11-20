@@ -98,17 +98,26 @@ export function resolveEmployeeByWpUserId(wpUserId?: number): WpEmployeeAuthorMa
   );
 }
 
-async function getWpRestSession(forceRefresh = false): Promise<WpPublishAuthSession> {
+async function getWpRestSession(
+  forceRefresh = false,
+  customSiteUrl?: string,
+  customUsername?: string,
+  customPassword?: string
+): Promise<WpPublishAuthSession> {
+  const targetSite = (customSiteUrl || DEFAULT_WP_SITE).replace(/\/+$/, '');
+  const targetUser = customUsername || DEFAULT_WP_USER;
+  const targetPass = customPassword || DEFAULT_WP_PASS;
+
   if (!forceRefresh && cachedPublishSession && cachedPublishSession.expiresAt > Date.now()) {
     return cachedPublishSession;
   }
 
-  const loginUrl = `${DEFAULT_WP_SITE}/wp-login.php`;
+  const loginUrl = `${targetSite}/wp-login.php`;
   const body = new URLSearchParams({
-    log: DEFAULT_WP_USER,
-    pwd: DEFAULT_WP_PASS,
+    log: targetUser,
+    pwd: targetPass,
     'wp-submit': 'Log In',
-    redirect_to: `${DEFAULT_WP_SITE}/wp-admin/`,
+    redirect_to: `${targetSite}/wp-admin/`,
     testcookie: '1',
   });
 
@@ -136,11 +145,11 @@ async function getWpRestSession(forceRefresh = false): Promise<WpPublishAuthSess
     .join('; ');
 
   if (!cookieHeader.includes('wordpress_logged_in_')) {
-    throw new Error('Không thể đăng nhập vào hệ thống WordPress celeb24h.com');
+    throw new Error(`Không thể đăng nhập vào hệ thống WordPress ${targetSite}`);
   }
 
   // Lấy X-WP-Nonce từ trang post-new.php
-  const postNewRes = await fetch(`${DEFAULT_WP_SITE}/wp-admin/post-new.php`, {
+  const postNewRes = await fetch(`${targetSite}/wp-admin/post-new.php`, {
     headers: {
       Cookie: cookieHeader,
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
@@ -149,7 +158,7 @@ async function getWpRestSession(forceRefresh = false): Promise<WpPublishAuthSess
   const html = await postNewRes.text();
   const nonceMatch = html.match(/wpApiSettings\s*=\s*(\{[^;]+\})/);
   let restNonce = '';
-  let restRoot = `${DEFAULT_WP_SITE}/wp-json/`;
+  let restRoot = `${targetSite}/wp-json/`;
 
   if (nonceMatch && nonceMatch[1]) {
     try {
@@ -176,14 +185,24 @@ async function getWpRestSession(forceRefresh = false): Promise<WpPublishAuthSess
   return cachedPublishSession;
 }
 
-export async function fetchWpPublishInitData(): Promise<{
+export async function fetchWpPublishInitData(customAuth?: {
+  siteUrl?: string;
+  username?: string;
+  password?: string;
+}): Promise<{
   ok: boolean;
   siteUrl: string;
   categories: WpCategoryItem[];
   posts: WpRemotePostItem[];
   authors: WpEmployeeAuthorMap[];
 }> {
-  const session = await getWpRestSession();
+  const activeSiteUrl = (customAuth?.siteUrl || DEFAULT_WP_SITE).replace(/\/+$/, '');
+  const session = await getWpRestSession(
+    false,
+    customAuth?.siteUrl,
+    customAuth?.username,
+    customAuth?.password
+  );
   const headers = {
     Cookie: session.cookieHeader,
     'X-WP-Nonce': session.restNonce,
@@ -245,7 +264,7 @@ export async function fetchWpPublishInitData(): Promise<{
           status: p.status || 'publish',
           date: String(p.date || ''),
           modified: String(p.modified || ''),
-          link: String(p.link || `${DEFAULT_WP_SITE}/${p.id}`),
+          link: String(p.link || `${activeSiteUrl}/${p.id}`),
           authorId: Number(p.author || 6),
           authorName: authorInfo.displayName,
           employeeCode: authorInfo.code,
@@ -260,7 +279,7 @@ export async function fetchWpPublishInitData(): Promise<{
 
   return {
     ok: true,
-    siteUrl: DEFAULT_WP_SITE,
+    siteUrl: activeSiteUrl,
     categories,
     posts,
     authors: WP_EMPLOYEE_AUTHOR_MAP,

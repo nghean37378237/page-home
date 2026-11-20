@@ -1169,7 +1169,16 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     setLoadingRemote(true);
     setRemoteError(null);
     try {
-      const res = await fetch('/api/wp-publish');
+      let endpoint = '/api/wp-publish';
+      if (targetConfig.targetMode === 'custom_wp' && targetConfig.customWpUrl.trim()) {
+        const params = new URLSearchParams({
+          customWpUrl: targetConfig.customWpUrl.trim(),
+          customWpUser: targetConfig.customWpUser.trim(),
+          customWpAppPassword: targetConfig.customWpAppPassword.trim(),
+        });
+        endpoint = `/api/wp-publish?${params.toString()}`;
+      }
+      const res = await fetch(endpoint);
       const data = await safeParseApiJson(res);
       if (!res.ok || !data.ok) {
         throw new Error(data.error || 'Không thể kết nối tới WordPress');
@@ -1186,7 +1195,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     } finally {
       setLoadingRemote(false);
     }
-  }, []);
+  }, [targetConfig]);
 
   useEffect(() => {
     fetchRemoteWpData();
@@ -6507,8 +6516,40 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               Cấu Hình Kết Nối Website & Webhook API
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
-              Mặc định hệ thống đã kết nối trực tiếp với <strong>https://celeb24h.com</strong>. Bạn cũng có thể chuyển sang đẩy bài lên WordPress cá nhân hoặc Webhook API tùy chỉnh.
+              Mặc định hệ thống đã kết nối trực tiếp với <strong>https://celeb24h.com</strong>. Bạn cũng có thể kết nối với <strong>https://yieldstudio.com</strong> hoặc WordPress cá nhân.
             </p>
+          </div>
+
+          {/* NÚT KẾT NỐI NHANH YIELDSTUDIO */}
+          <div className="p-4 bg-violet-50 border border-violet-300 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div>
+              <h3 className="text-xs font-black text-violet-950 flex items-center gap-1.5">
+                <Globe className="w-4 h-4 text-violet-600" />
+                <span>⚡ Kết Nối Nhanh YieldStudio (https://yieldstudio.com)</span>
+              </h3>
+              <p className="text-[11px] text-violet-800 mt-0.5">
+                Bấm nút này để tự động thiết lập URL đích thành <strong>https://yieldstudio.com</strong> và kết nối đẩy bài viết trực tiếp.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const next = {
+                  ...targetConfig,
+                  targetMode: 'custom_wp' as const,
+                  customWpUrl: 'https://yieldstudio.com',
+                };
+                setTargetConfig(next);
+                localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                setSiteUrl('https://yieldstudio.com');
+                setTimeout(() => {
+                  void fetchRemoteWpData();
+                }, 100);
+              }}
+              className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-black cursor-pointer shadow-2xs shrink-0"
+            >
+              🔗 Kết Nối YieldStudio Ngay
+            </button>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

@@ -120,9 +120,20 @@ async function startServer() {
   });
 
   // API Route: WebPublish Studio - Soạn thảo & Đẩy bài lên Website (celeb24h.com, WordPress, Webhook API)
-  app.get('/api/wp-publish', async (_req, res) => {
+  app.get('/api/wp-publish', async (req, res) => {
     try {
-      const data = await fetchWpPublishInitData();
+      const customWpUrl = String(req.query.customWpUrl || '').trim();
+      const customWpUser = String(req.query.customWpUser || '').trim();
+      const customWpAppPassword = String(req.query.customWpAppPassword || '').trim();
+      const data = await fetchWpPublishInitData(
+        customWpUrl
+          ? {
+              siteUrl: customWpUrl,
+              username: customWpUser,
+              password: customWpAppPassword,
+            }
+          : undefined
+      );
       res.json(data);
     } catch (error: any) {
       console.error('[/api/wp-publish GET] Error:', error);
