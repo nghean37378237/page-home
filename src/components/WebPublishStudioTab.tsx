@@ -296,6 +296,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     actors: string[];
     projectOrMovie?: string;
   } | null>(null);
+  const [connectionNotice, setConnectionNotice] = useState<{
+    ok: boolean;
+    message: string;
+  } | null>(null);
   const [referenceFacePreview, setReferenceFacePreview] = useState<{
     previewUrl: string;
     imageBase64?: string;
@@ -1165,8 +1169,9 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     };
   };
 
-  const fetchRemoteWpData = useCallback(async () => {
+  const handleTestConnection = async () => {
     setLoadingRemote(true);
+    setConnectionNotice(null);
     setRemoteError(null);
     try {
       let endpoint = '/api/wp-publish';
@@ -1181,20 +1186,25 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       const res = await fetch(endpoint);
       const data = await safeParseApiJson(res);
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Không thể kết nối tới WordPress');
+        throw new Error(data.error || 'Không thể kết nối hoặc đăng nhập vào WordPress');
       }
       if (data.siteUrl) setSiteUrl(data.siteUrl);
-      if (Array.isArray(data.categories) && data.categories.length > 0) {
-        setCategories(data.categories);
-      }
-      if (Array.isArray(data.posts)) {
-        setRemotePosts(data.posts);
-      }
+      if (Array.isArray(data.categories)) setCategories(data.categories);
+      if (Array.isArray(data.posts)) setRemotePosts(data.posts);
+
+      const msg = `✅ Kết nối thành công tới ${data.siteUrl || siteUrl}! (Đã tải ${data.categories?.length || 0} chuyên mục, ${data.posts?.length || 0} bài viết)`;
+      setConnectionNotice({ ok: true, message: msg });
     } catch (err: any) {
-      setRemoteError(err?.message || 'Lỗi tải dữ liệu từ website');
+      const errMsg = err?.message || 'Lỗi kết nối website';
+      setConnectionNotice({ ok: false, message: `❌ ${errMsg}` });
+      setRemoteError(errMsg);
     } finally {
       setLoadingRemote(false);
     }
+  };
+
+  const fetchRemoteWpData = useCallback(async () => {
+    await handleTestConnection();
   }, [targetConfig]);
 
   useEffect(() => {
@@ -3769,7 +3779,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                       setSiteUrl('https://celeb24h.com');
-                      setTimeout(() => void fetchRemoteWpData(), 50);
+                      setTimeout(() => void handleTestConnection(), 50);
                     }}
                     className={`px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer transition-all ${
                       siteUrl.includes('celeb24h') && targetConfig.targetMode === 'default_wp'
@@ -3790,7 +3800,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                       setSiteUrl('https://yieldstudio.com');
-                      setTimeout(() => void fetchRemoteWpData(), 50);
+                      setTimeout(() => void handleTestConnection(), 50);
                     }}
                     className={`px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer transition-all ${
                       siteUrl.includes('yieldstudio') || targetConfig.customWpUrl.includes('yieldstudio')
@@ -3800,8 +3810,38 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   >
                     🟣 yieldstudio.com
                   </button>
+
+                  <button
+                    type="button"
+                    disabled={loadingRemote}
+                    onClick={() => void handleTestConnection()}
+                    className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-black disabled:opacity-50 text-white text-xs font-black cursor-pointer shadow-2xs flex items-center gap-1 shrink-0"
+                    title="Kiểm tra kết nối và xác thực đăng nhập tới website đích"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${loadingRemote ? 'animate-spin' : ''}`} />
+                    <span>{loadingRemote ? 'Đang kiểm tra...' : '🔌 Kiểm tra kết nối'}</span>
+                  </button>
                 </div>
               </div>
+
+              {connectionNotice && (
+                <div
+                  className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-2 border ${
+                    connectionNotice.ok
+                      ? 'bg-emerald-50 text-emerald-950 border-emerald-300'
+                      : 'bg-rose-50 text-rose-950 border-rose-300'
+                  }`}
+                >
+                  <span>{connectionNotice.message}</span>
+                  <button
+                    type="button"
+                    onClick={() => setConnectionNotice(null)}
+                    className="text-slate-500 hover:text-slate-900 font-black cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
               <p className="text-xs text-slate-600 mt-1">
                 Quy trình 3 bước khoa học: <b>(1)</b> Hút bài từ Link Web / Đoạn văn → <b>(2)</b> Soạn thảo, gắn 5–7 ảnh & 2 Video YouTube → <b>(3)</b> Chấm điểm SEO & Đẩy lên Web.
               </p>
