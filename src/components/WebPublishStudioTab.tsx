@@ -3756,24 +3756,53 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               W
             </div>
             <div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="space-y-1">
                 <h1 className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
                   Bảng 11: WebPublish Studio — Soạn Thảo & Đẩy Bài Lên Website
                 </h1>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">
-                  Kết nối: {siteUrl.replace(/^https?:\/\//, '')} · Mã NV: ?{selectedEmployeeCode}
-                </span>
-                {onNavigateToTab && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black text-slate-700">🌐 Chọn web viết bài:</span>
                   <button
                     type="button"
-                    onClick={() => onNavigateToTab('movieshd4k_story')}
-                    className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border border-indigo-200 cursor-pointer transition-colors"
+                    onClick={() => {
+                      const next = { ...targetConfig, targetMode: 'default_wp' as const };
+                      setTargetConfig(next);
+                      localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                      setSiteUrl('https://celeb24h.com');
+                      setTimeout(() => void fetchRemoteWpData(), 50);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer transition-all ${
+                      siteUrl.includes('celeb24h') && targetConfig.targetMode === 'default_wp'
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                    }`}
                   >
-                    📖 Tab Truyện movieshd4k.com →
+                    🟢 celeb24h.com
                   </button>
-                )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const next = {
+                        ...targetConfig,
+                        targetMode: 'custom_wp' as const,
+                        customWpUrl: 'https://yieldstudio.com',
+                      };
+                      setTargetConfig(next);
+                      localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                      setSiteUrl('https://yieldstudio.com');
+                      setTimeout(() => void fetchRemoteWpData(), 50);
+                    }}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer transition-all ${
+                      siteUrl.includes('yieldstudio') || targetConfig.customWpUrl.includes('yieldstudio')
+                        ? 'bg-violet-600 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
+                    }`}
+                  >
+                    🟣 yieldstudio.com
+                  </button>
+                </div>
               </div>
-              <p className="text-xs text-slate-600 mt-0.5">
+              <p className="text-xs text-slate-600 mt-1">
                 Quy trình 3 bước khoa học: <b>(1)</b> Hút bài từ Link Web / Đoạn văn → <b>(2)</b> Soạn thảo, gắn 5–7 ảnh & 2 Video YouTube → <b>(3)</b> Chấm điểm SEO & Đẩy lên Web.
               </p>
             </div>
