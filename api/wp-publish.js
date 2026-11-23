@@ -17,7 +17,39 @@ const WP_EMPLOYEE_AUTHOR_MAP = [
   { code: 'H0082', wpUserId: 1, wpUsername: 'admin', displayName: 'Admin (H0082)', staffUsername: 'Admin' },
 ];
 
-let cachedPublishSession = null;
+const cachedPublishSessions = new Map();
+
+function validateSafePublicHttpUrl(rawUrl) {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) throw new Error('URL website không được để trống');
+  const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let parsed;
+  try {
+    parsed = new URL(withProto);
+  } catch {
+    throw new Error(`URL không hợp lệ: ${trimmed}`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Chỉ hỗ trợ giao thức http:// hoặc https://');
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (
+    host === 'localhost' ||
+    host === '::1' ||
+    host === '[::1]' ||
+    host === '0.0.0.0' ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  ) {
+    throw new Error('Không cho phép kết nối tới địa chỉ mạng nội bộ hoặc localhost');
+  }
+  return parsed.toString().replace(/\/+$/, '');
+}
 
 function fetchWithTimeout(url, options = {}, timeoutMs = 5500) {
   const controller = new AbortController();
@@ -3322,17 +3354,48 @@ async function generateSeoArticleWithAiFast(params) {
   };
 }
 
-async function getWpRestSession(forceRefresh = false) {
-  if (!forceRefresh && cachedPublishSession && cachedPublishSession.expiresAt > Date.now()) {
-    return cachedPublishSession;
+async function getWpRestSession(
+  forceRefresh = false,
+  customSiteUrl,
+  customUsername,
+  customPassword,
+  customLoginUrl
+) {
+  const safeBase = customSiteUrl
+    ? new URL(validateSafePublicHttpUrl(customSiteUrl)).origin
+    : DEFAULT_WP_SITE.replace(/\/+$/, '');
+  const targetUser = String(customUsername || DEFAULT_WP_USER).trim();
+  const targetPass = customPassword || DEFAULT_WP_PASS;
+  const cacheKey = `${safeBase}::${targetUser}`;
+
+  const existing = cachedPublishSessions.get(cacheKey);
+  if (!forceRefresh && existing && existing.expiresAt > Date.now()) {
+    return existing;
   }
 
-  const loginUrl = `${DEFAULT_WP_SITE}/wp-login.php`;
+  const loginUrl = customLoginUrl
+    ? validateSafePublicHttpUrl(customLoginUrl)
+    : `${safeBase}/wp-login.php`;
+
+  if (safeBase !== DEFAULT_WP_SITE.replace(/\/+$/, '')) {
+    const preCheck = await fetchWithTimeout(
+      loginUrl,
+      { headers: { 'User-Agent': SCRAPER_USER_AGENT }, redirect: 'follow' },
+      6000
+    );
+    const preHtml = await preCheck.text();
+    if (/cf-turnstile|g-recaptcha|h-captcha|challenges\.cloudflare\.com\/turnstile/i.test(preHtml)) {
+      throw new Error(
+        `Trang đăng nhập ${loginUrl} có lớp xác thực Cloudflare Turnstile / CAPTCHA trên trình duyệt và không dùng WordPress REST API. Hãy đăng nhập trực tiếp tại ${loginUrl} trên trình duyệt, sau đó dán Cookie phiên (ys_dash_sess=...) vào ô cấu hình, hoặc nhập URL website WordPress con + Application Password.`
+      );
+    }
+  }
+
   const body = new URLSearchParams({
-    log: DEFAULT_WP_USER,
-    pwd: DEFAULT_WP_PASS,
+    log: targetUser,
+    pwd: targetPass,
     'wp-submit': 'Log In',
-    redirect_to: `${DEFAULT_WP_SITE}/wp-admin/`,
+    redirect_to: `${safeBase}/wp-admin/`,
     testcookie: '1',
   });
 
@@ -3363,8 +3426,14 @@ async function getWpRestSession(forceRefresh = false) {
     )
     .join('; ');
 
+  if (!cookieHeader.includes('wordpress_logged_in_')) {
+    throw new Error(
+      `Không thể đăng nhập qua form WordPress tại ${loginUrl}. Kiểm tra lại Tài khoản/Mật khẩu hoặc trang web này không sử dụng wp-login.php chuẩn WordPress.`
+    );
+  }
+
   const postNewRes = await fetchWithTimeout(
-    `${DEFAULT_WP_SITE}/wp-admin/post-new.php`,
+    `${safeBase}/wp-admin/post-new.php`,
     {
       headers: {
         Cookie: cookieHeader,
@@ -3376,7 +3445,7 @@ async function getWpRestSession(forceRefresh = false) {
   const html = await postNewRes.text();
   const nonceMatch = html.match(/wpApiSettings\s*=\s*(\{[^;]+\})/);
   let restNonce = '';
-  let restRoot = `${DEFAULT_WP_SITE}/wp-json/`;
+  let restRoot = `${safeBase}/wp-json/`;
 
   if (nonceMatch && nonceMatch[1]) {
     try {
@@ -3386,100 +3455,199 @@ async function getWpRestSession(forceRefresh = false) {
     } catch {}
   }
 
-  cachedPublishSession = {
+  if (!restNonce) {
+    const fallbackNonce = html.match(/"nonce"\s*:\s*"([a-zA-Z0-9]+)"/);
+    if (fallbackNonce) restNonce = fallbackNonce[1];
+  }
+
+  const newSession = {
+    siteUrl: safeBase,
     cookieHeader,
     restNonce,
     restRoot: restRoot.endsWith('/') ? restRoot : `${restRoot}/`,
     expiresAt: Date.now() + 20 * 60 * 1000,
   };
+  cachedPublishSessions.set(cacheKey, newSession);
 
-  return cachedPublishSession;
+  return newSession;
+}
+
+async function fetchWpPublishInitData(customAuth) {
+  const activeSiteUrl =
+    customAuth && customAuth.siteUrl
+      ? new URL(validateSafePublicHttpUrl(customAuth.siteUrl)).origin
+      : DEFAULT_WP_SITE.replace(/\/+$/, '');
+  const username = customAuth && customAuth.username ? String(customAuth.username).trim() : '';
+  const password = customAuth && customAuth.password ? String(customAuth.password).trim() : '';
+  const sessionCookie =
+    customAuth && customAuth.sessionCookie ? String(customAuth.sessionCookie).trim() : '';
+  const isCustomSite = activeSiteUrl !== DEFAULT_WP_SITE.replace(/\/+$/, '');
+
+  if (isCustomSite && sessionCookie) {
+    const normalizedCookie = sessionCookie.includes('=')
+      ? sessionCookie
+      : `ys_dash_sess=${sessionCookie}`;
+    const dashProbeUrl = activeSiteUrl.includes('yieldstudio')
+      ? `${activeSiteUrl}/dash/`
+      : activeSiteUrl;
+    const probeRes = await fetchWithTimeout(
+      dashProbeUrl,
+      {
+        headers: {
+          Cookie: normalizedCookie,
+          'User-Agent': SCRAPER_USER_AGENT,
+        },
+        redirect: 'manual',
+      },
+      6000
+    );
+    const loc = probeRes.headers.get('location') || '';
+    if (probeRes.status >= 300 && probeRes.status < 400 && /login/i.test(loc)) {
+      throw new Error(
+        `Cookie phiên tại ${activeSiteUrl} đã hết hạn hoặc không hợp lệ (chuyển hướng về ${loc}). Vui lòng đăng nhập lại trên trình duyệt và lấy Cookie mới.`
+      );
+    }
+    if (probeRes.ok) {
+      const dashHtml = await probeRes.text();
+      if (/login/i.test(dashHtml) && /cf-turnstile|password/i.test(dashHtml)) {
+        throw new Error(`Cookie phiên chưa đăng nhập được vào Dashboard của ${activeSiteUrl}.`);
+      }
+      return {
+        ok: true,
+        siteUrl: activeSiteUrl,
+        categories: [],
+        posts: [],
+        authors: WP_EMPLOYEE_AUTHOR_MAP,
+        notice: `Đã xác thực phiên đăng nhập qua Cookie tại ${dashProbeUrl}.`,
+      };
+    }
+  }
+
+  let restRoot = `${activeSiteUrl}/wp-json/`;
+  let headers = { 'User-Agent': SCRAPER_USER_AGENT };
+  let catRes = null;
+  let postsRes = null;
+  const isJsonResponse = (r) =>
+    Boolean(r && r.ok && (r.headers.get('content-type') || '').toLowerCase().includes('json'));
+
+  if (username && password) {
+    headers.Authorization = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+    try {
+      [catRes, postsRes] = await Promise.all([
+        fetchWithTimeout(`${restRoot}wp/v2/categories?per_page=50`, { headers }, 5500),
+        fetchWithTimeout(
+          `${restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`,
+          { headers },
+          5500
+        ),
+      ]);
+    } catch {}
+  }
+
+  if (!isJsonResponse(catRes) || !isJsonResponse(postsRes)) {
+    const inferredLoginUrl =
+      (customAuth && customAuth.loginUrl && customAuth.loginUrl.trim()) ||
+      (customAuth && customAuth.siteUrl && /\/dash\/login/i.test(customAuth.siteUrl)
+        ? customAuth.siteUrl.trim()
+        : activeSiteUrl.includes('yieldstudio')
+        ? `${activeSiteUrl}/dash/login`
+        : undefined);
+
+    const session = await getWpRestSession(
+      false,
+      activeSiteUrl,
+      username || undefined,
+      password || undefined,
+      inferredLoginUrl
+    );
+    restRoot = session.restRoot;
+    headers = {
+      Cookie: session.cookieHeader,
+      'X-WP-Nonce': session.restNonce,
+      'User-Agent': SCRAPER_USER_AGENT,
+    };
+    [catRes, postsRes] = await Promise.all([
+      fetchWithTimeout(`${restRoot}wp/v2/categories?per_page=50`, { headers }, 5500),
+      fetchWithTimeout(
+        `${restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`,
+        { headers },
+        5500
+      ),
+    ]);
+  }
+
+  const rawCats = isJsonResponse(catRes) ? await catRes.json() : [];
+  const categories = Array.isArray(rawCats)
+    ? rawCats.map((c) => ({
+        id: Number(c.id),
+        name: decodeHtmlEntities(c.name || ''),
+        slug: String(c.slug || ''),
+        count: Number(c.count || 0),
+      }))
+    : [];
+
+  const catMap = new Map();
+  categories.forEach((c) => catMap.set(c.id, c.name));
+
+  const rawPosts = isJsonResponse(postsRes) ? await postsRes.json() : [];
+  const posts = Array.isArray(rawPosts)
+    ? rawPosts.map((p) => {
+        const authorInfo = resolveEmployeeByWpUserId(p.author);
+        const catIds = Array.isArray(p.categories) ? p.categories.map(Number) : [];
+        const embeddedMedia =
+          p._embedded && p._embedded['wp:featuredmedia'] && p._embedded['wp:featuredmedia'][0];
+        const featuredImageUrl =
+          (embeddedMedia && embeddedMedia.source_url) ||
+          (embeddedMedia &&
+            embeddedMedia.media_details &&
+            embeddedMedia.media_details.sizes &&
+            embeddedMedia.media_details.sizes.medium &&
+            embeddedMedia.media_details.sizes.medium.source_url) ||
+          '';
+        return {
+          id: Number(p.id),
+          title: decodeHtmlEntities(
+            typeof p.title === 'object' ? p.title.raw || p.title.rendered || '' : p.title || ''
+          ),
+          content:
+            typeof p.content === 'object'
+              ? p.content.raw || p.content.rendered || ''
+              : p.content || '',
+          excerpt: stripHtmlTags(
+            typeof p.excerpt === 'object'
+              ? p.excerpt.raw || p.excerpt.rendered || ''
+              : p.excerpt || ''
+          ),
+          slug: String(p.slug || ''),
+          status: p.status || 'publish',
+          date: String(p.date || ''),
+          modified: String(p.modified || ''),
+          link: String(p.link || `${activeSiteUrl}/${p.id}`),
+          authorId: Number(p.author || 6),
+          authorName: authorInfo.displayName,
+          employeeCode: authorInfo.code,
+          categories: catIds,
+          categoryNames: catIds.map((id) => catMap.get(id) || `#${id}`),
+          featuredMediaId: Number(p.featured_media || 0),
+          featuredImageUrl,
+        };
+      })
+    : [];
+
+  return {
+    ok: true,
+    siteUrl: activeSiteUrl,
+    categories,
+    posts,
+    authors: WP_EMPLOYEE_AUTHOR_MAP,
+  };
 }
 
 export default async function handler(req, res) {
   try {
     if (req.method === 'GET') {
-      const session = await getWpRestSession();
-      const headers = {
-        Cookie: session.cookieHeader,
-        'X-WP-Nonce': session.restNonce,
-        'User-Agent': SCRAPER_USER_AGENT,
-      };
-
-      const [catRes, postsRes] = await Promise.all([
-        fetchWithTimeout(`${session.restRoot}wp/v2/categories?per_page=50`, { headers }, 5500),
-        fetchWithTimeout(
-          `${session.restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`,
-          { headers },
-          5500
-        ),
-      ]);
-
-      const rawCats = catRes.ok ? await catRes.json() : [];
-      const categories = Array.isArray(rawCats)
-        ? rawCats.map((c) => ({
-            id: Number(c.id),
-            name: decodeHtmlEntities(c.name || ''),
-            slug: String(c.slug || ''),
-            count: Number(c.count || 0),
-          }))
-        : [];
-
-      const catMap = new Map();
-      categories.forEach((c) => catMap.set(c.id, c.name));
-
-      const rawPosts = postsRes.ok ? await postsRes.json() : [];
-      const posts = Array.isArray(rawPosts)
-        ? rawPosts.map((p) => {
-            const authorInfo = resolveEmployeeByWpUserId(p.author);
-            const catIds = Array.isArray(p.categories) ? p.categories.map(Number) : [];
-            const embeddedMedia =
-              p._embedded && p._embedded['wp:featuredmedia'] && p._embedded['wp:featuredmedia'][0];
-            const featuredImageUrl =
-              (embeddedMedia && embeddedMedia.source_url) ||
-              (embeddedMedia &&
-                embeddedMedia.media_details &&
-                embeddedMedia.media_details.sizes &&
-                embeddedMedia.media_details.sizes.medium &&
-                embeddedMedia.media_details.sizes.medium.source_url) ||
-              '';
-            return {
-              id: Number(p.id),
-              title: decodeHtmlEntities(
-                typeof p.title === 'object' ? p.title.raw || p.title.rendered || '' : p.title || ''
-              ),
-              content:
-                typeof p.content === 'object'
-                  ? p.content.raw || p.content.rendered || ''
-                  : p.content || '',
-              excerpt: stripHtmlTags(
-                typeof p.excerpt === 'object'
-                  ? p.excerpt.raw || p.excerpt.rendered || ''
-                  : p.excerpt || ''
-              ),
-              slug: String(p.slug || ''),
-              status: p.status || 'publish',
-              date: String(p.date || ''),
-              modified: String(p.modified || ''),
-              link: String(p.link || `${DEFAULT_WP_SITE}/${p.id}`),
-              authorId: Number(p.author || 6),
-              authorName: authorInfo.displayName,
-              employeeCode: authorInfo.code,
-              categories: catIds,
-              categoryNames: catIds.map((id) => catMap.get(id) || `#${id}`),
-              featuredMediaId: Number(p.featured_media || 0),
-              featuredImageUrl,
-            };
-          })
-        : [];
-
-      return res.status(200).json({
-        ok: true,
-        siteUrl: DEFAULT_WP_SITE,
-        categories,
-        posts,
-        authors: WP_EMPLOYEE_AUTHOR_MAP,
-      });
+      const data = await fetchWpPublishInitData();
+      return res.status(200).json(data);
     }
 
     if (req.method === 'POST') {
@@ -3706,6 +3874,176 @@ export default async function handler(req, res) {
           detectedPeople: (ctxProfile && ctxProfile.detectedPeople) || [],
           searchQuery: (ctxProfile && ctxProfile.combinedSearchQuery) || explicitQuery || query,
         });
+      }
+
+      if (action === 'test_connection') {
+        const targetMode = String(body.targetMode || 'default_wp');
+        if (targetMode === 'custom_wp' && String(body.customWpUrl || '').trim()) {
+          const data = await fetchWpPublishInitData({
+            siteUrl: String(body.customWpUrl || '').trim(),
+            loginUrl: body.customWpLoginUrl ? String(body.customWpLoginUrl).trim() : undefined,
+            username: body.customWpUser ? String(body.customWpUser).trim() : undefined,
+            password: body.customWpAppPassword ? String(body.customWpAppPassword).trim() : undefined,
+            sessionCookie: body.customSessionCookie ? String(body.customSessionCookie).trim() : undefined,
+          });
+          return res.status(200).json(data);
+        }
+        const data = await fetchWpPublishInitData();
+        return res.status(200).json(data);
+      }
+
+      if (action === 'publish') {
+        const targetMode = String(body.targetMode || 'default_wp');
+        if (targetMode === 'webhook') {
+          if (!String(body.webhookUrl || '').trim()) {
+            return res.status(400).json({ ok: false, error: 'Vui lòng nhập Webhook Endpoint URL trước khi đẩy bài.' });
+          }
+          const safeWebhookUrl = validateSafePublicHttpUrl(body.webhookUrl);
+          const empCode = String(body.employeeCode || 'A0006').trim().toUpperCase();
+          const webhookRes = await fetchWithTimeout(
+            safeWebhookUrl,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                ...(body.webhookSecret ? { Authorization: `Bearer ${body.webhookSecret}` } : {}),
+              },
+              body: JSON.stringify({
+                title: body.title || '',
+                content: body.content || '',
+                excerpt: body.excerpt || '',
+                slug: body.slug || '',
+                status: body.status || 'publish',
+                categories: body.categories || [],
+                tags: body.tags || [],
+                employeeCode: empCode,
+                featuredImageUrl: body.featuredImageUrl || '',
+                publishedAt: new Date().toISOString(),
+              }),
+            },
+            7000
+          );
+          if (!webhookRes.ok) {
+            const errText = await webhookRes.text();
+            return res.status(webhookRes.status).json({
+              ok: false,
+              error: `Webhook trả về lỗi (${webhookRes.status}): ${errText.slice(0, 200)}`,
+            });
+          }
+          const resData = await webhookRes.json().catch(() => ({}));
+          const link = resData.url || resData.link || safeWebhookUrl;
+          const trackingLink = empCode ? `${link}${link.includes('?') ? '&' : '?'}${empCode}` : link;
+          return res.status(200).json({
+            ok: true,
+            targetMode: 'webhook',
+            post: {
+              id: resData.id || Date.now(),
+              title: body.title || '',
+              link,
+              trackingLink,
+              status: body.status || 'publish',
+              slug: body.slug || '',
+              date: new Date().toISOString(),
+              authorId: 0,
+              employeeCode: empCode,
+              featuredImageUrl: body.featuredImageUrl || '',
+            },
+          });
+        }
+        if (targetMode === 'custom_wp') {
+          if (!String(body.customWpUrl || '').trim()) {
+            return res.status(400).json({ ok: false, error: 'Vui lòng nhập URL website đích trong phần cấu hình.' });
+          }
+          const baseSite = new URL(validateSafePublicHttpUrl(body.customWpUrl)).origin;
+          if (!String(body.customWpUser || '').trim() || !String(body.customWpAppPassword || '').trim()) {
+            return res.status(400).json({
+              ok: false,
+              error: `Chưa có thông tin đăng nhập (Username/Email & Password) cho ${baseSite}. Vui lòng nhập đầy đủ trước khi đẩy bài.`,
+            });
+          }
+          const postEndpoint = body.postId
+            ? `${baseSite}/wp-json/wp/v2/posts/${body.postId}`
+            : `${baseSite}/wp-json/wp/v2/posts`;
+          const postPayload = JSON.stringify({
+            title: body.title || '',
+            content: body.content || '',
+            excerpt: body.excerpt || '',
+            ...(body.slug ? { slug: body.slug } : {}),
+            status: body.status || 'publish',
+            ...(Array.isArray(body.categories) && body.categories.length > 0 ? { categories: body.categories } : {}),
+          });
+          const authHeader =
+            'Basic ' +
+            Buffer.from(`${String(body.customWpUser).trim()}:${String(body.customWpAppPassword).trim()}`).toString('base64');
+          let wpRes = await fetchWithTimeout(
+            postEndpoint,
+            {
+              method: 'POST',
+              headers: { Authorization: authHeader, 'Content-Type': 'application/json' },
+              body: postPayload,
+            },
+            7000
+          );
+          const ct = (wpRes.headers.get('content-type') || '').toLowerCase();
+          if (!wpRes.ok || !ct.includes('json')) {
+            const inferredLoginUrl =
+              (body.customWpLoginUrl && String(body.customWpLoginUrl).trim()) ||
+              (/\/dash\/login/i.test(body.customWpUrl)
+                ? String(body.customWpUrl).trim()
+                : baseSite.includes('yieldstudio')
+                ? `${baseSite}/dash/login`
+                : undefined);
+            const customSession = await getWpRestSession(
+              false,
+              baseSite,
+              body.customWpUser,
+              body.customWpAppPassword,
+              inferredLoginUrl
+            );
+            wpRes = await fetchWithTimeout(
+              body.postId
+                ? `${customSession.restRoot}wp/v2/posts/${body.postId}`
+                : `${customSession.restRoot}wp/v2/posts`,
+              {
+                method: 'POST',
+                headers: {
+                  Cookie: customSession.cookieHeader,
+                  'X-WP-Nonce': customSession.restNonce,
+                  'Content-Type': 'application/json',
+                },
+                body: postPayload,
+              },
+              7000
+            );
+          }
+          if (!wpRes.ok) {
+            const errText = await wpRes.text();
+            return res.status(wpRes.status).json({
+              ok: false,
+              error: `Website ${baseSite} trả về lỗi (${wpRes.status}): ${errText.slice(0, 250)}`,
+            });
+          }
+          const created = await wpRes.json();
+          const link = String(created.link || `${baseSite}/?p=${created.id}`);
+          const empCode = String(body.employeeCode || 'A0006').trim().toUpperCase();
+          const trackingLink = empCode ? `${link}${link.includes('?') ? '&' : '?'}${empCode}` : link;
+          return res.status(200).json({
+            ok: true,
+            targetMode: 'custom_wp',
+            post: {
+              id: Number(created.id),
+              title: body.title || '',
+              link,
+              trackingLink,
+              status: created.status || body.status || 'publish',
+              slug: String(created.slug || ''),
+              date: String(created.date || new Date().toISOString()),
+              authorId: Number(created.author || 1),
+              employeeCode: empCode,
+              featuredImageUrl: body.featuredImageUrl || '',
+            },
+          });
+        }
       }
 
       const session = await getWpRestSession();
