@@ -165,7 +165,7 @@ async function getWpRestSession(
     const preHtml = await preCheck.text();
     if (/cf-turnstile|g-recaptcha|h-captcha|challenges\.cloudflare\.com\/turnstile/i.test(preHtml)) {
       throw new Error(
-        `Trang đăng nhập ${loginUrl} có lớp xác thực Cloudflare Turnstile / CAPTCHA trên trình duyệt và không dùng WordPress REST API. Hãy đăng nhập trực tiếp tại ${loginUrl} trên trình duyệt, sau đó dán Cookie phiên (ys_dash_sess=...) vào ô cấu hình, hoặc nhập URL website WordPress con + Application Password.`
+        `Trang đăng nhập ${loginUrl} có bật xác thực Cloudflare Turnstile / CAPTCHA trên trình duyệt và không mở WordPress REST API. Hãy nhập trực tiếp URL website WordPress con (kèm Username & Password / Application Password) hoặc chọn mục Webhook API để đẩy bài.`
       );
     }
   }

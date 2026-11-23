@@ -3849,7 +3849,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       onClick={() => setShowSiteAuthBox((prev) => !prev)}
                       className="px-2.5 py-1 rounded-lg bg-violet-100 hover:bg-violet-200 text-violet-900 border border-violet-300 text-xs font-black cursor-pointer"
                     >
-                      {showSiteAuthBox ? '▲ Ẩn cấu hình Login' : '🔑 Nhập User / Pass / Cookie'}
+                      {showSiteAuthBox ? '▲ Ẩn cấu hình Login' : '🔑 Nhập User / Pass'}
                     </button>
                   )}
 
@@ -3950,31 +3950,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
-                      Cookie phiên đăng nhập (tùy chọn — dùng nếu trang Login bật Cloudflare Turnstile, VD: ys_dash_sess=...)
-                    </label>
-                    <div className="flex flex-wrap sm:flex-nowrap gap-2">
-                      <input
-                        type="password"
-                        value={targetConfig.customSessionCookie || ''}
-                        onChange={(e) => {
-                          const next = { ...targetConfig, customSessionCookie: e.target.value };
-                          setTargetConfig(next);
-                          localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
-                        }}
-                        placeholder="ys_dash_sess=..."
-                        className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-violet-200 rounded-lg text-xs font-mono text-slate-900"
-                      />
-                      <button
-                        type="button"
-                        disabled={loadingRemote}
-                        onClick={() => void handleTestConnection(targetConfig)}
-                        className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-black cursor-pointer shrink-0"
-                      >
-                        🔌 Lưu &amp; Kiểm tra kết nối
-                      </button>
-                    </div>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      disabled={loadingRemote}
+                      onClick={() => void handleTestConnection(targetConfig)}
+                      className="px-3.5 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-black cursor-pointer shrink-0"
+                    >
+                      🔌 Lưu &amp; Kiểm tra kết nối
+                    </button>
                   </div>
                 </div>
               )}
@@ -6810,7 +6794,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             >
               <Settings className="w-5 h-5 text-blue-600 mb-1" />
               <div className="text-xs font-black">Website Tùy Chỉnh / WP</div>
-              <div className="text-[11px] opacity-80">REST API, Login URL hoặc Cookie</div>
+              <div className="text-[11px] opacity-80">Đăng nhập trực tiếp hoặc REST API</div>
             </button>
 
             <button
@@ -6902,31 +6886,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   />
                 </div>
               </div>
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Cookie phiên đăng nhập (tùy chọn — dùng cho trang có Cloudflare Turnstile như yieldstudio.com)
-                </label>
-                <div className="flex flex-wrap sm:flex-nowrap gap-2">
-                  <input
-                    type="password"
-                    value={targetConfig.customSessionCookie || ''}
-                    onChange={(e) => {
-                      const next = { ...targetConfig, customSessionCookie: e.target.value };
-                      setTargetConfig(next);
-                      localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
-                    }}
-                    placeholder="ys_dash_sess=..."
-                    className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono"
-                  />
-                  <button
-                    type="button"
-                    disabled={loadingRemote}
-                    onClick={() => void handleTestConnection(targetConfig)}
-                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black disabled:opacity-50 text-white text-xs font-black cursor-pointer shrink-0"
-                  >
-                    🔌 Kiểm tra kết nối
-                  </button>
-                </div>
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  disabled={loadingRemote}
+                  onClick={() => void handleTestConnection(targetConfig)}
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black disabled:opacity-50 text-white text-xs font-black cursor-pointer shrink-0"
+                >
+                  🔌 Kiểm tra kết nối
+                </button>
               </div>
             </div>
           )}
