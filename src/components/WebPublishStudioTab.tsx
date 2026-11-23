@@ -96,6 +96,30 @@ interface WebPublishStudioTabProps {
 
 const LOCAL_DRAFTS_KEY = 'webpublish_studio_local_drafts_v1';
 const LOCAL_TARGET_CONFIG_KEY = 'webpublish_studio_target_cfg_v1';
+const LOCAL_MANUAL_CATALOGS_KEY = 'webpublish_studio_manual_catalogs_v1';
+
+function getNormalizedSiteOrigin(rawUrl?: string): string {
+  const clean = (rawUrl || '').trim();
+  if (!clean) return 'default';
+  try {
+    const withProto = /^https?:\/\//i.test(clean) ? clean : `https://${clean}`;
+    return new URL(withProto).origin.toLowerCase();
+  } catch {
+    return clean.toLowerCase();
+  }
+}
+
+function loadSavedManualCatalogs(siteOriginKey: string): WpCategoryItem[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_MANUAL_CATALOGS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    const list = parsed?.[siteOriginKey];
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
 
 interface LocalArticleDraft {
   id: string;
@@ -302,6 +326,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     message: string;
   } | null>(null);
   const [showSiteAuthBox, setShowSiteAuthBox] = useState(false);
+  const [showManualCatalogBox, setShowManualCatalogBox] = useState(false);
+  const [manualCatalogText, setManualCatalogText] = useState('');
   const [referenceFacePreview, setReferenceFacePreview] = useState<{
     previewUrl: string;
     imageBase64?: string;
@@ -1172,15 +1198,63 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     };
   };
 
+  const handleSaveManualCatalogs = (rawInput?: string) => {
+    const textToParse = typeof rawInput === 'string' ? rawInput : manualCatalogText;
+    const names = textToParse
+      .split(/[\n,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const uniqueNames = Array.from(new Set(names));
+    const targetUrl =
+      targetConfig.targetMode === 'custom_wp' && targetConfig.customWpUrl?.trim()
+        ? targetConfig.customWpUrl.trim()
+        : siteUrl;
+    const originKey = getNormalizedSiteOrigin(targetUrl);
+
+    if (uniqueNames.length === 0) {
+      setConnectionNotice({
+        ok: false,
+        message: '⚠️ Vui lòng nhập ít nhất 1 tên Catalog / Danh mục (phân tách bằng dấu phẩy hoặc xuống dòng).',
+      });
+      return;
+    }
+
+    const mapped: WpCategoryItem[] = uniqueNames.map((name, idx) => ({
+      id: 9000 + idx + 1,
+      name,
+      slug: slugifyText(name) || `catalog-${idx + 1}`,
+      count: 0,
+    }));
+
+    try {
+      const rawAll = localStorage.getItem(LOCAL_MANUAL_CATALOGS_KEY);
+      const allMap = rawAll ? JSON.parse(rawAll) : {};
+      allMap[originKey] = mapped;
+      localStorage.setItem(LOCAL_MANUAL_CATALOGS_KEY, JSON.stringify(allMap));
+    } catch {}
+
+    setCategories(mapped);
+    setSelectedCategories([mapped[0].id]);
+    setManualCatalogText(uniqueNames.join(', '));
+    setShowManualCatalogBox(false);
+    setRemoteError(null);
+    setConnectionNotice({
+      ok: true,
+      message: `✅ Đã lưu thủ công ${mapped.length} danh mục / Catalog cho ${originKey}! Bạn có thể chọn Catalog khi soạn bài và bấm "Copy HTML dán tay lên Web".`,
+    });
+  };
+
   const handleTestConnection = async (overrideConfig?: CustomTargetConfig) => {
     const activeCfg = overrideConfig || targetConfig;
+    const isCustomWp =
+      activeCfg.targetMode === 'custom_wp' && Boolean(activeCfg.customWpUrl?.trim());
+    const customOriginKey = getNormalizedSiteOrigin(activeCfg.customWpUrl);
+    const savedManual = isCustomWp ? loadSavedManualCatalogs(customOriginKey) : [];
+
     setLoadingRemote(true);
     setConnectionNotice(null);
     setRemoteError(null);
     try {
-      const isCustomWp =
-        activeCfg.targetMode === 'custom_wp' && Boolean(activeCfg.customWpUrl?.trim());
-
       const res = isCustomWp
         ? await fetch('/api/wp-publish', {
             method: 'POST',
@@ -1199,26 +1273,34 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       const data = await safeParseApiJson(res);
       if (!res.ok || !data.ok) {
         if (isCustomWp) {
-          setCategories([]);
-          setSelectedCategories([]);
+          if (savedManual.length > 0) {
+            setCategories(savedManual);
+            setSelectedCategories([savedManual[0].id]);
+            setManualCatalogText(savedManual.map((c) => c.name).join(', '));
+          } else {
+            setCategories([]);
+            setSelectedCategories([]);
+          }
           setRemotePosts([]);
         }
         throw new Error(data.error || 'Không thể kết nối hoặc đăng nhập vào website');
       }
       if (data.siteUrl) setSiteUrl(data.siteUrl);
-      if (Array.isArray(data.categories)) {
-        setCategories(data.categories);
-        if (data.categories.length > 0 && !data.categories.some((c: any) => selectedCategories.includes(c.id))) {
-          setSelectedCategories([data.categories[0].id]);
-        } else if (data.categories.length === 0) {
-          setSelectedCategories([]);
-        }
+      const effectiveCats =
+        Array.isArray(data.categories) && data.categories.length > 0
+          ? data.categories
+          : savedManual;
+      setCategories(effectiveCats);
+      if (effectiveCats.length > 0 && !effectiveCats.some((c: any) => selectedCategories.includes(c.id))) {
+        setSelectedCategories([effectiveCats[0].id]);
+      } else if (effectiveCats.length === 0) {
+        setSelectedCategories([]);
       }
       if (Array.isArray(data.posts)) setRemotePosts(data.posts);
 
       const baseMsg = data.notice
         ? `✅ ${data.notice}`
-        : `✅ Kết nối thành công tới ${data.siteUrl || siteUrl}! (Đã tải ${data.categories?.length || 0} chuyên mục, ${data.posts?.length || 0} bài viết)`;
+        : `✅ Kết nối thành công tới ${data.siteUrl || siteUrl}! (Đã tải ${effectiveCats.length} chuyên mục, ${data.posts?.length || 0} bài viết)`;
       setConnectionNotice({ ok: true, message: baseMsg });
     } catch (err: any) {
       const errMsg = err?.message || 'Lỗi kết nối website';
@@ -3954,7 +4036,22 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex justify-end pt-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const existing = loadSavedManualCatalogs(
+                          getNormalizedSiteOrigin(targetConfig.customWpUrl || siteUrl)
+                        );
+                        if (existing.length > 0 && !manualCatalogText.trim()) {
+                          setManualCatalogText(existing.map((c) => c.name).join(', '));
+                        }
+                        setShowManualCatalogBox((prev) => !prev);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-white hover:bg-amber-50 border border-amber-300 text-amber-900 text-xs font-black cursor-pointer shrink-0"
+                    >
+                      ✍️ {showManualCatalogBox ? 'Ẩn nhập tay Catalog' : 'Nhập tay Catalog (khi web có CAPTCHA)'}
+                    </button>
                     <button
                       type="button"
                       disabled={loadingRemote}
@@ -3964,25 +4061,68 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       🔌 Lưu &amp; Kiểm tra kết nối
                     </button>
                   </div>
+
+                  {showManualCatalogBox && (
+                    <div className="p-3 bg-amber-50/90 border border-amber-300 rounded-xl space-y-2">
+                      <div className="text-[11px] font-black text-amber-950">
+                        ✍️ Nhập tay danh sách Catalog / Danh mục của {targetConfig.customWpUrl || siteUrl} (không cần đăng nhập tự động)
+                      </div>
+                      <input
+                        type="text"
+                        value={manualCatalogText}
+                        onChange={(e) => setManualCatalogText(e.target.value)}
+                        placeholder="Ví dụ: Tin tức, Công nghệ, AI, Dịch vụ, Blog..."
+                        className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-semibold text-slate-900"
+                      />
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[11px] text-amber-800">
+                          Phân tách bằng dấu phẩy (,). Sau khi lưu bạn có thể chọn Catalog &amp; soạn bài như bình thường rồi Copy HTML dán lên web.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveManualCatalogs()}
+                          className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-black cursor-pointer shrink-0"
+                        >
+                          ✅ Lưu Catalog nhập tay
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
               {connectionNotice && (
                 <div
-                  className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-2 border ${
+                  className={`p-2.5 rounded-xl text-xs font-bold flex flex-col gap-2 border ${
                     connectionNotice.ok
                       ? 'bg-emerald-50 text-emerald-950 border-emerald-300'
                       : 'bg-rose-50 text-rose-950 border-rose-300'
                   }`}
                 >
-                  <span>{connectionNotice.message}</span>
-                  <button
-                    type="button"
-                    onClick={() => setConnectionNotice(null)}
-                    className="text-slate-500 hover:text-slate-900 font-black cursor-pointer"
-                  >
-                    ✕
-                  </button>
+                  <div className="flex items-start justify-between gap-2">
+                    <span>{connectionNotice.message}</span>
+                    <button
+                      type="button"
+                      onClick={() => setConnectionNotice(null)}
+                      className="text-slate-500 hover:text-slate-900 font-black cursor-pointer shrink-0"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {!connectionNotice.ok && targetConfig.targetMode === 'custom_wp' && (
+                    <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowSiteAuthBox(true);
+                          setShowManualCatalogBox(true);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-white hover:bg-amber-50 border border-amber-400 text-amber-900 text-[11px] font-black cursor-pointer"
+                      >
+                        ✍️ Chuyển sang Nhập Tay Catalog để viết bài cho web này
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
               <p className="text-xs text-slate-600 mt-1">
@@ -6313,50 +6453,94 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                 </p>
               </div>
 
-              {/* CHỌN CHUYÊN MỤC (CATEGORIES TRÊN CELEB24H.COM) */}
+              {/* CHỌN CHUYÊN MỤC / CATALOG WEBSITE */}
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-black text-slate-800 uppercase flex items-center space-x-1.5">
                     <FolderOpen className="w-3.5 h-3.5 text-blue-600" />
-                    <span>Chuyên Mục Website (Categories)</span>
+                    <span>Chuyên Mục / Catalog Website</span>
                   </label>
-                  <button
-                    type="button"
-                    onClick={fetchRemoteWpData}
-                    className="text-[11px] text-blue-600 hover:underline cursor-pointer"
-                  >
-                    Làm mới
-                  </button>
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setShowManualCatalogBox((prev) => !prev)}
+                      className="text-[11px] font-bold text-amber-700 hover:underline cursor-pointer"
+                    >
+                      + Nhập tay Catalog
+                    </button>
+                    <button
+                      type="button"
+                      onClick={fetchRemoteWpData}
+                      className="text-[11px] text-blue-600 hover:underline cursor-pointer"
+                    >
+                      Làm mới
+                    </button>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
-                  {categories.map((cat) => {
-                    const checked = selectedCategories.includes(cat.id);
-                    return (
-                      <label
-                        key={cat.id}
-                        className={`flex items-center space-x-2 p-2 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
-                          checked
-                            ? 'bg-blue-50 border-blue-400 text-blue-950'
-                            : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
-                        }`}
+                {showManualCatalogBox && (
+                  <div className="p-2.5 bg-amber-50 border border-amber-300 rounded-xl space-y-1.5">
+                    <input
+                      type="text"
+                      value={manualCatalogText}
+                      onChange={(e) => setManualCatalogText(e.target.value)}
+                      placeholder="Nhập Catalog cách nhau dấu phẩy (VD: Tin tức, Công nghệ, AI)..."
+                      className="w-full px-2.5 py-1.5 bg-white border border-amber-300 rounded-lg text-xs font-semibold"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleSaveManualCatalogs()}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-black cursor-pointer"
                       >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setSelectedCategories((prev) => [...prev, cat.id]);
-                            } else {
-                              setSelectedCategories((prev) => prev.filter((id) => id !== cat.id));
-                            }
-                          }}
-                          className="w-3.5 h-3.5 text-blue-600 rounded"
-                        />
-                        <span className="truncate">{cat.name}</span>
-                      </label>
-                    );
-                  })}
+                        ✅ Lưu Catalog
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2 max-h-44 overflow-y-auto p-2 bg-slate-50 border border-slate-200 rounded-xl">
+                  {categories.length === 0 ? (
+                    <div className="col-span-2 text-center py-3 text-[11px] text-slate-500">
+                      Chưa có Catalog tự động cho web này. Bấm{' '}
+                      <button
+                        type="button"
+                        onClick={() => setShowManualCatalogBox(true)}
+                        className="font-black text-amber-700 underline cursor-pointer"
+                      >
+                        + Nhập tay Catalog
+                      </button>{' '}
+                      để thêm ngay.
+                    </div>
+                  ) : (
+                    categories.map((cat) => {
+                      const checked = selectedCategories.includes(cat.id);
+                      return (
+                        <label
+                          key={cat.id}
+                          className={`flex items-center space-x-2 p-2 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
+                            checked
+                              ? 'bg-blue-50 border-blue-400 text-blue-950'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedCategories((prev) => [...prev, cat.id]);
+                              } else {
+                                setSelectedCategories((prev) => prev.filter((id) => id !== cat.id));
+                              }
+                            }}
+                            className="w-3.5 h-3.5 text-blue-600 rounded"
+                          />
+                          <span className="truncate">{cat.name}</span>
+                        </label>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
@@ -6457,7 +6641,39 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   className="w-full py-2 px-4 bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-800 rounded-xl text-xs font-bold flex items-center justify-center space-x-1.5 cursor-pointer transition-all"
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  <span>Gửi Lưu Nháp Trên WordPress (Draft)</span>
+                  <span>Gửi Lưu Nháp Trên Website (Draft)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const cleanRaw = content.trim();
+                    let formattedHtml =
+                      cleanRaw.includes('<p') || cleanRaw.includes('<h') || cleanRaw.includes('<div')
+                        ? cleanRaw
+                        : cleanRaw
+                            .split(/\n\s*\n/)
+                            .filter(Boolean)
+                            .map((para) => `<p style="margin: 0 0 22px 0; line-height: 1.85;">${para.trim().replace(/\n/g, '<br />')}</p>`)
+                            .join('\n\n');
+                    if (!/<img\b/i.test(formattedHtml) && extractedWebImages.length > 0) {
+                      formattedHtml = distributeAndAttachImagesToHtml(
+                        formattedHtml,
+                        extractedWebImages,
+                        title.trim()
+                      );
+                    }
+                    const fullCopy = `<h1>${title.trim()}</h1>\n${excerpt.trim() ? `<p><em>${excerpt.trim()}</em></p>\n` : ''}${formattedHtml}`;
+                    handleCopyText(fullCopy, 'manual_article_html');
+                  }}
+                  className="w-full py-2 px-4 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 rounded-xl text-xs font-black flex items-center justify-center space-x-1.5 cursor-pointer transition-all"
+                >
+                  <Copy className="w-3.5 h-3.5 text-amber-700" />
+                  <span>
+                    {copiedKey === 'manual_article_html'
+                      ? '✅ Đã Copy HTML bài viết! Dán trực tiếp lên Web'
+                      : '📋 Copy HTML bài viết (Dán tay lên Web)'}
+                  </span>
                 </button>
               </div>
             </div>
