@@ -81,8 +81,10 @@ interface RelatedYouTubeVideo {
 interface CustomTargetConfig {
   targetMode: 'default_wp' | 'custom_wp' | 'webhook';
   customWpUrl: string;
+  customWpLoginUrl?: string;
   customWpUser: string;
   customWpAppPassword: string;
+  customSessionCookie?: string;
   webhookUrl: string;
   webhookSecret: string;
 }
@@ -300,6 +302,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     ok: boolean;
     message: string;
   } | null>(null);
+  const [showSiteAuthBox, setShowSiteAuthBox] = useState(false);
   const [referenceFacePreview, setReferenceFacePreview] = useState<{
     previewUrl: string;
     imageBase64?: string;
@@ -366,8 +369,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     return {
       targetMode: 'default_wp',
       customWpUrl: '',
+      customWpLoginUrl: '',
       customWpUser: '',
       customWpAppPassword: '',
+      customSessionCookie: '',
       webhookUrl: '',
       webhookSecret: '',
     };
@@ -1169,31 +1174,52 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
     };
   };
 
-  const handleTestConnection = async () => {
+  const handleTestConnection = async (overrideConfig?: CustomTargetConfig) => {
+    const activeCfg = overrideConfig || targetConfig;
     setLoadingRemote(true);
     setConnectionNotice(null);
     setRemoteError(null);
     try {
-      let endpoint = '/api/wp-publish';
-      if (targetConfig.targetMode === 'custom_wp' && targetConfig.customWpUrl.trim()) {
-        const params = new URLSearchParams({
-          customWpUrl: targetConfig.customWpUrl.trim(),
-          customWpUser: targetConfig.customWpUser.trim(),
-          customWpAppPassword: targetConfig.customWpAppPassword.trim(),
-        });
-        endpoint = `/api/wp-publish?${params.toString()}`;
-      }
-      const res = await fetch(endpoint);
+      const isCustomWp =
+        activeCfg.targetMode === 'custom_wp' && Boolean(activeCfg.customWpUrl?.trim());
+
+      const res = isCustomWp
+        ? await fetch('/api/wp-publish', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              action: 'test_connection',
+              targetMode: activeCfg.targetMode,
+              customWpUrl: activeCfg.customWpUrl.trim(),
+              customWpLoginUrl: activeCfg.customWpLoginUrl?.trim() || '',
+              customWpUser: activeCfg.customWpUser.trim(),
+              customWpAppPassword: activeCfg.customWpAppPassword.trim(),
+              customSessionCookie: activeCfg.customSessionCookie?.trim() || '',
+            }),
+          })
+        : await fetch('/api/wp-publish');
+
       const data = await safeParseApiJson(res);
       if (!res.ok || !data.ok) {
-        throw new Error(data.error || 'Không thể kết nối hoặc đăng nhập vào WordPress');
+        if (isCustomWp) {
+          setCategories([]);
+          setRemotePosts([]);
+        }
+        throw new Error(data.error || 'Không thể kết nối hoặc đăng nhập vào website');
       }
       if (data.siteUrl) setSiteUrl(data.siteUrl);
-      if (Array.isArray(data.categories)) setCategories(data.categories);
+      if (Array.isArray(data.categories)) {
+        setCategories(data.categories);
+        if (data.categories.length > 0 && !data.categories.some((c: any) => selectedCategories.includes(c.id))) {
+          setSelectedCategories([data.categories[0].id]);
+        }
+      }
       if (Array.isArray(data.posts)) setRemotePosts(data.posts);
 
-      const msg = `✅ Kết nối thành công tới ${data.siteUrl || siteUrl}! (Đã tải ${data.categories?.length || 0} chuyên mục, ${data.posts?.length || 0} bài viết)`;
-      setConnectionNotice({ ok: true, message: msg });
+      const baseMsg = data.notice
+        ? `✅ ${data.notice}`
+        : `✅ Kết nối thành công tới ${data.siteUrl || siteUrl}! (Đã tải ${data.categories?.length || 0} chuyên mục, ${data.posts?.length || 0} bài viết)`;
+      setConnectionNotice({ ok: true, message: baseMsg });
     } catch (err: any) {
       const errMsg = err?.message || 'Lỗi kết nối website';
       setConnectionNotice({ ok: false, message: `❌ ${errMsg}` });
@@ -1204,7 +1230,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
   };
 
   const fetchRemoteWpData = useCallback(async () => {
-    await handleTestConnection();
+    await handleTestConnection(targetConfig);
   }, [targetConfig]);
 
   useEffect(() => {
@@ -3645,8 +3671,10 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           extractedImages: extractedWebImages,
           targetMode: targetConfig.targetMode,
           customWpUrl: targetConfig.customWpUrl,
+          customWpLoginUrl: targetConfig.customWpLoginUrl,
           customWpUser: targetConfig.customWpUser,
           customWpAppPassword: targetConfig.customWpAppPassword,
+          customSessionCookie: targetConfig.customSessionCookie,
           webhookUrl: targetConfig.webhookUrl,
           webhookSecret: targetConfig.webhookSecret,
         }),
@@ -3775,14 +3803,15 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const next = { ...targetConfig, targetMode: 'default_wp' as const };
+                      const next: CustomTargetConfig = { ...targetConfig, targetMode: 'default_wp' };
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                       setSiteUrl('https://celeb24h.com');
-                      setTimeout(() => void handleTestConnection(), 50);
+                      setShowSiteAuthBox(false);
+                      void handleTestConnection(next);
                     }}
                     className={`px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer transition-all ${
-                      siteUrl.includes('celeb24h') && targetConfig.targetMode === 'default_wp'
+                      targetConfig.targetMode === 'default_wp'
                         ? 'bg-emerald-600 text-white shadow-2xs'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
                     }`}
@@ -3792,31 +3821,42 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      const next = {
+                      const next: CustomTargetConfig = {
                         ...targetConfig,
-                        targetMode: 'custom_wp' as const,
-                        customWpUrl: 'https://yieldstudio.com',
-                        customWpUser: 'cualokhachsan@gmail.com',
-                        customWpAppPassword: 'uENSi7J&Kmc*y6$7',
+                        targetMode: 'custom_wp',
+                        customWpUrl: targetConfig.customWpUrl?.trim() || 'https://yieldstudio.com',
+                        customWpLoginUrl:
+                          targetConfig.customWpLoginUrl?.trim() || 'https://yieldstudio.com/dash/login',
                       };
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
-                      setSiteUrl('https://yieldstudio.com');
-                      setTimeout(() => void handleTestConnection(), 50);
+                      setSiteUrl(next.customWpUrl);
+                      setShowSiteAuthBox(true);
+                      void handleTestConnection(next);
                     }}
                     className={`px-2.5 py-1 rounded-lg text-xs font-black cursor-pointer transition-all ${
-                      siteUrl.includes('yieldstudio') || targetConfig.customWpUrl.includes('yieldstudio')
+                      targetConfig.targetMode === 'custom_wp'
                         ? 'bg-violet-600 text-white shadow-2xs'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border border-slate-300'
                     }`}
                   >
-                    🟣 yieldstudio.com
+                    🟣 yieldstudio.com / Web khác
                   </button>
+
+                  {targetConfig.targetMode === 'custom_wp' && (
+                    <button
+                      type="button"
+                      onClick={() => setShowSiteAuthBox((prev) => !prev)}
+                      className="px-2.5 py-1 rounded-lg bg-violet-100 hover:bg-violet-200 text-violet-900 border border-violet-300 text-xs font-black cursor-pointer"
+                    >
+                      {showSiteAuthBox ? '▲ Ẩn cấu hình Login' : '🔑 Nhập User / Pass / Cookie'}
+                    </button>
+                  )}
 
                   <button
                     type="button"
                     disabled={loadingRemote}
-                    onClick={() => void handleTestConnection()}
+                    onClick={() => void handleTestConnection(targetConfig)}
                     className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-black disabled:opacity-50 text-white text-xs font-black cursor-pointer shadow-2xs flex items-center gap-1 shrink-0"
                     title="Kiểm tra kết nối và xác thực đăng nhập tới website đích"
                   >
@@ -3825,6 +3865,119 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   </button>
                 </div>
               </div>
+
+              {targetConfig.targetMode === 'custom_wp' && showSiteAuthBox && (
+                <div className="mt-2.5 p-3.5 bg-violet-50/90 border border-violet-300 rounded-xl space-y-2.5 max-w-3xl">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-black text-violet-950">
+                      🔐 Thông Tin Kết Nối Trực Tiếp ({targetConfig.customWpUrl || 'Website đích'})
+                    </span>
+                    <a
+                      href={targetConfig.customWpLoginUrl || 'https://yieldstudio.com/dash/login'}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-violet-700 hover:underline"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>Mở trang đăng nhập trên trình duyệt</span>
+                    </a>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                        URL Website (hoặc Site WordPress)
+                      </label>
+                      <input
+                        type="text"
+                        value={targetConfig.customWpUrl}
+                        onChange={(e) => {
+                          const next = { ...targetConfig, customWpUrl: e.target.value };
+                          setTargetConfig(next);
+                          localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                        }}
+                        placeholder="https://yieldstudio.com"
+                        className="w-full px-2.5 py-1.5 bg-white border border-violet-200 rounded-lg text-xs font-semibold text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                        Link Login trực tiếp (tùy chọn)
+                      </label>
+                      <input
+                        type="text"
+                        value={targetConfig.customWpLoginUrl || ''}
+                        onChange={(e) => {
+                          const next = { ...targetConfig, customWpLoginUrl: e.target.value };
+                          setTargetConfig(next);
+                          localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                        }}
+                        placeholder="https://yieldstudio.com/dash/login"
+                        className="w-full px-2.5 py-1.5 bg-white border border-violet-200 rounded-lg text-xs font-semibold text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                        Email / Username
+                      </label>
+                      <input
+                        type="text"
+                        value={targetConfig.customWpUser}
+                        onChange={(e) => {
+                          const next = { ...targetConfig, customWpUser: e.target.value };
+                          setTargetConfig(next);
+                          localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                        }}
+                        placeholder="Nhập email hoặc username..."
+                        className="w-full px-2.5 py-1.5 bg-white border border-violet-200 rounded-lg text-xs font-semibold text-slate-900"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                        Password / Application Password
+                      </label>
+                      <input
+                        type="password"
+                        value={targetConfig.customWpAppPassword}
+                        onChange={(e) => {
+                          const next = { ...targetConfig, customWpAppPassword: e.target.value };
+                          setTargetConfig(next);
+                          localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                        }}
+                        placeholder="Nhập mật khẩu hoặc App Password..."
+                        className="w-full px-2.5 py-1.5 bg-white border border-violet-200 rounded-lg text-xs font-mono text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
+                      Cookie phiên đăng nhập (tùy chọn — dùng nếu trang Login bật Cloudflare Turnstile, VD: ys_dash_sess=...)
+                    </label>
+                    <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                      <input
+                        type="password"
+                        value={targetConfig.customSessionCookie || ''}
+                        onChange={(e) => {
+                          const next = { ...targetConfig, customSessionCookie: e.target.value };
+                          setTargetConfig(next);
+                          localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                        }}
+                        placeholder="ys_dash_sess=..."
+                        className="flex-1 min-w-0 px-2.5 py-1.5 bg-white border border-violet-200 rounded-lg text-xs font-mono text-slate-900"
+                      />
+                      <button
+                        type="button"
+                        disabled={loadingRemote}
+                        onClick={() => void handleTestConnection(targetConfig)}
+                        className="px-3 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-white text-xs font-black cursor-pointer shrink-0"
+                      >
+                        🔌 Lưu &amp; Kiểm tra kết nối
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {connectionNotice && (
                 <div
@@ -6605,23 +6758,21 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
             <button
               type="button"
               onClick={() => {
-                const next = {
+                const next: CustomTargetConfig = {
                   ...targetConfig,
-                  targetMode: 'custom_wp' as const,
+                  targetMode: 'custom_wp',
                   customWpUrl: 'https://yieldstudio.com',
-                  customWpUser: 'cualokhachsan@gmail.com',
-                  customWpAppPassword: 'uENSi7J&Kmc*y6$7',
+                  customWpLoginUrl: 'https://yieldstudio.com/dash/login',
                 };
                 setTargetConfig(next);
                 localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                 setSiteUrl('https://yieldstudio.com');
-                setTimeout(() => {
-                  void fetchRemoteWpData();
-                }, 100);
+                setShowSiteAuthBox(true);
+                void handleTestConnection(next);
               }}
               className="px-3.5 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-black cursor-pointer shadow-2xs shrink-0"
             >
-              🔗 Kết Nối YieldStudio Ngay
+              🔗 Chọn YieldStudio
             </button>
           </div>
 
@@ -6658,8 +6809,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               }`}
             >
               <Settings className="w-5 h-5 text-blue-600 mb-1" />
-              <div className="text-xs font-black">WordPress Cá Nhân</div>
-              <div className="text-[11px] opacity-80">Qua REST API & App Password</div>
+              <div className="text-xs font-black">Website Tùy Chỉnh / WP</div>
+              <div className="text-[11px] opacity-80">REST API, Login URL hoặc Cookie</div>
             </button>
 
             <button
@@ -6683,26 +6834,44 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
 
           {targetConfig.targetMode === 'custom_wp' && (
             <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl space-y-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Địa chỉ Website WordPress (URL)
-                </label>
-                <input
-                  type="text"
-                  value={targetConfig.customWpUrl}
-                  onChange={(e) => {
-                    const next = { ...targetConfig, customWpUrl: e.target.value };
-                    setTargetConfig(next);
-                    localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
-                  }}
-                  placeholder="https://example.com"
-                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Địa chỉ Website (URL)
+                  </label>
+                  <input
+                    type="text"
+                    value={targetConfig.customWpUrl}
+                    onChange={(e) => {
+                      const next = { ...targetConfig, customWpUrl: e.target.value };
+                      setTargetConfig(next);
+                      localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                    }}
+                    placeholder="https://example.com"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Link Trang Đăng Nhập (tùy chọn)
+                  </label>
+                  <input
+                    type="text"
+                    value={targetConfig.customWpLoginUrl || ''}
+                    onChange={(e) => {
+                      const next = { ...targetConfig, customWpLoginUrl: e.target.value };
+                      setTargetConfig(next);
+                      localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                    }}
+                    placeholder="https://yieldstudio.com/dash/login"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold"
+                  />
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Username WordPress
+                    Username / Email
                   </label>
                   <input
                     type="text"
@@ -6712,13 +6881,13 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                     }}
-                    placeholder="admin"
+                    placeholder="admin hoặc email"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Application Password
+                    Password / Application Password
                   </label>
                   <input
                     type="password"
@@ -6728,9 +6897,35 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                     }}
-                    placeholder="xxxx xxxx xxxx xxxx"
+                    placeholder="Mật khẩu hoặc xxxx xxxx xxxx xxxx"
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono"
                   />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Cookie phiên đăng nhập (tùy chọn — dùng cho trang có Cloudflare Turnstile như yieldstudio.com)
+                </label>
+                <div className="flex flex-wrap sm:flex-nowrap gap-2">
+                  <input
+                    type="password"
+                    value={targetConfig.customSessionCookie || ''}
+                    onChange={(e) => {
+                      const next = { ...targetConfig, customSessionCookie: e.target.value };
+                      setTargetConfig(next);
+                      localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
+                    }}
+                    placeholder="ys_dash_sess=..."
+                    className="flex-1 min-w-0 px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono"
+                  />
+                  <button
+                    type="button"
+                    disabled={loadingRemote}
+                    onClick={() => void handleTestConnection(targetConfig)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-black disabled:opacity-50 text-white text-xs font-black cursor-pointer shrink-0"
+                  >
+                    🔌 Kiểm tra kết nối
+                  </button>
                 </div>
               </div>
             </div>

@@ -48,13 +48,46 @@ export const WP_EMPLOYEE_AUTHOR_MAP: WpEmployeeAuthorMap[] = [
 ];
 
 interface WpPublishAuthSession {
+  siteUrl: string;
   cookieHeader: string;
   restNonce: string;
   restRoot: string;
   expiresAt: number;
 }
 
-let cachedPublishSession: WpPublishAuthSession | null = null;
+const cachedPublishSessions = new Map<string, WpPublishAuthSession>();
+
+export function validateSafePublicHttpUrl(rawUrl: string): string {
+  const trimmed = String(rawUrl || '').trim();
+  if (!trimmed) throw new Error('URL website không được để trống');
+  const withProto = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let parsed: URL;
+  try {
+    parsed = new URL(withProto);
+  } catch {
+    throw new Error(`URL không hợp lệ: ${trimmed}`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Chỉ hỗ trợ giao thức http:// hoặc https://');
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (
+    host === 'localhost' ||
+    host === '::1' ||
+    host === '[::1]' ||
+    host === '0.0.0.0' ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(host) ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal')
+  ) {
+    throw new Error('Không cho phép kết nối tới địa chỉ mạng nội bộ hoặc localhost');
+  }
+  return parsed.toString().replace(/\/+$/, '');
+}
 
 function decodeHtmlEntities(text: string): string {
   if (!text) return '';
@@ -102,22 +135,46 @@ async function getWpRestSession(
   forceRefresh = false,
   customSiteUrl?: string,
   customUsername?: string,
-  customPassword?: string
+  customPassword?: string,
+  customLoginUrl?: string
 ): Promise<WpPublishAuthSession> {
-  const targetSite = (customSiteUrl || DEFAULT_WP_SITE).replace(/\/+$/, '');
-  const targetUser = customUsername || DEFAULT_WP_USER;
+  const safeBase = customSiteUrl
+    ? new URL(validateSafePublicHttpUrl(customSiteUrl)).origin
+    : DEFAULT_WP_SITE.replace(/\/+$/, '');
+  const targetUser = (customUsername || DEFAULT_WP_USER).trim();
   const targetPass = customPassword || DEFAULT_WP_PASS;
+  const cacheKey = `${safeBase}::${targetUser}`;
 
-  if (!forceRefresh && cachedPublishSession && cachedPublishSession.expiresAt > Date.now()) {
-    return cachedPublishSession;
+  const existing = cachedPublishSessions.get(cacheKey);
+  if (!forceRefresh && existing && existing.expiresAt > Date.now()) {
+    return existing;
   }
 
-  const loginUrl = `${targetSite}/wp-login.php`;
+  const loginUrl = customLoginUrl
+    ? validateSafePublicHttpUrl(customLoginUrl)
+    : `${safeBase}/wp-login.php`;
+
+  // Kiểm tra trang đăng nhập trước nếu không phải celeb24h.com mặc định
+  if (safeBase !== DEFAULT_WP_SITE.replace(/\/+$/, '')) {
+    const preCheck = await fetch(loginUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
+      },
+      redirect: 'follow',
+    });
+    const preHtml = await preCheck.text();
+    if (/cf-turnstile|g-recaptcha|h-captcha|challenges\.cloudflare\.com\/turnstile/i.test(preHtml)) {
+      throw new Error(
+        `Trang đăng nhập ${loginUrl} có lớp xác thực Cloudflare Turnstile / CAPTCHA trên trình duyệt và không dùng WordPress REST API. Hãy đăng nhập trực tiếp tại ${loginUrl} trên trình duyệt, sau đó dán Cookie phiên (ys_dash_sess=...) vào ô cấu hình, hoặc nhập URL website WordPress con + Application Password.`
+      );
+    }
+  }
+
   const body = new URLSearchParams({
     log: targetUser,
     pwd: targetPass,
     'wp-submit': 'Log In',
-    redirect_to: `${targetSite}/wp-admin/`,
+    redirect_to: `${safeBase}/wp-admin/`,
     testcookie: '1',
   });
 
@@ -145,11 +202,13 @@ async function getWpRestSession(
     .join('; ');
 
   if (!cookieHeader.includes('wordpress_logged_in_')) {
-    throw new Error(`Không thể đăng nhập vào hệ thống WordPress ${targetSite}`);
+    throw new Error(
+      `Không thể đăng nhập qua form WordPress tại ${loginUrl}. Kiểm tra lại Tài khoản/Mật khẩu hoặc trang web này không sử dụng wp-login.php chuẩn WordPress.`
+    );
   }
 
   // Lấy X-WP-Nonce từ trang post-new.php
-  const postNewRes = await fetch(`${targetSite}/wp-admin/post-new.php`, {
+  const postNewRes = await fetch(`${safeBase}/wp-admin/post-new.php`, {
     headers: {
       Cookie: cookieHeader,
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
@@ -158,7 +217,7 @@ async function getWpRestSession(
   const html = await postNewRes.text();
   const nonceMatch = html.match(/wpApiSettings\s*=\s*(\{[^;]+\})/);
   let restNonce = '';
-  let restRoot = `${targetSite}/wp-json/`;
+  let restRoot = `${safeBase}/wp-json/`;
 
   if (nonceMatch && nonceMatch[1]) {
     try {
@@ -175,30 +234,78 @@ async function getWpRestSession(
     if (fallbackNonce) restNonce = fallbackNonce[1];
   }
 
-  cachedPublishSession = {
+  const newSession: WpPublishAuthSession = {
+    siteUrl: safeBase,
     cookieHeader,
     restNonce,
     restRoot: restRoot.endsWith('/') ? restRoot : `${restRoot}/`,
     expiresAt: Date.now() + 20 * 60 * 1000, // 20 phút
   };
+  cachedPublishSessions.set(cacheKey, newSession);
 
-  return cachedPublishSession;
+  return newSession;
 }
 
 export async function fetchWpPublishInitData(customAuth?: {
   siteUrl?: string;
+  loginUrl?: string;
   username?: string;
   password?: string;
+  sessionCookie?: string;
 }): Promise<{
   ok: boolean;
   siteUrl: string;
   categories: WpCategoryItem[];
   posts: WpRemotePostItem[];
   authors: WpEmployeeAuthorMap[];
+  notice?: string;
 }> {
-  const activeSiteUrl = (customAuth?.siteUrl || DEFAULT_WP_SITE).replace(/\/+$/, '');
+  const activeSiteUrl = customAuth?.siteUrl
+    ? new URL(validateSafePublicHttpUrl(customAuth.siteUrl)).origin
+    : DEFAULT_WP_SITE.replace(/\/+$/, '');
   const username = customAuth?.username?.trim();
   const password = customAuth?.password?.trim();
+  const sessionCookie = customAuth?.sessionCookie?.trim();
+  const isCustomSite = activeSiteUrl !== DEFAULT_WP_SITE.replace(/\/+$/, '');
+
+  // Hỗ trợ kiểm tra kết nối qua Cookie phiên đăng nhập trình duyệt (VD: ys_dash_sess=... từ yieldstudio.com/dash)
+  if (isCustomSite && sessionCookie) {
+    const normalizedCookie = sessionCookie.includes('=')
+      ? sessionCookie
+      : `ys_dash_sess=${sessionCookie}`;
+    const dashProbeUrl = activeSiteUrl.includes('yieldstudio')
+      ? `${activeSiteUrl}/dash/`
+      : activeSiteUrl;
+    const probeRes = await fetch(dashProbeUrl, {
+      headers: {
+        Cookie: normalizedCookie,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
+      },
+      redirect: 'manual',
+    });
+    const loc = probeRes.headers.get('location') || '';
+    if (probeRes.status >= 300 && probeRes.status < 400 && /login/i.test(loc)) {
+      throw new Error(
+        `Cookie phiên tại ${activeSiteUrl} đã hết hạn hoặc không hợp lệ (chuyển hướng về ${loc}). Vui lòng đăng nhập lại trên trình duyệt và lấy Cookie mới.`
+      );
+    }
+    if (probeRes.ok) {
+      const dashHtml = await probeRes.text();
+      if (/login/i.test(dashHtml) && /cf-turnstile|password/i.test(dashHtml)) {
+        throw new Error(
+          `Cookie phiên chưa đăng nhập được vào Dashboard của ${activeSiteUrl}.`
+        );
+      }
+      return {
+        ok: true,
+        siteUrl: activeSiteUrl,
+        categories: [],
+        posts: [],
+        authors: WP_EMPLOYEE_AUTHOR_MAP,
+        notice: `Đã xác thực phiên đăng nhập qua Cookie tại ${dashProbeUrl}.`,
+      };
+    }
+  }
 
   let restRoot = `${activeSiteUrl}/wp-json/`;
   let headers: Record<string, string> = {
@@ -207,6 +314,9 @@ export async function fetchWpPublishInitData(customAuth?: {
 
   let catRes: Response | null = null;
   let postsRes: Response | null = null;
+
+  const isJsonResponse = (res: Response | null) =>
+    Boolean(res && res.ok && (res.headers.get('content-type') || '').toLowerCase().includes('json'));
 
   if (username && password) {
     const authHeader = 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
@@ -219,12 +329,21 @@ export async function fetchWpPublishInitData(customAuth?: {
     } catch {}
   }
 
-  if (!catRes || !catRes.ok || !postsRes || !postsRes.ok) {
+  if (!isJsonResponse(catRes) || !isJsonResponse(postsRes)) {
+    const inferredLoginUrl =
+      customAuth?.loginUrl?.trim() ||
+      (customAuth?.siteUrl && /\/dash\/login/i.test(customAuth.siteUrl)
+        ? customAuth.siteUrl.trim()
+        : activeSiteUrl.includes('yieldstudio')
+        ? `${activeSiteUrl}/dash/login`
+        : undefined);
+
     const session = await getWpRestSession(
       false,
-      customAuth?.siteUrl,
+      activeSiteUrl,
       customAuth?.username,
-      customAuth?.password
+      customAuth?.password,
+      inferredLoginUrl
     );
     restRoot = session.restRoot;
     headers = {
@@ -242,7 +361,7 @@ export async function fetchWpPublishInitData(customAuth?: {
   }
 
   let categories: WpCategoryItem[] = [];
-  if (catRes.ok) {
+  if (isJsonResponse(catRes) && catRes) {
     const rawCats = await catRes.json();
     if (Array.isArray(rawCats)) {
       categories = rawCats.map((c: any) => ({
@@ -258,7 +377,7 @@ export async function fetchWpPublishInitData(customAuth?: {
   categories.forEach((c) => catMap.set(c.id, c.name));
 
   let posts: WpRemotePostItem[] = [];
-  if (postsRes.ok) {
+  if (isJsonResponse(postsRes) && postsRes) {
     const rawPosts = await postsRes.json();
     if (Array.isArray(rawPosts)) {
       posts = rawPosts.map((p: any) => {
@@ -480,8 +599,10 @@ export interface PublishArticleInput {
   // Tùy chọn đích đẩy bài khác (Custom WordPress hoặc Webhook)
   targetMode?: 'default_wp' | 'custom_wp' | 'webhook';
   customWpUrl?: string;
+  customWpLoginUrl?: string;
   customWpUser?: string;
   customWpAppPassword?: string;
+  customSessionCookie?: string;
   webhookUrl?: string;
   webhookSecret?: string;
 }
@@ -926,8 +1047,12 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
   input.content = finalContent;
 
   // 1. Chế độ đẩy qua Webhook API
-  if (targetMode === 'webhook' && input.webhookUrl) {
-    const webhookRes = await fetch(input.webhookUrl, {
+  if (targetMode === 'webhook') {
+    if (!input.webhookUrl?.trim()) {
+      throw new Error('Vui lòng nhập Webhook Endpoint URL trước khi đẩy bài.');
+    }
+    const safeWebhookUrl = validateSafePublicHttpUrl(input.webhookUrl);
+    const webhookRes = await fetch(safeWebhookUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -953,7 +1078,7 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
     }
 
     const resData: any = await webhookRes.json().catch(() => ({}));
-    const link = resData.url || resData.link || input.webhookUrl;
+    const link = resData.url || resData.link || safeWebhookUrl;
     const empCode = (input.employeeCode || '').trim().toUpperCase();
     const trackingLink = empCode
       ? `${link}${link.includes('?') ? '&' : '?'}${empCode}`
@@ -977,36 +1102,79 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
     };
   }
 
-  // 2. Chế độ Custom WordPress (Application Password)
-  if (targetMode === 'custom_wp' && input.customWpUrl && input.customWpUser && input.customWpAppPassword) {
-    const baseSite = input.customWpUrl.replace(/\/+$/, '');
-    const authHeader =
-      'Basic ' +
-      Buffer.from(`${input.customWpUser}:${input.customWpAppPassword}`).toString('base64');
+  // 2. Chế độ Custom WordPress / Website Đích Khác
+  if (targetMode === 'custom_wp') {
+    if (!input.customWpUrl?.trim()) {
+      throw new Error('Vui lòng nhập URL website đích trong phần cấu hình.');
+    }
+    const baseSite = new URL(validateSafePublicHttpUrl(input.customWpUrl)).origin;
+    if (!input.customWpUser?.trim() || !input.customWpAppPassword?.trim()) {
+      throw new Error(
+        `Chưa có thông tin đăng nhập (Username/Email & Password) cho ${baseSite}. Vui lòng nhập đầy đủ trước khi đẩy bài.`
+      );
+    }
 
     const postEndpoint = input.postId
       ? `${baseSite}/wp-json/wp/v2/posts/${input.postId}`
       : `${baseSite}/wp-json/wp/v2/posts`;
 
-    const wpRes = await fetch(postEndpoint, {
+    const postPayload = JSON.stringify({
+      title: input.title,
+      content: input.content,
+      excerpt: input.excerpt || '',
+      ...(input.slug ? { slug: input.slug } : {}),
+      status: input.status || 'publish',
+      ...(input.categories && input.categories.length > 0 ? { categories: input.categories } : {}),
+    });
+
+    const authHeader =
+      'Basic ' +
+      Buffer.from(`${input.customWpUser.trim()}:${input.customWpAppPassword.trim()}`).toString('base64');
+
+    let wpRes = await fetch(postEndpoint, {
       method: 'POST',
       headers: {
         Authorization: authHeader,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        title: input.title,
-        content: input.content,
-        excerpt: input.excerpt || '',
-        ...(input.slug ? { slug: input.slug } : {}),
-        status: input.status || 'publish',
-        ...(input.categories && input.categories.length > 0 ? { categories: input.categories } : {}),
-      }),
+      body: postPayload,
     });
+
+    const ct = (wpRes.headers.get('content-type') || '').toLowerCase();
+    if (!wpRes.ok || !ct.includes('json')) {
+      const inferredLoginUrl =
+        input.customWpLoginUrl?.trim() ||
+        (/\/dash\/login/i.test(input.customWpUrl)
+          ? input.customWpUrl.trim()
+          : baseSite.includes('yieldstudio')
+          ? `${baseSite}/dash/login`
+          : undefined);
+      const customSession = await getWpRestSession(
+        false,
+        baseSite,
+        input.customWpUser,
+        input.customWpAppPassword,
+        inferredLoginUrl
+      );
+      wpRes = await fetch(
+        input.postId
+          ? `${customSession.restRoot}wp/v2/posts/${input.postId}`
+          : `${customSession.restRoot}wp/v2/posts`,
+        {
+          method: 'POST',
+          headers: {
+            Cookie: customSession.cookieHeader,
+            'X-WP-Nonce': customSession.restNonce,
+            'Content-Type': 'application/json',
+          },
+          body: postPayload,
+        }
+      );
+    }
 
     if (!wpRes.ok) {
       const errText = await wpRes.text();
-      throw new Error(`WordPress tùy chỉnh trả về lỗi (${wpRes.status}): ${errText.slice(0, 250)}`);
+      throw new Error(`Website ${baseSite} trả về lỗi (${wpRes.status}): ${errText.slice(0, 250)}`);
     }
 
     const created: any = await wpRes.json();

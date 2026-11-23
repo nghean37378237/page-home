@@ -120,20 +120,9 @@ async function startServer() {
   });
 
   // API Route: WebPublish Studio - Soạn thảo & Đẩy bài lên Website (celeb24h.com, WordPress, Webhook API)
-  app.get('/api/wp-publish', async (req, res) => {
+  app.get('/api/wp-publish', async (_req, res) => {
     try {
-      const customWpUrl = String(req.query.customWpUrl || '').trim();
-      const customWpUser = String(req.query.customWpUser || '').trim();
-      const customWpAppPassword = String(req.query.customWpAppPassword || '').trim();
-      const data = await fetchWpPublishInitData(
-        customWpUrl
-          ? {
-              siteUrl: customWpUrl,
-              username: customWpUser,
-              password: customWpAppPassword,
-            }
-          : undefined
-      );
+      const data = await fetchWpPublishInitData();
       res.json(data);
     } catch (error: any) {
       console.error('[/api/wp-publish GET] Error:', error);
@@ -148,6 +137,24 @@ async function startServer() {
     try {
       const body = req.body || {};
       const action = String(body.action || 'publish');
+
+      if (action === 'test_connection') {
+        const targetMode = String(body.targetMode || 'default_wp');
+        if (targetMode === 'custom_wp' && String(body.customWpUrl || '').trim()) {
+          const data = await fetchWpPublishInitData({
+            siteUrl: String(body.customWpUrl || '').trim(),
+            loginUrl: body.customWpLoginUrl ? String(body.customWpLoginUrl).trim() : undefined,
+            username: body.customWpUser ? String(body.customWpUser).trim() : undefined,
+            password: body.customWpAppPassword ? String(body.customWpAppPassword).trim() : undefined,
+            sessionCookie: body.customSessionCookie ? String(body.customSessionCookie).trim() : undefined,
+          });
+          res.json(data);
+          return;
+        }
+        const data = await fetchWpPublishInitData();
+        res.json(data);
+        return;
+      }
 
       if (action === 'upload_media') {
         const uploaded = await uploadMediaToWordPress({
@@ -490,8 +497,10 @@ async function startServer() {
         extractedImages: Array.isArray(body.extractedImages) ? body.extractedImages : undefined,
         targetMode: body.targetMode || 'default_wp',
         customWpUrl: body.customWpUrl,
+        customWpLoginUrl: body.customWpLoginUrl,
         customWpUser: body.customWpUser,
         customWpAppPassword: body.customWpAppPassword,
+        customSessionCookie: body.customSessionCookie,
         webhookUrl: body.webhookUrl,
         webhookSecret: body.webhookSecret,
       });
