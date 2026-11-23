@@ -84,7 +84,6 @@ interface CustomTargetConfig {
   customWpLoginUrl?: string;
   customWpUser: string;
   customWpAppPassword: string;
-  customSessionCookie?: string;
   webhookUrl: string;
   webhookSecret: string;
 }
@@ -372,7 +371,6 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       customWpLoginUrl: '',
       customWpUser: '',
       customWpAppPassword: '',
-      customSessionCookie: '',
       webhookUrl: '',
       webhookSecret: '',
     };
@@ -1194,7 +1192,6 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               customWpLoginUrl: activeCfg.customWpLoginUrl?.trim() || '',
               customWpUser: activeCfg.customWpUser.trim(),
               customWpAppPassword: activeCfg.customWpAppPassword.trim(),
-              customSessionCookie: activeCfg.customSessionCookie?.trim() || '',
             }),
           })
         : await fetch('/api/wp-publish');
@@ -1203,6 +1200,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
       if (!res.ok || !data.ok) {
         if (isCustomWp) {
           setCategories([]);
+          setSelectedCategories([]);
           setRemotePosts([]);
         }
         throw new Error(data.error || 'Không thể kết nối hoặc đăng nhập vào website');
@@ -1212,6 +1210,8 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
         setCategories(data.categories);
         if (data.categories.length > 0 && !data.categories.some((c: any) => selectedCategories.includes(c.id))) {
           setSelectedCategories([data.categories[0].id]);
+        } else if (data.categories.length === 0) {
+          setSelectedCategories([]);
         }
       }
       if (Array.isArray(data.posts)) setRemotePosts(data.posts);
@@ -3657,7 +3657,12 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           excerpt: pubExcerpt,
           slug: pubSlug || undefined,
           status: finalStatus,
-          categories: selectedCategories.length > 0 ? selectedCategories : [2],
+          categories:
+            selectedCategories.length > 0
+              ? selectedCategories
+              : targetConfig.targetMode === 'default_wp'
+              ? [2]
+              : [],
           tags: tagList,
           employeeCode: selectedEmployeeCode,
           featuredMediaId: featuredMediaId || undefined,
@@ -3674,7 +3679,6 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
           customWpLoginUrl: targetConfig.customWpLoginUrl,
           customWpUser: targetConfig.customWpUser,
           customWpAppPassword: targetConfig.customWpAppPassword,
-          customSessionCookie: targetConfig.customSessionCookie,
           webhookUrl: targetConfig.webhookUrl,
           webhookSecret: targetConfig.webhookSecret,
         }),
@@ -3886,7 +3890,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
-                        URL Website (hoặc Site WordPress)
+                        URL Website (Web thường hoặc WordPress)
                       </label>
                       <input
                         type="text"
@@ -3934,7 +3938,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                     </div>
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 mb-0.5">
-                        Password / Application Password
+                        Mật khẩu (Password)
                       </label>
                       <input
                         type="password"
@@ -3944,7 +3948,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                           setTargetConfig(next);
                           localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                         }}
-                        placeholder="Nhập mật khẩu hoặc App Password..."
+                        placeholder="Nhập mật khẩu đăng nhập web..."
                         className="w-full px-2.5 py-1.5 bg-white border border-violet-200 rounded-lg text-xs font-mono text-slate-900"
                       />
                     </div>
@@ -6855,7 +6859,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Username / Email
+                    Email / Username
                   </label>
                   <input
                     type="text"
@@ -6865,13 +6869,13 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                     }}
-                    placeholder="admin hoặc email"
+                    placeholder="Nhập email hoặc username..."
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold"
                   />
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Password / Application Password
+                    Mật khẩu (Password)
                   </label>
                   <input
                     type="password"
@@ -6881,7 +6885,7 @@ export const WebPublishStudioTab: React.FC<WebPublishStudioTabProps> = ({
                       setTargetConfig(next);
                       localStorage.setItem(LOCAL_TARGET_CONFIG_KEY, JSON.stringify(next));
                     }}
-                    placeholder="Mật khẩu hoặc xxxx xxxx xxxx xxxx"
+                    placeholder="Nhập mật khẩu đăng nhập web..."
                     className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-mono"
                   />
                 </div>

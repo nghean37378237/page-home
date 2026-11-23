@@ -47,15 +47,470 @@ export const WP_EMPLOYEE_AUTHOR_MAP: WpEmployeeAuthorMap[] = [
   { code: 'H0082', wpUserId: 1, wpUsername: 'admin', displayName: 'Admin (H0082)', staffUsername: 'Admin' },
 ];
 
+interface CustomPublishFormMeta {
+  actionUrl: string;
+  method: string;
+  hiddenFields: Record<string, string>;
+  titleField: string;
+  contentField: string;
+  excerptField?: string;
+  categoryField?: string;
+  statusField?: string;
+  slugField?: string;
+}
+
 interface WpPublishAuthSession {
+  siteType?: 'wordpress' | 'custom_web';
   siteUrl: string;
+  dashboardUrl?: string;
   cookieHeader: string;
   restNonce: string;
   restRoot: string;
+  categories?: WpCategoryItem[];
+  posts?: WpRemotePostItem[];
+  publishForm?: CustomPublishFormMeta;
   expiresAt: number;
 }
 
 const cachedPublishSessions = new Map<string, WpPublishAuthSession>();
+
+const BROWSER_USER_AGENT =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+
+async function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs = 7000
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function collectCookiesFromResponse(cookieMap: Map<string, string>, res: Response) {
+  const rawCookies = res.headers.getSetCookie ? res.headers.getSetCookie() : [];
+  for (const raw of rawCookies) {
+    const firstPart = raw.split(';')[0] || '';
+    const eqIdx = firstPart.indexOf('=');
+    if (eqIdx > 0) {
+      const k = firstPart.slice(0, eqIdx).trim();
+      const v = firstPart.slice(eqIdx + 1).trim();
+      if (k) cookieMap.set(k, v);
+    }
+  }
+}
+
+function serializeCookieMap(cookieMap: Map<string, string>): string {
+  return Array.from(cookieMap.entries())
+    .map(([k, v]) => `${k}=${v}`)
+    .join('; ');
+}
+
+function parseTagAttrs(tagHtml: string): Record<string, string> {
+  const attrs: Record<string, string> = {};
+  const attrRegex = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+  let m: RegExpExecArray | null;
+  while ((m = attrRegex.exec(tagHtml)) !== null) {
+    const key = m[1].toLowerCase();
+    const val = m[2] ?? m[3] ?? m[4] ?? '';
+    attrs[key] = decodeHtmlEntities(val);
+  }
+  return attrs;
+}
+
+function parseLoginFormFromHtml(html: string, pageUrl: string) {
+  const formRegex = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
+  const forms: Array<{ attrs: Record<string, string>; body: string }> = [];
+  let match: RegExpExecArray | null;
+  while ((match = formRegex.exec(html)) !== null) {
+    forms.push({ attrs: parseTagAttrs(match[1] || ''), body: match[2] || '' });
+  }
+  const loginForm =
+    forms.find((f) => /type\s*=\s*["']?password\b/i.test(f.body)) ||
+    forms.find((f) => /name\s*=\s*["']?(?:password|pwd|pass)\b/i.test(f.body)) ||
+    forms[0];
+  if (!loginForm) return null;
+
+  let actionUrl = pageUrl;
+  const rawAction = (loginForm.attrs.action || '').trim();
+  if (rawAction && !rawAction.startsWith('#')) {
+    try {
+      actionUrl = validateSafePublicHttpUrl(new URL(rawAction, pageUrl).href);
+    } catch {
+      actionUrl = pageUrl;
+    }
+  } else {
+    actionUrl = validateSafePublicHttpUrl(pageUrl);
+  }
+
+  const hiddenFields: Record<string, string> = {};
+  let userField = '';
+  let passField = '';
+
+  const inputRegex = /<input\b([^>]*)>/gi;
+  let inMatch: RegExpExecArray | null;
+  while ((inMatch = inputRegex.exec(loginForm.body)) !== null) {
+    const attrs = parseTagAttrs(inMatch[1] || '');
+    const name = (attrs.name || '').trim();
+    const type = (attrs.type || 'text').toLowerCase().trim();
+    if (!name) continue;
+    if (type === 'hidden') {
+      hiddenFields[name] = attrs.value || '';
+    } else if (type === 'password') {
+      if (!passField) passField = name;
+    } else if (
+      type === 'email' ||
+      /^(?:email|user_email|username|user_login|login|log|user|account|identifier)$/i.test(name)
+    ) {
+      if (!userField) userField = name;
+    } else if (type === 'text' && !userField && !/captcha|turnstile|otp|code/i.test(name)) {
+      userField = name;
+    }
+  }
+
+  // Fallback meta csrf-token if not in hidden inputs
+  const metaCsrf = html.match(
+    /<meta\b[^>]*name=["']csrf-token["'][^>]*content=["']([^"']+)["'][^>]*>/i
+  );
+  if (metaCsrf && metaCsrf[1] && !hiddenFields._token && !hiddenFields.csrf_token) {
+    hiddenFields._token = decodeHtmlEntities(metaCsrf[1]);
+  }
+
+  const isWpForm = Boolean(
+    userField === 'log' ||
+      passField === 'pwd' ||
+      /wp-login\.php|wp-submit/i.test(loginForm.body + ' ' + rawAction)
+  );
+  if (!userField) userField = isWpForm ? 'log' : 'email';
+  if (!passField) passField = isWpForm ? 'pwd' : 'password';
+
+  return {
+    actionUrl,
+    method: (loginForm.attrs.method || 'POST').toUpperCase(),
+    hiddenFields,
+    userField,
+    passField,
+    isWpForm,
+    hasTurnstileOrCaptcha:
+      /cf-turnstile|g-recaptcha|h-captcha|challenges\.cloudflare\.com\/turnstile/i.test(
+        loginForm.body + '\n' + html
+      ),
+  };
+}
+
+function extractHtmlAlertMessage(html: string): string {
+  const candidates: string[] = [];
+  const patterns = [
+    /<div\b[^>]*class=["'][^"']*(?:alert-danger|alert-warning|alert-error|error-message|invalid-feedback|login-error|notice-error)[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
+    /<(?:p|span)\b[^>]*class=["'][^"']*(?:text-danger|error|invalid-feedback|alert-danger)[^"']*["'][^>]*>([\s\S]*?)<\/(?:p|span)>/gi,
+    /<div\b[^>]*role=["']alert["'][^>]*>([\s\S]*?)<\/div>/gi,
+  ];
+  for (const re of patterns) {
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(html)) !== null) {
+      const text = stripHtmlTags(m[1] || '').replace(/\s+/g, ' ').trim();
+      if (text && text.length >= 4 && text.length <= 280) {
+        candidates.push(text);
+      }
+    }
+  }
+  return Array.from(new Set(candidates)).join(' — ').slice(0, 260);
+}
+
+async function fetchWithSafeRedirects(
+  startUrl: string,
+  init: RequestInit,
+  cookieMap: Map<string, string>,
+  maxHops = 4
+): Promise<{ res: Response; finalUrl: string; html: string }> {
+  let currentUrl = validateSafePublicHttpUrl(startUrl);
+  let currentInit: RequestInit = {
+    ...init,
+    redirect: 'manual',
+  };
+
+  for (let hop = 0; hop <= maxHops; hop++) {
+    const cookieStr = serializeCookieMap(cookieMap);
+    const mergedHeaders: Record<string, string> = {
+      'User-Agent': BROWSER_USER_AGENT,
+      ...(currentInit.headers as Record<string, string> | undefined),
+      ...(cookieStr ? { Cookie: cookieStr } : {}),
+    };
+    const res = await fetchWithTimeout(currentUrl, {
+      ...currentInit,
+      headers: mergedHeaders,
+      redirect: 'manual',
+    });
+    collectCookiesFromResponse(cookieMap, res);
+
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      if (loc && hop < maxHops) {
+        const nextUrl = validateSafePublicHttpUrl(new URL(loc, currentUrl).href);
+        currentUrl = nextUrl;
+        currentInit = { method: 'GET' };
+        continue;
+      }
+    }
+    const html = await res.text();
+    return { res, finalUrl: currentUrl, html };
+  }
+
+  throw new Error(`Quá nhiều lần chuyển hướng khi truy cập ${startUrl}`);
+}
+
+function parseCustomPublishForm(html: string, pageUrl: string): CustomPublishFormMeta | undefined {
+  const formRegex = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
+  let m: RegExpExecArray | null;
+  while ((m = formRegex.exec(html)) !== null) {
+    const formAttrs = parseTagAttrs(m[1] || '');
+    const body = m[2] || '';
+    if (!/<textarea\b/i.test(body) && !/name=["'][^"']*(?:content|body|article|description)/i.test(body)) {
+      continue;
+    }
+
+    const rawAction = (formAttrs.action || '').trim();
+    let actionUrl = pageUrl;
+    if (rawAction && !rawAction.startsWith('#')) {
+      try {
+        actionUrl = validateSafePublicHttpUrl(new URL(rawAction, pageUrl).href);
+      } catch {
+        actionUrl = pageUrl;
+      }
+    }
+
+    const hiddenFields: Record<string, string> = {};
+    let titleField = '';
+    let contentField = '';
+    let excerptField = '';
+    let categoryField = '';
+    let statusField = '';
+    let slugField = '';
+
+    const fieldRegex = /<(?:input|textarea|select)\b([^>]*)>/gi;
+    let fm: RegExpExecArray | null;
+    while ((fm = fieldRegex.exec(body)) !== null) {
+      const tag = fm[0].toLowerCase();
+      const attrs = parseTagAttrs(fm[1] || '');
+      const name = (attrs.name || '').trim();
+      const type = (attrs.type || '').toLowerCase().trim();
+      if (!name) continue;
+      if (tag.startsWith('<input') && type === 'hidden') {
+        hiddenFields[name] = attrs.value || '';
+      } else if (tag.startsWith('<textarea')) {
+        if (/excerpt|summary|mo_ta|tom_tat|desc/i.test(name) && !excerptField) {
+          excerptField = name;
+        } else if (!contentField) {
+          contentField = name;
+        }
+      } else if (tag.startsWith('<select')) {
+        if (/cat|catalog|category|danh_muc|chuyen_muc|topic|section/i.test(name) && !categoryField) {
+          categoryField = name;
+        } else if (/status|trang_thai|state/i.test(name) && !statusField) {
+          statusField = name;
+        }
+      } else if (/title|tieu_de|headline|subject|post_title/i.test(name) && !titleField) {
+        titleField = name;
+      } else if (/slug|url_slug|permalink/i.test(name) && !slugField) {
+        slugField = name;
+      } else if (/content|body|noi_dung|article/i.test(name) && !contentField) {
+        contentField = name;
+      } else if (/excerpt|summary|mo_ta/i.test(name) && !excerptField) {
+        excerptField = name;
+      }
+    }
+
+    if (titleField && contentField) {
+      return {
+        actionUrl,
+        method: (formAttrs.method || 'POST').toUpperCase(),
+        hiddenFields,
+        titleField,
+        contentField,
+        excerptField: excerptField || undefined,
+        categoryField: categoryField || undefined,
+        statusField: statusField || undefined,
+        slugField: slugField || undefined,
+      };
+    }
+  }
+  return undefined;
+}
+
+function extractCategoriesAndPostsFromHtml(
+  html: string,
+  baseUrl: string
+): { categories: WpCategoryItem[]; posts: WpRemotePostItem[] } {
+  const categories: WpCategoryItem[] = [];
+  const seenCatNames = new Set<string>();
+
+  const selectRegex = /<select\b([^>]*)>([\s\S]*?)<\/select>/gi;
+  let sm: RegExpExecArray | null;
+  while ((sm = selectRegex.exec(html)) !== null) {
+    const selectAttrs = parseTagAttrs(sm[1] || '');
+    const selectMeta = `${selectAttrs.name || ''} ${selectAttrs.id || ''} ${selectAttrs.class || ''}`;
+    if (/lang|locale|country|currency|timezone|sort|order|limit|per_page/i.test(selectMeta)) {
+      continue;
+    }
+    const isLikelyCatalogSelect =
+      /cat|catalog|category|danh_muc|chuyen_muc|topic|site|domain|section|type/i.test(selectMeta);
+    const optRegex = /<option\b([^>]*)>([\s\S]*?)<\/option>/gi;
+    let om: RegExpExecArray | null;
+    const tempOpts: WpCategoryItem[] = [];
+    let autoId = 1;
+    while ((om = optRegex.exec(sm[2] || '')) !== null) {
+      const optAttrs = parseTagAttrs(om[1] || '');
+      const val = (optAttrs.value || '').trim();
+      const label = stripHtmlTags(om[2] || '').replace(/\s+/g, ' ').trim();
+      if (!label || /^(?:--|choose|select|all|chọn|tất cả)/i.test(label) || !val) continue;
+      const numericId = /^\d+$/.test(val) ? Number(val) : autoId++;
+      tempOpts.push({
+        id: numericId,
+        name: label,
+        slug: val,
+        count: 0,
+      });
+    }
+    if ((isLikelyCatalogSelect && tempOpts.length > 0) || tempOpts.length >= 2) {
+      for (const item of tempOpts) {
+        const key = item.name.toLowerCase();
+        if (!seenCatNames.has(key)) {
+          seenCatNames.add(key);
+          categories.push(item);
+        }
+      }
+    }
+  }
+
+  if (categories.length === 0) {
+    const linkCatRegex = /<a\b([^>]*)href=["']([^"']*(?:cat|catalog|category|topic|chuyen-muc|danh-muc)[^"']*)["'][^>]*>([\s\S]*?)<\/a>/gi;
+    let lm: RegExpExecArray | null;
+    let autoId = 1;
+    while ((lm = linkCatRegex.exec(html)) !== null) {
+      const label = stripHtmlTags(lm[3] || '').replace(/\s+/g, ' ').trim();
+      if (!label || label.length > 60) continue;
+      const key = label.toLowerCase();
+      if (!seenCatNames.has(key)) {
+        seenCatNames.add(key);
+        categories.push({
+          id: autoId++,
+          name: label,
+          slug: lm[2].replace(/^.*\//, '').replace(/[^a-zA-Z0-9_-]/g, '') || `cat-${autoId}`,
+          count: 0,
+        });
+      }
+    }
+  }
+
+  const posts: WpRemotePostItem[] = [];
+  const seenTitles = new Set<string>();
+  const rowRegex = /<tr\b[^>]*>([\s\S]*?)<\/tr>/gi;
+  let rm: RegExpExecArray | null;
+  let rowId = 1;
+  while ((rm = rowRegex.exec(html)) !== null) {
+    const rowHtml = rm[1] || '';
+    if (/<th\b/i.test(rowHtml)) continue;
+    const linkMatch = rowHtml.match(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+    if (!linkMatch) continue;
+    const rawHref = linkMatch[1];
+    const text = stripHtmlTags(linkMatch[2] || '').replace(/\s+/g, ' ').trim();
+    if (!text || text.length < 8 || /^(?:edit|delete|view|sửa|xóa|xem)$/i.test(text)) continue;
+    const key = text.toLowerCase();
+    if (seenTitles.has(key)) continue;
+    seenTitles.add(key);
+    let absLink = baseUrl;
+    try {
+      absLink = new URL(rawHref, baseUrl).href;
+    } catch {}
+    posts.push({
+      id: rowId++,
+      title: text,
+      content: '',
+      excerpt: '',
+      slug: '',
+      status: 'publish',
+      date: new Date().toISOString(),
+      modified: new Date().toISOString(),
+      link: absLink,
+      authorId: 1,
+      authorName: 'Admin',
+      employeeCode: 'A0006',
+      categories: [],
+      categoryNames: [],
+      featuredMediaId: 0,
+      featuredImageUrl: '',
+    });
+    if (posts.length >= 25) break;
+  }
+
+  return { categories, posts };
+}
+
+async function scrapeCustomWebDashboard(
+  initialHtml: string,
+  dashboardUrl: string,
+  cookieMap: Map<string, string>
+): Promise<{
+  categories: WpCategoryItem[];
+  posts: WpRemotePostItem[];
+  publishForm?: CustomPublishFormMeta;
+}> {
+  const baseOrigin = new URL(dashboardUrl).origin;
+  const firstPass = extractCategoriesAndPostsFromHtml(initialHtml, dashboardUrl);
+  const allCategories = [...firstPass.categories];
+  const seenCatNames = new Set(allCategories.map((c) => c.name.toLowerCase()));
+  const allPosts = [...firstPass.posts];
+  const seenPostTitles = new Set(allPosts.map((p) => p.title.toLowerCase()));
+  let publishForm = parseCustomPublishForm(initialHtml, dashboardUrl);
+
+  // Tìm tối đa 3 liên kết nội bộ trong dashboard liên quan đến bài viết / catalog / tạo bài mới
+  const subLinks: string[] = [];
+  const hrefRegex = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let hm: RegExpExecArray | null;
+  while ((hm = hrefRegex.exec(initialHtml)) !== null) {
+    const href = (hm[1] || '').trim();
+    const label = stripHtmlTags(hm[2] || '');
+    if (!href || href.startsWith('#') || /logout|signout|login/i.test(href + ' ' + label)) continue;
+    if (/(?:post|article|blog|bai-viet|catalog|category|content|write|create|new)/i.test(href + ' ' + label)) {
+      try {
+        const resolved = validateSafePublicHttpUrl(new URL(href, dashboardUrl).href);
+        if (new URL(resolved).origin === baseOrigin && resolved !== dashboardUrl && !subLinks.includes(resolved)) {
+          subLinks.push(resolved);
+          if (subLinks.length >= 3) break;
+        }
+      } catch {}
+    }
+  }
+
+  for (const subUrl of subLinks) {
+    try {
+      const subRes = await fetchWithSafeRedirects(subUrl, { method: 'GET' }, cookieMap, 2);
+      if (!subRes.res.ok) continue;
+      const parsedSub = extractCategoriesAndPostsFromHtml(subRes.html, subRes.finalUrl);
+      for (const c of parsedSub.categories) {
+        if (!seenCatNames.has(c.name.toLowerCase())) {
+          seenCatNames.add(c.name.toLowerCase());
+          allCategories.push(c);
+        }
+      }
+      for (const p of parsedSub.posts) {
+        if (!seenPostTitles.has(p.title.toLowerCase())) {
+          seenPostTitles.add(p.title.toLowerCase());
+          allPosts.push(p);
+        }
+      }
+      if (!publishForm) {
+        publishForm = parseCustomPublishForm(subRes.html, subRes.finalUrl);
+      }
+    } catch {}
+  }
+
+  return { categories: allCategories, posts: allPosts, publishForm };
+}
 
 export function validateSafePublicHttpUrl(rawUrl: string): string {
   const trimmed = String(rawUrl || '').trim();
@@ -150,100 +605,210 @@ async function getWpRestSession(
     return existing;
   }
 
-  const loginUrl = customLoginUrl
-    ? validateSafePublicHttpUrl(customLoginUrl)
-    : `${safeBase}/wp-login.php`;
+  const isCustomSite = safeBase !== DEFAULT_WP_SITE.replace(/\/+$/, '');
+  if (isCustomSite && (!customUsername?.trim() || !customPassword?.trim())) {
+    throw new Error(
+      `Vui lòng nhập đầy đủ Email / Username và Mật khẩu để đăng nhập trực tiếp vào ${safeBase}.`
+    );
+  }
 
-  // Kiểm tra trang đăng nhập trước nếu không phải celeb24h.com mặc định
-  if (safeBase !== DEFAULT_WP_SITE.replace(/\/+$/, '')) {
-    const preCheck = await fetch(loginUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
-      },
-      redirect: 'follow',
-    });
-    const preHtml = await preCheck.text();
-    if (/cf-turnstile|g-recaptcha|h-captcha|challenges\.cloudflare\.com\/turnstile/i.test(preHtml)) {
+  const candidateUrls: string[] = [];
+  if (customLoginUrl?.trim()) {
+    candidateUrls.push(validateSafePublicHttpUrl(customLoginUrl));
+  } else if (customSiteUrl && /^https?:\/\/[^/]+\/.+/i.test(customSiteUrl.trim())) {
+    candidateUrls.push(validateSafePublicHttpUrl(customSiteUrl));
+    candidateUrls.push(`${safeBase}/dash/login`, `${safeBase}/login`);
+  } else if (isCustomSite) {
+    candidateUrls.push(
+      `${safeBase}/wp-login.php`,
+      `${safeBase}/dash/login`,
+      `${safeBase}/login`,
+      `${safeBase}/admin/login`
+    );
+  } else {
+    candidateUrls.push(`${safeBase}/wp-login.php`);
+  }
+
+  const uniqueCandidates = Array.from(new Set(candidateUrls));
+  let chosenLoginUrl = uniqueCandidates[0];
+  let loginHtml = '';
+  let parsedForm: ReturnType<typeof parseLoginFormFromHtml> = null;
+  const cookieMap = new Map<string, string>();
+
+  if (!isCustomSite) {
+    cookieMap.set('wordpress_test_cookie', 'WP%20Cookie%20check');
+  } else {
+    for (const urlCandidate of uniqueCandidates) {
+      try {
+        const candidateCookies = new Map<string, string>();
+        const probe = await fetchWithSafeRedirects(urlCandidate, { method: 'GET' }, candidateCookies, 3);
+        if (probe.res.ok) {
+          const maybeForm = parseLoginFormFromHtml(probe.html, probe.finalUrl);
+          if (maybeForm) {
+            chosenLoginUrl = probe.finalUrl;
+            loginHtml = probe.html;
+            parsedForm = maybeForm;
+            candidateCookies.forEach((v, k) => cookieMap.set(k, v));
+            break;
+          }
+        }
+      } catch {}
+    }
+
+    if (!parsedForm) {
       throw new Error(
-        `Trang đăng nhập ${loginUrl} có bật xác thực Cloudflare Turnstile / CAPTCHA trên trình duyệt và không mở WordPress REST API. Hãy nhập trực tiếp URL website WordPress con (kèm Username & Password / Application Password) hoặc chọn mục Webhook API để đẩy bài.`
+        `Không tìm thấy form đăng nhập (Email/User & Password) tại ${uniqueCandidates.join(' hoặc ')}. Kiểm tra lại Link Login trực tiếp của website.`
       );
     }
   }
 
-  const body = new URLSearchParams({
-    log: targetUser,
-    pwd: targetPass,
-    'wp-submit': 'Log In',
-    redirect_to: `${safeBase}/wp-admin/`,
-    testcookie: '1',
+  // Luồng 1: Form chuẩn WordPress (wp-login.php hoặc có field log/pwd)
+  if (!isCustomSite || parsedForm?.isWpForm) {
+    const wpFormAction = parsedForm?.actionUrl || `${safeBase}/wp-login.php`;
+    const wpBody = new URLSearchParams({
+      ...(parsedForm?.hiddenFields || {}),
+      [parsedForm?.userField || 'log']: targetUser,
+      [parsedForm?.passField || 'pwd']: targetPass,
+      'wp-submit': 'Log In',
+      redirect_to: `${safeBase}/wp-admin/`,
+      testcookie: '1',
+    });
+
+    if (!cookieMap.has('wordpress_test_cookie')) {
+      cookieMap.set('wordpress_test_cookie', 'WP%20Cookie%20check');
+    }
+
+    const loginRes = await fetchWithTimeout(wpFormAction, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Cookie: serializeCookieMap(cookieMap),
+        Origin: safeBase,
+        Referer: chosenLoginUrl,
+        'User-Agent': BROWSER_USER_AGENT,
+      },
+      body: wpBody.toString(),
+      redirect: 'manual',
+    });
+    collectCookiesFromResponse(cookieMap, loginRes);
+
+    const wpCookieHeader = Array.from(cookieMap.entries())
+      .filter(
+        ([k]) =>
+          k.startsWith('wordpress_logged_in_') ||
+          k.startsWith('wordpress_sec_') ||
+          k.startsWith('wordpress_') ||
+          k.startsWith('wp-settings-')
+      )
+      .map(([k, v]) => `${k}=${v}`)
+      .join('; ');
+
+    if (!wpCookieHeader.includes('wordpress_logged_in_')) {
+      const errHtml = await loginRes.text().catch(() => '');
+      const alertText = extractHtmlAlertMessage(errHtml);
+      if (parsedForm?.hasTurnstileOrCaptcha) {
+        throw new Error(
+          `Đăng nhập vào ${wpFormAction} không thành công${alertText ? ` (${alertText})` : ''}. Trang đăng nhập có bật xác thực Turnstile/CAPTCHA trên trình duyệt.`
+        );
+      }
+      throw new Error(
+        `Không thể đăng nhập qua form WordPress tại ${wpFormAction}${alertText ? `: ${alertText}` : '. Kiểm tra lại Tài khoản / Mật khẩu.'}`
+      );
+    }
+
+    const postNewRes = await fetchWithTimeout(`${safeBase}/wp-admin/post-new.php`, {
+      headers: {
+        Cookie: wpCookieHeader,
+        'User-Agent': BROWSER_USER_AGENT,
+      },
+    });
+    const html = await postNewRes.text();
+    const nonceMatch = html.match(/wpApiSettings\s*=\s*(\{[^;]+\})/);
+    let restNonce = '';
+    let restRoot = `${safeBase}/wp-json/`;
+
+    if (nonceMatch && nonceMatch[1]) {
+      try {
+        const parsed = JSON.parse(nonceMatch[1]);
+        restNonce = parsed.nonce || '';
+        restRoot = parsed.root || restRoot;
+      } catch {}
+    }
+
+    if (!restNonce) {
+      const fallbackNonce = html.match(/"nonce"\s*:\s*"([a-zA-Z0-9]+)"/);
+      if (fallbackNonce) restNonce = fallbackNonce[1];
+    }
+
+    const newSession: WpPublishAuthSession = {
+      siteType: 'wordpress',
+      siteUrl: safeBase,
+      cookieHeader: wpCookieHeader,
+      restNonce,
+      restRoot: restRoot.endsWith('/') ? restRoot : `${restRoot}/`,
+      expiresAt: Date.now() + 20 * 60 * 1000,
+    };
+    cachedPublishSessions.set(cacheKey, newSession);
+    return newSession;
+  }
+
+  // Luồng 2: Website code riêng không phải WordPress (submit form HTML kèm CSRF token + Email/User + Password)
+  const formBody = new URLSearchParams({
+    ...parsedForm!.hiddenFields,
+    [parsedForm!.userField]: targetUser,
+    [parsedForm!.passField]: targetPass,
   });
 
-  const loginRes = await fetch(loginUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Cookie: 'wordpress_test_cookie=WP%20Cookie%20check',
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
+  const postLogin = await fetchWithSafeRedirects(
+    parsedForm!.actionUrl,
+    {
+      method: parsedForm!.method === 'GET' ? 'GET' : 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        Origin: safeBase,
+        Referer: chosenLoginUrl,
+      },
+      body: formBody.toString(),
     },
-    body: body.toString(),
-    redirect: 'manual',
-  });
+    cookieMap,
+    4
+  );
 
-  const rawCookies = loginRes.headers.getSetCookie ? loginRes.headers.getSetCookie() : [];
-  const cookieHeader = rawCookies
-    .map((c) => c.split(';')[0])
-    .filter(
-      (c) =>
-        c.startsWith('wordpress_logged_in_') ||
-        c.startsWith('wordpress_sec_') ||
-        c.startsWith('wordpress_') ||
-        c.startsWith('wp-settings-')
-    )
-    .join('; ');
+  const stillOnLoginPage =
+    /\/(?:login|signin|sign-in)\b/i.test(new URL(postLogin.finalUrl).pathname) ||
+    /<input\b[^>]*type\s*=\s*["']?password\b/i.test(postLogin.html);
 
-  if (!cookieHeader.includes('wordpress_logged_in_')) {
+  if (stillOnLoginPage || !postLogin.res.ok) {
+    const alertText = extractHtmlAlertMessage(postLogin.html);
+    if (parsedForm!.hasTurnstileOrCaptcha) {
+      throw new Error(
+        `Đăng nhập trực tiếp tại ${chosenLoginUrl} chưa được máy chủ chấp nhận${
+          alertText ? ` (Phản hồi từ web: "${alertText}")` : ''
+        }. Trang web này đang bật Cloudflare Turnstile/CAPTCHA trên form đăng nhập nên máy chủ của web yêu cầu xác minh Turnstile khi đăng nhập. Để viết bài và đồng bộ catalog trực tiếp với ${safeBase}, vui lòng tắt Turnstile cho phiên đăng nhập này hoặc mở API/Webhook nhận bài trên web.`
+      );
+    }
     throw new Error(
-      `Không thể đăng nhập qua form WordPress tại ${loginUrl}. Kiểm tra lại Tài khoản/Mật khẩu hoặc trang web này không sử dụng wp-login.php chuẩn WordPress.`
+      `Đăng nhập trực tiếp tại ${chosenLoginUrl} thất bại${
+        alertText ? `: ${alertText}` : '. Vui lòng kiểm tra lại Email / Username và Mật khẩu.'
+      }`
     );
   }
 
-  // Lấy X-WP-Nonce từ trang post-new.php
-  const postNewRes = await fetch(`${safeBase}/wp-admin/post-new.php`, {
-    headers: {
-      Cookie: cookieHeader,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
-    },
-  });
-  const html = await postNewRes.text();
-  const nonceMatch = html.match(/wpApiSettings\s*=\s*(\{[^;]+\})/);
-  let restNonce = '';
-  let restRoot = `${safeBase}/wp-json/`;
-
-  if (nonceMatch && nonceMatch[1]) {
-    try {
-      const parsed = JSON.parse(nonceMatch[1]);
-      restNonce = parsed.nonce || '';
-      restRoot = parsed.root || restRoot;
-    } catch {
-      // Fallback regex
-    }
-  }
-
-  if (!restNonce) {
-    const fallbackNonce = html.match(/"nonce"\s*:\s*"([a-zA-Z0-9]+)"/);
-    if (fallbackNonce) restNonce = fallbackNonce[1];
-  }
-
-  const newSession: WpPublishAuthSession = {
+  const scraped = await scrapeCustomWebDashboard(postLogin.html, postLogin.finalUrl, cookieMap);
+  const customSession: WpPublishAuthSession = {
+    siteType: 'custom_web',
     siteUrl: safeBase,
-    cookieHeader,
-    restNonce,
-    restRoot: restRoot.endsWith('/') ? restRoot : `${restRoot}/`,
-    expiresAt: Date.now() + 20 * 60 * 1000, // 20 phút
+    dashboardUrl: postLogin.finalUrl,
+    cookieHeader: serializeCookieMap(cookieMap),
+    restNonce: '',
+    restRoot: `${safeBase}/`,
+    categories: scraped.categories,
+    posts: scraped.posts,
+    publishForm: scraped.publishForm,
+    expiresAt: Date.now() + 20 * 60 * 1000,
   };
-  cachedPublishSessions.set(cacheKey, newSession);
-
-  return newSession;
+  cachedPublishSessions.set(cacheKey, customSession);
+  return customSession;
 }
 
 export async function fetchWpPublishInitData(customAuth?: {
@@ -254,6 +819,7 @@ export async function fetchWpPublishInitData(customAuth?: {
   sessionCookie?: string;
 }): Promise<{
   ok: boolean;
+  siteType?: 'wordpress' | 'custom_web';
   siteUrl: string;
   categories: WpCategoryItem[];
   posts: WpRemotePostItem[];
@@ -265,51 +831,11 @@ export async function fetchWpPublishInitData(customAuth?: {
     : DEFAULT_WP_SITE.replace(/\/+$/, '');
   const username = customAuth?.username?.trim();
   const password = customAuth?.password?.trim();
-  const sessionCookie = customAuth?.sessionCookie?.trim();
   const isCustomSite = activeSiteUrl !== DEFAULT_WP_SITE.replace(/\/+$/, '');
-
-  // Hỗ trợ kiểm tra kết nối qua Cookie phiên đăng nhập trình duyệt (VD: ys_dash_sess=... từ yieldstudio.com/dash)
-  if (isCustomSite && sessionCookie) {
-    const normalizedCookie = sessionCookie.includes('=')
-      ? sessionCookie
-      : `ys_dash_sess=${sessionCookie}`;
-    const dashProbeUrl = activeSiteUrl.includes('yieldstudio')
-      ? `${activeSiteUrl}/dash/`
-      : activeSiteUrl;
-    const probeRes = await fetch(dashProbeUrl, {
-      headers: {
-        Cookie: normalizedCookie,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
-      },
-      redirect: 'manual',
-    });
-    const loc = probeRes.headers.get('location') || '';
-    if (probeRes.status >= 300 && probeRes.status < 400 && /login/i.test(loc)) {
-      throw new Error(
-        `Cookie phiên tại ${activeSiteUrl} đã hết hạn hoặc không hợp lệ (chuyển hướng về ${loc}). Vui lòng đăng nhập lại trên trình duyệt và lấy Cookie mới.`
-      );
-    }
-    if (probeRes.ok) {
-      const dashHtml = await probeRes.text();
-      if (/login/i.test(dashHtml) && /cf-turnstile|password/i.test(dashHtml)) {
-        throw new Error(
-          `Cookie phiên chưa đăng nhập được vào Dashboard của ${activeSiteUrl}.`
-        );
-      }
-      return {
-        ok: true,
-        siteUrl: activeSiteUrl,
-        categories: [],
-        posts: [],
-        authors: WP_EMPLOYEE_AUTHOR_MAP,
-        notice: `Đã xác thực phiên đăng nhập qua Cookie tại ${dashProbeUrl}.`,
-      };
-    }
-  }
 
   let restRoot = `${activeSiteUrl}/wp-json/`;
   let headers: Record<string, string> = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
+    'User-Agent': BROWSER_USER_AGENT,
   };
 
   let catRes: Response | null = null;
@@ -323,8 +849,12 @@ export async function fetchWpPublishInitData(customAuth?: {
     headers['Authorization'] = authHeader;
     try {
       [catRes, postsRes] = await Promise.all([
-        fetch(`${restRoot}wp/v2/categories?per_page=50`, { headers }),
-        fetch(`${restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`, { headers }),
+        fetchWithTimeout(`${restRoot}wp/v2/categories?per_page=50`, { headers }, 5000),
+        fetchWithTimeout(
+          `${restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`,
+          { headers },
+          5000
+        ),
       ]);
     } catch {}
   }
@@ -332,30 +862,46 @@ export async function fetchWpPublishInitData(customAuth?: {
   if (!isJsonResponse(catRes) || !isJsonResponse(postsRes)) {
     const inferredLoginUrl =
       customAuth?.loginUrl?.trim() ||
-      (customAuth?.siteUrl && /\/dash\/login/i.test(customAuth.siteUrl)
+      (customAuth?.siteUrl && /^https?:\/\/[^/]+\/.+/i.test(customAuth.siteUrl.trim())
         ? customAuth.siteUrl.trim()
-        : activeSiteUrl.includes('yieldstudio')
+        : isCustomSite && activeSiteUrl.includes('yieldstudio')
         ? `${activeSiteUrl}/dash/login`
         : undefined);
 
     const session = await getWpRestSession(
-      false,
+      Boolean(isCustomSite),
       activeSiteUrl,
       customAuth?.username,
       customAuth?.password,
       inferredLoginUrl
     );
+
+    if (session.siteType === 'custom_web') {
+      const cats = session.categories || [];
+      const sitePosts = session.posts || [];
+      return {
+        ok: true,
+        siteType: 'custom_web',
+        siteUrl: activeSiteUrl,
+        categories: cats,
+        posts: sitePosts,
+        authors: WP_EMPLOYEE_AUTHOR_MAP,
+        notice: `Đăng nhập trực tiếp thành công vào ${activeSiteUrl}! Đã đồng bộ ${cats.length} danh mục/catalog và ${sitePosts.length} bài viết.`,
+      };
+    }
+
     restRoot = session.restRoot;
     headers = {
       Cookie: session.cookieHeader,
       'X-WP-Nonce': session.restNonce,
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/125.0.0.0 Safari/537.36',
+      'User-Agent': BROWSER_USER_AGENT,
     };
     [catRes, postsRes] = await Promise.all([
-      fetch(`${restRoot}wp/v2/categories?per_page=50`, { headers }),
-      fetch(
+      fetchWithTimeout(`${restRoot}wp/v2/categories?per_page=50`, { headers }, 6000),
+      fetchWithTimeout(
         `${restRoot}wp/v2/posts?_embed&per_page=25&status=publish,draft,future&context=edit`,
-        { headers }
+        { headers },
+        6000
       ),
     ]);
   }
@@ -1131,7 +1677,7 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
       'Basic ' +
       Buffer.from(`${input.customWpUser.trim()}:${input.customWpAppPassword.trim()}`).toString('base64');
 
-    let wpRes = await fetch(postEndpoint, {
+    let wpRes = await fetchWithTimeout(postEndpoint, {
       method: 'POST',
       headers: {
         Authorization: authHeader,
@@ -1144,7 +1690,7 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
     if (!wpRes.ok || !ct.includes('json')) {
       const inferredLoginUrl =
         input.customWpLoginUrl?.trim() ||
-        (/\/dash\/login/i.test(input.customWpUrl)
+        (/^https?:\/\/[^/]+\/.+/i.test(input.customWpUrl)
           ? input.customWpUrl.trim()
           : baseSite.includes('yieldstudio')
           ? `${baseSite}/dash/login`
@@ -1156,7 +1702,75 @@ export async function publishArticleToTarget(input: PublishArticleInput) {
         input.customWpAppPassword,
         inferredLoginUrl
       );
-      wpRes = await fetch(
+
+      if (customSession.siteType === 'custom_web') {
+        if (!customSession.publishForm) {
+          throw new Error(
+            `Đã đăng nhập vào ${baseSite} nhưng không tìm thấy form/endpoint tạo bài viết HTML trên dashboard (${customSession.dashboardUrl || baseSite}). Nếu website này dùng API nội bộ riêng, vui lòng cấu hình ở mục Webhook API.`
+          );
+        }
+        const pf = customSession.publishForm;
+        const formData = new URLSearchParams({
+          ...pf.hiddenFields,
+          [pf.titleField]: input.title,
+          [pf.contentField]: input.content,
+          ...(pf.excerptField ? { [pf.excerptField]: input.excerpt || '' } : {}),
+          ...(pf.slugField && input.slug ? { [pf.slugField]: input.slug } : {}),
+          ...(pf.categoryField && input.categories?.[0]
+            ? { [pf.categoryField]: String(input.categories[0]) }
+            : {}),
+          ...(pf.statusField ? { [pf.statusField]: input.status || 'publish' } : {}),
+        });
+        const formCookieMap = new Map<string, string>();
+        customSession.cookieHeader.split(';').forEach((pair) => {
+          const idx = pair.indexOf('=');
+          if (idx > 0) {
+            formCookieMap.set(pair.slice(0, idx).trim(), pair.slice(idx + 1).trim());
+          }
+        });
+        const submitRes = await fetchWithSafeRedirects(
+          pf.actionUrl,
+          {
+            method: pf.method === 'GET' ? 'GET' : 'POST',
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded',
+              Origin: baseSite,
+              Referer: customSession.dashboardUrl || baseSite,
+            },
+            body: formData.toString(),
+          },
+          formCookieMap,
+          3
+        );
+        if (!submitRes.res.ok) {
+          throw new Error(
+            `Website ${baseSite} từ chối lưu bài viết (${submitRes.res.status}): ${extractHtmlAlertMessage(submitRes.html) || 'Kiểm tra lại các trường bắt buộc trên web.'}`
+          );
+        }
+        const empCode = (input.employeeCode || '').trim().toUpperCase();
+        const link = submitRes.finalUrl || customSession.dashboardUrl || baseSite;
+        const trackingLink = empCode
+          ? `${link}${link.includes('?') ? '&' : '?'}${empCode}`
+          : link;
+        return {
+          ok: true,
+          targetMode: 'custom_wp',
+          post: {
+            id: Date.now(),
+            title: input.title,
+            link,
+            trackingLink,
+            status: input.status || 'publish',
+            slug: input.slug || '',
+            date: new Date().toISOString(),
+            authorId: 1,
+            employeeCode: empCode,
+            featuredImageUrl: input.featuredImageUrl || '',
+          },
+        };
+      }
+
+      wpRes = await fetchWithTimeout(
         input.postId
           ? `${customSession.restRoot}wp/v2/posts/${input.postId}`
           : `${customSession.restRoot}wp/v2/posts`,
