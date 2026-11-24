@@ -250,7 +250,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
             </div>
             <div className="flex items-center space-x-1.5">
               <h1 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight whitespace-nowrap hidden xl:block">
-                QL Fanpage & Web
+                Page & Web
               </h1>
               <button
                 type="button"
