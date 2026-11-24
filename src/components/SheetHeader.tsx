@@ -274,8 +274,8 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
             <div className="flex items-center gap-1.5 flex-1 min-w-0 mx-1">
               {navMode === 'grouped' ? (
                 <>
-                  {/* 4 Phân Khu Chính — Gọn gàng, không cần cuộn ngang */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5 flex-1">
+                  {/* 4 Phân Khu Chính — Gọn gàng, vừa khít trên màn hình desktop */}
+                  <div className="flex items-center gap-1 overflow-x-auto scrollbar-none py-0.5 flex-1">
                     {visibleGroups.map((group, gIdx) => {
                       const isGroupActive = currentGroup?.id === group.id;
                       const GroupIcon = group.icon;
@@ -287,7 +287,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                           key={group.id}
                           type="button"
                           onClick={() => handleSelectGroup(group)}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer whitespace-nowrap shrink-0 border ${
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 border ${
                             isGroupActive
                               ? `${group.activeBg} border-transparent`
                               : 'bg-slate-50/90 text-slate-700 hover:bg-slate-100 hover:text-slate-950 border-slate-200/90'
@@ -295,7 +295,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                           title={`${group.label}: ${group.items.map((i) => i.title).join(' • ')}`}
                         >
                           <span
-                            className={`w-4 h-4 rounded-md flex items-center justify-center text-[10px] font-black shrink-0 ${
+                            className={`w-4 h-4 rounded flex items-center justify-center text-[10px] font-black shrink-0 ${
                               isGroupActive
                                 ? 'bg-white/20 text-white'
                                 : 'bg-white text-slate-700 border border-slate-200'
@@ -308,7 +308,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
 
                           {/* Hiển thị số tab con hoặc tên tab con đang mở */}
                           <span
-                            className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
+                            className={`px-1.5 py-0.2 rounded text-[10px] font-bold tabular-nums ${
                               isGroupActive
                                 ? 'bg-black/20 text-white'
                                 : 'bg-white text-slate-500 border border-slate-200/80'
@@ -321,10 +321,10 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
 
                           {group.totalNewCount > 0 && (
                             <span
-                              className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-1 ring-rose-300 animate-pulse"
+                              className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white tabular-nums"
                               title={`Có ${group.totalNewCount} mục mới cần xử lý`}
                             >
-                              🔴+{group.totalNewCount}
+                              +{group.totalNewCount}
                             </span>
                           )}
                         </button>
@@ -337,7 +337,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                     <button
                       type="button"
                       onClick={() => setIsAllTabsMenuOpen((prev) => !prev)}
-                      className="inline-flex items-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/90 cursor-pointer transition-colors"
+                      className="relative z-50 inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200/90 cursor-pointer transition-colors"
                       title="Xem danh mục tất cả các bảng trong hệ thống"
                     >
                       <LayoutGrid className="w-3.5 h-3.5 text-slate-600" />
@@ -816,9 +816,9 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
         <div
           className={`bg-gradient-to-r ${currentGroup.subBarBg} border-t border-slate-200/80 px-2.5 sm:px-5 py-1`}
         >
-          <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mr-1 hidden sm:inline-flex items-center gap-1">
+          <div className="max-w-[1700px] mx-auto flex items-center justify-between gap-3">
+            <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none min-w-0 flex-1">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mr-1 hidden sm:inline-flex items-center gap-1 shrink-0">
                 <span>Nhóm {currentGroup.label}:</span>
               </span>
 
@@ -852,7 +852,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
                     <span>{tab.title}</span>
 
                     <span
-                      className={`px-1.5 py-0.1 rounded-full text-[10px] font-black ${
+                      className={`px-1.5 py-0.1 rounded-full text-[10px] font-black tabular-nums ${
                         isSelected
                           ? 'bg-white/25 text-white'
                           : 'bg-slate-100 text-slate-700 border border-slate-200'
@@ -863,10 +863,10 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
 
                     {tab.newCount > 0 && (
                       <span
-                        className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-1 ring-rose-300 animate-pulse"
+                        className="px-1.5 py-0.1 rounded-full text-[9.5px] font-black bg-rose-600 text-white shadow-xs ring-1 ring-rose-300"
                         title={`Có ${tab.newCount} ${tab.unit} mới được chuyển giao!`}
                       >
-                        🔴+{tab.newCount}
+                        +{tab.newCount}
                       </span>
                     )}
                   </button>
@@ -875,7 +875,10 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
             </div>
 
             {activeNavTabObj && (
-              <div className="hidden lg:flex items-center gap-2 text-[11px] text-slate-500 truncate">
+              <div
+                className="hidden xl:flex items-center gap-2 text-[11px] text-slate-500 shrink-0 max-w-[340px]"
+                title={activeNavTabObj.fullTitle}
+              >
                 <span className="font-semibold text-slate-700 truncate">
                   {activeNavTabObj.fullTitle}
                 </span>

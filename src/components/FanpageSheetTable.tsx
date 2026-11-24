@@ -39,6 +39,7 @@ import {
   Bot,
   Users,
   X,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   PageRecord,
@@ -404,6 +405,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const [mergeViaCells, setMergeViaCells] = useState<boolean>(true);
+  const [isDisplayMenuOpen, setIsDisplayMenuOpen] = useState<boolean>(false);
   const [editingStaffName, setEditingStaffName] = useState<{ [oldName: string]: string }>({});
   const [isEditingStaffNameMode, setIsEditingStaffNameMode] = useState<string | null>(null);
 
@@ -1221,19 +1223,18 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
 
   return (
     <div className="max-w-[1700px] mx-auto">
-      {/* HÀNG 4: THANH ĐIỀU KHIỂN BẢNG KHOA HỌC & SIÊU GỌN TRÊN 1 DÒNG DUY NHẤT */}
-      <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5 px-1 text-xs">
-        {/* Trái: Lọc loại Via + Thống kê NV + Copy UID + Thu gọn NV + Gộp ô */}
-        <div className="flex items-center flex-wrap gap-1">
-          {/* Filter Pills: Lọc loại Via */}
-          <div className="inline-flex items-center space-x-0.5 bg-white p-0.5 rounded-md border border-slate-300 shadow-2xs">
+      {/* THANH ĐIỀU KHIỂN BẢNG GỌN GÀNG (1 HÀNG DUY NHẤT: PHẠM VI VIA · TIỆN ÍCH · PHÂN TRANG · HIỂN THỊ) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2 px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl shadow-2xs text-xs">
+        {/* Trái: Lọc loại Via + Thống kê NV + Copy UID */}
+        <div className="flex items-center flex-wrap gap-1.5">
+          <div className="inline-flex items-center h-7 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
             <button
               type="button"
               onClick={() => setFilterViaType('all')}
-              className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all cursor-pointer ${
+              className={`px-2 h-full rounded-md text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
                 filterViaType === 'all'
-                  ? 'bg-slate-800 text-white shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  ? 'bg-slate-900 text-white shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Tất cả ({records.length})
@@ -1242,28 +1243,27 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             <button
               type="button"
               onClick={() => setFilterViaType(filterViaType === 'multi' ? 'all' : 'multi')}
-              className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all inline-flex items-center space-x-1 cursor-pointer ${
+              className={`px-2 h-full rounded-md text-[11px] font-semibold transition-colors inline-flex items-center gap-1 cursor-pointer whitespace-nowrap tabular-nums ${
                 filterViaType === 'multi'
-                  ? 'bg-indigo-700 text-white shadow-2xs'
-                  : 'text-indigo-800 hover:bg-indigo-50'
+                  ? 'bg-indigo-600 text-white shadow-2xs'
+                  : 'text-slate-700 hover:text-slate-900'
               }`}
               title="Lọc các Nick Via đang cầm từ 2 Fanpage trở lên"
             >
-              <Sparkles className="w-3 h-3 text-indigo-400" />
-              <span>Via Chung ({viaStats.multiPageVias})</span>
+              <Sparkles className={`w-3 h-3 ${filterViaType === 'multi' ? 'text-indigo-200' : 'text-indigo-500'}`} />
+              <span>Via chung ({viaStats.multiPageVias})</span>
             </button>
 
             <button
               type="button"
               onClick={() => setFilterViaType(filterViaType === 'single' ? 'all' : 'single')}
-              className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all inline-flex items-center space-x-1 cursor-pointer ${
+              className={`px-2 h-full rounded-md text-[11px] font-semibold transition-colors inline-flex items-center gap-1 cursor-pointer whitespace-nowrap tabular-nums ${
                 filterViaType === 'single'
                   ? 'bg-slate-700 text-white shadow-2xs'
-                  : 'text-slate-600 hover:bg-slate-100'
+                  : 'text-slate-600 hover:text-slate-900'
               }`}
               title="Lọc các Nick Via cầm 1 page riêng lẻ"
             >
-              <User className="w-3 h-3 text-slate-400" />
               <span>1 Page ({viaStats.singlePageVias})</span>
             </button>
 
@@ -1271,10 +1271,10 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               <button
                 type="button"
                 onClick={() => setFilterViaType(filterViaType === 'unassigned' ? 'all' : 'unassigned')}
-                className={`px-1.5 py-0.5 rounded text-[11px] font-bold border border-dashed transition-all cursor-pointer ${
+                className={`px-2 h-full rounded-md text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
                   filterViaType === 'unassigned'
-                    ? 'bg-amber-700 text-white border-amber-800 shadow-2xs'
-                    : 'text-amber-800 hover:bg-amber-50 border-amber-300'
+                    ? 'bg-amber-600 text-white shadow-2xs'
+                    : 'text-amber-800 hover:bg-amber-100/70'
                 }`}
                 title="Các fanpage chưa được gán Nick Via"
               >
@@ -1288,110 +1288,63 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                 onClick={() =>
                   setFilterViaType(filterViaType === 'new_transfer' ? 'all' : 'new_transfer')
                 }
-                className={`px-1.5 py-0.5 rounded text-[11px] font-black transition-all cursor-pointer inline-flex items-center space-x-1 ${
+                className={`px-2 h-full rounded-md text-[11px] font-bold transition-colors cursor-pointer inline-flex items-center gap-1 whitespace-nowrap tabular-nums ${
                   filterViaType === 'new_transfer'
-                    ? 'bg-rose-600 text-white shadow-xs ring-1 ring-rose-300'
-                    : 'bg-rose-100 text-rose-800 hover:bg-rose-200 border border-rose-300 animate-pulse'
+                    ? 'bg-rose-600 text-white shadow-2xs'
+                    : 'bg-rose-100 text-rose-800 hover:bg-rose-200'
                 }`}
-                title="Lọc nhanh các Via & Fanpage vừa mới chuyển giao (Đánh dấu đỏ)"
+                title="Lọc nhanh các Via & Fanpage vừa mới chuyển giao"
               >
-                <span>🔴 Mới ({newlyTransferredStats.viaCount} Via / {newlyTransferredStats.pageCount} Page)</span>
+                <span>Mới ({newlyTransferredStats.viaCount} Via / {newlyTransferredStats.pageCount})</span>
               </button>
             )}
           </div>
 
-          {/* Nút Thống Kê Đăng Tay/Tool & Đang Làm/Không Làm từng nhân viên */}
           <button
             type="button"
             id="btn-posting-stats-modal-open"
             onClick={() => setIsPostingStatsModalOpen(true)}
-            className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md border text-[11px] font-bold transition-all shadow-2xs cursor-pointer bg-teal-50 hover:bg-teal-100 text-teal-900 border-teal-300"
+            className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-[11px] font-semibold transition-colors cursor-pointer bg-white hover:bg-slate-50 text-slate-700 border-slate-200 whitespace-nowrap tabular-nums"
             title="Xem bảng thống kê Page Đang Làm / Không Làm và Đăng Tay / Tool của từng nhân viên"
           >
-            <BarChart3 className="w-3 h-3 text-teal-700" />
-            <span>Thống kê NV:</span>
-            <span className="text-emerald-700 font-extrabold">🟢{totalDoingInSheet}</span>
-            <span className="text-rose-700 font-extrabold">🔴{totalNotDoingInSheet}</span>
+            <BarChart3 className="w-3.5 h-3.5 text-emerald-700" />
+            <span>Thống kê NV</span>
+            <span className="text-slate-300">|</span>
+            <span className="text-emerald-700 font-bold" title="Đang làm">{totalDoingInSheet}</span>
+            <span className="text-slate-300">/</span>
+            <span className="text-rose-600 font-bold" title="Không làm">{totalNotDoingInSheet}</span>
           </button>
 
-          {/* Copy toàn bộ UID Via */}
           <button
             type="button"
             id="btn-copy-all-fanpage-vias"
             onClick={handleCopyAllViaUids}
-            className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md border text-[11px] font-bold transition-all shadow-2xs cursor-pointer ${
+            className={`inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
               copiedViaId === 'all-vias'
                 ? 'bg-emerald-700 text-white border-emerald-800'
-                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
             }`}
             title="Sao chép toàn bộ UID tài khoản nick Via trên bảng (1 UID/dòng)"
           >
             {copiedViaId === 'all-vias' ? (
               <>
                 <Check className="w-3 h-3 text-emerald-100 stroke-[3]" />
-                <span>Đã Copy!</span>
+                <span>Đã copy</span>
               </>
             ) : (
               <>
-                <Copy className="w-3 h-3 text-indigo-600" />
+                <Copy className="w-3 h-3 text-slate-500" />
                 <span>Copy UID ({viaStats.totalVias})</span>
-              </>
-            )}
-          </button>
-
-          {/* Thu gọn / Mở rộng tất cả nhân viên */}
-          {distinctStaff.length > 1 && (
-            <button
-              type="button"
-              onClick={collapsedStaffSet.size > 0 ? expandAllStaff : collapseAllStaff}
-              className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 cursor-pointer shadow-2xs transition-colors"
-              title="Thu gọn hoặc mở rộng toàn bộ danh sách nhân viên"
-            >
-              {collapsedStaffSet.size > 0 ? (
-                <>
-                  <FolderPlus className="w-3 h-3 text-emerald-600" />
-                  <span>Mở NV</span>
-                </>
-              ) : (
-                <>
-                  <FolderMinus className="w-3 h-3 text-slate-500" />
-                  <span>Thu gọn NV</span>
-                </>
-              )}
-            </button>
-          )}
-
-          {/* View Mode Toggle: Gộp ô vs Tách ô */}
-          <button
-            type="button"
-            id="btn-toggle-merge-via"
-            onClick={() => setMergeViaCells(!mergeViaCells)}
-            className={`inline-flex items-center space-x-1 px-2 py-0.5 rounded-md border text-[11px] font-bold transition-all shadow-2xs cursor-pointer ${
-              mergeViaCells
-                ? 'bg-emerald-700 hover:bg-emerald-800 text-white border-emerald-800'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-            }`}
-            title="Bật/tắt gộp ô theo Via"
-          >
-            {mergeViaCells ? (
-              <>
-                <ToggleRight className="w-3 h-3 text-emerald-200" />
-                <span>Gộp ô</span>
-              </>
-            ) : (
-              <>
-                <ToggleLeft className="w-3 h-3 text-slate-400" />
-                <span>Tách ô</span>
               </>
             )}
           </button>
         </div>
 
-        {/* Phải: Phân trang + Xem cột nhanh + Sắp xếp + Khung nhìn & Màu */}
-        <div className="flex items-center flex-wrap gap-1 ml-auto">
-          {/* Phân trang ngắn gọn (Hỗ trợ Phân trang theo Nhân Viên khi xem Tất Cả) */}
-          <div className="inline-flex items-center space-x-0.5 bg-white px-1.5 py-0.5 rounded-md border border-slate-300 shadow-2xs">
-            <span className="text-[10px] text-slate-500 font-bold mr-0.5">Phân trang:</span>
+        {/* Phải: Phân trang hợp nhất + Cuộn cột nhanh + Popover Tùy chọn hiển thị */}
+        <div className="flex items-center flex-wrap gap-1.5 ml-auto">
+          {/* Phân trang gọn + Chọn nhanh trang NV ngay tại chỗ */}
+          <div className="inline-flex items-center gap-0.5 h-7 bg-slate-100 px-1 rounded-lg border border-slate-200">
+            <span className="text-[10px] text-slate-500 font-semibold px-1 hidden xl:inline">Xem:</span>
             {!hideStaffColumn && (
               <button
                 type="button"
@@ -1399,14 +1352,14 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   setPageSize('staff');
                   setCurrentPage(1);
                 }}
-                className={`px-1.5 py-0.1 rounded text-[11px] font-bold transition-all cursor-pointer inline-flex items-center space-x-0.5 ${
+                className={`px-2 h-5.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap ${
                   pageSize === 'staff'
                     ? 'bg-[#2e7d32] text-white shadow-2xs'
-                    : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100'
+                    : 'text-slate-700 hover:bg-white'
                 }`}
-                title="Phân trang theo từng Tên Nhân Viên (Mỗi trang 1 nhân viên)"
+                title="Phân trang theo từng Nhân Viên (Mỗi trang 1 nhân viên)"
               >
-                <span>👤 Theo NV</span>
+                Theo NV
               </button>
             )}
             {([10, 15, 25, 50, 'all'] as const).map((sz) => (
@@ -1417,10 +1370,10 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   setPageSize(sz);
                   setCurrentPage(1);
                 }}
-                className={`px-1 py-0.1 rounded text-[11px] font-bold transition-all cursor-pointer ${
+                className={`px-1.5 h-5.5 rounded-md text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap tabular-nums ${
                   pageSize === sz || (hideStaffColumn && pageSize === 'staff' && sz === 'all')
-                    ? 'bg-[#2e7d32] text-white'
-                    : 'text-slate-600 hover:bg-slate-100'
+                    ? 'bg-[#2e7d32] text-white shadow-2xs'
+                    : 'text-slate-600 hover:bg-white'
                 }`}
               >
                 {sz === 'all' ? 'Hết' : sz}
@@ -1428,43 +1381,59 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
             ))}
 
             {(isStaffPaginationActive || pageSize !== 'all') && totalPages > 1 && (
-              <div className="flex items-center space-x-0.5 pl-1 border-l border-slate-200">
+              <div className="flex items-center gap-0.5 pl-1 ml-0.5 border-l border-slate-300">
                 <button
                   type="button"
                   onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                  className="p-0.5 rounded text-slate-600 hover:bg-white disabled:opacity-30 cursor-pointer"
                   title="Trang trước"
+                  aria-label="Trang trước"
                 >
-                  <ChevronLeft className="w-3 h-3" />
+                  <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
-                <span className="text-[10px] font-extrabold text-slate-800 px-1 whitespace-nowrap">
-                  {isStaffPaginationActive && currentStaffPage
-                    ? `${currentPage}/${totalPages} • ${currentStaffPage.staffName}`
-                    : `${currentPage}/${totalPages}`}
-                </span>
+                {isStaffPaginationActive && staffPages.length > 1 ? (
+                  <select
+                    aria-label="Chọn nhân viên theo trang"
+                    value={currentPage}
+                    onChange={(e) => setCurrentPage(Number(e.target.value))}
+                    className="h-5.5 px-1.5 bg-white border border-slate-200 rounded text-[11px] font-bold text-slate-800 cursor-pointer tabular-nums max-w-[155px] truncate"
+                    title="Chuyển nhanh sang trang của nhân viên khác"
+                  >
+                    {staffPages.map((sp, idx) => (
+                      <option key={sp.staffName} value={idx + 1}>
+                        {idx + 1}/{staffPages.length} · {sp.staffName} ({sp.count})
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <span className="text-[11px] font-bold text-slate-800 px-1 whitespace-nowrap tabular-nums">
+                    {currentPage}/{totalPages}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  className="p-0.5 rounded text-slate-600 hover:bg-slate-100 disabled:opacity-30 cursor-pointer"
+                  className="p-0.5 rounded text-slate-600 hover:bg-white disabled:opacity-30 cursor-pointer"
                   title="Trang sau"
+                  aria-label="Trang sau"
                 >
-                  <ChevronRight className="w-3 h-3" />
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
           </div>
 
-          {/* Phím cuộn ngang nhanh chống khuất cột */}
-          <div className="inline-flex rounded-md border border-slate-300 bg-white p-0.5 shadow-2xs items-center gap-0.5">
+          {/* Phím cuộn cột ngang gọn */}
+          <div className="inline-flex items-center h-7 rounded-lg border border-slate-200 bg-white p-0.5 gap-0.5">
             <button
               type="button"
               onClick={() => scrollContainerRef.current?.scrollTo({ left: 0, behavior: 'smooth' })}
-              className="px-1.5 py-0.2 rounded text-[10px] font-bold text-slate-700 hover:bg-emerald-50 cursor-pointer"
-              title="Cuộn về đầu bảng (Tên NV, Nick Via, Tên Page)"
+              className="px-1.5 h-full rounded-md text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 cursor-pointer whitespace-nowrap"
+              title="Cuộn về đầu bảng (Via, Tên Page)"
             >
-              ◀ Đầu
+              ‹ Đầu
             </button>
             <button
               type="button"
@@ -1474,10 +1443,10 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   scrollContainerRef.current.scrollTo({ left: mid > 0 ? mid : 500, behavior: 'smooth' });
                 }
               }}
-              className="px-1.5 py-0.2 rounded text-[10px] font-bold text-slate-700 hover:bg-emerald-50 cursor-pointer"
+              className="px-1.5 h-full rounded-md text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 cursor-pointer whitespace-nowrap"
               title="Cuộn đến giữa bảng (Trạng thái, Chặn, Đăng bài)"
             >
-              ● Giữa
+              Giữa
             </button>
             <button
               type="button"
@@ -1489,51 +1458,197 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   });
                 }
               }}
-              className="px-1.5 py-0.2 rounded text-[10px] font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 cursor-pointer"
+              className="px-1.5 h-full rounded-md text-[10px] font-semibold text-slate-600 hover:bg-slate-100 hover:text-slate-900 cursor-pointer whitespace-nowrap"
               title="Cuộn về cuối bảng (Ghi chú BM, Đổi Via, Thao tác)"
             >
-              Cuối ▶
+              Cuối ›
             </button>
           </div>
 
-          {/* Sắp xếp khoa học */}
-          <button
-            type="button"
-            onClick={() => setSortMode(sortMode === 'multi-first' ? 'natural' : 'multi-first')}
-            className={`inline-flex items-center space-x-1 px-1.5 py-0.5 rounded-md border text-[11px] font-bold transition-all shadow-2xs cursor-pointer ${
-              sortMode === 'multi-first'
-                ? 'bg-emerald-50 text-emerald-900 border-emerald-300'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-300'
-            }`}
-            title="Sắp xếp khoa học: Đưa Via cầm 2+ page lên đầu"
-          >
-            <ArrowUpDown className="w-3 h-3 text-emerald-600" />
-            <span>{sortMode === 'multi-first' ? 'Via chung trước' : 'Thứ tự gốc'}</span>
-          </button>
+          {/* Popover Tùy chọn Hiển thị: gom Gộp ô, Sắp xếp, Chiều cao khung, Màu nền, Thu gọn NV */}
+          <div className="relative">
+            <button
+              type="button"
+              id="btn-table-display-settings"
+              onClick={() => setIsDisplayMenuOpen((prev) => !prev)}
+              aria-expanded={isDisplayMenuOpen}
+              className={`relative z-50 inline-flex items-center gap-1.5 h-7 px-2.5 rounded-lg border text-[11px] font-semibold transition-colors cursor-pointer whitespace-nowrap ${
+                isDisplayMenuOpen
+                  ? 'bg-slate-900 text-white border-slate-900'
+                  : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+              }`}
+              title="Tùy chỉnh hiển thị bảng: Gộp ô, Sắp xếp, Khung nhìn, Màu nền"
+            >
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+              <span>Hiển thị</span>
+              <ChevronDown className="w-3 h-3 opacity-70" />
+            </button>
 
-          {/* Khung nhìn gọn */}
-          <select
-            value={viewportHeight}
-            onChange={(e) => setViewportHeight(e.target.value as 'compact' | 'medium' | 'full')}
-            className="px-1.5 py-0.5 bg-white border border-slate-300 rounded-md text-[11px] font-bold text-slate-700 cursor-pointer shadow-2xs"
-            title="Chiều cao khung bảng"
-          >
-            <option value="compact">↕ Khung: Gọn</option>
-            <option value="medium">↕ Khung: Vừa</option>
-            <option value="full">↕ Khung: Hết</option>
-          </select>
+            {isDisplayMenuOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setIsDisplayMenuOpen(false)}
+                />
+                <div className="absolute right-0 top-full mt-1.5 w-72 bg-white rounded-xl shadow-xl border border-slate-200 z-50 p-3 text-xs space-y-3">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                    <span className="font-bold text-slate-900">Tùy chọn hiển thị bảng</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsDisplayMenuOpen(false)}
+                      className="text-slate-400 hover:text-slate-600 cursor-pointer"
+                      aria-label="Đóng tùy chọn hiển thị"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
 
-          {/* Chế độ màu nền gọn */}
-          <select
-            value={colorMode}
-            onChange={(e) => setColorMode(e.target.value as 'multi-only' | 'all-vias' | 'monochrome')}
-            className="px-1.5 py-0.5 bg-white border border-slate-300 rounded-md text-[11px] font-bold text-slate-700 cursor-pointer shadow-2xs"
-            title="Chế độ màu nền bảng"
-          >
-            <option value="multi-only">🎨 Màu: Via chung</option>
-            <option value="all-vias">🎨 Màu: Tất cả</option>
-            <option value="monochrome">📋 Đơn sắc</option>
-          </select>
+                  {/* Gộp ô theo Via */}
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold text-slate-800">Gộp ô theo Via</div>
+                      <div className="text-[10px] text-slate-500">Gom chung các page cùng 1 UID</div>
+                    </div>
+                    <button
+                      type="button"
+                      id="btn-toggle-merge-via"
+                      onClick={() => setMergeViaCells(!mergeViaCells)}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer border ${
+                        mergeViaCells
+                          ? 'bg-emerald-700 text-white border-emerald-800'
+                          : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'
+                      }`}
+                    >
+                      {mergeViaCells ? (
+                        <>
+                          <ToggleRight className="w-3.5 h-3.5" />
+                          <span>Đang gộp</span>
+                        </>
+                      ) : (
+                        <>
+                          <ToggleLeft className="w-3.5 h-3.5" />
+                          <span>Tách ô</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {/* Sắp xếp */}
+                  <div className="space-y-1">
+                    <div className="font-semibold text-slate-700 text-[11px]">Sắp xếp danh sách</div>
+                    <div className="grid grid-cols-2 gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                      <button
+                        type="button"
+                        onClick={() => setSortMode('multi-first')}
+                        className={`py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                          sortMode === 'multi-first'
+                            ? 'bg-white text-emerald-800 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Via chung trước
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSortMode('natural')}
+                        className={`py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                          sortMode === 'natural'
+                            ? 'bg-white text-slate-900 shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                      >
+                        Thứ tự gốc
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Chiều cao khung bảng */}
+                  <div className="space-y-1">
+                    <div className="font-semibold text-slate-700 text-[11px]">Chiều cao khung bảng</div>
+                    <div className="grid grid-cols-3 gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                      {(
+                        [
+                          { id: 'compact', label: 'Gọn' },
+                          { id: 'medium', label: 'Vừa' },
+                          { id: 'full', label: 'Hết' },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setViewportHeight(opt.id)}
+                          className={`py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                            viewportHeight === opt.id
+                              ? 'bg-white text-slate-900 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Chế độ màu nền */}
+                  <div className="space-y-1">
+                    <div className="font-semibold text-slate-700 text-[11px]">Màu nền nhóm Via</div>
+                    <div className="grid grid-cols-3 gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                      {(
+                        [
+                          { id: 'multi-only', label: 'Via chung' },
+                          { id: 'all-vias', label: 'Tất cả' },
+                          { id: 'monochrome', label: 'Đơn sắc' },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => setColorMode(opt.id)}
+                          className={`py-1 rounded-md text-[11px] font-semibold transition-colors cursor-pointer ${
+                            colorMode === opt.id
+                              ? 'bg-white text-slate-900 shadow-2xs'
+                              : 'text-slate-600 hover:text-slate-900'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Thu gọn / Mở rộng NV (Chỉ hiện khi đang xem gộp nhiều nhân viên) */}
+                  {!isStaffPaginationActive && distinctStaff.length > 1 && (
+                    <div className="pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (collapsedStaffSet.size > 0) {
+                            expandAllStaff();
+                          } else {
+                            collapseAllStaff();
+                          }
+                          setIsDisplayMenuOpen(false);
+                        }}
+                        className="w-full inline-flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer transition-colors"
+                      >
+                        {collapsedStaffSet.size > 0 ? (
+                          <>
+                            <FolderPlus className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Mở rộng tất cả nhân viên</span>
+                          </>
+                        ) : (
+                          <>
+                            <FolderMinus className="w-3.5 h-3.5 text-slate-500" />
+                            <span>Thu gọn tất cả nhân viên</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -1607,194 +1722,7 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
         </div>
       )}
 
-      {/* 📑 THANH PHÂN TRANG THEO TÊN NHÂN VIÊN KHI XEM TẤT CẢ */}
-      {!hideStaffColumn && staffPages.length > 1 && (
-        <div className="mb-1.5 bg-gradient-to-r from-emerald-50 via-white to-teal-50 border border-emerald-300 rounded-lg px-2.5 py-1.5 shadow-2xs flex flex-wrap items-center justify-between gap-2 text-xs">
-          <div className="flex items-center flex-wrap gap-1.5">
-            <span className="inline-flex items-center space-x-1 px-2 py-0.5 rounded-md bg-[#2e7d32] text-white font-black text-[11px] shadow-2xs">
-              <User className="w-3 h-3" />
-              <span>Phân Trang Theo NV:</span>
-            </span>
-
-            {isStaffPaginationActive && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(1)}
-                  disabled={currentPage === 1}
-                  className="px-1.5 py-0.5 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                  title="Trang nhân viên đầu tiên"
-                >
-                  « Đầu
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                  disabled={currentPage === 1}
-                  className="px-1.5 py-0.5 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                  title="Nhân viên trước"
-                >
-                  ‹ Trước
-                </button>
-              </>
-            )}
-
-            <div className="flex items-center flex-wrap gap-1">
-              {staffPages.map((sp, idx) => {
-                const pageNum = idx + 1;
-                const isActive = isStaffPaginationActive && currentPage === pageNum;
-                const staffGroupCount = groupRecords.filter(
-                  (g) =>
-                    (g.staffName || '').trim().toLowerCase() === sp.staffName.trim().toLowerCase() ||
-                    areStaffNamesEquivalent(g.staffName, sp.staffName)
-                ).length;
-
-                return (
-                  <button
-                    key={sp.staffName}
-                    type="button"
-                    onClick={() => {
-                      if (pageSize !== 'staff') {
-                        setPageSize('staff');
-                      }
-                      setCurrentPage(pageNum);
-                    }}
-                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer inline-flex items-center space-x-1 ${
-                      isActive
-                        ? 'bg-[#2e7d32] text-white border-[#1b5e20] shadow-xs ring-2 ring-emerald-200'
-                        : 'bg-white hover:bg-emerald-50 text-slate-700 border-slate-300 hover:border-emerald-400'
-                    }`}
-                    title={`Xem trang ${pageNum}/${staffPages.length}: Nhân viên ${sp.staffName} (${sp.count} Fanpage${staffGroupCount > 0 ? ` • ${staffGroupCount} Group` : ''})`}
-                  >
-                    <span
-                      className={`w-4 h-4 rounded-full text-[9px] font-black inline-flex items-center justify-center ${
-                        isActive ? 'bg-white text-[#2e7d32]' : 'bg-slate-100 text-slate-600'
-                      }`}
-                    >
-                      {pageNum}
-                    </span>
-                    <span>{sp.staffName}</span>
-                    <span
-                      className={`text-[10px] font-mono px-1 rounded ${
-                        isActive ? 'bg-emerald-800/80 text-emerald-100' : 'bg-slate-100 text-slate-500'
-                      }`}
-                    >
-                      {sp.count}
-                    </span>
-                    {staffGroupCount > 0 && (
-                      <span
-                        className={`text-[10px] font-extrabold px-1 rounded ${
-                          isActive ? 'bg-amber-300 text-slate-900' : 'bg-rose-100 text-rose-800'
-                        }`}
-                      >
-                        G:{staffGroupCount}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-
-              {/* Hiển thị các nhân viên được phân công Group (0 Fanpage) ngay trên thanh Phân Trang Theo NV để Admin bấm xem Group luôn */}
-              {availableStaffNames
-                .filter((staffName) => {
-                  if (isAdminWaitingPool(staffName)) return false;
-                  const alreadyInFanpage = staffPages.some(
-                    (sp) =>
-                      sp.staffName.trim().toLowerCase() === staffName.trim().toLowerCase() ||
-                      areStaffNamesEquivalent(sp.staffName, staffName)
-                  );
-                  if (alreadyInFanpage) return false;
-                  const gCount = groupRecords.filter(
-                    (g) =>
-                      (g.staffName || '').trim().toLowerCase() === staffName.trim().toLowerCase() ||
-                      areStaffNamesEquivalent(g.staffName, staffName)
-                  ).length;
-                  const matchedAcc = accounts.find(
-                    (a) =>
-                      (a.username || '').trim().toLowerCase() === staffName.trim().toLowerCase() ||
-                      areStaffNamesEquivalent(a.username, staffName)
-                  );
-                  return Boolean(matchedAcc?.allowedTabs?.includes('group') || gCount > 0);
-                })
-                .map((groupStaffName) => {
-                  const gCount = groupRecords.filter(
-                    (g) =>
-                      (g.staffName || '').trim().toLowerCase() === groupStaffName.trim().toLowerCase() ||
-                      areStaffNamesEquivalent(g.staffName, groupStaffName)
-                  ).length;
-                  return (
-                    <button
-                      key={`group-staff-${groupStaffName}`}
-                      type="button"
-                      onClick={() => onSelectStaffFilter?.(groupStaffName)}
-                      className="px-2 py-0.5 rounded-md text-[11px] font-bold border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-900 transition-all cursor-pointer inline-flex items-center space-x-1 shadow-2xs"
-                      title={`Nhân viên ${groupStaffName} được phân công Group (${gCount} dòng Group) — Bấm để xem bảng Group của ${groupStaffName}`}
-                    >
-                      <Users className="w-3 h-3 text-red-600" />
-                      <span>{groupStaffName}</span>
-                      <span className="text-[10px] font-extrabold px-1.5 rounded-full bg-red-600 text-white">
-                        Group: {gCount}
-                      </span>
-                    </button>
-                  );
-                })}
-            </div>
-
-            {isStaffPaginationActive && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={currentPage === totalPages}
-                  className="px-1.5 py-0.5 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                  title="Nhân viên tiếp theo"
-                >
-                  Sau ›
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage(totalPages)}
-                  disabled={currentPage === totalPages}
-                  className="px-1.5 py-0.5 text-[11px] font-bold rounded border border-slate-300 bg-white hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
-                  title="Trang nhân viên cuối cùng"
-                >
-                  Cuối »
-                </button>
-              </>
-            )}
-          </div>
-
-          <div className="flex items-center space-x-2 ml-auto">
-            {isStaffPaginationActive && currentStaffPage ? (
-              <>
-                <span className="text-[11px] text-emerald-950 font-semibold">
-                  Trang <strong>{currentPage}/{staffPages.length}</strong>:{' '}
-                  <strong className="text-[#2e7d32] font-black">{currentStaffPage.staffName}</strong> ({currentStaffPage.count} Page)
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPageSize('all')}
-                  className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer"
-                  title="Hiển thị nối dài toàn bộ nhân viên trên 1 trang"
-                >
-                  Xem gộp hết ({totalItems})
-                </button>
-              </>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setPageSize('staff');
-                  setCurrentPage(1);
-                }}
-                className="px-2.5 py-0.5 rounded border border-emerald-600 bg-emerald-700 hover:bg-emerald-800 text-white text-[11px] font-bold transition-colors cursor-pointer"
-              >
-                📑 Bật phân trang theo NV
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Đã hợp nhất thanh Phân Trang Theo NV vào thanh điều khiển phía trên để tránh trùng lặp danh sách nhân viên */}
 
       {/* Spreadsheet Container */}
       <div className="bg-white border-2 border-[#2e7d32] rounded-lg shadow-sm overflow-hidden">
@@ -1903,49 +1831,41 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
               </div>
 
               {/* Thống kê nhanh của Nhân Viên đang xem */}
-              <div className="flex items-center flex-wrap gap-1.5">
-                <span className="px-2.5 py-1 rounded-lg bg-white text-[#1b5e20] font-black text-xs shadow-2xs border border-emerald-100">
-                  📄 {staffPageCount} Fanpage
-                </span>
-                {sInfo && (
-                  <>
+              <div className="flex items-center flex-wrap gap-2">
+                <div className="flex items-center gap-2 text-xs text-emerald-50 font-semibold tabular-nums">
+                  <span className="px-2.5 py-1 rounded-lg bg-white text-[#1b5e20] font-bold shadow-2xs">
+                    {staffPageCount} Fanpage
+                  </span>
+                  {sInfo && (
                     <button
                       type="button"
                       onClick={() => setIsPostingStatsModalOpen(true)}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-950/80 text-emerald-100 font-bold text-xs border border-emerald-500/40 cursor-pointer transition-colors"
+                      className="px-2.5 py-1 rounded-lg bg-emerald-950/45 hover:bg-emerald-950/65 text-emerald-50 font-semibold border border-emerald-400/30 cursor-pointer transition-colors"
                       title="Bấm xem chi tiết thống kê Tiến độ & Đăng bài"
                     >
-                      🟢 {sInfo.doingPages} Đang làm • 🔴 {sInfo.notDoingPages} Không làm
+                      {sInfo.doingPages} Đang làm · {sInfo.notDoingPages} Không làm · {sInfo.manualPages} Tay · {sInfo.toolPages} Tool
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setIsPostingStatsModalOpen(true)}
-                      className="px-2.5 py-1 rounded-lg bg-emerald-950/60 hover:bg-emerald-950/80 text-white font-bold text-xs border border-emerald-500/40 cursor-pointer transition-colors"
-                      title="Bấm xem chi tiết thống kê Đăng Tay vs Tool"
-                    >
-                      ✍️ {sInfo.manualPages} Tay • 🤖 {sInfo.toolPages} Tool
-                    </button>
-                  </>
-                )}
+                  )}
+                </div>
                 {isStaffPaginationActive && staffPages.length > 1 && (
-                  <div className="flex items-center space-x-1 ml-1 pl-2 border-l border-emerald-600">
+                  <div className="flex items-center gap-1 pl-2 border-l border-emerald-500/50">
                     <button
                       type="button"
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className="px-2 py-1 rounded-md bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs border border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      className="px-2 py-1 rounded-md bg-emerald-800 hover:bg-emerald-700 text-white font-semibold text-xs border border-emerald-500/60 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                       title="Chuyển sang nhân viên trước"
                     >
                       ‹ NV Trước
                     </button>
-                    <span className="text-xs font-black text-amber-300 px-1.5">
+                    <span className="text-xs font-bold text-amber-200 px-1.5 tabular-nums">
                       NV {currentPage}/{staffPages.length}
                     </span>
                     <button
                       type="button"
                       onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                       disabled={currentPage === totalPages}
-                      className="px-2 py-1 rounded-md bg-emerald-800 hover:bg-emerald-700 text-white font-bold text-xs border border-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                      className="px-2 py-1 rounded-md bg-emerald-800 hover:bg-emerald-700 text-white font-semibold text-xs border border-emerald-500/60 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
                       title="Chuyển sang nhân viên tiếp theo"
                     >
                       NV Tiếp ›
@@ -2218,10 +2138,17 @@ export const FanpageSheetTable: React.FC<FanpageSheetTableProps> = ({
                   const isCompact = densityMode === 'compact';
                   const cellPyClass = isCompact ? 'py-0.5' : 'py-1';
 
+                  const hasSingleStaffBanner = Boolean(
+                    (isStaffPaginationActive && currentStaffPage) ||
+                      selectedStaff !== 'all' ||
+                      (activeStaffFilter && activeStaffFilter.trim().toLowerCase() !== 'all') ||
+                      staffPages.length === 1
+                  );
+
                   return (
                     <React.Fragment key={record.id}>
-                      {/* 🌟 HÀNG TIÊU ĐỀ NHÂN VIÊN NẰM NGANG TRÊN CÙNG MỖI NHÓM NV (THAY CHO CỘT TÊN NV DỌC) */}
-                      {isFirstOfStaff && (
+                      {/* 🌟 HÀNG TIÊU ĐỀ NHÂN VIÊN NẰM NGANG TRÊN CÙNG MỖI NHÓM NV (CHỈ HIỆN KHI XEM NHIỀU NV CÙNG LÚC ĐỂ TRÁNH TRÙNG BANNER TRÊN) */}
+                      {isFirstOfStaff && !hasSingleStaffBanner && (
                         <tr className="bg-gradient-to-r from-emerald-100 via-emerald-50 to-teal-50 border-y-2 border-[#2e7d32] select-none">
                           <td colSpan={16} className="px-3 py-1.5">
                             <div className="flex flex-wrap items-center justify-between gap-2">
