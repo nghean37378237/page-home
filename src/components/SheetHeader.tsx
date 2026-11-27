@@ -239,7 +239,7 @@ export const SheetHeader: React.FC<SheetHeaderProps> = ({
   );
 
   return (
-    <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+    <header className="bg-white border-b border-slate-200 sticky top-0 z-40 shadow-2xs">
       {/* HÀNG 1: LOGO + 4 NHÓM ĐIỀU HƯỚNG KHOA HỌC (HOẶC DẠNG ĐẦY ĐỦ) + TÀI KHOẢN */}
       <div className="max-w-[1700px] mx-auto px-2.5 sm:px-5 py-1.5">
         <div className="flex items-center justify-between gap-2">

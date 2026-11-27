@@ -16,6 +16,14 @@ import {
   RatioOption,
 } from '../data/collageData';
 import { QuizImageStudioPanel } from './QuizImageStudioPanel';
+import { ImageEnhanceModal } from './ImageEnhanceModal';
+import {
+  ENHANCE_PRESETS,
+  EnhanceParams,
+  EnhancePresetId,
+  enhanceImageSource,
+  getPresetParams,
+} from '../utils/imageEnhancer';
 import {
   SaveImageConfirmModal,
   PendingFallbackSaveData,
@@ -71,6 +79,7 @@ import {
   ArrowLeftRight,
   Star,
   Settings2,
+  RotateCcw,
 } from 'lucide-react';
 
 interface ImageStudioTabProps {
@@ -649,6 +658,53 @@ export function ImageStudioTab({
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [pendingSaveDialog, setPendingSaveDialog] = useState<PendingFallbackSaveData | null>(null);
 
+  // --- PRE-COLLAGE IMAGE SHARPENING & BEAUTY ENHANCEMENT STATE ---
+  const [autoEnhanceOnUpload, setAutoEnhanceOnUpload] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('celeb24h_auto_enhance_v1');
+      return saved === null ? true : saved === '1';
+    } catch {
+      return true;
+    }
+  });
+  const [enhancePresetId, setEnhancePresetId] = useState<EnhancePresetId>(() => {
+    try {
+      const saved = localStorage.getItem('celeb24h_enhance_preset_v1') as EnhancePresetId | null;
+      if (saved === 'natural_sharp' || saved === 'studio_beauty' || saved === 'rescue_blur') {
+        return saved;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return 'studio_beauty';
+  });
+  const [customEnhanceParams, setCustomEnhanceParams] = useState<EnhanceParams>(() =>
+    getPresetParams('studio_beauty')
+  );
+  // Maps enhanced dataUrl -> untouched original src (never double-sharpen, enables instant 1-click revert)
+  const [enhancedOriginalsMap, setEnhancedOriginalsMap] = useState<Record<string, string>>({});
+  const [isEnhancingBatch, setIsEnhancingBatch] = useState<boolean>(false);
+  const [enhanceModalIndex, setEnhanceModalIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('celeb24h_auto_enhance_v1', autoEnhanceOnUpload ? '1' : '0');
+    } catch {
+      // ignore
+    }
+  }, [autoEnhanceOnUpload]);
+
+  useEffect(() => {
+    if (enhancePresetId !== 'custom') {
+      try {
+        localStorage.setItem('celeb24h_enhance_preset_v1', enhancePresetId);
+      } catch {
+        // ignore
+      }
+      setCustomEnhanceParams(getPresetParams(enhancePresetId));
+    }
+  }, [enhancePresetId]);
+
   // Dragging state for photo pan + natural aspect tracking so hidden cropped parts pan seamlessly without leaving blank edges
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null);
   const [photoNaturalSizes, setPhotoNaturalSizes] = useState<
@@ -1165,14 +1221,27 @@ export function ImageStudioTab({
         throw new Error(data?.error || 'Không tìm thấy ảnh nào trong đường dẫn này!');
       }
 
-      const extractedPhotos: string[] = data.images.map(
+      const extractedPhotosRaw: string[] = data.images.map(
         (img: ExtractedWebImageItem) => img.dataUrl || img.url
       );
       const rawUrls: string[] = data.images
         .map((img: ExtractedWebImageItem) => img.url)
         .filter(Boolean);
 
-      setUploadedPhotos(extractedPhotos);
+      let finalPhotos = extractedPhotosRaw;
+      if (autoEnhanceOnUpload && extractedPhotosRaw.length > 0) {
+        const activeParams = getPresetParams(enhancePresetId, customEnhanceParams);
+        const { enhancedList, newOriginals } = await runEnhanceOnPhotoList(
+          extractedPhotosRaw,
+          activeParams
+        );
+        finalPhotos = enhancedList;
+        if (Object.keys(newOriginals).length > 0) {
+          setEnhancedOriginalsMap((prev) => ({ ...prev, ...newOriginals }));
+        }
+      }
+
+      setUploadedPhotos(finalPhotos);
       setExtractedRawUrls(rawUrls);
       setExtractedArticleBodyText(String(data.articleText || data.excerpt || ''));
       setSimilarSearchQuery('');
@@ -1183,7 +1252,7 @@ export function ImageStudioTab({
         title: data.title || 'Bài viết Web',
         sourceUrl: data.sourceUrl || targetUrl,
         siteName: data.siteName || 'Website',
-        imageCount: extractedPhotos.length,
+        imageCount: finalPhotos.length,
       });
       if (data.title && String(data.title).trim()) {
         const cleanedT = String(data.title).trim();
@@ -1196,10 +1265,12 @@ export function ImageStudioTab({
       setMultiFrameOffsets({});
 
       // Tự động áp dụng yêu cầu khung ghép của người dùng
-      applyCustomRequirementToStudio(customRequirementText, extractedPhotos, data.title);
+      applyCustomRequirementToStudio(customRequirementText, finalPhotos, data.title);
 
       setExportNotice(
-        `Đã tự động lấy ${extractedPhotos.length} ảnh từ bài "${(data.title || '').slice(0, 45)}..." vào Kho Tự Ghép & đang tìm thêm ảnh tương tự vào hàng chờ!`
+        autoEnhanceOnUpload
+          ? `Đã lấy ${finalPhotos.length} ảnh & tự động làm nét HD trước khi ghép!`
+          : `Đã tự động lấy ${finalPhotos.length} ảnh từ bài "${(data.title || '').slice(0, 45)}..." vào Kho Tự Ghép & đang tìm thêm ảnh tương tự vào hàng chờ!`
       );
       setTimeout(() => setExportNotice(null), 5000);
 
@@ -1291,6 +1362,174 @@ export function ImageStudioTab({
     setSlotTransforms({});
   };
 
+  // --- HELPER: LÀM NÉT & LÀM ĐẸP DANH SÁCH ẢNH TRƯỚC KHI GHÉP ---
+  const runEnhanceOnPhotoList = async (
+    photosToProcess: string[],
+    paramsToUse: EnhanceParams,
+    existingOriginals: Record<string, string> = {}
+  ): Promise<{
+    enhancedList: string[];
+    newOriginals: Record<string, string>;
+    urlReplacements: Record<string, string>;
+    successCount: number;
+  }> => {
+    const newOriginals: Record<string, string> = {};
+    const urlReplacements: Record<string, string> = {};
+    const enhancedList = [...photosToProcess];
+    let successCount = 0;
+
+    // Xử lý song song theo lô 3 ảnh để nhanh nhưng không giật UI
+    for (let i = 0; i < photosToProcess.length; i += 3) {
+      const batchIndices = [i, i + 1, i + 2].filter((idx) => idx < photosToProcess.length);
+      await Promise.all(
+        batchIndices.map(async (idx) => {
+          const curUrl = photosToProcess[idx];
+          if (!curUrl) return;
+          const origUrl = existingOriginals[curUrl] || curUrl;
+          try {
+            const res = await enhanceImageSource(origUrl, paramsToUse);
+            enhancedList[idx] = res.enhancedDataUrl;
+            newOriginals[res.enhancedDataUrl] = origUrl;
+            urlReplacements[curUrl] = res.enhancedDataUrl;
+            successCount++;
+          } catch {
+            // Giữ nguyên ảnh cũ nếu ảnh ngoài web chặn CORS hoàn toàn
+          }
+        })
+      );
+    }
+
+    return { enhancedList, newOriginals, urlReplacements, successCount };
+  };
+
+  // Làm nét & Đẹp toàn bộ ảnh hiện có trong Kho / Ảnh nguồn (từ ảnh gốc để không bị nét chồng nét)
+  const handleEnhanceAllUploadedPhotos = async (
+    presetOverride?: EnhancePresetId,
+    paramsOverride?: EnhanceParams
+  ) => {
+    if (uploadedPhotos.length === 0 || isEnhancingBatch) return;
+    const targetPresetId = presetOverride || enhancePresetId;
+    const targetParams = paramsOverride || getPresetParams(targetPresetId, customEnhanceParams);
+
+    if (presetOverride) setEnhancePresetId(presetOverride);
+    if (paramsOverride) setCustomEnhanceParams(paramsOverride);
+
+    setIsEnhancingBatch(true);
+    setExportNotice(`Đang làm nét HD & tối ưu màu cho ${uploadedPhotos.length} ảnh...`);
+    try {
+      const snapshotPhotos = [...uploadedPhotos];
+      const { enhancedList, newOriginals, urlReplacements, successCount } =
+        await runEnhanceOnPhotoList(snapshotPhotos, targetParams, enhancedOriginalsMap);
+
+      if (successCount > 0) {
+        setEnhancedOriginalsMap((prev) => ({ ...prev, ...newOriginals }));
+        setUploadedPhotos(enhancedList);
+        setSlotAssignments((oldSlots) => {
+          const next = { ...oldSlots };
+          Object.keys(next).forEach((k) => {
+            const slotKey = Number(k);
+            const cur = next[slotKey];
+            if (cur && urlReplacements[cur]) {
+              next[slotKey] = urlReplacements[cur];
+            }
+          });
+          return next;
+        });
+        setExportNotice(
+          `Đã làm nét & làm đẹp ${successCount}/${snapshotPhotos.length} ảnh chuẩn HD trước khi ghép!`
+        );
+      } else {
+        setExportNotice('Không thể xử lý làm nét cho các ảnh này (lỗi đọc dữ liệu ảnh).');
+      }
+      setTimeout(() => setExportNotice(null), 3500);
+    } finally {
+      setIsEnhancingBatch(false);
+    }
+  };
+
+  // Làm nét 1 ảnh riêng lẻ trong Ảnh nguồn
+  const handleEnhanceSinglePhotoByIndex = async (
+    photoIndex: number,
+    presetOverride?: EnhancePresetId,
+    paramsOverride?: EnhanceParams
+  ) => {
+    const curUrl = uploadedPhotos[photoIndex];
+    if (!curUrl) return;
+    const origUrl = enhancedOriginalsMap[curUrl] || curUrl;
+    const targetParams =
+      paramsOverride || getPresetParams(presetOverride || enhancePresetId, customEnhanceParams);
+    setIsEnhancingBatch(true);
+    try {
+      const res = await enhanceImageSource(origUrl, targetParams);
+      setEnhancedOriginalsMap((prev) => ({ ...prev, [res.enhancedDataUrl]: origUrl }));
+      setUploadedPhotos((prev) =>
+        prev.map((p, idx) => (idx === photoIndex ? res.enhancedDataUrl : p))
+      );
+      setSlotAssignments((oldSlots) => {
+        const next = { ...oldSlots };
+        Object.keys(next).forEach((k) => {
+          const sk = Number(k);
+          if (next[sk] === curUrl) next[sk] = res.enhancedDataUrl;
+        });
+        return next;
+      });
+      setExportNotice(`Đã làm nét HD ảnh #${photoIndex + 1} (${res.outputWidth}×${res.outputHeight})!`);
+      setTimeout(() => setExportNotice(null), 3000);
+    } catch {
+      setExportNotice(`Không thể làm nét ảnh #${photoIndex + 1}.`);
+      setTimeout(() => setExportNotice(null), 3000);
+    } finally {
+      setIsEnhancingBatch(false);
+    }
+  };
+
+  // Khôi phục 1 ảnh về bản gốc
+  const handleRevertSinglePhotoToOriginal = (photoIndex: number) => {
+    const curUrl = uploadedPhotos[photoIndex];
+    if (!curUrl) return;
+    const origUrl = enhancedOriginalsMap[curUrl];
+    if (!origUrl) return;
+    setUploadedPhotos((prev) => prev.map((p, idx) => (idx === photoIndex ? origUrl : p)));
+    setSlotAssignments((oldSlots) => {
+      const next = { ...oldSlots };
+      Object.keys(next).forEach((k) => {
+        const sk = Number(k);
+        if (next[sk] === curUrl) next[sk] = origUrl;
+      });
+      return next;
+    });
+    setExportNotice(`Đã khôi phục ảnh gốc #${photoIndex + 1}.`);
+    setTimeout(() => setExportNotice(null), 2500);
+  };
+
+  // Khôi phục toàn bộ ảnh về bản gốc
+  const handleRevertAllPhotosToOriginal = () => {
+    if (uploadedPhotos.length === 0) return;
+    const replacementMap: Record<string, string> = {};
+    const revertedList = uploadedPhotos.map((p) => {
+      const orig = enhancedOriginalsMap[p];
+      if (orig) {
+        replacementMap[p] = orig;
+        return orig;
+      }
+      return p;
+    });
+    if (Object.keys(replacementMap).length === 0) return;
+    setUploadedPhotos(revertedList);
+    setSlotAssignments((oldSlots) => {
+      const next = { ...oldSlots };
+      Object.keys(next).forEach((k) => {
+        const sk = Number(k);
+        if (next[sk] && replacementMap[next[sk]]) {
+          next[sk] = replacementMap[next[sk]];
+        }
+      });
+      return next;
+    });
+    setExportNotice('Đã khôi phục toàn bộ về ảnh gốc ban đầu.');
+    setTimeout(() => setExportNotice(null), 2500);
+  };
+
   // Paste image directly from clipboard (Ctrl+V) anywhere in window
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
@@ -1301,16 +1540,35 @@ export function ImageStudioTab({
           const file = items[i].getAsFile();
           if (file) {
             const reader = new FileReader();
-            reader.onload = (event) => {
-              const result = event.target?.result as string;
-              if (result) {
-                setUploadedPhotos((prev) => [result, ...prev]);
-                if (activeSlotId !== null) {
-                  setSlotAssignments((prev) => ({ ...prev, [activeSlotId]: result }));
+            reader.onload = async (event) => {
+              const rawResult = event.target?.result as string;
+              if (!rawResult) return;
+              let finalResult = rawResult;
+              if (autoEnhanceOnUpload) {
+                try {
+                  const res = await enhanceImageSource(
+                    rawResult,
+                    getPresetParams(enhancePresetId, customEnhanceParams)
+                  );
+                  finalResult = res.enhancedDataUrl;
+                  setEnhancedOriginalsMap((prev) => ({
+                    ...prev,
+                    [res.enhancedDataUrl]: rawResult,
+                  }));
+                } catch {
+                  // fallback to raw
                 }
-                setExportNotice('Đã dán ảnh từ Clipboard thành công!');
-                setTimeout(() => setExportNotice(null), 3000);
               }
+              setUploadedPhotos((prev) => [finalResult, ...prev]);
+              if (activeSlotId !== null) {
+                setSlotAssignments((prev) => ({ ...prev, [activeSlotId]: finalResult }));
+              }
+              setExportNotice(
+                autoEnhanceOnUpload
+                  ? 'Đã dán & tự động làm nét HD ảnh từ Clipboard!'
+                  : 'Đã dán ảnh từ Clipboard thành công!'
+              );
+              setTimeout(() => setExportNotice(null), 3000);
             };
             reader.readAsDataURL(file);
           }
@@ -1319,7 +1577,7 @@ export function ImageStudioTab({
     };
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
-  }, [activeSlotId]);
+  }, [activeSlotId, autoEnhanceOnUpload, enhancePresetId, customEnhanceParams]);
 
   // Tự động bỏ viền đỏ chọn ô (activeSlotId) khi bấm ra ngoài ô ảnh hoặc nhấn Esc
   useEffect(() => {
@@ -1351,30 +1609,49 @@ export function ImageStudioTab({
     };
   }, [activeSlotId]);
 
-  // File Upload handler (hỗ trợ cả thêm vào kho hoặc thay mới toàn bộ kho ảnh tự ghép)
+  // File Upload handler (hỗ trợ cả thêm vào kho hoặc thay mới toàn bộ kho ảnh + tự làm nét HD trước khi ghép)
   const handleFileUpload = (
     e: React.ChangeEvent<HTMLInputElement>,
     mode: 'append' | 'replace' = 'append'
   ) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
-    const newPhotos: string[] = [];
+    const rawPhotos: string[] = [];
     let loaded = 0;
     const totalFiles = files.length;
     Array.from(files).forEach((file) => {
       const reader = new FileReader();
-      reader.onload = (event) => {
+      reader.onload = async (event) => {
         const result = event.target?.result as string;
-        if (result) newPhotos.push(result);
+        if (result) rawPhotos.push(result);
         loaded++;
         if (loaded === totalFiles) {
+          let finalPhotos = rawPhotos;
+          if (autoEnhanceOnUpload && rawPhotos.length > 0) {
+            setIsEnhancingBatch(true);
+            setExportNotice(`Đang tự động làm nét HD & tối ưu ${rawPhotos.length} ảnh trước khi ghép...`);
+            try {
+              const activeParams = getPresetParams(enhancePresetId, customEnhanceParams);
+              const { enhancedList, newOriginals } = await runEnhanceOnPhotoList(
+                rawPhotos,
+                activeParams
+              );
+              finalPhotos = enhancedList;
+              if (Object.keys(newOriginals).length > 0) {
+                setEnhancedOriginalsMap((prev) => ({ ...prev, ...newOriginals }));
+              }
+            } finally {
+              setIsEnhancingBatch(false);
+            }
+          }
+
           setUploadedPhotos((prev) => {
-            const combined = mode === 'replace' ? [...newPhotos] : [...newPhotos, ...prev];
+            const combined = mode === 'replace' ? [...finalPhotos] : [...finalPhotos, ...prev];
             setSlotAssignments((oldSlots) => {
               const next = { ...oldSlots };
               activePreset.slots.forEach((slot, idx) => {
-                if (newPhotos[idx]) {
-                  next[slot.id] = newPhotos[idx];
+                if (finalPhotos[idx]) {
+                  next[slot.id] = finalPhotos[idx];
                 } else if (mode === 'replace' || !next[slot.id]) {
                   next[slot.id] = combined[idx % Math.max(1, combined.length)] || '';
                 }
@@ -1386,9 +1663,11 @@ export function ImageStudioTab({
           setShowMultiFrameGallery(true);
           setMultiFrameOffsets({});
           setExportNotice(
-            mode === 'replace'
-              ? `Đã thay mới Kho Tự Ghép bằng ${newPhotos.length} ảnh tải lên từ máy!`
-              : `Đã tải thêm ${newPhotos.length} ảnh từ máy lên Kho Tự Ghép!`
+            autoEnhanceOnUpload
+              ? `Đã tải & tự động làm nét HD ${finalPhotos.length} ảnh trước khi ghép!`
+              : mode === 'replace'
+              ? `Đã thay mới Kho Tự Ghép bằng ${finalPhotos.length} ảnh tải lên từ máy!`
+              : `Đã tải thêm ${finalPhotos.length} ảnh từ máy lên Kho Tự Ghép!`
           );
           setTimeout(() => setExportNotice(null), 3500);
         }
@@ -2394,6 +2673,8 @@ export function ImageStudioTab({
     canvas.height = targetH;
     const ctx = canvas.getContext('2d');
     if (!ctx) throw new Error('Cannot get 2d context');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     // 1. Draw Background
     if (selectedBackground.type === 'color') {
@@ -3751,6 +4032,19 @@ export function ImageStudioTab({
                       </button>
                     )}
 
+                    {uploadedPhotos.length > 0 && (
+                      <button
+                        type="button"
+                        disabled={isEnhancingBatch}
+                        onClick={() => void handleEnhanceAllUploadedPhotos()}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-[11px] font-bold cursor-pointer transition-colors disabled:opacity-50"
+                        title="Làm nét HD & tối ưu ánh sáng/màu cho toàn bộ ảnh trong kho trước khi ghép"
+                      >
+                        <Sparkles className={`w-3 h-3 text-indigo-600 ${isEnhancingBatch ? 'animate-spin' : ''}`} />
+                        <span>{isEnhancingBatch ? 'Đang làm nét...' : 'Làm nét HD'}</span>
+                      </button>
+                    )}
+
                     <label className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-extrabold cursor-pointer shadow-2xs transition-colors">
                       <Upload className="w-3 h-3" />
                       <span>+ Tải Ảnh Máy</span>
@@ -3861,7 +4155,23 @@ export function ImageStudioTab({
                             >
                               ×
                             </button>
+                            {enhancedOriginalsMap[photo] && (
+                              <span
+                                className="absolute bottom-6 left-1 px-1 py-0.2 rounded bg-emerald-600/90 text-white text-[8px] font-black pointer-events-none"
+                                title="Đã làm nét & tối ưu HD"
+                              >
+                                HD✨
+                              </span>
+                            )}
                             <div className="absolute inset-x-0 bottom-0 bg-black/75 p-1 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={() => void handleEnhanceSinglePhotoByIndex(idx)}
+                                className="px-1 py-0.5 rounded bg-indigo-600 text-white text-[9px] font-black cursor-pointer"
+                                title="Làm nét & làm đẹp riêng ảnh này"
+                              >
+                                ✨
+                              </button>
                               {idx !== 0 && (
                                 <button
                                   type="button"
@@ -5623,9 +5933,9 @@ export function ImageStudioTab({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
             {/* CỘT TRÁI & GIỮA (8 COL): KHUNG CANVAS + BỘ CHỌN PRESET */}
             <div className="lg:col-span-8 space-y-4">
-              {/* Thanh tải ảnh & danh sách ảnh gốc */}
-              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              {/* Thanh tải ảnh & danh sách ảnh gốc + Chế độ Làm Nét & Đẹp Ảnh trước khi ghép */}
+              <div className="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="flex items-center space-x-2">
                     <span className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                       <Upload className="w-3.5 h-3.5 text-rose-600" />
@@ -5647,7 +5957,34 @@ export function ImageStudioTab({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setUploadedPhotos(SAMPLE_STUDIO_IMAGES)}
+                      onClick={async () => {
+                        const applySamples = (list: string[]) => {
+                          setUploadedPhotos(list);
+                          setSlotAssignments((oldSlots) => {
+                            const next = { ...oldSlots };
+                            activePreset.slots.forEach((slot, sIdx) => {
+                              next[slot.id] = list[sIdx % Math.max(1, list.length)] || '';
+                            });
+                            return next;
+                          });
+                        };
+                        if (autoEnhanceOnUpload) {
+                          setIsEnhancingBatch(true);
+                          try {
+                            const activeParams = getPresetParams(enhancePresetId, customEnhanceParams);
+                            const { enhancedList, newOriginals } = await runEnhanceOnPhotoList(
+                              SAMPLE_STUDIO_IMAGES,
+                              activeParams
+                            );
+                            setEnhancedOriginalsMap((prev) => ({ ...prev, ...newOriginals }));
+                            applySamples(enhancedList);
+                          } finally {
+                            setIsEnhancingBatch(false);
+                          }
+                        } else {
+                          applySamples(SAMPLE_STUDIO_IMAGES);
+                        }
+                      }}
                       className="text-[11px] font-bold text-slate-600 hover:text-rose-700 px-2 py-1 bg-slate-100 hover:bg-slate-200 rounded-md transition-colors cursor-pointer"
                     >
                       Dùng 4 ảnh mẫu
@@ -5673,7 +6010,7 @@ export function ImageStudioTab({
                             setExtractedArticleInfo(null);
                           }
                         }}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors"
+                        className="p-1.5 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition-colors cursor-pointer"
                         title="Xóa tất cả ảnh"
                       >
                         <Trash2 className="w-4 h-4" />
@@ -5682,47 +6019,191 @@ export function ImageStudioTab({
                   </div>
                 </div>
 
+                {/* THANH CHẾ ĐỘ LÀM NÉT & LÀM ĐẸP ẢNH TRƯỚC KHI GHÉP */}
+                {(() => {
+                  const enhancedCount = uploadedPhotos.filter((p) =>
+                    Boolean(enhancedOriginalsMap[p])
+                  ).length;
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200/90">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="button"
+                          id="btn-toggle-auto-enhance"
+                          onClick={() => setAutoEnhanceOnUpload((prev) => !prev)}
+                          aria-pressed={autoEnhanceOnUpload}
+                          className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10.5px] font-bold border transition-colors cursor-pointer whitespace-nowrap ${
+                            autoEnhanceOnUpload
+                              ? 'bg-emerald-600 text-white border-emerald-700'
+                              : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-100'
+                          }`}
+                          title="Khi bật, mọi ảnh mới tải lên từ máy hoặc từ link web sẽ tự động được làm nét HD và cân chỉnh đẹp nhất trước khi đưa vào khung ghép"
+                        >
+                          <Sparkles className="w-3 h-3" />
+                          <span>
+                            Tự làm nét: {autoEnhanceOnUpload ? 'BẬT' : 'TẮT'}
+                          </span>
+                        </button>
+
+                        <div className="inline-flex items-center bg-white p-0.5 rounded-lg border border-slate-200">
+                          {ENHANCE_PRESETS.map((presetOpt) => {
+                            const isSelected = enhancePresetId === presetOpt.id;
+                            return (
+                              <button
+                                key={presetOpt.id}
+                                type="button"
+                                onClick={() => setEnhancePresetId(presetOpt.id)}
+                                title={presetOpt.description}
+                                className={`px-2 py-0.5 rounded-md text-[10.5px] font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                                  isSelected
+                                    ? 'bg-slate-900 text-white'
+                                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                                }`}
+                              >
+                                {presetOpt.shortLabel}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {uploadedPhotos.length > 0 && (
+                          <>
+                            <button
+                              type="button"
+                              id="btn-enhance-all-photos"
+                              disabled={isEnhancingBatch}
+                              onClick={() => void handleEnhanceAllUploadedPhotos()}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10.5px] font-extrabold bg-indigo-600 hover:bg-indigo-700 disabled:opacity-60 text-white cursor-pointer transition-colors whitespace-nowrap tabular-nums"
+                              title="Chạy làm nét HD, khử nhiễu, cân chỉnh ánh sáng và độ tươi màu cho toàn bộ ảnh nguồn"
+                            >
+                              {isEnhancingBatch ? (
+                                <>
+                                  <RefreshCw className="w-3 h-3 animate-spin" />
+                                  <span>Đang làm nét...</span>
+                                </>
+                              ) : enhancedCount === uploadedPhotos.length && enhancedCount > 0 ? (
+                                <>
+                                  <Check className="w-3 h-3" />
+                                  <span>Đã nét HD ({enhancedCount}/{uploadedPhotos.length})</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="w-3 h-3" />
+                                  <span>Làm nét & Đẹp ({uploadedPhotos.length} ảnh)</span>
+                                </>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              id="btn-open-enhance-compare"
+                              onClick={() => setEnhanceModalIndex(0)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10.5px] font-bold bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 cursor-pointer transition-colors whitespace-nowrap"
+                              title="Mở bảng so sánh Trước / Sau và tinh chỉnh chi tiết độ nét, ánh sáng, màu sắc"
+                            >
+                              <Eye className="w-3 h-3 text-indigo-600" />
+                              <span>So sánh & Tinh chỉnh</span>
+                            </button>
+
+                            {enhancedCount > 0 && (
+                              <button
+                                type="button"
+                                id="btn-revert-original-photos"
+                                onClick={handleRevertAllPhotosToOriginal}
+                                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10.5px] font-bold bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 cursor-pointer transition-colors whitespace-nowrap"
+                                title="Khôi phục toàn bộ ảnh về ảnh gốc ban đầu"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>Ảnh gốc</span>
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Dải ảnh thumbnails cuộn ngang */}
                 <div className="flex items-center space-x-2.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-thin">
-                  {uploadedPhotos.map((photo, idx) => (
-                    <div
-                      key={idx}
-                      className="relative group shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 border-slate-200 hover:border-rose-500 shadow-2xs transition-all"
-                    >
-                      <img
-                        src={photo}
-                        alt={`Photo ${idx + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center space-x-1">
-                        <button
-                          type="button"
-                          data-keep-slot-selection="true"
-                          onClick={() => {
-                            const targetSlot = activeSlotId !== null ? activeSlotId : 0;
-                            setSlotAssignments((prev) => ({ ...prev, [targetSlot]: photo }));
-                          }}
-                          className="p-1 rounded bg-white text-slate-800 text-[10px] font-black hover:bg-rose-600 hover:text-white cursor-pointer"
-                          title="Gán vào ô đang chọn"
-                        >
-                          Gán
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUploadedPhotos((prev) => prev.filter((_, i) => i !== idx));
-                          }}
-                          className="p-1 rounded bg-red-600 text-white hover:bg-red-700 cursor-pointer"
-                          title="Xóa ảnh"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                  {uploadedPhotos.map((photo, idx) => {
+                    const isEnhanced = Boolean(enhancedOriginalsMap[photo]);
+                    return (
+                      <div
+                        key={idx}
+                        className={`relative group shrink-0 w-16 h-16 rounded-xl overflow-hidden border-2 shadow-2xs transition-all ${
+                          isEnhanced
+                            ? 'border-emerald-400 hover:border-rose-500'
+                            : 'border-slate-200 hover:border-rose-500'
+                        }`}
+                      >
+                        <img
+                          src={photo}
+                          alt={`Photo ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        {isEnhanced && (
+                          <span
+                            className="absolute top-0.5 left-0.5 bg-emerald-600/95 text-white text-[8px] font-black px-1 py-0.2 rounded shadow-2xs pointer-events-none"
+                            title="Ảnh đã được làm nét & tối ưu HD"
+                          >
+                            HD✨
+                          </span>
+                        )}
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-1 p-1">
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              data-keep-slot-selection="true"
+                              onClick={() => {
+                                const targetSlot = activeSlotId !== null ? activeSlotId : 0;
+                                setSlotAssignments((prev) => ({ ...prev, [targetSlot]: photo }));
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-white text-slate-800 text-[9px] font-black hover:bg-rose-600 hover:text-white cursor-pointer"
+                              title="Gán vào ô đang chọn"
+                            >
+                              Gán
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEnhanceModalIndex(idx)}
+                              className="p-1 rounded bg-indigo-600 text-white hover:bg-indigo-700 cursor-pointer"
+                              title="So sánh Trước/Sau & làm nét riêng ảnh này"
+                            >
+                              <Sparkles className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            {isEnhanced && (
+                              <button
+                                type="button"
+                                onClick={() => handleRevertSinglePhotoToOriginal(idx)}
+                                className="px-1 py-0.5 rounded bg-slate-800 text-white text-[8px] font-bold hover:bg-slate-700 cursor-pointer"
+                                title="Khôi phục ảnh gốc"
+                              >
+                                Gốc
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setUploadedPhotos((prev) => prev.filter((_, i) => i !== idx));
+                              }}
+                              className="p-0.5 rounded bg-red-600 text-white hover:bg-red-700 cursor-pointer"
+                              title="Xóa ảnh"
+                            >
+                              <Trash2 className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        </div>
+                        <span className="absolute bottom-0.5 right-0.5 bg-black/60 text-white text-[9px] px-1 rounded font-bold">
+                          #{idx + 1}
+                        </span>
                       </div>
-                      <span className="absolute bottom-0.5 right-0.5 bg-black/60 text-white text-[9px] px-1 rounded font-bold">
-                        #{idx + 1}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {uploadedPhotos.length === 0 && (
                     <div className="w-full py-4 text-center text-xs text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
@@ -8310,6 +8791,42 @@ export function ImageStudioTab({
           </div>
         </div>
       )}
+      <ImageEnhanceModal
+        isOpen={enhanceModalIndex !== null}
+        onClose={() => setEnhanceModalIndex(null)}
+        photos={uploadedPhotos}
+        initialIndex={enhanceModalIndex ?? 0}
+        originalsMap={enhancedOriginalsMap}
+        presetId={enhancePresetId}
+        params={customEnhanceParams}
+        isBusyBatch={isEnhancingBatch}
+        onApplySingle={(photoIdx, enhancedUrl, origSrc, nextPresetId, nextParams) => {
+          setEnhancePresetId(nextPresetId);
+          setCustomEnhanceParams(nextParams);
+          const prevUrl = uploadedPhotos[photoIdx];
+          setEnhancedOriginalsMap((prev) => ({ ...prev, [enhancedUrl]: origSrc }));
+          setUploadedPhotos((prev) =>
+            prev.map((p, idx) => (idx === photoIdx ? enhancedUrl : p))
+          );
+          if (prevUrl) {
+            setSlotAssignments((oldSlots) => {
+              const next = { ...oldSlots };
+              Object.keys(next).forEach((k) => {
+                const sk = Number(k);
+                if (next[sk] === prevUrl) next[sk] = enhancedUrl;
+              });
+              return next;
+            });
+          }
+          setExportNotice(`Đã áp dụng làm nét HD cho ảnh #${photoIdx + 1}!`);
+          setTimeout(() => setExportNotice(null), 3000);
+        }}
+        onApplyAll={async (nextPresetId, nextParams) => {
+          await handleEnhanceAllUploadedPhotos(nextPresetId, nextParams);
+        }}
+        onRevertSingle={handleRevertSinglePhotoToOriginal}
+      />
+
       <SaveImageConfirmModal
         pendingSave={pendingSaveDialog}
         onClose={() => setPendingSaveDialog(null)}
